@@ -5,7 +5,7 @@
 use zeroize::Zeroizing;
 
 use super::json::{JsonInvalido, Valor, de_base64};
-use crate::entrada::Segredo;
+use crate::entry::Secret;
 
 pub(crate) type R<T> = Result<T, JsonInvalido>;
 
@@ -71,7 +71,7 @@ impl Campos {
         texto_de(self.exigir(k)?, max)
     }
 
-    /// Texto opcional; ausente vira vazio (o "não informado" do [`crate::entrada::Rascunho`]).
+    /// Texto opcional; ausente vira vazio (o "não informado" do [`crate::entry::Draft`]).
     pub(crate) fn texto_ou_vazio(&mut self, k: &str, max: usize) -> R<String> {
         match self.tirar(k) {
             Some(v) => texto_de(v, max),
@@ -83,11 +83,11 @@ impl Campos {
         self.tirar(k).map(|v| texto_de(v, max)).transpose()
     }
 
-    pub(crate) fn segredo(&mut self, k: &str, max: usize) -> R<Segredo> {
+    pub(crate) fn segredo(&mut self, k: &str, max: usize) -> R<Secret> {
         segredo_de(self.exigir(k)?, max)
     }
 
-    pub(crate) fn segredo_opc(&mut self, k: &str, max: usize) -> R<Option<Segredo>> {
+    pub(crate) fn segredo_opc(&mut self, k: &str, max: usize) -> R<Option<Secret>> {
         self.tirar(k).map(|v| segredo_de(v, max)).transpose()
     }
 
@@ -153,9 +153,9 @@ pub(crate) fn bytes_de(v: Valor, max: usize) -> R<Zeroizing<Vec<u8>>> {
 
 /// Segredo em base64 (todo segredo do protocolo vai assim; o texto em base64 zera ao
 /// sair junto com o valor do quadro).
-pub(crate) fn segredo_de(v: Valor, max: usize) -> R<Segredo> {
+pub(crate) fn segredo_de(v: Valor, max: usize) -> R<Secret> {
     let mut b = bytes_de(v, max)?;
-    Ok(Segredo::de_bytes(core::mem::take(&mut *b)))
+    Ok(Secret::from_bytes(core::mem::take(&mut *b)))
 }
 
 pub(crate) fn lista_de(v: Valor, max: usize) -> R<Vec<Valor>> {

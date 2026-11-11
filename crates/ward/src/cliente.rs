@@ -252,7 +252,7 @@ impl Sessao {
 
 impl EscritaSessao {
     /// Manda um pedaço da entrada padrão (vazio = fim da entrada).
-    pub fn entrada(&mut self, dados: ward_core::entrada::Segredo) -> Result<(), ErroConexao> {
+    pub fn entrada(&mut self, dados: ward_core::entry::Secret) -> Result<(), ErroConexao> {
         let corpo = protocolo::codificar_pedido(Papel::Agente, &Pedido::EntradaPadrao { dados })
             .map_err(|_| ErroConexao::PedidoInvalido)?;
         quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_COMMON_FRAME).map_err(erro_do_quadro)

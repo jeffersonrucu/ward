@@ -281,7 +281,7 @@ pub(crate) fn exibir(a: &Atual) -> PedidoExibido {
     PedidoExibido {
         id: p.id,
         entradas,
-        ambiente: p.ambiente.nome(),
+        ambiente: p.ambiente.name(),
         operacao: p.operacao.nome(),
         comando: neutralize(&p.comando),
         diretorio: neutralize(&p.diretorio),
@@ -319,14 +319,14 @@ pub fn vigiar(
 mod testes {
     use super::*;
     use crate::daemon::Aviso;
-    use ward_core::entrada::Ambiente;
+    use ward_core::entry::Environment;
     use ward_core::protocolo::Operacao;
 
     pub(crate) fn pedido(id: u64, comando: &str, cadeia: &[&str]) -> PedidoDeAprovacao {
         PedidoDeAprovacao {
             id,
             entradas: vec!["acme-pg-aprovacao".into()],
-            ambiente: Ambiente::Stage,
+            ambiente: Environment::Stage,
             operacao: Operacao::Executar,
             comando: comando.into(),
             diretorio: "\"/home/dev/projetos/acme\"".into(),
@@ -493,7 +493,7 @@ mod testes_servico {
     use crate::nivel::Pin;
     use crate::servico::Servico;
     use std::sync::Mutex as M;
-    use ward_core::entrada::{Ambiente, NivelAcesso};
+    use ward_core::entry::{AccessLevel, Environment};
     use ward_core::protocolo;
     use zeroize::Zeroizing;
 
@@ -588,7 +588,7 @@ mod testes_servico {
         // A entrada não virou livre.
         assert_eq!(
             f.0.lock().unwrap().nivel_de("acme-pg-aprovacao"),
-            Some(NivelAcesso::ComAprovacao)
+            Some(AccessLevel::Approval)
         );
     }
 
@@ -694,7 +694,7 @@ mod testes_servico {
             &protocolo::Pedido::ResponderAprovacao {
                 pedido: 21,
                 decisao: protocolo::Decisao::PermitirUmaVez,
-                pin: Some(ward_core::entrada::Segredo::de_texto(PIN_CERTO.to_owned())),
+                pin: Some(ward_core::entry::Secret::from_text(PIN_CERTO.to_owned())),
                 entrada_confirmada: false,
             },
         )
@@ -726,11 +726,11 @@ mod testes_servico {
             .unwrap();
         assert_eq!(
             f.0.lock().unwrap().nivel_de("acme-pg-aprovacao"),
-            Some(NivelAcesso::Livre)
+            Some(AccessLevel::Free)
         );
         let mut prod = pedido(6, "\"ls\"", &[]);
         prod.entradas = vec!["acme-pg-prod".into()];
-        prod.ambiente = Ambiente::Prod;
+        prod.ambiente = Environment::Prod;
         let (s, f) = montar(&[prod, pedido(8, "\"ls\"", &[])]);
         assert_eq!(s.pedido_de_aprovacao().unwrap().unwrap().ambiente, "prod");
         s.negar_aprovacoes_pendentes();

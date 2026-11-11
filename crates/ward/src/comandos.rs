@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_core::entrada::Segredo;
+use ward_core::entry::Secret;
 use ward_core::limits::{KIB, MAX_ARGUMENT, MAX_ARGUMENTS, MAX_ENV_VARIABLES, MAX_SECRET};
 use ward_core::protocolo::{
     ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta,
@@ -313,7 +313,7 @@ fn destravar(e: &mut dyn Entorno) -> u8 {
         return falhar(e, &erro.mensagem());
     }
     // A senha passa do `Zeroizing` para o `Segredo` sem cópia.
-    let senha = Segredo::de_bytes(std::mem::take(&mut *lida));
+    let senha = Secret::from_bytes(std::mem::take(&mut *lida));
     drop(lida);
     let r = pedir(e, &mut c, &Pedido::Destravar { senha });
     match r {
@@ -375,7 +375,7 @@ pub fn pedido_run(
             .into_iter()
             .map(|(k, v)| Variavel {
                 nome: Zeroizing::new(k),
-                valor: Segredo::de_bytes(v),
+                valor: Secret::from_bytes(v),
             })
             .collect(),
         tipo_entrada,
@@ -458,7 +458,7 @@ fn repassar_entrada(
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                     Err(_) => 0,
                 };
-                let dados = Segredo::de_bytes(buf[..n].to_vec());
+                let dados = Secret::from_bytes(buf[..n].to_vec());
                 let mut w = escrita.lock().unwrap_or_else(|e| e.into_inner());
                 if w.entrada(dados).is_err() || n == 0 {
                     return;
@@ -497,7 +497,7 @@ const PASSO_JANELA: Duration = Duration::from_millis(250);
 /// `ward run`, D52). Nenhum valor vai para a mensagem.
 pub fn pedido_ssh(
     entrada: String,
-    token: Option<Segredo>,
+    token: Option<Secret>,
     comando: Vec<OsString>,
     janela: Option<Janela>,
     tipo_entrada: TipoEntradaPadrao,
@@ -530,14 +530,14 @@ pub const MSG_TOKEN_FORMATO: &str = "o token do Conectar veio fora do formato";
 /// O token do "Conectar" pelo fd herdado (Fase 27a). Antes de ler, o processo fica
 /// não-dumpable e sem core (o token passa a existir na memória dele). O fd fecha na
 /// leitura, antes de qualquer conexão. O conteúdo nunca vai para mensagem.
-fn token_do_canal(e: &mut dyn Entorno, fd: u32) -> Result<Segredo, &'static str> {
+fn token_do_canal(e: &mut dyn Entorno, fd: u32) -> Result<Secret, &'static str> {
     e.endurecer()
         .map_err(|_| "não foi possível proteger o processo antes de ler o token")?;
     let mut bytes = e.ler_token(fd).map_err(ChannelError::message)?;
     if !crate::args::token_ok(&bytes) {
         return Err(MSG_TOKEN_FORMATO);
     }
-    Ok(Segredo::de_bytes(std::mem::take(&mut *bytes)))
+    Ok(Secret::from_bytes(std::mem::take(&mut *bytes)))
 }
 
 /// `ward ssh [--token-fd <n>] <entrada> [comando…]` (Fases 27 e 27a). O daemon conecta

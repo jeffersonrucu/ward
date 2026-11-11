@@ -31,7 +31,7 @@
 //! (D68, RA11).
 
 use ward_core::display;
-use ward_core::entrada::{Ambiente, Dados, Entrada, NivelAcesso, Segredo};
+use ward_core::entry::{AccessLevel, Data, Entry, Environment, Secret};
 use ward_core::limits::{MAX_DISPLAYED_TEXT, MAX_TEXT};
 use ward_core::protocolo::{
     Decisao, ErroResposta, Operacao, Pedido, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
@@ -55,30 +55,30 @@ pub enum Autorizacao {
 }
 
 /// O mais restritivo de dois níveis (D19).
-pub fn mais_restritivo(a: NivelAcesso, b: NivelAcesso) -> NivelAcesso {
+pub fn mais_restritivo(a: AccessLevel, b: AccessLevel) -> AccessLevel {
     let grau = |n| match n {
-        NivelAcesso::Bloqueado => 2,
-        NivelAcesso::ComAprovacao => 1,
-        NivelAcesso::Livre => 0,
+        AccessLevel::Blocked => 2,
+        AccessLevel::Approval => 1,
+        AccessLevel::Free => 0,
     };
     if grau(a) >= grau(b) { a } else { b }
 }
 
 /// O ambiente mais sensível de dois, para o destaque da janela.
-fn mais_sensivel(a: Ambiente, b: Ambiente) -> Ambiente {
+fn mais_sensivel(a: Environment, b: Environment) -> Environment {
     let grau = |x| match x {
-        Ambiente::Prod => 2,
-        Ambiente::Stage => 1,
-        Ambiente::Dev => 0,
+        Environment::Prod => 2,
+        Environment::Stage => 1,
+        Environment::Dev => 0,
     };
     if grau(a) >= grau(b) { a } else { b }
 }
 
 /// A outra entrada de um uso combinado (D19): túnel do `banco`, salto do `servidor`.
-fn segunda_entrada(e: &Entrada, op: Operacao) -> Option<&str> {
-    match (e.dados(), op) {
-        (Dados::Banco(b), Operacao::Executar) => b.tunel.as_deref(),
-        (Dados::Servidor(s), Operacao::Executar | Operacao::Ssh) => s.salto.as_deref(),
+fn segunda_entrada(e: &Entry, op: Operacao) -> Option<&str> {
+    match (e.data(), op) {
+        (Data::Database(b), Operacao::Executar) => b.tunnel.as_deref(),
+        (Data::Server(s), Operacao::Executar | Operacao::Ssh) => s.jump.as_deref(),
         _ => None,
     }
 }
@@ -88,11 +88,11 @@ fn segunda_entrada(e: &Entrada, op: Operacao) -> Option<&str> {
 /// fora, outro tipo, outra operação). Fase 44e (2ª auditoria do M6): todo host de
 /// loopback conta, em qualquer esquema (`https://localhost`, `https://127.0.0.1`,
 /// `https://[::1]`…): um certificado de uma CA local (mkcert, `~/.pki`) não prova quem
-/// responde ([`ward_core::entrada::origem_local_da_url`]).
-pub(crate) fn origem_a_confirmar(e: &Entrada, op: Operacao) -> Option<String> {
-    match (e.dados(), op) {
-        (Dados::Login(l), Operacao::Login | Operacao::Playwright | Operacao::Preencher) => {
-            ward_core::entrada::origem_local_da_url(&l.url)
+/// responde ([`ward_core::entry::local_url_origin`]).
+pub(crate) fn origem_a_confirmar(e: &Entry, op: Operacao) -> Option<String> {
+    match (e.data(), op) {
+        (Data::Login(l), Operacao::Login | Operacao::Playwright | Operacao::Preencher) => {
+            ward_core::entry::local_url_origin(&l.url)
         }
         _ => None,
     }
@@ -102,15 +102,15 @@ pub(crate) fn origem_a_confirmar(e: &Entrada, op: Operacao) -> Option<String> {
 /// `sem_liberacao` (Fase 54b: entrada padrão oculta), a liberação não conta.
 fn nivel_efetivo(
     a: &Aberto,
-    e: &Entrada,
+    e: &Entry,
     agora: std::time::Duration,
     sem_liberacao: bool,
-) -> NivelAcesso {
-    match e.nivel() {
-        NivelAcesso::ComAprovacao
-            if !sem_liberacao && a.liberacoes.get(e.nome()).is_some_and(|ate| agora < *ate) =>
+) -> AccessLevel {
+    match e.level() {
+        AccessLevel::Approval
+            if !sem_liberacao && a.liberacoes.get(e.name()).is_some_and(|ate| agora < *ate) =>
         {
-            NivelAcesso::Livre
+            AccessLevel::Free
         }
         n => n,
     }
@@ -233,21 +233,21 @@ impl Daemon {
             let e = a
                 .entradas
                 .iter()
-                .find(|e| e.nome() == nome && e.nivel() != NivelAcesso::Bloqueado)
+                .find(|e| e.name() == nome && e.level() != AccessLevel::Blocked)
                 .ok_or(ErroResposta::EntradaInexistente)?;
             // Fase 54b: com a entrada padrão oculta, a liberação de 1 hora não cobre.
             let mut nivel = nivel_efetivo(a, e, agora, entrada_oculta);
             let origem = origem_a_confirmar(e, op);
-            let mut entradas = vec![e.nome().to_owned()];
-            let mut ambiente = e.ambiente();
+            let mut entradas = vec![e.name().to_owned()];
+            let mut ambiente = e.environment();
             if let Some(outra) = segunda_entrada(e, op) {
-                match a.entradas.iter().find(|x| x.nome() == outra) {
+                match a.entradas.iter().find(|x| x.name() == outra) {
                     Some(x) => {
                         nivel = mais_restritivo(nivel, nivel_efetivo(a, x, agora, entrada_oculta));
-                        ambiente = mais_sensivel(ambiente, x.ambiente());
-                        entradas.push(x.nome().to_owned());
+                        ambiente = mais_sensivel(ambiente, x.environment());
+                        entradas.push(x.name().to_owned());
                     }
-                    None => nivel = NivelAcesso::Bloqueado,
+                    None => nivel = AccessLevel::Blocked,
                 }
             }
             (nivel, entradas, ambiente, origem)
@@ -267,7 +267,7 @@ impl Daemon {
             entrada_oculta: entrada_oculta && !confirmacao,
         };
         match nivel {
-            NivelAcesso::Livre => match origem {
+            AccessLevel::Free => match origem {
                 None => Ok(Autorizacao::SemPerguntar),
                 // Fase 44c/44e: origem local, só a confirmação (sem PIN).
                 Some(o) => {
@@ -277,11 +277,11 @@ impl Daemon {
                     Ok(Autorizacao::Aprovado)
                 }
             },
-            NivelAcesso::Bloqueado => {
+            AccessLevel::Blocked => {
                 aviso!("uso combinado com entrada bloqueada: negado sem perguntar (D19)");
                 Err(ErroResposta::Negado)
             }
-            NivelAcesso::ComAprovacao => {
+            AccessLevel::Approval => {
                 if entrada_oculta {
                     aviso!(
                         "uso com a entrada padrão que a janela não mostra: aviso e confirmação na janela (D68)"
@@ -303,7 +303,7 @@ impl Daemon {
         &self,
         id: u64,
         decisao: Decisao,
-        pin: Option<&Segredo>,
+        pin: Option<&Secret>,
         entrada_confirmada: bool,
     ) -> Result<Resposta, ErroResposta> {
         let entradas = self.aprovacao.pendente(id).ok_or(ErroResposta::Expirado)?;
@@ -379,11 +379,10 @@ impl Daemon {
                 let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
                 let mut mudadas = Vec::new();
                 for e in a.entradas.iter_mut() {
-                    if entradas.iter().any(|n| n == e.nome())
-                        && e.nivel() == NivelAcesso::ComAprovacao
+                    if entradas.iter().any(|n| n == e.name()) && e.level() == AccessLevel::Approval
                     {
-                        e.definir_nivel(NivelAcesso::Livre);
-                        mudadas.push(e.nome().to_owned());
+                        e.set_level(AccessLevel::Free);
+                        mudadas.push(e.name().to_owned());
                     }
                 }
                 for n in &mudadas {
@@ -392,8 +391,8 @@ impl Daemon {
                 // Falhou ao gravar: o nível volta e o pedido continua pendente.
                 self.gravar_ou_desfazer(&mut est, move |a| {
                     for e in a.entradas.iter_mut() {
-                        if mudadas.iter().any(|n| n == e.nome()) {
-                            e.definir_nivel(NivelAcesso::ComAprovacao);
+                        if mudadas.iter().any(|n| n == e.name()) {
+                            e.set_level(AccessLevel::Approval);
                         }
                     }
                 })?;
@@ -414,14 +413,14 @@ mod testes {
 
     #[test]
     fn nivel_combinado_e_o_mais_restritivo() {
-        use NivelAcesso::*;
+        use AccessLevel::*;
         for (a, b, r) in [
-            (Livre, Livre, Livre),
-            (Livre, ComAprovacao, ComAprovacao),
-            (ComAprovacao, Livre, ComAprovacao),
-            (Livre, Bloqueado, Bloqueado),
-            (Bloqueado, ComAprovacao, Bloqueado),
-            (ComAprovacao, ComAprovacao, ComAprovacao),
+            (Free, Free, Free),
+            (Free, Approval, Approval),
+            (Approval, Free, Approval),
+            (Free, Blocked, Blocked),
+            (Blocked, Approval, Blocked),
+            (Approval, Approval, Approval),
         ] {
             assert_eq!(mais_restritivo(a, b), r);
         }

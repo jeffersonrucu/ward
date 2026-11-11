@@ -11,9 +11,7 @@
 #![allow(dead_code)]
 
 use super::wc::configuracao::{Configuracao, HashPin};
-use super::wc::entrada::{
-    Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo,
-};
+use super::wc::entry::{AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, ExtraDraft, Secret};
 use super::wc::limits::MAX_ATTACHMENTS_TOTAL;
 
 /// Senha mestra do cofre de teste.
@@ -63,8 +61,8 @@ fn t(v: &str) -> String {
     v.to_owned()
 }
 
-fn s(v: &str) -> Option<Segredo> {
-    Some(Segredo::de_texto(v.to_owned()))
+fn s(v: &str) -> Option<Secret> {
+    Some(Secret::from_text(v.to_owned()))
 }
 
 /// Chave privada falsa, montada em tempo de execução (o texto inteiro não fica no
@@ -88,110 +86,110 @@ pub fn chave_falsa() -> String {
     c
 }
 
-fn rascunho(nome: &str, grupo: &str, ambiente: &str, dados: RascunhoDados) -> Rascunho {
-    Rascunho {
-        nome: t(nome),
-        grupo: t(grupo),
-        ambiente: t(ambiente),
-        projeto: String::new(),
+fn rascunho(nome: &str, grupo: &str, ambiente: &str, dados: DataDraft) -> Draft {
+    Draft {
+        name: t(nome),
+        group: t(grupo),
+        environment: t(ambiente),
+        project: String::new(),
         tags: Vec::new(),
-        dados,
+        data: dados,
         extras: Vec::new(),
-        anexos: Vec::new(),
+        attachments: Vec::new(),
     }
 }
 
 /// Valida e aplica o nível (como o daemon faria depois do PIN).
-pub fn validada(r: Rascunho, nivel: NivelAcesso) -> Entrada {
-    let mut e = match r.validar() {
+pub fn validada(r: Draft, nivel: AccessLevel) -> Entry {
+    let mut e = match r.validate() {
         Ok(e) => e,
         Err(erros) => panic!("entrada de teste inválida: {erros}"),
     };
-    e.definir_nivel(nivel);
+    e.set_level(nivel);
     e
 }
 
-fn login(url: &str, usuario: &str, senha: &str, totp: Option<&str>) -> RascunhoDados {
-    RascunhoDados::Login {
+fn login(url: &str, usuario: &str, senha: &str, totp: Option<&str>) -> DataDraft {
+    DataDraft::Login {
         url: t(url),
-        usuario: t(usuario),
-        senha: s(senha),
-        totp_semente: totp.and_then(s),
+        username: t(usuario),
+        password: s(senha),
+        totp_seed: totp.and_then(s),
     }
 }
 
-fn banco(host: &str, porta: &str, tunel: &str) -> RascunhoDados {
-    RascunhoDados::Banco {
-        motor: t("postgres"),
+fn banco(host: &str, porta: &str, tunel: &str) -> DataDraft {
+    DataDraft::Database {
+        engine: t("postgres"),
         host: t(host),
-        porta: t(porta),
-        base: t("app_teste"),
-        usuario: t("app"),
-        senha: s("falso-PG:s3nha/01@#"),
-        tunel: t(tunel),
+        port: t(porta),
+        db_name: t("app_teste"),
+        username: t("app"),
+        password: s("falso-PG:s3nha/01@#"),
+        tunnel: t(tunel),
     }
 }
 
-fn servidor_senha(porta: &str, usuario: &str, senha: &str) -> RascunhoDados {
-    RascunhoDados::Servidor {
+fn servidor_senha(porta: &str, usuario: &str, senha: &str) -> DataDraft {
+    DataDraft::Server {
         host: t("127.0.0.1"),
-        porta: t(porta),
-        usuario: t(usuario),
-        senha: s(senha),
-        chave_privada: None,
+        port: t(porta),
+        username: t(usuario),
+        password: s(senha),
+        private_key: None,
         passphrase: None,
-        salto: String::new(),
+        jump: String::new(),
     }
 }
 
-fn servidor_chave(host: &str, porta: &str, salto: &str) -> RascunhoDados {
-    RascunhoDados::Servidor {
+fn servidor_chave(host: &str, porta: &str, salto: &str) -> DataDraft {
+    DataDraft::Server {
         host: t(host),
-        porta: t(porta),
-        usuario: t("deploy"),
-        senha: None,
-        chave_privada: Some(Segredo::de_texto(chave_falsa())),
+        port: t(porta),
+        username: t("deploy"),
+        password: None,
+        private_key: Some(Secret::from_text(chave_falsa())),
         passphrase: s("falso-passphrase-01"),
-        salto: t(salto),
+        jump: t(salto),
     }
 }
 
 /// As 22 entradas do cofre de teste, com os níveis da tabela (fora de ordem de nome).
-pub fn cofre_de_teste() -> Vec<Entrada> {
-    use NivelAcesso::{Bloqueado, ComAprovacao, Livre};
+pub fn cofre_de_teste() -> Vec<Entry> {
+    use AccessLevel::{Approval, Blocked, Free};
     const WP: &str = "http://localhost:8081/wp-login.php";
-    let mut generico = rascunho("gama-generico", "gama", "stage", RascunhoDados::Generico);
+    let mut generico = rascunho("gama-generico", "gama", "stage", DataDraft::Generic);
     generico.extras = vec![
-        RascunhoExtra {
-            nome: t("REGIAO"),
-            valor: Segredo::de_texto(t("r-01")),
-            segredo: false,
+        ExtraDraft {
+            name: t("REGIAO"),
+            value: Secret::from_text(t("r-01")),
+            secret: false,
         },
-        RascunhoExtra {
-            nome: t("CHAVE_LICENCA"),
-            valor: Segredo::de_texto(t("falso-licenca-01")),
-            segredo: true,
+        ExtraDraft {
+            name: t("CHAVE_LICENCA"),
+            value: Secret::from_text(t("falso-licenca-01")),
+            secret: true,
         },
     ];
-    generico.anexos = vec![RascunhoAnexo {
-        nome: t("app.env"),
-        conteudo: Segredo::de_bytes(b"FALSO_ENV=falso-anexo-01\n".to_vec()),
+    generico.attachments = vec![AttachmentDraft {
+        name: t("app.env"),
+        content: Secret::from_bytes(b"FALSO_ENV=falso-anexo-01\n".to_vec()),
     }];
     // D59: caracteres especiais (aspas simples, `$&<>`, `/` e fora do ASCII).
     let mut simbolos = rascunho(
         "delta-api-simbolos",
         "delta",
         "dev",
-        RascunhoDados::Api {
+        DataDraft::Api {
             url: t("https://api.teste.invalid"),
             token: s("falso-Ab3$k&<9>Zq!'/ç-01"),
-            variavel: t("SIMBOLOS_TOKEN"),
+            variable: t("SIMBOLOS_TOKEN"),
         },
     );
-    simbolos.extras = vec![RascunhoExtra {
-        nome: t("SEGREDO_ASCII"),
-        valor: Segredo::de_texto(t("falso-Ab3$k&<9>Zq!'")),
-        segredo: true,
+    simbolos.extras = vec![ExtraDraft {
+        name: t("SEGREDO_ASCII"),
+        value: Secret::from_text(t("falso-Ab3$k&<9>Zq!'")),
+        secret: true,
     }];
     let lista = vec![
         (
@@ -206,7 +204,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                     Some("JBSWY3DPEHPK3PXP"),
                 ),
             ),
-            ComAprovacao,
+            Approval,
         ),
         (
             rascunho(
@@ -220,7 +218,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                     Some("JBSWY3DPEHPK3PXP"),
                 ),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -229,7 +227,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "dev",
                 banco("127.0.0.1", "55432", ""),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -238,7 +236,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "stage",
                 banco("127.0.0.1", "55432", ""),
             ),
-            ComAprovacao,
+            Approval,
         ),
         (
             rascunho(
@@ -247,7 +245,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "prod",
                 banco("127.0.0.1", "55432", ""),
             ),
-            ComAprovacao,
+            Approval,
         ),
         (
             rascunho(
@@ -256,7 +254,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "stage",
                 banco("postgres", "5432", "acme-ssh-senha-stage"),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -265,7 +263,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "stage",
                 servidor_senha("2222", "deploy", "falso-SSH-senha-01"),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -274,7 +272,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "prod",
                 servidor_chave("127.0.0.1", "2223", ""),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -283,7 +281,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "prod",
                 servidor_senha("2224", "salto", "falso-SALTO-01"),
             ),
-            ComAprovacao,
+            Approval,
         ),
         (
             rascunho(
@@ -292,7 +290,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "prod",
                 servidor_senha("2224", "salto", "falso-SALTO-01"),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -301,7 +299,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "prod",
                 servidor_chave("ssh-interno", "22", "acme-ssh-salto-livre"),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -310,80 +308,80 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "prod",
                 servidor_chave("ssh-interno", "22", "acme-ssh-salto"),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
                 "beta-github-api",
                 "beta",
                 "dev",
-                RascunhoDados::Api {
+                DataDraft::Api {
                     url: t("https://api.github.com"),
                     token: s("falso_token_github_01"),
-                    variavel: t("GITHUB_TOKEN"),
+                    variable: t("GITHUB_TOKEN"),
                 },
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
                 "beta-aws-dev",
                 "beta",
                 "dev",
-                RascunhoDados::Aws {
+                DataDraft::Aws {
                     access_key_id: t("FALSOACCESSKEY01"),
                     secret_access_key: s("falso-aws-secret-01"),
-                    regiao: t("sa-east-1"),
+                    region: t("sa-east-1"),
                     role_arn: t("arn:aws:iam::000000000000:role/teste"),
                     session_token: s("falso-aws-session-01"),
                 },
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
                 "beta-smtp-stage",
                 "beta",
                 "stage",
-                RascunhoDados::Smtp {
+                DataDraft::Smtp {
                     host: t("smtp.teste.invalid"),
-                    porta: t("587"),
-                    usuario: t("mailer"),
-                    senha: s("falso-SMTP-01"),
-                    seguranca: t("starttls"),
+                    port: t("587"),
+                    username: t("mailer"),
+                    password: s("falso-SMTP-01"),
+                    security: t("starttls"),
                 },
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
                 "beta-sftp-dev",
                 "beta",
                 "dev",
-                RascunhoDados::FtpSftp {
-                    protocolo: t("sftp"),
+                DataDraft::FtpSftp {
+                    protocol: t("sftp"),
                     host: t("127.0.0.1"),
-                    porta: t("2222"),
-                    usuario: t("sftpuser"),
-                    senha: s("falso-SFTP-01"),
-                    chave_privada: None,
+                    port: t("2222"),
+                    username: t("sftpuser"),
+                    password: s("falso-SFTP-01"),
+                    private_key: None,
                     passphrase: None,
                 },
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
                 "gama-nota",
                 "gama",
                 "dev",
-                RascunhoDados::NotaSegura {
-                    texto: s("falso-nota-01"),
+                DataDraft::SecureNote {
+                    text: s("falso-nota-01"),
                 },
             ),
-            Livre,
+            Free,
         ),
-        (generico, Livre),
+        (generico, Free),
         (
             rascunho(
                 "gama-bloqueada",
@@ -391,7 +389,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "prod",
                 login("https://bloqueada.invalid", "x", "falso-BLOQ-01", None),
             ),
-            Bloqueado,
+            Blocked,
         ),
         (
             rascunho(
@@ -400,7 +398,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                 "dev",
                 login("http://localhost:8084/login", "u", "falso-REDIR-01", None),
             ),
-            Livre,
+            Free,
         ),
         (
             rascunho(
@@ -414,9 +412,9 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
                     Some("JBSWY3DPEHPK3PXP"),
                 ),
             ),
-            Livre,
+            Free,
         ),
-        (simbolos, Livre),
+        (simbolos, Free),
     ];
     lista
         .into_iter()
@@ -435,8 +433,8 @@ pub fn bytes_0_a_255(tam: usize) -> Vec<u8> {
 /// só o anexo pequeno (as duas coisas juntas passam do orçamento). Os campos no limite de D25 (URL de
 /// 2048, token de 64 KiB, nota de 1 MiB) prendem os limites da leitura aos da
 /// validação.
-pub fn um_de_cada_cheio() -> Vec<Entrada> {
-    use NivelAcesso::{Bloqueado, ComAprovacao, Livre};
+pub fn um_de_cada_cheio() -> Vec<Entry> {
+    use AccessLevel::{Approval, Blocked, Free};
     let url_longa = {
         let base = "https://cheio.invalid/";
         let mut u = String::with_capacity(2048);
@@ -446,113 +444,113 @@ pub fn um_de_cada_cheio() -> Vec<Entrada> {
         }
         u
     };
-    let dados: Vec<(&str, RascunhoDados, NivelAcesso)> = vec![
+    let dados: Vec<(&str, DataDraft, AccessLevel)> = vec![
         (
             "zz-cheio-login",
-            RascunhoDados::Login {
+            DataDraft::Login {
                 url: url_longa,
-                usuario: t("Usuário Com Espaço"),
-                senha: s("falso-cheio-senha"),
-                totp_semente: s("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"),
+                username: t("Usuário Com Espaço"),
+                password: s("falso-cheio-senha"),
+                totp_seed: s("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"),
             },
-            Bloqueado,
+            Blocked,
         ),
         (
             "zz-cheio-banco",
-            RascunhoDados::Banco {
-                motor: t("sqlserver"),
+            DataDraft::Database {
+                engine: t("sqlserver"),
                 host: t("[::1]"),
-                porta: t("1"),
-                base: t("base_cheia"),
-                usuario: t("sa"),
-                senha: s("falso-cheio-banco"),
-                tunel: t("zz-cheio-servidor"),
+                port: t("1"),
+                db_name: t("base_cheia"),
+                username: t("sa"),
+                password: s("falso-cheio-banco"),
+                tunnel: t("zz-cheio-servidor"),
             },
-            ComAprovacao,
+            Approval,
         ),
         (
             "zz-cheio-servidor",
-            RascunhoDados::Servidor {
+            DataDraft::Server {
                 host: t("cheio.invalid"),
-                porta: t("65535"),
-                usuario: t("root"),
-                senha: None,
-                chave_privada: Some(Segredo::de_texto(chave_falsa())),
+                port: t("65535"),
+                username: t("root"),
+                password: None,
+                private_key: Some(Secret::from_text(chave_falsa())),
                 passphrase: None,
-                salto: String::new(),
+                jump: String::new(),
             },
-            Livre,
+            Free,
         ),
         (
             "zz-cheio-api",
-            RascunhoDados::Api {
+            DataDraft::Api {
                 url: String::new(),
-                token: Some(Segredo::de_bytes(vec![b'k'; 4096])),
-                variavel: String::new(),
+                token: Some(Secret::from_bytes(vec![b'k'; 4096])),
+                variable: String::new(),
             },
-            Livre,
+            Free,
         ),
         // O token no limite de D25 (64 KiB) passa do orçamento da máscara junto com
         // 256 KiB de anexos (entrada e `WARD_TOKEN`, ~1 MiB de padrões cada, mais
         // ~2,4 MiB do anexo); fica numa segunda `api`, com o anexo pequeno.
         (
             "zz-cheio-api-token",
-            RascunhoDados::Api {
+            DataDraft::Api {
                 url: String::new(),
-                token: Some(Segredo::de_bytes(vec![b'k'; 64 * 1024])),
-                variavel: String::new(),
+                token: Some(Secret::from_bytes(vec![b'k'; 64 * 1024])),
+                variable: String::new(),
             },
-            Livre,
+            Free,
         ),
         (
             "zz-cheio-aws",
-            RascunhoDados::Aws {
+            DataDraft::Aws {
                 access_key_id: t("FALSOACCESSKEY02"),
                 secret_access_key: s("falso-cheio-aws"),
-                regiao: t("us-east-1"),
+                region: t("us-east-1"),
                 role_arn: String::new(),
                 session_token: None,
             },
-            ComAprovacao,
+            Approval,
         ),
         (
             "zz-cheio-smtp",
-            RascunhoDados::Smtp {
+            DataDraft::Smtp {
                 host: t("smtp.cheio.invalid"),
-                porta: String::new(),
-                usuario: t("mailer"),
-                senha: s("falso-cheio-smtp"),
-                seguranca: t("tls"),
+                port: String::new(),
+                username: t("mailer"),
+                password: s("falso-cheio-smtp"),
+                security: t("tls"),
             },
-            Livre,
+            Free,
         ),
         (
             "zz-cheio-ftp",
-            RascunhoDados::FtpSftp {
-                protocolo: t("ftp"),
+            DataDraft::FtpSftp {
+                protocol: t("ftp"),
                 host: t("ftp.cheio.invalid"),
-                porta: String::new(),
-                usuario: t("ftpuser"),
-                senha: s("falso-cheio-ftp"),
-                chave_privada: None,
+                port: String::new(),
+                username: t("ftpuser"),
+                password: s("falso-cheio-ftp"),
+                private_key: None,
                 passphrase: None,
             },
-            Livre,
+            Free,
         ),
         (
             "zz-cheio-nota",
-            RascunhoDados::NotaSegura {
-                texto: Some(Segredo::de_bytes(vec![b'n'; 1024 * 1024])),
+            DataDraft::SecureNote {
+                text: Some(Secret::from_bytes(vec![b'n'; 1024 * 1024])),
             },
-            Bloqueado,
+            Blocked,
         ),
-        ("zz-cheio-generico", RascunhoDados::Generico, Livre),
+        ("zz-cheio-generico", DataDraft::Generic, Free),
     ];
     dados
         .into_iter()
         .map(|(nome, dados, nivel)| {
             let mut r = rascunho(nome, "zeta", "stage", dados);
-            r.projeto = t("projeto cheio");
+            r.project = t("projeto cheio");
             r.tags = (1..=16).map(|n| format!("tag-{n:02}")).collect();
             r.extras = (1..=64)
                 .map(|n| {
@@ -562,21 +560,21 @@ pub fn um_de_cada_cheio() -> Vec<Entrada> {
                     } else {
                         format!("valor-{n:02}")
                     };
-                    RascunhoExtra {
-                        nome: format!("extra_{n:02}"),
-                        valor: Segredo::de_texto(valor),
-                        segredo,
+                    ExtraDraft {
+                        name: format!("extra_{n:02}"),
+                        value: Secret::from_text(valor),
+                        secret: segredo,
                     }
                 })
                 .collect();
-            r.anexos = vec![RascunhoAnexo {
-                nome: t("binario.bin"),
-                conteudo: Segredo::de_bytes(bytes_0_a_255(4096)),
+            r.attachments = vec![AttachmentDraft {
+                name: t("binario.bin"),
+                content: Secret::from_bytes(bytes_0_a_255(4096)),
             }];
             if nome != "zz-cheio-api-token" {
-                r.anexos.push(RascunhoAnexo {
-                    nome: t("grande.bin"),
-                    conteudo: Segredo::de_bytes(bytes_0_a_255(MAX_ATTACHMENTS_TOTAL - 4096)),
+                r.attachments.push(AttachmentDraft {
+                    name: t("grande.bin"),
+                    content: Secret::from_bytes(bytes_0_a_255(MAX_ATTACHMENTS_TOTAL - 4096)),
                 });
             }
             validada(r, nivel)

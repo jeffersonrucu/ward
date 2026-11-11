@@ -60,7 +60,7 @@ use ward_core::atomic_write::{self, Step, WriteError};
 use ward_core::backup::{self, ErroBackup, Versao};
 use ward_core::configuracao::{BackupExterno, Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
-use ward_core::entrada::{Dados, Datas, Entrada, NivelAcesso, Rascunho, RascunhoDados, Segredo};
+use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::origin::Origin;
 use ward_core::protocolo::{
@@ -132,7 +132,7 @@ pub struct Caminhos {
 pub(crate) struct Aberto {
     cofre: OpenVault,
     /// Em ordem de nome.
-    pub(crate) entradas: Vec<Entrada>,
+    pub(crate) entradas: Vec<Entry>,
     /// "Permitir por 1 hora" (D2): entrada → até quando, no relógio do motor. Some ao
     /// travar (vai junto com o `Aberto`), ao mudar o nível e ao remover ou renomear.
     pub(crate) liberacoes: HashMap<String, Duration>,
@@ -313,8 +313,8 @@ fn problema(campo: &str, motivo: &str) -> ErroResposta {
 /// Senha mestra do pedido, em NFC (Fase 39c): destravar, criar, trocar e restaurar
 /// passam todos por aqui, então o app e a CLI abrem o mesmo cofre com o mesmo texto
 /// composto ou decomposto, sem depender do cliente.
-fn senha_de(s: &Segredo) -> MasterPassword {
-    MasterPassword::typed(Zeroizing::new(s.expor().to_vec()))
+fn senha_de(s: &Secret) -> MasterPassword {
+    MasterPassword::typed(Zeroizing::new(s.expose().to_vec()))
 }
 
 /// Texto fixo (sem valor) de senha mestra nova abaixo do mínimo, igual ao do app.
@@ -322,7 +322,7 @@ const SENHA_CURTA: &str = "a senha mestra precisa de 12 caracteres ou mais";
 
 /// Senha mestra nova (criar, trocar): o mínimo vale também aqui, não só no app
 /// (Fase 39c; um cliente do papel app que pule a tela não cria cofre com senha curta).
-fn senha_nova(s: &Segredo, campo: &str) -> Result<MasterPassword, ErroResposta> {
+fn senha_nova(s: &Secret, campo: &str) -> Result<MasterPassword, ErroResposta> {
     let senha = senha_de(s);
     if senha.is_valid_new() {
         Ok(senha)
@@ -431,7 +431,7 @@ fn registrar_backup(r: &Result<Versao, ErroBackup>) {
 fn gravar_com_backup(
     caminhos: &Caminhos,
     cofre: &mut OpenVault,
-    entradas: &[Entrada],
+    entradas: &[Entry],
 ) -> Result<Identidade, WriteError> {
     match abrir_pasta(caminhos) {
         Some(p) => {
@@ -910,7 +910,7 @@ impl Daemon {
         }
     }
 
-    fn destravar(&self, papel: Papel, senha: &Segredo) -> Result<Resposta, ErroResposta> {
+    fn destravar(&self, papel: Papel, senha: &Secret) -> Result<Resposta, ErroResposta> {
         if !self.travado() {
             return Ok(Resposta::Ok);
         }
@@ -1025,7 +1025,7 @@ impl Daemon {
         let itens = a
             .entradas
             .iter()
-            .filter(|e| papel == Papel::App || e.nivel() != NivelAcesso::Bloqueado)
+            .filter(|e| papel == Papel::App || e.level() != AccessLevel::Blocked)
             .map(|e| ItemLista::de_entrada(e, papel))
             .collect();
         Ok(Resposta::Lista(itens))
@@ -1051,16 +1051,18 @@ impl Daemon {
         let e = a
             .entradas
             .iter()
-            .find(|e| e.nome() == nome)
+            .find(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         let valor = alvo.segredo_em(e).ok_or(ErroResposta::CampoInexistente)?;
         // O campo do tipo já passou pela lista fixa do protocolo; o nome do extra vem
         // da entrada e sai com escape (sem quebra de linha nem controle no log).
         match alvo {
-            Alvo::Campo(c) => aviso!("{} {} {c}", op.nome(), e.nome()),
-            Alvo::Extra(x) => aviso!("{} {} extra {x:?}", op.nome(), e.nome()),
+            Alvo::Campo(c) => aviso!("{} {} {c}", op.nome(), e.name()),
+            Alvo::Extra(x) => aviso!("{} {} extra {x:?}", op.nome(), e.name()),
         }
-        Ok(Resposta::Segredo(Segredo::de_bytes(valor.expor().to_vec())))
+        Ok(Resposta::Segredo(Secret::from_bytes(
+            valor.expose().to_vec(),
+        )))
     }
 
     /// `totp` do app (D65 b): o código atual da semente da entrada `login`, pelo
@@ -1075,7 +1077,7 @@ impl Daemon {
         let e = a
             .entradas
             .iter()
-            .find(|e| e.nome() == nome)
+            .find(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         let semente = Alvo::Campo("totp_semente".to_owned())
             .segredo_em(e)
@@ -1084,7 +1086,7 @@ impl Daemon {
         let c = Totp::from_seed(semente)
             .map_err(|_| ErroResposta::Interno)?
             .code_at(agora);
-        aviso!("totp {}", e.nome());
+        aviso!("totp {}", e.name());
         Ok(Resposta::CodigoTotp {
             codigo: Zeroizing::new(c.code().to_owned()),
             restante: c.remaining(),
@@ -1109,13 +1111,13 @@ impl Daemon {
         let mut itens: Vec<Sugestao> = a
             .entradas
             .iter()
-            .filter_map(|e| match e.dados() {
-                Dados::Login(l) if Origin::from_url(&l.url).as_ref() == Some(&aba) => {
+            .filter_map(|e| match e.data() {
+                Data::Login(l) if Origin::from_url(&l.url).as_ref() == Some(&aba) => {
                     Some(Sugestao {
-                        nome: e.nome().to_owned(),
-                        usuario: l.usuario.clone(),
-                        ambiente: e.ambiente(),
-                        totp: l.totp_semente.is_some(),
+                        nome: e.name().to_owned(),
+                        usuario: l.username.clone(),
+                        ambiente: e.environment(),
+                        totp: l.totp_seed.is_some(),
                     })
                 }
                 _ => None,
@@ -1149,9 +1151,9 @@ impl Daemon {
             let e = a
                 .entradas
                 .iter()
-                .find(|e| e.nome() == nome)
+                .find(|e| e.name() == nome)
                 .ok_or(ErroResposta::EntradaInexistente)?;
-            let Dados::Login(l) = e.dados() else {
+            let Data::Login(l) = e.data() else {
                 return Err(ErroResposta::EntradaInexistente);
             };
             let casa = match (Origin::from_url(&l.url), Origin::from_url(origem)) {
@@ -1159,13 +1161,13 @@ impl Daemon {
                 _ => false,
             };
             if !casa {
-                aviso!("preencher {} recusado: origem diferente (D9)", e.nome());
+                aviso!("preencher {} recusado: origem diferente (D9)", e.name());
                 return Err(ErroResposta::OrigemDiferente);
             }
             crate::uso::origem_a_confirmar(e, Operacao::Preencher).map(|o| PedidoDeAprovacao {
                 id: 0,
-                entradas: vec![e.nome().to_owned()],
-                ambiente: e.ambiente(),
+                entradas: vec![e.name().to_owned()],
+                ambiente: e.environment(),
                 operacao: Operacao::Preencher,
                 comando: String::new(),
                 diretorio: String::new(),
@@ -1202,9 +1204,9 @@ impl Daemon {
         let e = a
             .entradas
             .iter()
-            .find(|e| e.nome() == nome)
+            .find(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
-        let Dados::Login(l) = e.dados() else {
+        let Data::Login(l) = e.data() else {
             return Err(ErroResposta::EntradaInexistente);
         };
         let casa = match (Origin::from_url(&l.url), Origin::from_url(origem)) {
@@ -1212,10 +1214,10 @@ impl Daemon {
             _ => false,
         };
         if !casa {
-            aviso!("preencher {} recusado: origem diferente (D9)", e.nome());
+            aviso!("preencher {} recusado: origem diferente (D9)", e.name());
             return Err(ErroResposta::OrigemDiferente);
         }
-        let totp = match &l.totp_semente {
+        let totp = match &l.totp_seed {
             Some(semente) => {
                 let agora = self.relogio.segundos_unix().ok_or(ErroResposta::Interno)?;
                 let c = Totp::from_seed(semente)
@@ -1225,21 +1227,21 @@ impl Daemon {
             }
             None => None,
         };
-        aviso!("preencher {}", e.nome());
+        aviso!("preencher {}", e.name());
         Ok(Resposta::Preenchimento {
-            usuario: l.usuario.clone(),
-            senha: Segredo::de_bytes(l.senha.expor().to_vec()),
+            usuario: l.username.clone(),
+            senha: Secret::from_bytes(l.password.expose().to_vec()),
             totp,
         })
     }
 
-    fn criar_cofre(&self, senha: &Segredo, pin: &Segredo) -> Result<Resposta, ErroResposta> {
+    fn criar_cofre(&self, senha: &Secret, pin: &Secret) -> Result<Resposta, ErroResposta> {
         let senha = senha_nova(senha, "senha")?;
         let mut est = self.estado();
         if est.aberto.is_some() || arquivos::cofre_existe(&self.caminhos.cofre) {
             return Err(ErroResposta::CofreJaExiste);
         }
-        let hash = HashPin::criar(pin.expor()).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let hash = HashPin::criar(pin.expose()).map_err(|_| ErroResposta::PedidoInvalido)?;
         // D62: um estado velho (cofre apagado) não desce. O cofre novo nasce na geração
         // `queimada` + 1, e uma cópia de um cofre anterior fica abaixo da `vista`.
         let velho = match arquivos::ler_estado(&self.caminhos.estado) {
@@ -1310,7 +1312,7 @@ impl Daemon {
         let e = a
             .entradas
             .iter()
-            .find(|e| e.nome() == nome)
+            .find(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         Ok(Resposta::Detalhe(DetalheEntrada::de_entrada(e)))
     }
@@ -1339,10 +1341,10 @@ impl Daemon {
     }
 
     /// Segundos UTC do relógio do daemon para carimbar uma entrada (D65 d). Relógio
-    /// ilegível ou fora da faixa de [`Datas`]: `None`, e a gravação segue sem carimbo
+    /// ilegível ou fora da faixa de [`Dates`]: `None`, e a gravação segue sem carimbo
     /// novo (as datas são só informação; nenhuma decisão de segurança usa).
     fn agora_para_datas(&self) -> Option<u64> {
-        let agora = self.relogio.segundos_unix().and_then(Datas::instante);
+        let agora = self.relogio.segundos_unix().and_then(Dates::instant);
         if agora.is_none() {
             aviso!("relógio de parede ilegível: a entrada é gravada sem data nova (D65 d)");
         }
@@ -1350,14 +1352,14 @@ impl Daemon {
     }
 
     /// As datas da entrada depois de uma alteração em `agora` (as mesmas sem relógio).
-    fn alterado(datas: Datas, agora: Option<u64>) -> Datas {
-        agora.and_then(|a| datas.alterado(a)).unwrap_or(datas)
+    fn alterado(datas: Dates, agora: Option<u64>) -> Dates {
+        agora.and_then(|a| datas.modified(a)).unwrap_or(datas)
     }
 
     fn salvar_entrada(
         &self,
         anterior: Option<&str>,
-        mut rascunho: Rascunho,
+        mut rascunho: Draft,
         manter_anexos: &[String],
     ) -> Result<Resposta, ErroResposta> {
         let agora = self.agora_para_datas();
@@ -1370,25 +1372,21 @@ impl Daemon {
             let antiga = a
                 .entradas
                 .iter()
-                .find(|e| e.nome() == nome)
+                .find(|e| e.name() == nome)
                 .ok_or(ErroResposta::EntradaInexistente)?;
             ward_core::protocolo::juntar_anexos_mantidos(&mut rascunho, antiga, manter_anexos)?;
         }
         let mut nova = rascunho
-            .validar()
+            .validate()
             .map_err(|e| ErroResposta::de_validacao(&e))?;
         let antiga = match anterior {
             None => {
                 // D50: toda entrada nova nasce "com aprovação"; outro nível só pelo
                 // `mudar_nivel`, com PIN (S9).
-                nova.definir_nivel(NivelAcesso::ComAprovacao);
+                nova.set_level(AccessLevel::Approval);
                 // D65 d: a entrada nova ganha as duas datas, do relógio do daemon.
-                nova.definir_datas(
-                    agora
-                        .and_then(Datas::carimbo_novo)
-                        .unwrap_or(Datas::NENHUMA),
-                );
-                nova.conferir_no_cofre(a.entradas.iter())
+                nova.set_dates(agora.and_then(Dates::new_stamp).unwrap_or(Dates::NONE));
+                nova.verify_in_vault(a.entradas.iter())
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 None
             }
@@ -1396,34 +1394,34 @@ impl Daemon {
                 let i = a
                     .entradas
                     .iter()
-                    .position(|e| e.nome() == nome)
+                    .position(|e| e.name() == nome)
                     .ok_or(ErroResposta::EntradaInexistente)?;
                 // Editar não muda o nível. Renomear tira a liberação de 1 hora (D2).
-                nova.definir_nivel(a.entradas[i].nivel());
+                nova.set_level(a.entradas[i].level());
                 // D65 d: a criação fica a da entrada editada; só a alteração muda.
-                nova.definir_datas(Self::alterado(a.entradas[i].datas(), agora));
-                if nova.nome() != nome {
+                nova.set_dates(Self::alterado(a.entradas[i].dates(), agora));
+                if nova.name() != nome {
                     a.liberacoes.remove(nome);
                 }
-                nova.conferir_no_cofre(a.entradas.iter().filter(|e| e.nome() != nome))
+                nova.verify_in_vault(a.entradas.iter().filter(|e| e.name() != nome))
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 Some(a.entradas.remove(i))
             }
         };
-        let nome_novo = nova.nome().to_owned();
+        let nome_novo = nova.name().to_owned();
         let pos = a
             .entradas
-            .binary_search_by(|e| e.nome().cmp(&nome_novo))
+            .binary_search_by(|e| e.name().cmp(&nome_novo))
             .unwrap_or_else(|p| p);
         a.entradas.insert(pos, nova);
         self.gravar_ou_desfazer(&mut est, move |a| {
-            if let Some(i) = a.entradas.iter().position(|e| e.nome() == nome_novo) {
+            if let Some(i) = a.entradas.iter().position(|e| e.name() == nome_novo) {
                 drop(a.entradas.remove(i));
             }
             if let Some(velha) = antiga {
                 let p = a
                     .entradas
-                    .binary_search_by(|e| e.nome().cmp(velha.nome()))
+                    .binary_search_by(|e| e.name().cmp(velha.name()))
                     .unwrap_or_else(|p| p);
                 a.entradas.insert(p, velha);
             }
@@ -1437,17 +1435,21 @@ impl Daemon {
     /// são recusados sem gravar nada (o app é o lugar de completar a entrada). O nível é
     /// sempre "com aprovação" (D50, S9), como no `salvar_entrada` do app. O log não leva
     /// o nome nem a URL (vieram da página).
-    fn salvar_login(&self, papel: Papel, rascunho: Rascunho) -> Result<Resposta, ErroResposta> {
+    fn salvar_login(&self, papel: Papel, rascunho: Draft) -> Result<Resposta, ErroResposta> {
         if papel != Papel::Extensao {
             return Err(ErroResposta::NaoAutorizado);
         }
-        let RascunhoDados::Login { totp_semente, .. } = &rascunho.dados else {
+        let DataDraft::Login {
+            totp_seed: totp_semente,
+            ..
+        } = &rascunho.data
+        else {
             return Err(ErroResposta::PedidoInvalido);
         };
         if totp_semente.is_some()
             || !rascunho.extras.is_empty()
-            || !rascunho.anexos.is_empty()
-            || !rascunho.projeto.is_empty()
+            || !rascunho.attachments.is_empty()
+            || !rascunho.project.is_empty()
             || !rascunho.tags.is_empty()
         {
             return Err(ErroResposta::PedidoInvalido);
@@ -1465,7 +1467,7 @@ impl Daemon {
         let i = a
             .entradas
             .iter()
-            .position(|e| e.nome() == nome)
+            .position(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         let velha = a.entradas.remove(i);
         a.liberacoes.remove(nome);
@@ -1473,9 +1475,9 @@ impl Daemon {
     }
 
     /// Confere o PIN (S9): acerto zera a contagem; o 5.º erro seguido trava.
-    pub(crate) fn conferir_pin(est: &mut Estado, pin: &Segredo) -> Result<(), ErroResposta> {
+    pub(crate) fn conferir_pin(est: &mut Estado, pin: &Secret) -> Result<(), ErroResposta> {
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-        if a.cofre.config().conferir_pin(pin.expor()) {
+        if a.cofre.config().conferir_pin(pin.expose()) {
             est.erros_pin = 0;
             return Ok(());
         }
@@ -1490,8 +1492,8 @@ impl Daemon {
     fn mudar_nivel(
         &self,
         nome: &str,
-        nivel: NivelAcesso,
-        pin: &Segredo,
+        nivel: AccessLevel,
+        pin: &Secret,
     ) -> Result<Resposta, ErroResposta> {
         let agora = self.agora_para_datas();
         let mut est = self.estado();
@@ -1500,29 +1502,29 @@ impl Daemon {
         let e = a
             .entradas
             .iter_mut()
-            .find(|e| e.nome() == nome)
+            .find(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
-        let antes = e.nivel();
-        let datas_antes = e.datas();
+        let antes = e.level();
+        let datas_antes = e.dates();
         // D65 d: mudar o nível é alterar a entrada.
         let datas = Self::alterado(datas_antes, agora);
-        e.definir_nivel(nivel);
-        e.definir_datas(datas);
+        e.set_level(nivel);
+        e.set_dates(datas);
         // Voltar atrás é mudar o nível: a liberação de 1 hora acaba (D2).
         a.liberacoes.remove(nome);
         let nome = nome.to_owned();
         self.gravar_ou_desfazer(&mut est, move |a| {
-            if let Some(e) = a.entradas.iter_mut().find(|e| e.nome() == nome) {
-                e.definir_nivel(antes);
-                e.definir_datas(datas_antes);
+            if let Some(e) = a.entradas.iter_mut().find(|e| e.name() == nome) {
+                e.set_level(antes);
+                e.set_dates(datas_antes);
             }
         })
     }
 
-    fn trocar_pin(&self, atual: &Segredo, novo: &Segredo) -> Result<Resposta, ErroResposta> {
+    fn trocar_pin(&self, atual: &Secret, novo: &Secret) -> Result<Resposta, ErroResposta> {
         let mut est = self.estado();
         Self::conferir_pin(&mut est, atual)?;
-        let hash = HashPin::criar(novo.expor()).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let hash = HashPin::criar(novo.expose()).map_err(|_| ErroResposta::PedidoInvalido)?;
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
         a.cofre.config_mut().trocar_hash_pin(hash);
         match self.gravar_ou_desfazer(&mut est, |_| {}) {
@@ -1551,7 +1553,7 @@ impl Daemon {
 
     /// Troca a senha mestra (D53): `queimada` antes, `trocar_senha` do núcleo com
     /// (`vista`, geração atual), e um erro depois da senha conferida trava o cofre.
-    fn trocar_senha(&self, atual: &Segredo, nova: &Segredo) -> Result<Resposta, ErroResposta> {
+    fn trocar_senha(&self, atual: &Secret, nova: &Secret) -> Result<Resposta, ErroResposta> {
         // Antes de tudo: senha nova curta não queima geração nem toca no disco.
         let nova = senha_nova(nova, "nova")?;
         let mut est = self.estado();
@@ -1766,8 +1768,8 @@ impl Daemon {
     fn restaurar_backup(
         &self,
         versao: &str,
-        senha: &Segredo,
-        pin: &Segredo,
+        senha: &Secret,
+        pin: &Secret,
     ) -> Result<Resposta, ErroResposta> {
         let versao = Versao::de_nome(versao).ok_or(ErroResposta::PedidoInvalido)?;
         let mut est = self.estado();

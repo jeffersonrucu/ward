@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use comum::*;
-use ward_core::entrada::Segredo;
+use ward_core::entry::Secret;
 use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta};
@@ -286,7 +286,7 @@ impl Cena {
             .all(|n| self.registros(n).is_empty())
     }
 
-    fn token(&self, entrada: &str) -> Segredo {
+    fn token(&self, entrada: &str) -> Secret {
         match self.d.atender(
             Papel::App,
             Pedido::EmitirToken {
@@ -302,7 +302,7 @@ impl Cena {
 fn pedido_ssh(
     entrada: &str,
     comando: &[&str],
-    token: Option<&Segredo>,
+    token: Option<&Secret>,
     janela: Option<Janela>,
 ) -> Pedido {
     Pedido::Ssh {
@@ -311,7 +311,7 @@ fn pedido_ssh(
             .iter()
             .map(|c| Zeroizing::new(c.as_bytes().to_vec()))
             .collect(),
-        token: token.map(|t| Segredo::de_bytes(t.expor().to_vec())),
+        token: token.map(|t| Secret::from_bytes(t.expose().to_vec())),
         janela,
         // Fase 54b: os testes mandam a entrada pelo socket (como um pipe), ou digitam
         // no pty.
@@ -403,7 +403,7 @@ fn fechar_entrada(s: &mut UnixStream) {
     let corpo = protocolo::codificar_pedido(
         Papel::Agente,
         &Pedido::EntradaPadrao {
-            dados: Segredo::de_bytes(Vec::new()),
+            dados: Secret::from_bytes(Vec::new()),
         },
     )
     .unwrap();
@@ -570,7 +570,7 @@ fn v4_37_d56_sftp_com_user_e_host_depois_de_traco_traco() {
         mandar(
             s,
             &Pedido::EntradaPadrao {
-                dados: Segredo::de_bytes(b"pwd\nls\n".to_vec()),
+                dados: Secret::from_bytes(b"pwd\nls\n".to_vec()),
             },
         );
         fechar_entrada(s);
@@ -1057,7 +1057,7 @@ fn ataque_sftp_bang_nao_usa_o_agente() {
 fn v5_24_token_do_conectar() {
     let c = cena("token");
     c.modo("normal");
-    let rodar = |token: Option<&Segredo>, entrada: &str| {
+    let rodar = |token: Option<&Secret>, entrada: &str| {
         sessao(
             &c,
             pedido_ssh(entrada, &["true"], token, None),
@@ -1086,15 +1086,15 @@ fn v5_24_token_do_conectar() {
 
     // Válido: pula a aprovação uma vez.
     let t = c.token("s-outro");
-    assert_eq!(t.expor().len(), 32);
-    assert!(t.expor().iter().all(u8::is_ascii_alphanumeric));
+    assert_eq!(t.expose().len(), 32);
+    assert!(t.expose().iter().all(u8::is_ascii_alphanumeric));
     assert_eq!(rodar(Some(&t), "s-outro").fim, Some(7));
     // Repetido: vale o nível.
     assert_eq!(rodar(Some(&t), "s-outro").falha, indisponivel);
     assert_eq!(c.registros("ssh").len(), 1);
 
     // Inventado (no formato certo).
-    let falso = Segredo::de_texto("AbCdEfGhIjKlMnOpQrStUvWxYz012345".into());
+    let falso = Secret::from_text("AbCdEfGhIjKlMnOpQrStUvWxYz012345".into());
     assert_eq!(rodar(Some(&falso), "s-outro").falha, indisponivel);
 
     // De outra entrada: não vale e morre ali.
@@ -1422,7 +1422,7 @@ for i in range(2):
         tipo_entrada: ward_core::protocolo::TipoEntradaPadrao::Nula,
         ambiente: vec![ward_core::protocolo::Variavel {
             nome: Zeroizing::new(b"PATH".to_vec()),
-            valor: Segredo::de_texto("/usr/bin:/bin".into()),
+            valor: Secret::from_text("/usr/bin:/bin".into()),
         }],
     });
     let porta = std::cell::Cell::new(0u16);

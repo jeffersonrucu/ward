@@ -100,8 +100,8 @@ use std::collections::VecDeque;
 
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::entrada::{Dados, Entrada, OrigemSegredo, Segredo};
 use crate::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
+use crate::entry::{Data, Entry, Secret, SecretOrigin};
 use automato::{Automato, reservar};
 
 #[cfg(test)]
@@ -143,7 +143,7 @@ impl std::error::Error for ErroMascara {}
 /// segredos a máscara cobre.
 #[derive(Default)]
 pub struct ConstrutorMascara<'a> {
-    entradas: Vec<&'a Entrada>,
+    entradas: Vec<&'a Entry>,
     entregas: Vec<&'a Entrega>,
 }
 
@@ -159,7 +159,7 @@ impl<'a> ConstrutorMascara<'a> {
     }
 
     /// Cobre os segredos da entrada (V2.13) e o Basic auth com o usuário dela.
-    pub fn entrada(mut self, entrada: &'a Entrada) -> Self {
+    pub fn entrada(mut self, entrada: &'a Entry) -> Self {
         self.entradas.push(entrada);
         self
     }
@@ -180,9 +180,9 @@ impl<'a> ConstrutorMascara<'a> {
         })?;
         automato.finalizar();
         let curto = self.entradas.iter().any(|e| {
-            e.segredos().iter().any(|s| {
-                !matches!(s.origem, OrigemSegredo::Anexo(_))
-                    && caracteres(s.valor.expor()) < TRUSTED_MINIMUM
+            e.secrets().iter().any(|s| {
+                !matches!(s.origin, SecretOrigin::Attachment(_))
+                    && caracteres(s.value.expose()) < TRUSTED_MINIMUM
             })
         });
         Ok(Mascara { automato, curto })
@@ -206,7 +206,7 @@ impl fmt::Debug for Mascara {
 
 impl Mascara {
     /// Atalho: a máscara de uma entrada e, se houver, da entrega dela.
-    pub fn da_entrada(entrada: &Entrada, entrega: Option<&Entrega>) -> Result<Self, ErroMascara> {
+    pub fn da_entrada(entrada: &Entry, entrega: Option<&Entrega>) -> Result<Self, ErroMascara> {
         let mut c = ConstrutorMascara::new().entrada(entrada);
         if let Some(g) = entrega {
             c = c.entrega(g);
@@ -272,11 +272,11 @@ pub(crate) fn somar(c: &ConstrutorMascara<'_>, limite: usize) -> Result<usize, E
 struct RecursosDoOrcamento;
 
 impl Recursos for RecursosDoOrcamento {
-    fn codigo_totp(&mut self, _semente: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+    fn codigo_totp(&mut self, _semente: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
         Ok(Zeroizing::new(String::from("000000")))
     }
 
-    fn arquivo(&mut self, _nome: &str, _conteudo: &Segredo) -> Result<String, ErroRecurso> {
+    fn arquivo(&mut self, _nome: &str, _conteudo: &Secret) -> Result<String, ErroRecurso> {
         Ok(String::from("/orcamento"))
     }
 
@@ -292,7 +292,7 @@ impl Recursos for RecursosDoOrcamento {
 ///
 /// Como cada entrada cabe em metade de [`PATTERN_LIMIT`], as duas de um uso combinado
 /// (D19) cabem juntas: nenhuma entrada aceita pelo cofre fica sem `ward run`.
-pub fn custo_da_entrada(entrada: &Entrada) -> Result<usize, ErroMascara> {
+pub fn custo_da_entrada(entrada: &Entry) -> Result<usize, ErroMascara> {
     let entrega = match entrega::montar(entrada, &mut RecursosDoOrcamento) {
         Ok(g) => g,
         Err(ErroEntrega::TipoSemEntrega) => return Ok(0),
@@ -311,14 +311,14 @@ type Visitante<'f> = dyn FnMut(&[u8]) -> Result<(), ErroMascara> + 'f;
 fn visitar(c: &ConstrutorMascara<'_>, f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
     let mut g = Gerador::novo();
     for e in &c.entradas {
-        let usuario = usuario(e.dados());
-        for s in e.segredos() {
-            let valor = s.valor.expor();
-            match s.origem {
-                OrigemSegredo::Anexo(_) => g.anexo(valor, f)?,
+        let usuario = usuario(e.data());
+        for s in e.secrets() {
+            let valor = s.value.expose();
+            match s.origin {
+                SecretOrigin::Attachment(_) => g.anexo(valor, f)?,
                 // D36: segredo de várias linhas também por linha, como os anexos.
-                OrigemSegredo::Extra(_) => g.segredo_de_campo(valor, f)?,
-                OrigemSegredo::Campo(_) => {
+                SecretOrigin::Extra(_) => g.segredo_de_campo(valor, f)?,
+                SecretOrigin::Field(_) => {
                     g.segredo_de_campo(valor, f)?;
                     if let Some(u) = usuario {
                         g.basic(u.as_bytes(), valor, f)?;
@@ -338,14 +338,14 @@ fn visitar(c: &ConstrutorMascara<'_>, f: &mut Visitante<'_>) -> Result<(), ErroM
     Ok(())
 }
 
-fn usuario(d: &Dados) -> Option<&str> {
+fn usuario(d: &Data) -> Option<&str> {
     match d {
-        Dados::Login(l) => Some(&l.usuario),
-        Dados::Banco(b) => Some(&b.usuario),
-        Dados::Servidor(s) => Some(&s.usuario),
-        Dados::Smtp(s) => Some(&s.usuario),
-        Dados::FtpSftp(s) => Some(&s.usuario),
-        Dados::Api(_) | Dados::Aws(_) | Dados::NotaSegura(_) | Dados::Generico => None,
+        Data::Login(l) => Some(&l.username),
+        Data::Database(b) => Some(&b.username),
+        Data::Server(s) => Some(&s.username),
+        Data::Smtp(s) => Some(&s.username),
+        Data::FtpSftp(s) => Some(&s.username),
+        Data::Api(_) | Data::Aws(_) | Data::SecureNote(_) | Data::Generic => None,
     }
 }
 

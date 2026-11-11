@@ -1,17 +1,18 @@
 #!/usr/bin/python3 -I
-"""Cliente mínimo do Postgres para os testes (Fase 28; V4.29), só com a biblioteca
-padrão: o host não tem `psql` e o `psql` do contêiner (`psql_app`) não serve para o
-túnel, porque a ponte do Ward só aceita conexões do grupo de processos do `ward run`.
+"""Minimal Postgres client for the tests (Phase 28; V4.29), standard library only: the
+host has no `psql` and the container's `psql` (`psql_app`) does not work for the tunnel,
+because the Ward bridge only accepts connections from the process group of `ward run`.
 
-Lê `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` e `PGPASSWORD` do ambiente (como o
-`psql`; é o que o `ward run` entrega). Fora do `ward run` (o `real-home.sh`), a senha
-vem do arquivo em `WARD_TESTE_PG_SENHA_ARQUIVO` (nunca em argv). Autenticação
-SCRAM-SHA-256 (a padrão do Postgres 16) ou `trust`; sem TLS (a ponte só fala com
-127.0.0.1). Roda uma consulta e imprime cada valor da primeira coluna numa linha, como
-`psql -tA`. Nunca lê nada do home (sem `.pgpass`, sem `.psqlrc`).
+Reads `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` and `PGPASSWORD` from the environment
+(like `psql`; it is what `ward run` delivers). Outside `ward run` (`real-home.sh`), the
+password comes from the file named by the test password-file variable read in
+`password()` (never in argv). SCRAM-SHA-256 authentication (Postgres 16 default) or
+`trust`; no TLS (the bridge only talks to 127.0.0.1). Runs one query and prints each value
+of the first column on a line, like `psql -tA`. Never reads anything from the home (no
+`.pgpass`, no `.psqlrc`).
 
-Uso: pg_select.py '<sql>'. Sai 0 se a consulta deu certo; 1 com uma linha de erro sem
-valor (o texto do servidor não traz a senha).
+Usage: pg_select.py '<sql>'. Exits 0 if the query worked; 1 with an error line without a
+value (the server text does not carry the password).
 """
 
 import base64
@@ -24,133 +25,133 @@ import struct
 import sys
 
 
-def falhar(msg):
+def fail(msg):
     print("pg_select: " + msg, file=sys.stderr)
     sys.exit(1)
 
 
-def senha():
+def password():
     if "PGPASSWORD" in os.environ:
         return os.environ["PGPASSWORD"]
-    arq = os.environ.get("WARD_TESTE_PG_SENHA_ARQUIVO")
-    if arq:
-        with open(arq) as f:
+    path = os.environ.get("WARD_TESTE_PG_SENHA_ARQUIVO")
+    if path:
+        with open(path) as f:
             return f.read().strip()
     return ""
 
 
-class Conexao:
-    def __init__(self, host, porta):
-        self.s = socket.create_connection((host, porta), timeout=20)
+class Connection:
+    def __init__(self, host, port):
+        self.s = socket.create_connection((host, port), timeout=20)
         self.buf = b""
 
-    def mandar(self, tipo, corpo):
-        self.s.sendall(tipo + struct.pack("!I", len(corpo) + 4) + corpo)
+    def send(self, kind, body):
+        self.s.sendall(kind + struct.pack("!I", len(body) + 4) + body)
 
-    def ler_exato(self, n):
+    def read_exact(self, n):
         while len(self.buf) < n:
             d = self.s.recv(65536)
             if not d:
-                falhar("o servidor fechou a conexão")
+                fail("o servidor fechou a conexão")
             self.buf += d
         x, self.buf = self.buf[:n], self.buf[n:]
         return x
 
-    def mensagem(self):
-        tipo = self.ler_exato(1)
-        n = struct.unpack("!I", self.ler_exato(4))[0]
+    def message(self):
+        kind = self.read_exact(1)
+        n = struct.unpack("!I", self.read_exact(4))[0]
         if n < 4 or n > 16 * 1024 * 1024:
-            falhar("mensagem de tamanho inválido")
-        return tipo, self.ler_exato(n - 4)
+            fail("mensagem de tamanho inválido")
+        return kind, self.read_exact(n - 4)
 
 
-def erro_do_servidor(corpo):
-    campos = {}
-    for parte in corpo.split(b"\0"):
-        if parte:
-            campos[parte[:1]] = parte[1:].decode("utf-8", "replace")
-    return campos.get(b"C", "?") + " " + campos.get(b"M", "")
+def server_error(body):
+    fields = {}
+    for part in body.split(b"\0"):
+        if part:
+            fields[part[:1]] = part[1:].decode("utf-8", "replace")
+    return fields.get(b"C", "?") + " " + fields.get(b"M", "")
 
 
-def scram(c, mecanismos, pw):
-    if b"SCRAM-SHA-256" not in mecanismos.split(b"\0"):
-        falhar("o servidor não oferece SCRAM-SHA-256")
+def scram(c, mechanisms, pw):
+    if b"SCRAM-SHA-256" not in mechanisms.split(b"\0"):
+        fail("o servidor não oferece SCRAM-SHA-256")
     nonce = base64.b64encode(secrets.token_bytes(18)).decode()
-    primeira = "n=,r=" + nonce
-    inicial = ("n,," + primeira).encode()
-    c.mandar(b"p", b"SCRAM-SHA-256\0" + struct.pack("!I", len(inicial)) + inicial)
-    tipo, corpo = c.mensagem()
-    if tipo == b"E":
-        falhar(erro_do_servidor(corpo))
-    if tipo != b"R" or struct.unpack("!I", corpo[:4])[0] != 11:
-        falhar("resposta SCRAM inesperada")
-    servidor = corpo[4:].decode()
-    attrs = dict(x.split("=", 1) for x in servidor.split(","))
+    client_first = "n=,r=" + nonce
+    initial = ("n,," + client_first).encode()
+    c.send(b"p", b"SCRAM-SHA-256\0" + struct.pack("!I", len(initial)) + initial)
+    kind, body = c.message()
+    if kind == b"E":
+        fail(server_error(body))
+    if kind != b"R" or struct.unpack("!I", body[:4])[0] != 11:
+        fail("resposta SCRAM inesperada")
+    server_first = body[4:].decode()
+    attrs = dict(x.split("=", 1) for x in server_first.split(","))
     if not attrs["r"].startswith(nonce):
-        falhar("nonce SCRAM do servidor inválido")
-    sal = base64.b64decode(attrs["s"])
-    salgada = hashlib.pbkdf2_hmac("sha256", pw.encode(), sal, int(attrs["i"]))
-    chave_cliente = hmac.new(salgada, b"Client Key", hashlib.sha256).digest()
-    guardada = hashlib.sha256(chave_cliente).digest()
-    sem_prova = "c=biws,r=" + attrs["r"]
-    auth = (primeira + "," + servidor + "," + sem_prova).encode()
-    assinatura = hmac.new(guardada, auth, hashlib.sha256).digest()
-    prova = bytes(a ^ b for a, b in zip(chave_cliente, assinatura))
-    final = (sem_prova + ",p=" + base64.b64encode(prova).decode()).encode()
-    c.mandar(b"p", final)
-    tipo, corpo = c.mensagem()
-    if tipo == b"E":
-        falhar(erro_do_servidor(corpo))
-    if tipo != b"R" or struct.unpack("!I", corpo[:4])[0] != 12:
-        falhar("fim do SCRAM inesperado")
-    chave_servidor = hmac.new(salgada, b"Server Key", hashlib.sha256).digest()
-    esperada = base64.b64encode(hmac.new(chave_servidor, auth, hashlib.sha256).digest()).decode()
-    if not hmac.compare_digest(corpo[4:].decode(), "v=" + esperada):
-        falhar("assinatura SCRAM do servidor não confere")
+        fail("nonce SCRAM do servidor inválido")
+    salt = base64.b64decode(attrs["s"])
+    salted = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, int(attrs["i"]))
+    client_key = hmac.new(salted, b"Client Key", hashlib.sha256).digest()
+    stored_key = hashlib.sha256(client_key).digest()
+    without_proof = "c=biws,r=" + attrs["r"]
+    auth = (client_first + "," + server_first + "," + without_proof).encode()
+    signature = hmac.new(stored_key, auth, hashlib.sha256).digest()
+    proof = bytes(a ^ b for a, b in zip(client_key, signature))
+    final = (without_proof + ",p=" + base64.b64encode(proof).decode()).encode()
+    c.send(b"p", final)
+    kind, body = c.message()
+    if kind == b"E":
+        fail(server_error(body))
+    if kind != b"R" or struct.unpack("!I", body[:4])[0] != 12:
+        fail("fim do SCRAM inesperado")
+    server_key = hmac.new(salted, b"Server Key", hashlib.sha256).digest()
+    expected = base64.b64encode(hmac.new(server_key, auth, hashlib.sha256).digest()).decode()
+    if not hmac.compare_digest(body[4:].decode(), "v=" + expected):
+        fail("assinatura SCRAM do servidor não confere")
 
 
-def principal():
+def main():
     if len(sys.argv) != 2:
-        falhar("uso: pg_select.py '<sql>'")
+        fail("uso: pg_select.py '<sql>'")
     host = os.environ.get("PGHOST", "127.0.0.1")
-    porta = int(os.environ.get("PGPORT", "5432"))
-    usuario = os.environ.get("PGUSER", "")
-    base = os.environ.get("PGDATABASE", usuario)
-    c = Conexao(host, porta)
-    params = b"user\0" + usuario.encode() + b"\0database\0" + base.encode() + b"\0\0"
-    corpo = struct.pack("!I", 196608) + params
-    c.s.sendall(struct.pack("!I", len(corpo) + 4) + corpo)
+    port = int(os.environ.get("PGPORT", "5432"))
+    user = os.environ.get("PGUSER", "")
+    database = os.environ.get("PGDATABASE", user)
+    c = Connection(host, port)
+    params = b"user\0" + user.encode() + b"\0database\0" + database.encode() + b"\0\0"
+    body = struct.pack("!I", 196608) + params
+    c.s.sendall(struct.pack("!I", len(body) + 4) + body)
     while True:
-        tipo, corpo = c.mensagem()
-        if tipo == b"E":
-            falhar(erro_do_servidor(corpo))
-        if tipo == b"R":
-            codigo = struct.unpack("!I", corpo[:4])[0]
-            if codigo == 0:
+        kind, body = c.message()
+        if kind == b"E":
+            fail(server_error(body))
+        if kind == b"R":
+            code = struct.unpack("!I", body[:4])[0]
+            if code == 0:
                 continue
-            if codigo == 10:
-                scram(c, corpo[4:], senha())
+            if code == 10:
+                scram(c, body[4:], password())
                 continue
-            falhar(f"método de autenticação {codigo} não suportado")
-        if tipo == b"Z":
+            fail(f"método de autenticação {code} não suportado")
+        if kind == b"Z":
             break
-    c.mandar(b"Q", sys.argv[1].encode() + b"\0")
+    c.send(b"Q", sys.argv[1].encode() + b"\0")
     ok = True
     while True:
-        tipo, corpo = c.mensagem()
-        if tipo == b"D":
-            n = struct.unpack("!H", corpo[:2])[0]
+        kind, body = c.message()
+        if kind == b"D":
+            n = struct.unpack("!H", body[:2])[0]
             if n:
-                tam = struct.unpack("!i", corpo[2:6])[0]
-                print("" if tam < 0 else corpo[6 : 6 + tam].decode("utf-8", "replace"))
-        elif tipo == b"E":
-            print("pg_select: " + erro_do_servidor(corpo), file=sys.stderr)
+                size = struct.unpack("!i", body[2:6])[0]
+                print("" if size < 0 else body[6 : 6 + size].decode("utf-8", "replace"))
+        elif kind == b"E":
+            print("pg_select: " + server_error(body), file=sys.stderr)
             ok = False
-        elif tipo == b"Z":
+        elif kind == b"Z":
             break
-    c.mandar(b"X", b"")
+    c.send(b"X", b"")
     c.s.close()
     sys.exit(0 if ok else 1)
 
 
-principal()
+main()

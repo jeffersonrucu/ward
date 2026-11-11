@@ -1,30 +1,32 @@
-//! "ward-app" de teste do contêiner da Fase 29a (`make test-docker-platform`; D47,
-//! D57; V5.31). Roda a mesma partida do app real (`ward_app_core::partida`), sem GTK
-//! (a imagem do contêiner não tem WebKitGTK), e grava um relatório em
-//! `/tmp/ward-app-relatorio.txt`, porque o lançador do daemon liga 0–2 a `/dev/null`.
-//! Nunca é instalado fora do contêiner.
+//! Test "ward-app" of the container of Phase 29a (`make test-docker-platform`; D47,
+//! D57; V5.31). Runs the same startup as the real app (the startup module of
+//! `ward_app_core`), without GTK (the container image has no WebKitGTK), and writes a
+//! report to the file in `REPORT`, because the daemon's launcher binds 0–2 to
+//! `/dev/null`. It is never installed outside the container.
 //!
-//! Linhas do relatório (uma por execução, com o pid):
-//! - `inicio pid=… gid=… dumpable=… tracer=…`: logo no começo do `main`, antes da
-//!   partida (o que o `exec` setgid deixou);
-//! - `depois pid=… gid=… dumpable=… tracer=… socket_cloexec=… env=…` ou
-//!   `erro pid=… <mensagem>`.
+//! Report lines (one per execution, with the pid; the markers are the interface with
+//! the `inside.sh` scripts of `dev/container-*` and stay as they are):
+//! - the start line (`pid=… gid=… dumpable=… tracer=…`): right at the start of `main`,
+//!   before the startup (what the setgid `exec` left);
+//! - the after line (`pid=… gid=… dumpable=… tracer=… socket_cloexec=… env=…`) or the
+//!   error line (`pid=… <message>`).
 //!
-//! Na primeira execução de um pid, espera a conexão cair (o servidor de teste fecha
-//! depois de responder) e se executa de novo pela vigia da partida; na segunda, sai.
+//! On the first execution of a pid, it waits for the connection to drop (the test server
+//! closes after answering) and executes itself again through the startup's watcher; on the
+//! second one, it exits.
 
 use std::io::Write;
 
 use ward_app_core::partida;
 
-const RELATORIO: &str = "/tmp/ward-app-relatorio.txt";
+const REPORT: &str = "/tmp/ward-app-relatorio.txt";
 
-fn status(campo: &str) -> String {
+fn status(field: &str) -> String {
     std::fs::read_to_string("/proc/self/status")
         .unwrap_or_default()
         .lines()
         .find_map(|l| {
-            l.strip_prefix(campo)
+            l.strip_prefix(field)
                 .map(|v| v.split_whitespace().collect::<Vec<_>>().join(","))
         })
         .unwrap_or_default()
@@ -36,17 +38,18 @@ fn dumpable() -> String {
         .unwrap_or_else(|_| "?".to_owned())
 }
 
-/// Todo fd que é socket tem `FD_CLOEXEC`? (lido do `fdinfo`, flag `02000000`).
-fn sockets_com_cloexec() -> String {
+/// Does every fd that is a socket have `FD_CLOEXEC`? (read from `fdinfo`, flag
+/// `02000000`).
+fn sockets_with_cloexec() -> String {
     let mut sockets = 0;
-    let mut todos = true;
+    let mut all = true;
     for fd in std::fs::read_dir("/proc/self/fd")
         .into_iter()
         .flatten()
         .flatten()
     {
-        let alvo = std::fs::read_link(fd.path()).unwrap_or_default();
-        if !alvo.to_string_lossy().starts_with("socket:") {
+        let target = std::fs::read_link(fd.path()).unwrap_or_default();
+        if !target.to_string_lossy().starts_with("socket:") {
             continue;
         }
         sockets += 1;
@@ -60,12 +63,12 @@ fn sockets_com_cloexec() -> String {
             .find_map(|l| l.strip_prefix("flags:"))
             .and_then(|f| u32::from_str_radix(f.trim(), 8).ok())
             .unwrap_or(0);
-        todos &= flags & 0o2_000_000 != 0;
+        all &= flags & 0o2_000_000 != 0;
     }
-    format!("{todos}/{sockets}")
+    format!("{all}/{sockets}")
 }
 
-/// fds abertos (o último é o do próprio `read_dir`) e para onde 0–2 apontam.
+/// Open fds (the last one is the one of `read_dir` itself) and where 0–2 point to.
 fn fds() -> String {
     let mut v: Vec<u32> = std::fs::read_dir("/proc/self/fd")
         .into_iter()
@@ -81,33 +84,33 @@ fn fds() -> String {
                 .unwrap_or_else(|_| "-".to_owned())
         })
         .collect();
-    let lista: Vec<String> = v.iter().map(u32::to_string).collect();
-    format!("fds={} std={}", lista.join(","), std.join(","))
+    let list: Vec<String> = v.iter().map(u32::to_string).collect();
+    format!("fds={} std={}", list.join(","), std.join(","))
 }
 
-fn relatar(linha: &str) {
+fn report(line: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(RELATORIO)
+        .open(REPORT)
     {
-        let _ = writeln!(f, "{linha}");
+        let _ = writeln!(f, "{line}");
     }
 }
 
-fn execucoes_deste_pid(pid: u32) -> usize {
-    let prefixo = format!("inicio pid={pid} ");
-    std::fs::read_to_string(RELATORIO)
+fn runs_of_this_pid(pid: u32) -> usize {
+    let prefix = format!("inicio pid={pid} ");
+    std::fs::read_to_string(REPORT)
         .unwrap_or_default()
         .lines()
-        .filter(|l| l.starts_with(&prefixo))
+        .filter(|l| l.starts_with(&prefix))
         .count()
 }
 
 fn main() {
     let pid = std::process::id();
     let fds = fds();
-    relatar(&format!(
+    report(&format!(
         "inicio pid={pid} gid={} dumpable={} tracer={} {fds}",
         status("Gid:"),
         dumpable(),
@@ -116,28 +119,26 @@ fn main() {
     let mut p = match partida::iniciar() {
         Ok(p) => p,
         Err(e) => {
-            relatar(&format!("erro pid={pid} {e}"));
+            report(&format!("erro pid={pid} {e}"));
             std::process::exit(1);
         }
     };
-    let mut nomes: Vec<String> = std::env::vars_os()
+    let mut names: Vec<String> = std::env::vars_os()
         .map(|(k, _)| k.to_string_lossy().into_owned())
         .collect();
-    nomes.sort();
-    relatar(&format!(
+    names.sort();
+    report(&format!(
         "depois pid={pid} gid={} dumpable={} tracer={} socket_cloexec={} vmlck={} pai={} env={}",
         status("Gid:"),
         dumpable(),
         status("TracerPid:"),
-        sockets_com_cloexec(),
+        sockets_with_cloexec(),
         status("VmLck:"),
         p.parent_pid(),
-        nomes.join(",")
+        names.join(",")
     ));
     let _daemon = p.tomar_daemon();
-    if execucoes_deste_pid(pid) < 2 {
-        let _ = p
-            .vigiar(move || relatar(&format!("queda pid={pid}")))
-            .join();
+    if runs_of_this_pid(pid) < 2 {
+        let _ = p.vigiar(move || report(&format!("queda pid={pid}"))).join();
     }
 }

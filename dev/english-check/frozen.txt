@@ -234,3 +234,16 @@ Makefile extensao 56 variable WARD_DEV_EXTENSAO cited in target comments
 # Test socket dirs (`ward-teste`, `ward-teste-e2e`, `ward-teste-selecao`), Phase 56.
 Makefile teste 56 test socket dir names ward-teste, ward-teste-e2e and ward-teste-selecao
 Makefile selecao 56 test socket dir name ward-teste-selecao
+
+# Phase 12 (ward-core entry): vault names and delivered variables quoted in comments.
+crates/ward-core/src/entry.rs bloqueado 48 v4 vault name of AccessLevel::Blocked
+crates/ward-core/src/entry.rs aprovacao 48 v4 vault name of AccessLevel::Approval (com-aprovacao)
+crates/ward-core/src/entry.rs livre 48 v4 vault name of AccessLevel::Free
+crates/ward-core/src/entry.rs ambiente 53 delivered variable WARD_AMBIENTE
+crates/ward-core/src/entry.rs protocolo 53 delivered variable WARD_PROTOCOLO
+crates/ward-core/src/entry.rs arquivo 53 delivered variable prefix WARD_ARQUIVO_
+crates/ward-core/src/entry/validation.rs entrada 53 delivered variable WARD_ENTRADA
+crates/ward-core/src/entry/validation.rs grupo 53 delivered variable WARD_GRUPO
+crates/ward-core/src/entry/validation.rs ambiente 53 delivered variable WARD_AMBIENTE
+crates/ward-core/src/entry/validation.rs arquivo 53 delivered variable prefix WARD_ARQUIVO_
+crates/ward-core/src/entry/validation.rs chave 53 delivered variable WARD_ARQUIVO_CHAVE

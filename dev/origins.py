@@ -1,36 +1,37 @@
 #!/usr/bin/python3 -IB
-"""Origens do código Rust (Fases 12a e 12b, S14). Pré-checagem do `make check`: roda
-ANTES do passo 1 e antes de todo alvo do Makefile que chama o cargo.
+"""Origins of the Rust code (Phases 12a and 12b, S14). Pre-check of `make check`: runs
+BEFORE step 1 and before every Makefile target that calls cargo.
 
-Lista de PERMITIDAS, não de proibidas. O cargo e o rustc aceitam muitas formas de
-trocar o que é compilado ou executado: `[alias]` (um `cargo audit` que roda outro
-programa), `build.rustc`, `rustc-wrapper`, `rustc-workspace-wrapper`, `linker`,
-`rustflags`, `runner`, `[env]`, `[source]`, `[patch]`, `[registries]`... e as variáveis
-de ambiente equivalentes (`RUSTC_WRAPPER`, `RUSTFLAGS`, `CARGO_BUILD_RUSTC`,
-`CARGO_TARGET_<triplo>_LINKER`...). Em vez de correr atrás de cada uma, este script
-falha (sai 1) quando:
+An ALLOW list, not a deny list. Cargo and rustc accept many ways of swapping what gets
+compiled or executed: `[alias]` (a `cargo audit` that runs another program),
+`build.rustc`, `rustc-wrapper`, `rustc-workspace-wrapper`, `linker`, `rustflags`,
+`runner`, `[env]`, `[source]`, `[patch]`, `[registries]`... and the matching environment
+variables (`RUSTC_WRAPPER`, `RUSTFLAGS`, `CARGO_BUILD_RUSTC`,
+`CARGO_TARGET_<triple>_LINKER`...). Instead of chasing each one, this script fails
+(exits 1) when:
 
-1. existe qualquer `.cargo/config*` dentro do repositório (em qualquer pasta), um
-   `.cargo` que é link simbólico, ou `.cargo/config*` num diretório pai da raiz que não
-   seja o CARGO_HOME;
-2. o `config`/`config.toml` do CARGO_HOME tem alguma chave fora de `PERMITIDAS_HOME`
-   (só aparência do terminal, rede e número de jobs), ou não é TOML válido;
-3. há no ambiente variável `CARGO*`, `RUSTC*`, `RUSTDOC*`, `RUSTFLAGS*` ou `RUSTUP*`
-   fora de `ENV_PERMITIDAS` (CARGO_HOME, RUSTUP_HOME e CARGO só com o valor esperado);
-4. o `rust-toolchain.toml` tem chave fora de `[toolchain] channel/components/profile/
-   targets` (ex.: `path`, que aponta o rustc para qualquer pasta), o canal não é uma
-   versão fixa, existe um `rust-toolchain` sem extensão, ou o rustup diz que o
-   toolchain ativo não vem desse arquivo (ex.: `rustup override set`);
-5. algum `Cargo.toml` do workspace tem `[patch]` ou `[replace]`;
-6. algum pacote sem fonte (path) está fora do repositório (ou em `target/`/`.dev/`), ou
-   algum pacote vem de fonte que não é o crates.io.
+1. there is any `.cargo/config*` inside the repository (in any directory), a `.cargo`
+   that is a symbolic link, or a `.cargo/config*` in a parent directory of the root
+   that is not CARGO_HOME;
+2. the `config`/`config.toml` of CARGO_HOME has a key outside `HOME_ALLOWED` (only
+   terminal appearance, network and number of jobs), or is not valid TOML;
+3. the environment has a `CARGO*`, `RUSTC*`, `RUSTDOC*`, `RUSTFLAGS*` or `RUSTUP*`
+   variable outside `ENV_ALLOWED` (CARGO_HOME, RUSTUP_HOME and CARGO only with the
+   expected value);
+4. `rust-toolchain.toml` has a key outside `[toolchain] channel/components/profile/
+   targets` (e.g. `path`, which points rustc at any directory), the channel is not a
+   fixed version, a `rust-toolchain` without extension exists, or rustup says the
+   active toolchain does not come from that file (e.g. `rustup override set`);
+5. some workspace `Cargo.toml` has `[patch]` or `[replace]`;
+6. some package without a source (path) is outside the repository (or in `target/`/
+   `.dev/`), or some package comes from a source that is not crates.io.
 
-Os passos 1 a 4 rodam sem executar o cargo nem o rustc: com config ou ambiente ruim, o
-script para antes (o próprio `cargo metadata` rodaria o `build.rustc` plantado). O cargo
-e o rustup são chamados pelo caminho absoluto em `~/.cargo/bin` (home do passwd).
+Steps 1 to 4 run without executing cargo or rustc: with a bad config or environment the
+script stops first (`cargo metadata` itself would run a planted `build.rustc`). Cargo
+and rustup are called by absolute path in `~/.cargo/bin` (home from passwd).
 
-Só imprime nomes de arquivo, de chave e de variável, nunca valores.
-Uso: python3 -I -B dev/origins.py   (ou `make origins`)
+Prints only file, key and variable names, never values.
+Usage: python3 -I -B dev/origins.py   (or `make origins`)
 """
 
 import json
@@ -41,16 +42,16 @@ import subprocess
 import sys
 import tomllib
 
-RAIZ = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-CASA = pwd.getpwuid(os.getuid()).pw_dir
-CARGO_HOME = os.path.realpath(os.path.join(CASA, ".cargo"))
-RUSTUP_HOME = os.path.realpath(os.path.join(CASA, ".rustup"))
+ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+PASSWD_HOME = pwd.getpwuid(os.getuid()).pw_dir
+CARGO_HOME = os.path.realpath(os.path.join(PASSWD_HOME, ".cargo"))
+RUSTUP_HOME = os.path.realpath(os.path.join(PASSWD_HOME, ".rustup"))
 CARGO = os.path.join(CARGO_HOME, "bin", "cargo")
 RUSTUP = os.path.join(CARGO_HOME, "bin", "rustup")
 
-# Chaves aceitas no config do CARGO_HOME: tabela -> chaves (True = valor simples).
-# Nada que escolha programa, fonte, flag de compilação ou variável de ambiente.
-PERMITIDAS_HOME = {
+# Keys accepted in the CARGO_HOME config: table -> keys (True = simple value).
+# Nothing that picks a program, a source, a compiler flag or an environment variable.
+HOME_ALLOWED = {
     "term": {
         "quiet": True,
         "verbose": True,
@@ -67,9 +68,9 @@ PERMITIDAS_HOME = {
     "cache": {"auto-clean-frequency": True},
 }
 
-# Variáveis de ambiente do cargo/rustc/rustup aceitas. Valor None: qualquer valor
-# (só aparência e rede); string: só aquele caminho.
-ENV_PERMITIDAS = {
+# Accepted cargo/rustc/rustup environment variables. Value None: any value (only
+# appearance and network); string: only that path.
+ENV_ALLOWED = {
     "CARGO_HOME": CARGO_HOME,
     "RUSTUP_HOME": RUSTUP_HOME,
     "CARGO": CARGO,
@@ -83,213 +84,213 @@ ENV_PERMITIDAS = {
     "CARGO_BUILD_JOBS": None,
     "CARGO_INCREMENTAL": None,
 }
-ENV_DO_CARGO = re.compile(r"^(CARGO|RUSTC|RUSTDOC|RUSTFLAGS|RUSTUP)")
+CARGO_ENV = re.compile(r"^(CARGO|RUSTC|RUSTDOC|RUSTFLAGS|RUSTUP)")
 
-TOOLCHAIN_PERMITIDAS = {"channel", "components", "profile", "targets"}
-CANAL_FIXO = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
-NOME_SIMPLES = re.compile(r"^[a-z0-9_.-]+$")
+TOOLCHAIN_ALLOWED = {"channel", "components", "profile", "targets"}
+FIXED_CHANNEL = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+SIMPLE_NAME = re.compile(r"^[a-z0-9_.-]+$")
 
 CRATES_IO = {
     "registry+https://github.com/rust-lang/crates.io-index",
     "sparse+https://index.crates.io/",
 }
-# Pastas onde o cargo nunca roda como diretório atual aqui e que podem ser enormes.
-PULAR = {".git", "target", "node_modules"}
+# Directories where cargo never runs as the current directory here and that can be huge.
+SKIP = {".git", "target", "node_modules"}
 
-erros = []
+errors = []
 
 
-def dentro(p, base):
+def inside(p, base):
     return p == base or p.startswith(base.rstrip("/") + "/")
 
 
 def rel(p):
-    return os.path.relpath(p, RAIZ) if dentro(p, RAIZ) else p
+    return os.path.relpath(p, ROOT) if inside(p, ROOT) else p
 
 
-# --- 1 e 2: configs do cargo ------------------------------------------------------------
-def configs_no_repositorio():
-    for d, subdirs, arquivos in os.walk(RAIZ):
+# --- 1 and 2: cargo configs -------------------------------------------------------------
+def configs_in_repo():
+    for d, subdirs, files in os.walk(ROOT):
         for s in subdirs:
             if s == ".cargo" and os.path.islink(os.path.join(d, s)):
-                erros.append(f"{rel(os.path.join(d, s))}: .cargo como link simbólico no repositório")
-        subdirs[:] = [s for s in subdirs if s not in PULAR]
+                errors.append(f"{rel(os.path.join(d, s))}: .cargo como link simbólico no repositório")
+        subdirs[:] = [s for s in subdirs if s not in SKIP]
         if os.path.basename(d) != ".cargo":
             continue
-        for nome in sorted(arquivos + subdirs):
-            if nome.startswith("config"):
-                erros.append(f"{rel(os.path.join(d, nome))}: .cargo/config* no repositório é proibido")
+        for name in sorted(files + subdirs):
+            if name.startswith("config"):
+                errors.append(f"{rel(os.path.join(d, name))}: .cargo/config* no repositório é proibido")
 
 
-def conferir_tabela(dados, permitidas, caminho, arquivo):
-    for chave, valor in dados.items():
-        nome = f"{caminho}.{chave}" if caminho else chave
-        regra = permitidas.get(chave)
-        if regra is None:
-            erros.append(f"{arquivo}: chave {nome} fora da lista de permitidas")
-        elif isinstance(regra, dict):
-            if isinstance(valor, dict):
-                conferir_tabela(valor, regra, nome, arquivo)
+def verify_table(data, allowed, path, file):
+    for key, value in data.items():
+        name = f"{path}.{key}" if path else key
+        rule = allowed.get(key)
+        if rule is None:
+            errors.append(f"{file}: chave {name} fora da lista de permitidas")
+        elif isinstance(rule, dict):
+            if isinstance(value, dict):
+                verify_table(value, rule, name, file)
             else:
-                erros.append(f"{arquivo}: chave {nome} devia ser tabela")
-        elif not isinstance(valor, (str, int, bool)):
-            erros.append(f"{arquivo}: chave {nome} devia ter valor simples")
+                errors.append(f"{file}: chave {name} devia ser tabela")
+        elif not isinstance(value, (str, int, bool)):
+            errors.append(f"{file}: chave {name} devia ter valor simples")
 
 
-def conferir_config_home(arquivo):
+def verify_home_config(file):
     try:
-        with open(arquivo, "rb") as h:
-            dados = tomllib.load(h)
+        with open(file, "rb") as h:
+            data = tomllib.load(h)
     except (OSError, tomllib.TOMLDecodeError):
-        erros.append(f"{arquivo}: config do cargo ilegível ou TOML inválido")
+        errors.append(f"{file}: config do cargo ilegível ou TOML inválido")
         return
-    # tomllib já junta chaves pontilhadas (`build.rustc-wrapper = …`) nas tabelas.
-    conferir_tabela(dados, PERMITIDAS_HOME, "", arquivo)
+    # tomllib already folds dotted keys (`build.rustc-wrapper = …`) into the tables.
+    verify_table(data, HOME_ALLOWED, "", file)
 
 
-def configs_fora_do_repositorio():
-    d = os.path.dirname(RAIZ)
-    pastas = []
+def configs_outside_repo():
+    d = os.path.dirname(ROOT)
+    dirs = []
     while True:
-        pastas.append(os.path.join(d, ".cargo"))
-        pai = os.path.dirname(d)
-        if pai == d:
+        dirs.append(os.path.join(d, ".cargo"))
+        parent = os.path.dirname(d)
+        if parent == d:
             break
-        d = pai
-    pastas.append(CARGO_HOME)
-    for pasta in dict.fromkeys(os.path.realpath(p) for p in pastas):
-        for nome in ("config", "config.toml"):
-            f = os.path.join(pasta, nome)
+        d = parent
+    dirs.append(CARGO_HOME)
+    for folder in dict.fromkeys(os.path.realpath(p) for p in dirs):
+        for name in ("config", "config.toml"):
+            f = os.path.join(folder, name)
             if not os.path.lexists(f):
                 continue
-            if pasta == CARGO_HOME:
-                conferir_config_home(f)
+            if folder == CARGO_HOME:
+                verify_home_config(f)
             else:
-                erros.append(f"{f}: .cargo/config* em diretório pai do repositório é proibido")
+                errors.append(f"{f}: .cargo/config* em diretório pai do repositório é proibido")
 
 
-# --- 3: ambiente ------------------------------------------------------------------------
-def conferir_ambiente():
-    for nome in sorted(os.environ):
-        if not ENV_DO_CARGO.match(nome):
+# --- 3: environment ---------------------------------------------------------------------
+def verify_environment():
+    for name in sorted(os.environ):
+        if not CARGO_ENV.match(name):
             continue
-        if nome not in ENV_PERMITIDAS:
-            erros.append(f"variável de ambiente {nome} fora da lista de permitidas")
+        if name not in ENV_ALLOWED:
+            errors.append(f"variável de ambiente {name} fora da lista de permitidas")
             continue
-        esperado = ENV_PERMITIDAS[nome]
-        if esperado is not None and os.path.realpath(os.environ[nome]) != os.path.realpath(esperado):
-            erros.append(f"variável de ambiente {nome} com valor diferente do esperado")
+        expected = ENV_ALLOWED[name]
+        if expected is not None and os.path.realpath(os.environ[name]) != os.path.realpath(expected):
+            errors.append(f"variável de ambiente {name} com valor diferente do esperado")
 
 
 # --- 4: toolchain -----------------------------------------------------------------------
-def conferir_toolchain():
-    if os.path.lexists(os.path.join(RAIZ, "rust-toolchain")):
-        erros.append("rust-toolchain (sem extensão) é proibido; use só o rust-toolchain.toml")
-    arquivo = os.path.join(RAIZ, "rust-toolchain.toml")
+def verify_toolchain():
+    if os.path.lexists(os.path.join(ROOT, "rust-toolchain")):
+        errors.append("rust-toolchain (sem extensão) é proibido; use só o rust-toolchain.toml")
+    file = os.path.join(ROOT, "rust-toolchain.toml")
     try:
-        with open(arquivo, "rb") as h:
-            dados = tomllib.load(h)
+        with open(file, "rb") as h:
+            data = tomllib.load(h)
     except (OSError, tomllib.TOMLDecodeError):
-        erros.append("rust-toolchain.toml ausente, ilegível ou TOML inválido")
+        errors.append("rust-toolchain.toml ausente, ilegível ou TOML inválido")
         return None
-    if set(dados) != {"toolchain"} or not isinstance(dados["toolchain"], dict):
-        erros.append("rust-toolchain.toml: só a tabela [toolchain] é permitida")
+    if set(data) != {"toolchain"} or not isinstance(data["toolchain"], dict):
+        errors.append("rust-toolchain.toml: só a tabela [toolchain] é permitida")
         return None
-    tc = dados["toolchain"]
-    for chave in sorted(set(tc) - TOOLCHAIN_PERMITIDAS):
-        erros.append(f"rust-toolchain.toml: chave toolchain.{chave} fora da lista de permitidas")
-    canal = tc.get("channel")
-    if not isinstance(canal, str) or not CANAL_FIXO.match(canal):
-        erros.append("rust-toolchain.toml: channel tem de ser uma versão fixa (ex.: 1.99.1)")
-        canal = None
-    for chave in ("components", "targets"):
-        v = tc.get(chave, [])
-        if not isinstance(v, list) or not all(isinstance(x, str) and NOME_SIMPLES.match(x) for x in v):
-            erros.append(f"rust-toolchain.toml: toolchain.{chave} tem de ser lista de nomes")
+    tc = data["toolchain"]
+    for key in sorted(set(tc) - TOOLCHAIN_ALLOWED):
+        errors.append(f"rust-toolchain.toml: chave toolchain.{key} fora da lista de permitidas")
+    channel = tc.get("channel")
+    if not isinstance(channel, str) or not FIXED_CHANNEL.match(channel):
+        errors.append("rust-toolchain.toml: channel tem de ser uma versão fixa (ex.: 1.99.1)")
+        channel = None
+    for key in ("components", "targets"):
+        v = tc.get(key, [])
+        if not isinstance(v, list) or not all(isinstance(x, str) and SIMPLE_NAME.match(x) for x in v):
+            errors.append(f"rust-toolchain.toml: toolchain.{key} tem de ser lista de nomes")
     if tc.get("profile", "minimal") not in ("minimal", "default"):
-        erros.append("rust-toolchain.toml: profile tem de ser minimal ou default")
-    return canal
+        errors.append("rust-toolchain.toml: profile tem de ser minimal ou default")
+    return channel
 
 
-def conferir_toolchain_ativo(canal):
-    r = subprocess.run([RUSTUP, "show", "active-toolchain"], cwd=RAIZ, capture_output=True, text=True)
-    saida = r.stdout.strip()
-    esperado = f"(overridden by '{os.path.join(RAIZ, 'rust-toolchain.toml')}')"
-    if r.returncode != 0 or not saida.startswith(f"{canal}-") or not saida.endswith(esperado):
-        erros.append("o toolchain ativo do rustup não é o do rust-toolchain.toml (override de diretório?)")
+def verify_active_toolchain(channel):
+    r = subprocess.run([RUSTUP, "show", "active-toolchain"], cwd=ROOT, capture_output=True, text=True)
+    out = r.stdout.strip()
+    expected = f"(overridden by '{os.path.join(ROOT, 'rust-toolchain.toml')}')"
+    if r.returncode != 0 or not out.startswith(f"{channel}-") or not out.endswith(expected):
+        errors.append("o toolchain ativo do rustup não é o do rust-toolchain.toml (override de diretório?)")
 
 
-# --- 5 e 6: manifestos e pacotes --------------------------------------------------------
+# --- 5 and 6: manifests and packages ----------------------------------------------------
 def metadata():
     r = subprocess.run(
         [CARGO, "metadata", "--format-version", "1", "--locked"],
-        cwd=RAIZ,
+        cwd=ROOT,
         capture_output=True,
         text=True,
     )
     if r.returncode != 0:
-        erros.append("cargo metadata --locked falhou (lockfile desatualizado ou manifesto inválido)")
+        errors.append("cargo metadata --locked falhou (lockfile desatualizado ou manifesto inválido)")
         sys.stderr.write(r.stderr[-2000:])
         return None
     return json.loads(r.stdout)
 
 
-def conferir_manifestos(meta):
-    membros = set(meta["workspace_members"])
-    manifestos = {os.path.join(RAIZ, "Cargo.toml")}
+def verify_manifests(meta):
+    members = set(meta["workspace_members"])
+    manifests = {os.path.join(ROOT, "Cargo.toml")}
     for p in meta["packages"]:
-        if p["id"] in membros:
-            manifestos.add(p["manifest_path"])
-    for m in sorted(manifestos):
+        if p["id"] in members:
+            manifests.add(p["manifest_path"])
+    for m in sorted(manifests):
         try:
             with open(m, "rb") as h:
-                dados = tomllib.load(h)
+                data = tomllib.load(h)
         except (OSError, tomllib.TOMLDecodeError):
-            erros.append(f"{m}: manifesto ilegível")
+            errors.append(f"{m}: manifesto ilegível")
             continue
-        for chave in ("patch", "replace"):
-            if chave in dados:
-                erros.append(f"{rel(m)}: tem [{chave}]")
+        for key in ("patch", "replace"):
+            if key in data:
+                errors.append(f"{rel(m)}: tem [{key}]")
 
 
-def conferir_pacotes(meta):
+def verify_packages(meta):
     for p in meta["packages"]:
-        fonte = p.get("source")
-        manifesto = os.path.realpath(p["manifest_path"])
-        if fonte is None:
-            if not dentro(manifesto, RAIZ):
-                erros.append(f"pacote {p['name']}: dependência por path fora do repositório")
-            elif dentro(manifesto, os.path.join(RAIZ, "target")) or dentro(manifesto, os.path.join(RAIZ, ".dev")):
-                erros.append(f"pacote {p['name']}: dependência por path em diretório ignorado")
-        elif fonte not in CRATES_IO:
-            erros.append(f"pacote {p['name']}: fonte fora do crates.io")
+        source = p.get("source")
+        manifest = os.path.realpath(p["manifest_path"])
+        if source is None:
+            if not inside(manifest, ROOT):
+                errors.append(f"pacote {p['name']}: dependência por path fora do repositório")
+            elif inside(manifest, os.path.join(ROOT, "target")) or inside(manifest, os.path.join(ROOT, ".dev")):
+                errors.append(f"pacote {p['name']}: dependência por path em diretório ignorado")
+        elif source not in CRATES_IO:
+            errors.append(f"pacote {p['name']}: fonte fora do crates.io")
 
 
-def terminar():
-    for e in erros:
+def finish():
+    for e in errors:
         print(f"origens: {e}", file=sys.stderr)
-    print(f"origens: {len(erros)} problema(s); o build não pode confiar nas fontes", file=sys.stderr)
+    print(f"origens: {len(errors)} problema(s); o build não pode confiar nas fontes", file=sys.stderr)
     return 1
 
 
 def main():
-    # Sem executar nada: ambiente, configs e toolchain.
-    conferir_ambiente()
-    configs_no_repositorio()
-    configs_fora_do_repositorio()
-    canal = conferir_toolchain()
-    if erros:
-        return terminar()
-    # Agora o rustup e o cargo podem rodar: ambiente e configs são os permitidos.
-    conferir_toolchain_ativo(canal)
-    if erros:
-        return terminar()
+    # Without executing anything: environment, configs and toolchain.
+    verify_environment()
+    configs_in_repo()
+    configs_outside_repo()
+    channel = verify_toolchain()
+    if errors:
+        return finish()
+    # Now rustup and cargo may run: environment and configs are the allowed ones.
+    verify_active_toolchain(channel)
+    if errors:
+        return finish()
     meta = metadata()
     if meta is not None:
-        conferir_manifestos(meta)
-        conferir_pacotes(meta)
-    if erros:
-        return terminar()
+        verify_manifests(meta)
+        verify_packages(meta)
+    if errors:
+        return finish()
     print("origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório")
     return 0
 

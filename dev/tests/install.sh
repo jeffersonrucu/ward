@@ -26,8 +26,6 @@
 export PATH=/usr/bin:/bin
 set -euo pipefail
 ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
-# common.sh (Phase 46) still reads the root from its old variable name.
-RAIZ="$ROOT"
 # shellcheck source=dev/services/common.sh
 . "$ROOT/dev/services/common.sh"
 unset MAKEFLAGS MAKELEVEL MFLAGS
@@ -40,8 +38,8 @@ NO_TEST_MODE="$ROOT/target/no-test-mode/debug"
 WARD="$NO_TEST_MODE/ward"
 WARDD="$NO_TEST_MODE/wardd"
 NM="$NO_TEST_MODE/ward-nm"
-APP="$NO_TEST_MODE/examples/partida-conteiner"
-CLIENT="$NO_TEST_MODE/examples/wardd-cliente-teste"
+APP="$NO_TEST_MODE/examples/startup-container"
+CLIENT="$NO_TEST_MODE/examples/wardd-test-client"
 TEST_WARDD="$ROOT/target/debug/wardd"
 PLATFORM="$ROOT/target/debug/examples/ward-platform-container"
 for b in "$WARD" "$WARDD" "$NM" "$APP" "$CLIENT" "$TEST_WARDD" "$PLATFORM"; do

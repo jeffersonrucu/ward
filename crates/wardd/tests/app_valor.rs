@@ -202,7 +202,7 @@ fn v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste() {
     )
     .unwrap();
     let mut entradas = cofre_teste::cofre_de_teste();
-    entradas.sort_by(|a, b| a.nome().cmp(b.nome()));
+    entradas.sort_by(|a, b| a.name().cmp(b.name()));
     let senha = MasterPassword::new(cofre_teste::SENHA_MESTRA.to_owned());
     let mut cofre = OpenVault::new(&senha, cofre_teste::configuracao_nova()).unwrap();
     write_entries(&dev.join("test-vault.ward"), &mut cofre, &entradas).unwrap();

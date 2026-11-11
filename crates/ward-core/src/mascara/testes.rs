@@ -3,8 +3,8 @@
 //! Só valores falsos do cofre de teste (D15).
 
 use super::*;
-use crate::entrada::{Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo};
 use crate::entrega::{ErroRecurso, Recursos, montar};
+use crate::entry::{AttachmentDraft, DataDraft, Draft, ExtraDraft, Secret};
 
 // ---- Ajudantes ----
 
@@ -16,72 +16,73 @@ fn t(v: &str) -> String {
     v.to_owned()
 }
 
-fn s(v: &str) -> Option<Segredo> {
-    Some(Segredo::de_texto(t(v)))
+fn s(v: &str) -> Option<Secret> {
+    Some(Secret::from_text(t(v)))
 }
 
-fn rascunho(nome: &str, dados: RascunhoDados) -> Rascunho {
-    Rascunho {
-        nome: t(nome),
-        grupo: t("acme"),
-        ambiente: t("dev"),
-        projeto: String::new(),
+fn rascunho(nome: &str, dados: DataDraft) -> Draft {
+    Draft {
+        name: t(nome),
+        group: t("acme"),
+        environment: t("dev"),
+        project: String::new(),
         tags: Vec::new(),
-        dados,
+        data: dados,
         extras: Vec::new(),
-        anexos: Vec::new(),
+        attachments: Vec::new(),
     }
 }
 
-fn extra(nome: &str, valor: &str, segredo: bool) -> RascunhoExtra {
-    RascunhoExtra {
-        nome: t(nome),
-        valor: Segredo::de_texto(t(valor)),
-        segredo,
+fn extra(nome: &str, valor: &str, segredo: bool) -> ExtraDraft {
+    ExtraDraft {
+        name: t(nome),
+        value: Secret::from_text(t(valor)),
+        secret: segredo,
     }
 }
 
-fn anexo(nome: &str, conteudo: &[u8]) -> RascunhoAnexo {
-    RascunhoAnexo {
-        nome: t(nome),
-        conteudo: Segredo::de_bytes(conteudo.to_vec()),
+fn anexo(nome: &str, conteudo: &[u8]) -> AttachmentDraft {
+    AttachmentDraft {
+        name: t(nome),
+        content: Secret::from_bytes(conteudo.to_vec()),
     }
 }
 
-fn valida(r: Rascunho) -> Entrada {
-    r.validar().unwrap_or_else(|e| panic!("devia validar: {e}"))
+fn valida(r: Draft) -> Entry {
+    r.validate()
+        .unwrap_or_else(|e| panic!("devia validar: {e}"))
 }
 
-fn pg_dev() -> Entrada {
+fn pg_dev() -> Entry {
     valida(rascunho(
         "acme-pg-dev",
-        RascunhoDados::Banco {
-            motor: t("postgres"),
+        DataDraft::Database {
+            engine: t("postgres"),
             host: t("127.0.0.1"),
-            porta: t("55432"),
-            base: t("app_teste"),
-            usuario: t("app"),
-            senha: s(SENHA_PG),
-            tunel: String::new(),
+            port: t("55432"),
+            db_name: t("app_teste"),
+            username: t("app"),
+            password: s(SENHA_PG),
+            tunnel: String::new(),
         },
     ))
 }
 
-fn gama_generico() -> Entrada {
-    let mut r = rascunho("gama-generico", RascunhoDados::Generico);
-    r.grupo = t("gama");
-    r.ambiente = t("stage");
+fn gama_generico() -> Entry {
+    let mut r = rascunho("gama-generico", DataDraft::Generic);
+    r.group = t("gama");
+    r.environment = t("stage");
     r.extras = vec![
         extra("REGIAO", "r-01", false),
         extra("CHAVE_LICENCA", "falso-licenca-01", true),
     ];
-    r.anexos = vec![anexo("app.env", b"FALSO_ENV=falso-anexo-01\n")];
+    r.attachments = vec![anexo("app.env", b"FALSO_ENV=falso-anexo-01\n")];
     valida(r)
 }
 
 /// Genérico só com extras secretos (para os testes de vários segredos).
-fn generico(segredos: &[&str]) -> Entrada {
-    let mut r = rascunho("teste-generico", RascunhoDados::Generico);
+fn generico(segredos: &[&str]) -> Entry {
+    let mut r = rascunho("teste-generico", DataDraft::Generic);
     r.extras = segredos
         .iter()
         .enumerate()
@@ -95,10 +96,10 @@ const CODIGO_FALSO: &str = "123456";
 struct Falsos;
 
 impl Recursos for Falsos {
-    fn codigo_totp(&mut self, _: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+    fn codigo_totp(&mut self, _: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
         Ok(Zeroizing::new(t(CODIGO_FALSO)))
     }
-    fn arquivo(&mut self, nome: &str, _: &Segredo) -> Result<String, ErroRecurso> {
+    fn arquivo(&mut self, nome: &str, _: &Secret) -> Result<String, ErroRecurso> {
         Ok(format!("/run/user/1000/ward/tmp/1-{nome}"))
     }
     fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
@@ -106,12 +107,12 @@ impl Recursos for Falsos {
     }
 }
 
-fn entrega(e: &Entrada) -> Entrega {
+fn entrega(e: &Entry) -> Entrega {
     montar(e, &mut Falsos).unwrap_or_else(|erro| panic!("{erro}"))
 }
 
 /// Máscara da entrada com a entrega dela (como o `ward run` monta).
-fn mascara(e: &Entrada) -> Mascara {
+fn mascara(e: &Entry) -> Mascara {
     let g = entrega(e);
     Mascara::da_entrada(e, Some(&g)).expect("máscara")
 }
@@ -462,11 +463,11 @@ fn entrega_marca_o_que_e_segredo() {
 fn codigo_totp_nao_e_mascarado() {
     let e = valida(rascunho(
         "acme-wp-dev",
-        RascunhoDados::Login {
+        DataDraft::Login {
             url: t("http://localhost:8081/wp-login.php"),
-            usuario: t("wp_admin"),
-            senha: s("falso-WP-senha-01"),
-            totp_semente: s("JBSWY3DPEHPK3PXP"),
+            username: t("wp_admin"),
+            password: s("falso-WP-senha-01"),
+            totp_seed: s("JBSWY3DPEHPK3PXP"),
         },
     ));
     let g = entrega(&e);
@@ -568,9 +569,9 @@ fn v2_23_anexo_inteiro_linha_e_valor() {
 #[test]
 fn anexo_com_varias_linhas() {
     let conteudo = "# comentário longo\n  export TOKEN=\"falso-tok-anexo\"\nA=1\nSEGREDO_X=falso-x-anexo-02\r\n";
-    let mut r = rascunho("teste-anexo", RascunhoDados::Generico);
+    let mut r = rascunho("teste-anexo", DataDraft::Generic);
     r.extras = vec![extra("X", "y", false)];
-    r.anexos = vec![anexo("app.env", conteudo.as_bytes())];
+    r.attachments = vec![anexo("app.env", conteudo.as_bytes())];
     let m = mascara(&valida(r));
     let casos = [
         (conteudo.to_owned(), M.to_owned()),
@@ -622,7 +623,7 @@ fn v2_24_saida_sem_segredo_sai_igual() {
 
 #[test]
 fn mascara_sem_segredo_nao_mexe_em_nada() {
-    let mut r = rascunho("so-extras", RascunhoDados::Generico);
+    let mut r = rascunho("so-extras", DataDraft::Generic);
     r.extras = vec![extra("REGIAO", "r-01", false)];
     let e = valida(r);
     let m = mascara(&e);
@@ -781,11 +782,11 @@ fn segredo_curto_e_mascarado_e_avisado() {
 fn ataque_anexo_grande_demais_falha_fechado() {
     // Cada entrada cabe no orçamento (D29), mas juntas passam do limite da máscara:
     // acima dele a máscara não é montada; o `ward run` não roda sem máscara.
-    let grandes: Vec<Entrada> = (0..8)
+    let grandes: Vec<Entry> = (0..8)
         .map(|i| {
-            let mut r = rascunho(&format!("anexo-grande-{i}"), RascunhoDados::Generico);
+            let mut r = rascunho(&format!("anexo-grande-{i}"), DataDraft::Generic);
             r.extras = vec![extra("X", "y", false)];
-            r.anexos = vec![anexo(
+            r.attachments = vec![anexo(
                 "grande.bin",
                 &vec![b'z'; crate::limits::MAX_ATTACHMENTS_TOTAL],
             )];
@@ -900,9 +901,9 @@ fn base64_rfc4648() {
 
 #[test]
 fn v2_38_valor_curto_de_chave_valor_nao_vira_padrao() {
-    let mut r = rascunho("gama-generico", RascunhoDados::Generico);
+    let mut r = rascunho("gama-generico", DataDraft::Generic);
     r.extras = vec![extra("REGIAO", "r-01", false)];
-    r.anexos = vec![anexo(
+    r.attachments = vec![anexo(
         "app.env",
         b"PORT=8080\nDEBUG=1\nFALSO_ENV=falso-anexo-01\n",
     )];
@@ -928,9 +929,9 @@ fn v2_38_valor_curto_de_chave_valor_nao_vira_padrao() {
         }
     }
     // Com aspas: `"abcd"` tem 6 caracteres e vira padrão; sem aspas (4), não.
-    let mut r = rascunho("teste-aspas", RascunhoDados::Generico);
+    let mut r = rascunho("teste-aspas", DataDraft::Generic);
     r.extras = vec![extra("X", "y", false)];
-    r.anexos = vec![anexo("a.env", b"CURTO=\"abcd\"\n")];
+    r.attachments = vec![anexo("a.env", b"CURTO=\"abcd\"\n")];
     let m = mascara(&valida(r));
     assert_eq!(texto(&m.mascarar_tudo(b"v \"abcd\" v")), format!("v {M} v"));
     assert_eq!(texto(&m.mascarar_tudo(b"v abcd v")), "v abcd v");
@@ -992,17 +993,17 @@ fn chave_de_varias_linhas() -> String {
     c
 }
 
-fn servidor_com_chave(chave: &str) -> Entrada {
+fn servidor_com_chave(chave: &str) -> Entry {
     valida(rascunho(
         "acme-ssh-chave-prod",
-        RascunhoDados::Servidor {
+        DataDraft::Server {
             host: t("127.0.0.1"),
-            porta: t("2223"),
-            usuario: t("deploy"),
-            senha: None,
-            chave_privada: s(chave),
+            port: t("2223"),
+            username: t("deploy"),
+            password: None,
+            private_key: s(chave),
             passphrase: s("falso-passphrase-01"),
-            salto: String::new(),
+            jump: String::new(),
         },
     ))
 }
@@ -1072,7 +1073,7 @@ fn v2_41_chave_em_campo_mascarada_por_linha() {
 fn v2_41_json_de_varias_linhas_e_yaml() {
     const VALOR: &str = "falso-chave-de-conta-de-servico-0123456789";
     let json = format!("{{\n  \"type\": \"service_account\",\n  \"private_key\": \"{VALOR}\"\n}}");
-    let mut r = rascunho("x-gen", RascunhoDados::Generico);
+    let mut r = rascunho("x-gen", DataDraft::Generic);
     r.extras = vec![extra("GCP", &json, true)];
     let m = mascara(&valida(r));
     let linha = format!("  \"private_key\": \"{VALOR}\"");
@@ -1097,9 +1098,9 @@ fn v2_41_json_de_varias_linhas_e_yaml() {
 
     // Anexo YAML (kubeconfig): `token: valor`, com e sem aspas, e item de lista.
     let kube = "apiVersion: v1\nusers:\n- name: dev\n  user:\n    token: falso-token-kube-01\n    senha: \"falso-senha-kube-02\"\n- item-da-lista: falso-dados-kube-03\n";
-    let mut r = rascunho("x-kube", RascunhoDados::Generico);
+    let mut r = rascunho("x-kube", DataDraft::Generic);
     r.extras = vec![extra("X", "y", false)];
-    r.anexos = vec![anexo("kubeconfig", kube.as_bytes())];
+    r.attachments = vec![anexo("kubeconfig", kube.as_bytes())];
     let m = mascara(&valida(r));
     for valor in [
         "falso-token-kube-01",
@@ -1117,9 +1118,9 @@ fn v2_41_json_de_varias_linhas_e_yaml() {
         }
     }
     // `host:porta` e URL não viram `chave: valor` (sem espaço depois dos dois pontos).
-    let mut r = rascunho("x-url", RascunhoDados::Generico);
+    let mut r = rascunho("x-url", DataDraft::Generic);
     r.extras = vec![extra("X", "y", false)];
-    r.anexos = vec![anexo("hosts.txt", b"db:5432\n")];
+    r.attachments = vec![anexo("hosts.txt", b"db:5432\n")];
     let m = mascara(&valida(r));
     assert_eq!(texto(&m.mascarar_tudo(b"porta 5432")), "porta 5432");
 }
@@ -1134,8 +1135,8 @@ fn v2_41_controle_sem_a_passada_por_linha_vazaria() {
     // Só o segredo inteiro e as variações dele, sem `linhas` (o código de antes).
     let mut g = Gerador::novo();
     let mut padroes: Vec<Vec<u8>> = Vec::new();
-    for sg in e.segredos() {
-        g.segredo(sg.valor.expor(), &mut |p| {
+    for sg in e.secrets() {
+        g.segredo(sg.value.expose(), &mut |p| {
             padroes.push(p.to_vec());
             Ok(())
         })
@@ -1160,17 +1161,17 @@ fn v2_41_controle_sem_a_passada_por_linha_vazaria() {
     );
 }
 
-fn banco_com_senha(senha: &str) -> Entrada {
+fn banco_com_senha(senha: &str) -> Entry {
     valida(rascunho(
         "x-pg",
-        RascunhoDados::Banco {
-            motor: t("postgres"),
+        DataDraft::Database {
+            engine: t("postgres"),
             host: t("127.0.0.1"),
-            porta: String::new(),
-            base: t("app"),
-            usuario: t("app"),
-            senha: s(senha),
-            tunel: String::new(),
+            port: String::new(),
+            db_name: t("app"),
+            username: t("app"),
+            password: s(senha),
+            tunnel: String::new(),
         },
     ))
 }
@@ -1358,13 +1359,13 @@ fn sem_trecho_de_6(caso: &str, m: &Mascara, saida: &[u8], alvo: &str) {
     );
 }
 
-fn api_de_varias_linhas(token: &str) -> Entrada {
+fn api_de_varias_linhas(token: &str) -> Entry {
     valida(rascunho(
         "beta-api-varias",
-        RascunhoDados::Api {
+        DataDraft::Api {
             url: String::new(),
             token: s(token),
-            variavel: t("GITHUB_TOKEN"),
+            variable: t("GITHUB_TOKEN"),
         },
     ))
 }
@@ -1731,24 +1732,24 @@ fn v2_57_oraculo_e_mascara_com_valores_de_d54() {
     ];
     let anexo_ = "FALSO_ENV=falso-anexo-01\nPORT=8080\nnome\tfalso-tsv-valor-01\tfalso/ação\r\n";
     let senha_banco = "falso-PG$&<x>'q/ç-01";
-    let mut r = rascunho("teste-generico", RascunhoDados::Generico);
+    let mut r = rascunho("teste-generico", DataDraft::Generic);
     r.extras = extras
         .iter()
         .enumerate()
         .map(|(i, v)| extra(&format!("S{i}"), v, true))
         .collect();
-    r.anexos = vec![anexo("app.env", anexo_.as_bytes())];
+    r.attachments = vec![anexo("app.env", anexo_.as_bytes())];
     let generico = valida(r);
     let banco = valida(rascunho(
         "teste-banco",
-        RascunhoDados::Banco {
-            motor: t("postgres"),
+        DataDraft::Database {
+            engine: t("postgres"),
             host: t("127.0.0.1"),
-            porta: t("55432"),
-            base: t("app_teste"),
-            usuario: t("app"),
-            senha: s(senha_banco),
-            tunel: String::new(),
+            port: t("55432"),
+            db_name: t("app_teste"),
+            username: t("app"),
+            password: s(senha_banco),
+            tunnel: String::new(),
         },
     ));
     // Pedido ao oráculo pelo stdin: grupo, usuário (ou vazio), anexo (0/1), valor em hex.
@@ -1920,16 +1921,16 @@ const TOKEN_D59: &str = "falso-Ab3$k&<9>Zq!'/ç-01";
 const ASCII_D59: &str = "falso-Ab3$k&<9>Zq!'";
 
 /// `delta-api-simbolos` (D59), montada como na tabela do contrato.
-fn delta_api_simbolos() -> Entrada {
+fn delta_api_simbolos() -> Entry {
     let mut r = rascunho(
         "delta-api-simbolos",
-        RascunhoDados::Api {
+        DataDraft::Api {
             url: t("https://api.teste.invalid"),
             token: s(TOKEN_D59),
-            variavel: t("SIMBOLOS_TOKEN"),
+            variable: t("SIMBOLOS_TOKEN"),
         },
     );
-    r.grupo = t("delta");
+    r.group = t("delta");
     r.extras = vec![extra("SEGREDO_ASCII", ASCII_D59, true)];
     valida(r)
 }
@@ -2061,9 +2062,9 @@ fn v3_29_go_com_ensure_ascii_por_linha_e_linha_binaria() {
             .any(|p| p.windows(6).any(|w| w == br"\u0026")),
         "linha binária ganhou forma de texto"
     );
-    let mut r = rascunho("teste-binario", RascunhoDados::Generico);
+    let mut r = rascunho("teste-binario", DataDraft::Generic);
     r.extras = vec![extra("OBS", "nada", false)];
-    r.anexos = vec![anexo("cfg.bin", binaria)];
+    r.attachments = vec![anexo("cfg.bin", binaria)];
     let mb = mascara(&valida(r));
     assert_eq!(
         mb.mascarar_tudo(b"falso-bin-\xff&<x>-linha-01\n"),
@@ -2083,13 +2084,13 @@ fn v3_31_json_numa_linha() {
     let um = r#"{"user":"x","token":"falso-json-uma-linha-01"}"#;
     let varias = "{\n  \"db\": {\"senha\": \"falso-json-aninhado-02\"},\n  \"a\": \"x\", \"b\": \"falso-json-duas-chaves-03\"\n}";
     let escapado = r#"{"k": "falso-a\u00e7\/b-json-04"}"#;
-    let mut r = rascunho("teste-json", RascunhoDados::Generico);
+    let mut r = rascunho("teste-json", DataDraft::Generic);
     r.extras = vec![
         extra("UM", um, true),
         extra("VARIAS", varias, true),
         extra("ESC", escapado, true),
     ];
-    r.anexos = vec![anexo("client.json", client)];
+    r.attachments = vec![anexo("client.json", client)];
     let e = valida(r);
     let m = mascara(&e);
     let custo = custo_da_entrada(&e).unwrap();
@@ -2201,9 +2202,9 @@ fn v3_32_yaml_dotenv_e_tab_de_linha_binaria() {
     let mut an: Vec<u8> = b"# config\n".to_vec();
     an.extend_from_slice(b"SENHA=falso-latin\xe7-01\tTOKEN=falso-campo-tab-02\n");
     an.extend_from_slice(b"nome\xe7\tfalso-campo-tsv-03\tfalso-campo-tsv-04\n");
-    let mut r = rascunho("teste-latin1", RascunhoDados::Generico);
+    let mut r = rascunho("teste-latin1", DataDraft::Generic);
     r.extras = vec![extra("OBS", "nada", false)];
-    r.anexos = vec![anexo("cfg.ini", &an)];
+    r.attachments = vec![anexo("cfg.ini", &an)];
     let ea = valida(r);
     let ma = mascara(&ea);
     assert!(custo_da_entrada(&ea).unwrap() <= MASK_BUDGET);
@@ -2322,12 +2323,12 @@ fn mascara_de_todas_as_familias() -> Mascara {
     let pg = pg_dev();
     let g = entrega(&pg);
     let gama = gama_generico();
-    let mut r = rascunho("anexo-familias", RascunhoDados::Generico);
+    let mut r = rascunho("anexo-familias", DataDraft::Generic);
     r.extras = vec![
         extra("S_ASPAS", "falso\"a&b<c>'d$e", true),
         extra("S_SSH", SENHA_SSH, true),
     ];
-    r.anexos = vec![anexo(
+    r.attachments = vec![anexo(
         "conf",
         b"{\"api_token\": \"falso-json-tok-77\"}\nchave yaml: falso-yaml-val-88\ncol1\tfalso-tab-campo-99\nexport DB_PASS=falso-dotenv-55 # nota\n",
     )];

@@ -1,16 +1,16 @@
 #!/usr/bin/python3 -I
-"""Site falso na mesma origem `http://localhost:<porta>`, escutando só em `[::1]` (Fase 44c).
+"""Fake site on the same origin `http://localhost:<port>`, listening only on `[::1]` (Phase 44c).
 
-Ataque da auditoria de segurança do M6: o serviço de teste verdadeiro escuta só em
-`127.0.0.1:<porta>`; um processo do mesmo uid abre `[::1]:<porta>` e o Chrome, que
-tenta `::1` antes para `localhost`, carrega a página dele com a origem
-`http://localhost:<porta>`, a mesma da entrada. A origem confere, então o daemon não tem
-como distinguir; o que fecha é a confirmação da origem na janela (D9, Fase 44c) e, no
-`ward playwright`, o `--host-resolver-rules=MAP localhost 127.0.0.1`.
+Attack from the M6 security audit: the real test service listens only on
+`127.0.0.1:<port>`; a process of the same uid opens `[::1]:<port>` and Chrome, which
+tries `::1` first for `localhost`, loads its page with the origin
+`http://localhost:<port>`, the same as the entry's. The origin matches, so the daemon has
+no way to tell them apart; what closes it is the origin confirmation in the window (D9,
+Phase 44c) and, in `ward playwright`, `--host-resolver-rules=MAP localhost 127.0.0.1`.
 
-Uso: fake_v6.py <porta> <arquivo de saída>. Grava o caminho e o corpo de cada POST no
-arquivo (0600; a suíte confere que ficou vazio e nunca o imprime). A página tem
-`<title>falso-v6</title>` para a suíte saber que a aba caiu aqui.
+Usage: fake_v6.py <port> <output file>. Writes the path and the body of each POST to the
+file (0600; the suite checks that it stayed empty and never prints it). The page carries
+the fake-v6 title (see `FORM`) so the suite knows the tab landed here.
 """
 
 import http.server
@@ -18,8 +18,8 @@ import os
 import socket
 import sys
 
-PORTA = int(sys.argv[1])
-SAIDA = sys.argv[2]
+PORT = int(sys.argv[1])
+OUTPUT = sys.argv[2]
 
 FORM = b"""<!doctype html><html><head><title>falso-v6</title></head><body>
 <form method="post" action="/wp-login.php">
@@ -28,22 +28,22 @@ FORM = b"""<!doctype html><html><head><title>falso-v6</title></head><body>
 <button type="submit">Entrar</button></form></body></html>"""
 
 
-class Pagina(http.server.BaseHTTPRequestHandler):
+class Page(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        corpo = b"<html><head><title>falso-v6</title></head><body>painel</body></html>" \
+        body = b"<html><head><title>falso-v6</title></head><body>painel</body></html>" \
             if self.path.startswith("/wp-admin") else FORM
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
-        self.send_header("Content-Length", str(len(corpo)))
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(corpo)
+        self.wfile.write(body)
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length", "0") or "0")
-        corpo = self.rfile.read(min(n, 1 << 16))
-        fd = os.open(SAIDA, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        body = self.rfile.read(min(n, 1 << 16))
+        fd = os.open(OUTPUT, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "ab") as f:
-            f.write(self.path.encode() + b" " + corpo + b"\n")
+            f.write(self.path.encode() + b" " + body + b"\n")
         self.send_response(302)
         self.send_header("Location", "/wp-admin/")
         self.send_header("Content-Length", "0")
@@ -53,7 +53,7 @@ class Pagina(http.server.BaseHTTPRequestHandler):
         pass
 
 
-class Servidor(http.server.ThreadingHTTPServer):
+class Server(http.server.ThreadingHTTPServer):
     address_family = socket.AF_INET6
 
     def server_bind(self):
@@ -61,4 +61,4 @@ class Servidor(http.server.ThreadingHTTPServer):
         super().server_bind()
 
 
-Servidor(("::1", PORTA), Pagina).serve_forever()
+Server(("::1", PORT), Page).serve_forever()

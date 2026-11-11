@@ -14,8 +14,8 @@ ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/env.sh
 . "$ROOT/dev/env.sh"
 # rustup's cargo, at the end of PATH (like the Makefile).
-export PATH="/usr/bin:/bin:$CASA_PASSWD/.cargo/bin"
-CARGO_BIN="$CASA_PASSWD/.cargo/bin/cargo"
+export PATH="/usr/bin:/bin:$PASSWD_HOME/.cargo/bin"
+CARGO_BIN="$PASSWD_HOME/.cargo/bin/cargo"
 MAKE=(/usr/bin/make -s --no-print-directory -C "$ROOT")
 
 VAULT="$ROOT/.dev/test-vault.ward"
@@ -55,7 +55,7 @@ no_secret() { # description file
     fi
 }
 
-dev_vault() { "$CARGO_BIN" run --quiet --locked -p ward-core --example dev-cofre -- "$@"; }
+dev_vault() { "$CARGO_BIN" run --quiet --locked -p ward-core --example dev-vault -- "$@"; }
 
 # --- Variations list first (the other tests use it) -------------------------------------
 variations() {
@@ -259,7 +259,7 @@ PY
     # Body v4 (Phase 19b, D30; Phase 19c, D39; Phase 22d, D65 d): the verification opened
     # the settings section, the newly created vault is at generation 1 and the test PIN
     # matched the Argon2id hash; the PIN and the PHC text do not show up in the clear.
-    if grep -qxF 'dev-cofre: configuração: geração 1, hash do PIN Argon2id (m=65536 KiB, t=3, p=1), trava em 240 min, backup externo desligado' "$TMP/verify.log"; then
+    if grep -qxF 'dev-vault: configuração: geração 1, hash do PIN Argon2id (m=65536 KiB, t=3, p=1), trava em 240 min, backup externo desligado' "$TMP/verify.log"; then
         ok "configuração do corpo v4: geração 1, hash Argon2id do PIN de teste, trava 240, backup desligado"
     else
         failed "conferência sem a configuração do corpo v4"
@@ -272,19 +272,19 @@ PY
     printf '%s\n' 'falso-mestra-ward-01' >"$TMP/right-password"
     head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' >"$TMP/wrong-password"
     chmod 0600 "$TMP/right-password" "$TMP/wrong-password"
-    if dev_vault --conferir --senha-stdin <"$TMP/right-password" >"$TMP/right.log" 2>&1; then
+    if dev_vault --verify --password-stdin <"$TMP/right-password" >"$TMP/right.log" 2>&1; then
         ok "abre com a senha de teste (pelo stdin)"
     else
         failed "não abre com a senha de teste"
     fi
-    if dev_vault --conferir --senha-stdin <"$TMP/wrong-password" >"$TMP/wrong.log" 2>&1; then
+    if dev_vault --verify --password-stdin <"$TMP/wrong-password" >"$TMP/wrong.log" 2>&1; then
         failed "abriu com senha errada"
     else
         grep -q 'não abriu' "$TMP/wrong.log" && ok "senha errada recusada" || failed "senha errada: erro inesperado"
     fi
     no_secret "senha errada" "$TMP/wrong.log"
     # A password in argv does not exist.
-    if dev_vault --conferir --senha falso-mestra-ward-01 >/dev/null 2>&1; then
+    if dev_vault --verify --password falso-mestra-ward-01 >/dev/null 2>&1; then
         failed "aceitou senha em argv"
     else
         ok "senha em argv recusada"
@@ -296,7 +296,7 @@ PY
 # it came from and has to come out as `••••`. The patterns go from Python to the vault
 # example through a pipe (no file); the example only prints counts and line numbers.
 cross_check() {
-    if python3 -I -B - "$ROOT" <<'PY' | dev_vault --cruzado >"$TMP/cross.log" 2>&1; then
+    if python3 -I -B - "$ROOT" <<'PY' | dev_vault --cross >"$TMP/cross.log" 2>&1; then
 import importlib.util, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location("variacoes", root / "dev" / "variations.py")

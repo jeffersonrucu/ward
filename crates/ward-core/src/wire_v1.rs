@@ -201,7 +201,7 @@ fn vault_014_body_v4_read_and_written_byte_for_byte() {
     assert!(*again == *body, "body written differently from 0.1.4");
     let got: Vec<(&str, &str, &str)> = entries
         .iter()
-        .map(|e| (e.nome(), e.tipo().nome(), e.nivel().nome()))
+        .map(|e| (e.name(), e.kind().name(), e.level().name()))
         .collect();
     assert_eq!(got, ENTRIES_V4);
     assert_eq!(config.minutos_trava(), 240);

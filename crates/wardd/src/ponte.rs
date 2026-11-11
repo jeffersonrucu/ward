@@ -340,7 +340,7 @@ fn conectar(
     cmd.variable(b"LANG", b"C.UTF-8").ok()?;
     if let Some(s) = senha {
         // `sshpass -e`: a senha só no ambiente do filho, nunca em argv (S3).
-        cmd.variable(b"SSHPASS", s.expor()).ok()?;
+        cmd.variable(b"SSHPASS", s.expose()).ok()?;
     }
     let lancado = cmd.launch();
     // O ambiente com segredo zera agora.

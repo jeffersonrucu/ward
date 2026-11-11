@@ -16,7 +16,7 @@ use core::fmt;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::{self, CryptoFailure};
-use crate::entrada::Segredo;
+use crate::entry::Secret;
 
 /// Smallest accepted size.
 pub const MIN_SIZE: usize = 4;
@@ -106,7 +106,7 @@ impl GeneratorOptions {
 }
 
 /// Generates a password with the system RNG.
-pub fn generate(options: &GeneratorOptions) -> Result<Segredo, GeneratorError> {
+pub fn generate(options: &GeneratorOptions) -> Result<Secret, GeneratorError> {
     generate_with(options, &mut crypto::random)
 }
 
@@ -158,7 +158,7 @@ pub(crate) fn generate_with(
     options: &GeneratorOptions,
     // Source of random bytes; only `crypto::random` outside the tests.
     source: &mut dyn FnMut(&mut [u8]) -> Result<(), CryptoFailure>,
-) -> Result<Segredo, GeneratorError> {
+) -> Result<Secret, GeneratorError> {
     if !(MIN_SIZE..=MAX_SIZE).contains(&options.size) {
         return Err(GeneratorError::InvalidSize);
     }
@@ -177,7 +177,7 @@ pub(crate) fn generate_with(
         if sets.iter().all(|c| password.iter().any(|b| c.contains(b))) {
             // Takes ownership of the buffer without copying; the `Zeroizing` keeps an
             // empty vector.
-            return Ok(Segredo::de_bytes(core::mem::take(&mut *password)));
+            return Ok(Secret::from_bytes(core::mem::take(&mut *password)));
         }
     }
     Err(GeneratorError::RandomUnavailable)
@@ -189,7 +189,7 @@ pub const TOKEN_SIZE: usize = 32;
 /// Single-use token of the Connect button (D3, Phase 27): random by the system RNG, only letters
 /// and digits (it fits in the terminal argv without quotes and in the format the app
 /// accepts).
-pub fn connect_token() -> Result<Segredo, GeneratorError> {
+pub fn connect_token() -> Result<Secret, GeneratorError> {
     generate(&GeneratorOptions {
         size: TOKEN_SIZE,
         lowercase: true,

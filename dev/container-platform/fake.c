@@ -1,19 +1,21 @@
-/* Servidor falso do V4.2, 2ª parte (Fase 28; D46, D65 e; S5), só para o contêiner do
- * `make test-docker-platform`. Roda como o uid 1000, se marca não-dumpable
- * (`prctl(PR_SET_DUMPABLE, 0)`, o que passaria na conferência extra do `test-mode`) e
- * escuta num socket Unix numa pasta desse uid. Toda conexão aceita e todo byte recebido
- * vão para o registro (uma linha por evento, sem o conteúdo); o teste confere que o
- * registro fica vazio: a CLI de release nunca conecta num falso.
+/* Fake server of V4.2, 2nd part (Phase 28; D46, D65 e; S5), only for the container of
+ * `make test-docker-platform` (and of `make test-install`). Runs as uid 1000, marks itself
+ * non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`, which would pass the extra check of
+ * `test-mode`) and listens on a Unix socket in a folder of that uid. Every accepted
+ * connection and every byte received go to the record (one line per event, without the
+ * content); the test verifies that the record stays empty: the release CLI never
+ * connects to a fake.
  *
- * Uso: falso <socket> <registro> <segundos>. Imprime "pronto dumpable=<n>" quando
- * escuta; sai 3 se o bind falhar (o caso de /run/ward/<uid>/, que é do root).
+ * Usage: <binary> <socket> <record> <seconds> (the test scripts install it under a short
+ * name inside the container). Prints the ready marker with "dumpable=<n>" when it listens;
+ * exits 3 if the bind fails (the case of /run/ward/<uid>/, which belongs to root).
  *
- * `falso --ativar <socket> <programa>`: o papel do systemd feito pelo próprio usuário
- * (sem root): cria o socket numa pasta dele e executa <programa> com ele no fd 3 e
- * LISTEN_FDS=1/LISTEN_PID (o `wardd` copiado tenta subir assim).
+ * `<binary> --activate <socket> <program>`: the role of systemd done by the user itself
+ * (without root): creates the socket in a folder of the user and executes <program> with
+ * it on fd 3 and LISTEN_FDS=1/LISTEN_PID (the copied `wardd` tries to start like this).
  *
- * `falso --conectar <socket> x`: controle do teste (conecta e manda um byte), para
- * provar que o registro pega uma conexão de verdade. */
+ * `<binary> --connect <socket> x`: control of the test (connects and sends one byte), to
+ * prove that the record catches a real connection. */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
@@ -27,24 +29,24 @@
 #include <time.h>
 #include <unistd.h>
 
-static void registrar(int fd, const char *evento, long n) {
-    char linha[64];
-    int k = snprintf(linha, sizeof linha, "%s %ld\n", evento, n);
-    if (k > 0 && write(fd, linha, (size_t)k) != k) {
+static void record(int fd, const char *event, long n) {
+    char line[64];
+    int k = snprintf(line, sizeof line, "%s %ld\n", event, n);
+    if (k > 0 && write(fd, line, (size_t)k) != k) {
         _exit(4);
     }
 }
 
-static int ativar(const char *caminho, const char *programa) {
+static int activate(const char *path, const char *program) {
     int s = socket(AF_UNIX, SOCK_STREAM, 0);
     struct sockaddr_un a;
     memset(&a, 0, sizeof a);
     a.sun_family = AF_UNIX;
-    if (s < 0 || strlen(caminho) >= sizeof a.sun_path) {
+    if (s < 0 || strlen(path) >= sizeof a.sun_path) {
         return 2;
     }
-    strcpy(a.sun_path, caminho);
-    unlink(caminho);
+    strcpy(a.sun_path, path);
+    unlink(path);
     if (bind(s, (struct sockaddr *)&a, sizeof a) != 0 || listen(s, 16) != 0) {
         perror("bind");
         return 3;
@@ -56,20 +58,20 @@ static int ativar(const char *caminho, const char *programa) {
     snprintf(pid, sizeof pid, "%d", (int)getpid());
     setenv("LISTEN_FDS", "1", 1);
     setenv("LISTEN_PID", pid, 1);
-    execl(programa, programa, (char *)NULL);
+    execl(program, program, (char *)NULL);
     perror("execl");
     return 127;
 }
 
-static int conectar(const char *caminho) {
+static int connect_once(const char *path) {
     int s = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     struct sockaddr_un a;
     memset(&a, 0, sizeof a);
     a.sun_family = AF_UNIX;
-    if (s < 0 || strlen(caminho) >= sizeof a.sun_path) {
+    if (s < 0 || strlen(path) >= sizeof a.sun_path) {
         return 2;
     }
-    strcpy(a.sun_path, caminho);
+    strcpy(a.sun_path, path);
     if (connect(s, (struct sockaddr *)&a, sizeof a) != 0 || write(s, "x", 1) != 1) {
         return 3;
     }
@@ -78,11 +80,11 @@ static int conectar(const char *caminho) {
 }
 
 int main(int argc, char **argv) {
-    if (argc == 4 && strcmp(argv[1], "--conectar") == 0) {
-        return conectar(argv[2]);
+    if (argc == 4 && strcmp(argv[1], "--connect") == 0) {
+        return connect_once(argv[2]);
     }
-    if (argc == 4 && strcmp(argv[1], "--ativar") == 0) {
-        return ativar(argv[2], argv[3]);
+    if (argc == 4 && strcmp(argv[1], "--activate") == 0) {
+        return activate(argv[2], argv[3]);
     }
     if (argc != 4) {
         fprintf(stderr, "uso: falso <socket> <registro> <segundos>\n");
@@ -92,8 +94,8 @@ int main(int argc, char **argv) {
         perror("prctl");
         return 2;
     }
-    int reg = open(argv[2], O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
-    if (reg < 0) {
+    int rec = open(argv[2], O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+    if (rec < 0) {
         perror("registro");
         return 2;
     }
@@ -115,8 +117,8 @@ int main(int argc, char **argv) {
     }
     printf("pronto dumpable=%d\n", prctl(PR_GET_DUMPABLE, 0, 0, 0, 0));
     fflush(stdout);
-    time_t fim = time(NULL) + atoi(argv[3]);
-    while (time(NULL) < fim) {
+    time_t end = time(NULL) + atoi(argv[3]);
+    while (time(NULL) < end) {
         struct pollfd p = {.fd = s, .events = POLLIN};
         if (poll(&p, 1, 100) <= 0) {
             continue;
@@ -125,8 +127,8 @@ int main(int argc, char **argv) {
         if (c < 0) {
             continue;
         }
-        registrar(reg, "conexao", 0);
-        /* Um falso de verdade responderia como o wardd e esperaria a senha. */
+        record(rec, "conexao", 0);
+        /* A real fake would answer like the wardd and wait for the password. */
         char buf[4096];
         struct pollfd q = {.fd = c, .events = POLLIN};
         while (poll(&q, 1, 2000) > 0) {
@@ -134,7 +136,7 @@ int main(int argc, char **argv) {
             if (n <= 0) {
                 break;
             }
-            registrar(reg, "bytes", (long)n);
+            record(rec, "bytes", (long)n);
         }
         close(c);
     }

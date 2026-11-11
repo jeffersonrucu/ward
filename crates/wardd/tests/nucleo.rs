@@ -12,7 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use comum::*;
-use ward_core::entrada::NivelAcesso;
+use ward_core::entry::AccessLevel;
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{ESPERA_MAXIMA, espera_destrave};
@@ -24,7 +24,7 @@ fn lista(d: &wardd::nucleo::Daemon, papel: Papel) -> Vec<ward_core::protocolo::I
     }
 }
 
-fn nivel_de(d: &wardd::nucleo::Daemon, nome: &str) -> Option<NivelAcesso> {
+fn nivel_de(d: &wardd::nucleo::Daemon, nome: &str) -> Option<AccessLevel> {
     lista(d, Papel::App)
         .into_iter()
         .find(|i| i.nome == nome)
@@ -167,7 +167,7 @@ fn v3_11_mudar_nivel_exige_pin_e_papel_app() {
         Some(ErroResposta::NaoAutorizado)
     );
     assert_eq!(fs::read(&cofre).unwrap(), antes, "o arquivo mudou");
-    assert_eq!(nivel_de(&d, "t-aprov"), Some(NivelAcesso::ComAprovacao));
+    assert_eq!(nivel_de(&d, "t-aprov"), Some(AccessLevel::Approval));
 
     // App com o PIN certo: muda e fica no disco.
     assert!(ok(&mudar_nivel(
@@ -180,7 +180,7 @@ fn v3_11_mudar_nivel_exige_pin_e_papel_app() {
     assert_ne!(fs::read(&cofre).unwrap(), antes);
     d.travar();
     assert!(ok(&destravar(&d, SENHA)));
-    assert_eq!(nivel_de(&d, "t-aprov"), Some(NivelAcesso::Bloqueado));
+    assert_eq!(nivel_de(&d, "t-aprov"), Some(AccessLevel::Blocked));
 }
 
 /// V3.12 (S9): 5 erros de PIN seguidos travam, contando entre conexões (o contador é
@@ -252,7 +252,7 @@ fn v3_17_v3_26_lista_do_agente_e_bloqueada_igual_inexistente() {
     let app = lista(&d, Papel::App);
     assert_eq!(app.len(), 5);
     assert!(app.iter().all(|i| i.nivel.is_some()));
-    assert_eq!(nivel_de(&d, "t-bloq"), Some(NivelAcesso::Bloqueado));
+    assert_eq!(nivel_de(&d, "t-bloq"), Some(AccessLevel::Blocked));
 
     let executar = |nome: &str| {
         codificado(
@@ -314,7 +314,7 @@ fn v3_27_entrada_nova_nasce_com_aprovacao() {
         "salvar_entrada",
         &login("t-nova", SEGREDOS[0])
     )));
-    assert_eq!(nivel_de(&d, "t-nova"), Some(NivelAcesso::ComAprovacao));
+    assert_eq!(nivel_de(&d, "t-nova"), Some(AccessLevel::Approval));
     // Com nível no rascunho, em qualquer lugar: recusado pela leitura.
     let com_nivel =
         login("t-nova2", SEGREDOS[0]).replacen(r#""nome":"#, r#""nivel":"livre","nome":"#, 1);
@@ -326,7 +326,7 @@ fn v3_27_entrada_nova_nasce_com_aprovacao() {
     // Editar a livre mantém livre.
     let editar = login("t-livre", SEGREDOS[3]).replacen('{', r#"{"anterior":"t-livre","#, 1);
     assert!(ok(&pedir(&d, Papel::App, "salvar_entrada", &editar)));
-    assert_eq!(nivel_de(&d, "t-livre"), Some(NivelAcesso::Livre));
+    assert_eq!(nivel_de(&d, "t-livre"), Some(AccessLevel::Free));
     // Remover e recriar com o mesmo nome: volta "com aprovação".
     assert!(ok(&pedir(
         &d,
@@ -340,7 +340,7 @@ fn v3_27_entrada_nova_nasce_com_aprovacao() {
         "salvar_entrada",
         &login("t-livre", SEGREDOS[3])
     )));
-    assert_eq!(nivel_de(&d, "t-livre"), Some(NivelAcesso::ComAprovacao));
+    assert_eq!(nivel_de(&d, "t-livre"), Some(AccessLevel::Approval));
     // Nome repetido é erro de validação, e nada muda.
     let r = pedir(
         &d,

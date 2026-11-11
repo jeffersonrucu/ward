@@ -42,9 +42,7 @@
 use zeroize::Zeroizing;
 
 use ward_core::configuracao::HashPin;
-use ward_core::entrada::{
-    Datas, Entrada, NivelAcesso, Rascunho, Segredo as SegredoCore, TipoEntrada,
-};
+use ward_core::entry::{AccessLevel, Dates, Draft, Entry, EntryType, Secret as SegredoCore};
 use ward_core::protocolo::{
     self, Alvo, Decisao, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, PedidoDeAprovacao,
     Pendrive, Resposta,
@@ -64,7 +62,7 @@ pub use cofre_teste::SEGREDOS;
 
 /// Daemon falso com as entradas em memória.
 pub struct DaemonFalso {
-    entradas: Vec<Entrada>,
+    entradas: Vec<Entry>,
     /// `false` só no [`DaemonFalso::sem_cofre`] até o `criar_cofre` (Fase 30).
     existe: bool,
     /// Hash do PIN do cofre criado pelo `criar_cofre`, como o `wardd` o guarda (D30).
@@ -117,10 +115,10 @@ enum EntradasDoBackup {
     Teste {
         menos: usize,
     },
-    Guardadas(Vec<Entrada>),
+    Guardadas(Vec<Entry>),
 }
 
-fn cofre_de_teste_menos(menos: usize) -> Vec<Entrada> {
+fn cofre_de_teste_menos(menos: usize) -> Vec<Entry> {
     let mut e = cofre_teste::cofre_de_teste();
     e.truncate(e.len().saturating_sub(menos));
     e
@@ -200,7 +198,7 @@ pub type AprovacaoSimulada = (PedidoDeAprovacao, std::time::Duration);
 ///   neutralizado), e um processo `claude\u{202E}` na cadeia.
 pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
     use std::time::Duration;
-    use ward_core::entrada::Ambiente;
+    use ward_core::entry::Environment;
     use ward_core::protocolo::Operacao;
     let pedido = |id, entrada: &str, ambiente, comando: &str, cadeia: &[&str]| PedidoDeAprovacao {
         id,
@@ -219,19 +217,19 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
     // (`acme-wp-dev` é dev, `acme-wp-prod` é prod), como o `wardd` montaria.
     let na_origem = |id, entrada: &str, operacao, confirmacao, cadeia: &[&str]| {
         let entradas = cofre_teste::cofre_de_teste();
-        let e = entradas.iter().find(|e| e.nome() == entrada)?;
-        let ward_core::entrada::Dados::Login(l) = e.dados() else {
+        let e = entradas.iter().find(|e| e.name() == entrada)?;
+        let ward_core::entry::Data::Login(l) = e.data() else {
             return None;
         };
         Some(PedidoDeAprovacao {
             id,
             entradas: vec![entrada.to_owned()],
-            ambiente: e.ambiente(),
+            ambiente: e.environment(),
             operacao,
             comando: String::new(),
             diretorio: String::new(),
             cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
-            origem: ward_core::entrada::origem_da_url(&l.url)?,
+            origem: ward_core::entry::url_origin(&l.url)?,
             confirmacao,
             entrada_oculta: false,
         })
@@ -254,7 +252,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
     let normal = pedido(
         1,
         "acme-pg-aprovacao",
-        Ambiente::Stage,
+        Environment::Stage,
         &psql("acme-pg-aprovacao"),
         &cadeia,
     );
@@ -264,7 +262,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
             pedido(
                 2,
                 "acme-pg-prod",
-                Ambiente::Prod,
+                Environment::Prod,
                 &psql("acme-pg-prod"),
                 &cadeia,
             ),
@@ -277,7 +275,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
                 ..pedido(
                     7,
                     "acme-pg-aprovacao",
-                    Ambiente::Stage,
+                    Environment::Stage,
                     &ward_core::display::display_args(&["python3"], 64 * 1024),
                     &cadeia,
                 )
@@ -323,7 +321,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
             pedido(
                 3,
                 "acme-pg-aprovacao",
-                Ambiente::Stage,
+                Environment::Stage,
                 "\"ward\" \"run\" \"acme-pg-aprovacao\" \"--\" \"sh\" \"-c\" \"echo <b>ok</b>\u{202E}txt.exe\u{2066}x\u{200B}y\u{1b}[2J\nward run acme-pg-dev -- ls\"",
                 &["claude\u{202E}", "bash", "ward run"],
             ),
@@ -499,7 +497,7 @@ impl DaemonFalso {
             Some(s) => s,
             None => cofre_teste::SENHA_MESTRA.as_bytes(),
         };
-        senha.expor().len() == certa.len() && senha.expor().ct_eq(certa).to_bool()
+        senha.expose().len() == certa.len() && senha.expose().ct_eq(certa).to_bool()
     }
 
     /// Fase 36: um pedido de aprovação pendente, como se o `wardd` o tivesse mandado ao
@@ -516,8 +514,8 @@ impl DaemonFalso {
     }
 
     /// Nível de uma entrada (só para os testes).
-    pub fn nivel_de(&self, nome: &str) -> Option<NivelAcesso> {
-        self.entrada(nome).map(Entrada::nivel)
+    pub fn nivel_de(&self, nome: &str) -> Option<AccessLevel> {
+        self.entrada(nome).map(Entry::level)
     }
 
     /// O PIN confere com o hash guardado pelo `criar_cofre` (só para os testes).
@@ -525,8 +523,8 @@ impl DaemonFalso {
         self.hash_pin.as_ref().is_some_and(|h| h.conferir(pin))
     }
 
-    fn entrada(&self, nome: &str) -> Option<&Entrada> {
-        self.entradas.iter().find(|e| e.nome() == nome)
+    fn entrada(&self, nome: &str) -> Option<&Entry> {
+        self.entradas.iter().find(|e| e.name() == nome)
     }
 
     fn atender(&mut self, pedido: Pedido) -> Resposta {
@@ -538,7 +536,7 @@ impl DaemonFalso {
                     papel: Papel::App,
                 },
                 // Como o `wardd` (`nucleo.rs` › `criar_cofre`): só o hash do PIN fica.
-                Pedido::CriarCofre { senha: _, pin } => match HashPin::criar(pin.expor()) {
+                Pedido::CriarCofre { senha: _, pin } => match HashPin::criar(pin.expose()) {
                     Ok(h) => {
                         self.hash_pin = Some(h);
                         self.existe = true;
@@ -585,7 +583,7 @@ impl DaemonFalso {
             Pedido::Copiar { entrada, alvo } | Pedido::Revelar { entrada, alvo } => {
                 match self.entrada(&entrada) {
                     Some(e) => match alvo.segredo_em(e) {
-                        Some(v) => Resposta::Segredo(SegredoCore::de_bytes(v.expor().to_vec())),
+                        Some(v) => Resposta::Segredo(SegredoCore::from_bytes(v.expose().to_vec())),
                         None => Resposta::Erro(ErroResposta::CampoInexistente),
                     },
                     None => Resposta::Erro(ErroResposta::EntradaInexistente),
@@ -635,7 +633,7 @@ impl DaemonFalso {
                 }
             }
             Pedido::EmitirToken { entrada } => match self.entrada(&entrada) {
-                Some(e) if e.tipo() == TipoEntrada::Servidor => {
+                Some(e) if e.kind() == EntryType::Server => {
                     match ward_core::generator::generate(&ward_core::generator::GeneratorOptions {
                         size: 32,
                         lowercase: true,
@@ -728,8 +726,8 @@ impl DaemonFalso {
     /// Argon2id da biblioteca (tempo constante); o 5º erro seguido trava.
     fn conferir_pin(&mut self, pin: &SegredoCore) -> Result<(), ErroResposta> {
         let confere = match &self.hash_pin {
-            Some(h) => h.conferir(pin.expor()),
-            None => cofre_teste::configuracao_de_teste().conferir_pin(pin.expor()),
+            Some(h) => h.conferir(pin.expose()),
+            None => cofre_teste::configuracao_de_teste().conferir_pin(pin.expose()),
         };
         if !confere {
             self.erros_pin = self.erros_pin.saturating_add(1);
@@ -747,7 +745,7 @@ impl DaemonFalso {
     fn trocar_pin(&mut self, atual: &SegredoCore, novo: &SegredoCore) -> Result<(), ErroResposta> {
         self.conferir_pin(atual)?;
         self.hash_pin =
-            Some(HashPin::criar(novo.expor()).map_err(|_| ErroResposta::PedidoInvalido)?);
+            Some(HashPin::criar(novo.expose()).map_err(|_| ErroResposta::PedidoInvalido)?);
         Ok(())
     }
 
@@ -772,7 +770,7 @@ impl DaemonFalso {
         let Some(i) = lista.iter().position(|b| b.nome == versao) else {
             return Err(ErroResposta::BackupInexistente);
         };
-        let s = senha.expor();
+        let s = senha.expose();
         let certa = &lista[i].senha;
         if s.len() != certa.len() || !s.ct_eq(&certa[..]).to_bool() {
             return Err(ErroResposta::SenhaIncorreta);
@@ -820,7 +818,7 @@ impl DaemonFalso {
         if !self.senha_confere(atual) {
             return Err(ErroResposta::SenhaIncorreta);
         }
-        self.senha = Some(Zeroizing::new(nova.expor().to_vec()));
+        self.senha = Some(Zeroizing::new(nova.expose().to_vec()));
         Ok(())
     }
 
@@ -864,9 +862,8 @@ impl DaemonFalso {
         let (_, entradas, _) = self.aprovacoes.remove(i);
         if decisao == Decisao::PermitirSempre {
             for e in self.entradas.iter_mut() {
-                if entradas.iter().any(|n| n == e.nome()) && e.nivel() == NivelAcesso::ComAprovacao
-                {
-                    e.definir_nivel(NivelAcesso::Livre);
+                if entradas.iter().any(|n| n == e.name()) && e.level() == AccessLevel::Approval {
+                    e.set_level(AccessLevel::Free);
                 }
             }
         }
@@ -878,17 +875,17 @@ impl DaemonFalso {
     fn mudar_nivel(
         &mut self,
         nome: &str,
-        nivel: NivelAcesso,
+        nivel: AccessLevel,
         pin: &SegredoCore,
     ) -> Result<(), ErroResposta> {
         self.conferir_pin(pin)?;
         let e = self
             .entradas
             .iter_mut()
-            .find(|e| e.nome() == nome)
+            .find(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
-        e.definir_nivel(nivel);
-        e.definir_datas(alterado(e.datas()));
+        e.set_level(nivel);
+        e.set_dates(alterado(e.dates()));
         Ok(())
     }
 
@@ -896,7 +893,7 @@ impl DaemonFalso {
     fn salvar(
         &mut self,
         anterior: Option<&str>,
-        mut rascunho: Rascunho,
+        mut rascunho: Draft,
         manter_anexos: &[String],
     ) -> Result<(), ErroResposta> {
         // Fase 39b: a mesma regra do `wardd` (`nucleo.rs` › `salvar_entrada`).
@@ -906,34 +903,30 @@ impl DaemonFalso {
             protocolo::juntar_anexos_mantidos(&mut rascunho, antiga, manter_anexos)?;
         }
         let mut nova = rascunho
-            .validar()
+            .validate()
             .map_err(|e| ErroResposta::de_validacao(&e))?;
         match anterior {
             None => {
-                nova.definir_nivel(NivelAcesso::ComAprovacao);
-                nova.definir_datas(
-                    agora()
-                        .and_then(Datas::carimbo_novo)
-                        .unwrap_or(Datas::NENHUMA),
-                );
-                nova.conferir_no_cofre(self.entradas.iter())
+                nova.set_level(AccessLevel::Approval);
+                nova.set_dates(agora().and_then(Dates::new_stamp).unwrap_or(Dates::NONE));
+                nova.verify_in_vault(self.entradas.iter())
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
             }
             Some(nome) => {
                 let i = self
                     .entradas
                     .iter()
-                    .position(|e| e.nome() == nome)
+                    .position(|e| e.name() == nome)
                     .ok_or(ErroResposta::EntradaInexistente)?;
-                nova.definir_nivel(self.entradas[i].nivel());
-                nova.definir_datas(alterado(self.entradas[i].datas()));
-                nova.conferir_no_cofre(self.entradas.iter().filter(|e| e.nome() != nome))
+                nova.set_level(self.entradas[i].level());
+                nova.set_dates(alterado(self.entradas[i].dates()));
+                nova.verify_in_vault(self.entradas.iter().filter(|e| e.name() != nome))
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 drop(self.entradas.remove(i));
             }
         }
         self.entradas.push(nova);
-        self.entradas.sort_by(|a, b| a.nome().cmp(b.nome()));
+        self.entradas.sort_by(|a, b| a.name().cmp(b.name()));
         Ok(())
     }
 }
@@ -953,12 +946,12 @@ fn agora() -> Option<u64> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
-        .and_then(|d| Datas::instante(d.as_secs()))
+        .and_then(|d| Dates::instant(d.as_secs()))
 }
 
 /// As datas depois de uma alteração agora (as mesmas sem relógio), como no `wardd`.
-fn alterado(datas: Datas) -> Datas {
-    agora().and_then(|a| datas.alterado(a)).unwrap_or(datas)
+fn alterado(datas: Dates) -> Dates {
+    agora().and_then(|a| datas.modified(a)).unwrap_or(datas)
 }
 
 #[cfg(test)]
@@ -989,11 +982,11 @@ mod testes {
             .iter()
             .map(|e| {
                 (
-                    e.nome().to_owned(),
-                    e.tipo().nome().to_owned(),
-                    e.grupo().to_owned(),
-                    e.ambiente().nome().to_owned(),
-                    e.nivel().nome().to_owned(),
+                    e.name().to_owned(),
+                    e.kind().name().to_owned(),
+                    e.group().to_owned(),
+                    e.environment().name().to_owned(),
+                    e.level().name().to_owned(),
                 )
             })
             .collect();
@@ -1006,11 +999,11 @@ mod testes {
     fn pedidos_com_origem_usam_a_entrada_de_verdade() {
         // Fase 44e: o ambiente e a origem dos modos `aprovacao-origem*` vêm da entrada
         // do cofre de teste (`acme-wp-dev` é dev; `acme-wp-prod`, prod), como no `wardd`.
-        use ward_core::entrada::Ambiente;
+        use ward_core::entry::Environment;
         for (modo, ambiente, confirmacao) in [
-            ("aprovacao-origem", Ambiente::Prod, true),
-            ("aprovacao-origem-popup", Ambiente::Prod, true),
-            ("aprovacao-origem-pin", Ambiente::Dev, false),
+            ("aprovacao-origem", Environment::Prod, true),
+            ("aprovacao-origem-popup", Environment::Prod, true),
+            ("aprovacao-origem-pin", Environment::Dev, false),
         ] {
             let v = aprovacoes_simuladas(modo).unwrap();
             let p = &v[0].0;

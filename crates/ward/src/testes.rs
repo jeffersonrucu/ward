@@ -88,7 +88,7 @@ fn servidor(pasta: &Pasta, responder: Option<Arc<Responder>>) -> Arc<Mutex<Visto
                         v.bytes.extend_from_slice(&corpo);
                         v.operacoes.push(p.operacao().nome());
                         if let Pedido::Destravar { senha } = &p {
-                            v.senhas.push(senha.expor().to_vec());
+                            v.senhas.push(senha.expose().to_vec());
                         }
                     }
                     let resposta = r(&p);
@@ -341,7 +341,7 @@ fn uso_e_ajuda() {
 #[cfg(feature = "test-mode")]
 mod com_daemon_falso {
     use super::*;
-    use ward_core::entrada::{Ambiente, TipoEntrada};
+    use ward_core::entry::{EntryType, Environment};
     use ward_core::protocolo::{ErroResposta, ItemLista, Resposta};
 
     fn codificar(r: &Resposta) -> Vec<u8> {
@@ -360,12 +360,12 @@ mod com_daemon_falso {
         }
     }
 
-    fn item(nome: &str, tipo: TipoEntrada, endereco: Option<&str>) -> ItemLista {
+    fn item(nome: &str, tipo: EntryType, endereco: Option<&str>) -> ItemLista {
         ItemLista {
             nome: nome.to_owned(),
             tipo,
             grupo: "acme".to_owned(),
-            ambiente: Ambiente::Dev,
+            ambiente: Environment::Dev,
             projeto: Some("site".to_owned()),
             tags: vec![],
             nivel: None,
@@ -387,7 +387,7 @@ mod com_daemon_falso {
                         *travado = true;
                         Resposta::Ok
                     }
-                    Pedido::Destravar { senha } if senha.expor() == SENHA.as_bytes() => {
+                    Pedido::Destravar { senha } if senha.expose() == SENHA.as_bytes() => {
                         *travado = false;
                         Resposta::Ok
                     }
@@ -396,10 +396,10 @@ mod com_daemon_falso {
                     Pedido::Lista => Resposta::Lista(vec![
                         item(
                             "acme-wp-dev",
-                            TipoEntrada::Login,
+                            EntryType::Login,
                             Some("http://127.0.0.1:8081"),
                         ),
-                        item("gama-nota", TipoEntrada::NotaSegura, None),
+                        item("gama-nota", EntryType::SecureNote, None),
                     ]),
                     _ => Resposta::Erro(ErroResposta::NaoAutorizado),
                 })
@@ -596,7 +596,7 @@ mod com_daemon_falso {
                     assert_eq!(*tipo_entrada, ward_core::protocolo::TipoEntradaPadrao::Nula);
                     let c: Vec<&[u8]> = comando.iter().map(|x| x.as_slice()).collect();
                     assert_eq!(c, [b"ls".as_slice(), b"-la"]);
-                    assert_eq!(t.as_ref().map(|t| t.expor().to_vec()), Some(token.into()));
+                    assert_eq!(t.as_ref().map(|t| t.expose().to_vec()), Some(token.into()));
                     assert!(janela.is_none());
                     codificar(&Resposta::Saida {
                         fluxo: Fluxo::Saida,

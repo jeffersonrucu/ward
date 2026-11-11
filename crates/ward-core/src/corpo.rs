@@ -28,8 +28,8 @@
 //!   PIN, com hash fora do formato ou com custo fora da faixa também. Não há migração:
 //!   não existe cofre real nas versões antigas.
 //! - **Versão 4** (D65 d, provisória): cada entrada termina com as datas de criação e
-//!   de alteração ([`Datas`]), em segundos UTC; 0 é "sem data". A leitura confere a
-//!   regra de [`Datas`] (faixa de 1 a [`MAX_DATE`], criação só com alteração e não
+//!   de alteração ([`Dates`]), em segundos UTC; 0 é "sem data". A leitura confere a
+//!   regra de [`Dates`] (faixa de 1 a [`MAX_DATE`], criação só com alteração e não
 //!   depois dela). A versão 3 (sem datas) é recusada como versão desconhecida, sem
 //!   migração: não há cofre instalado, e o `make dev-vault` regrava o de teste.
 //! - Tipo, nível, ambiente, motor, segurança e protocolo vão pelos identificadores
@@ -49,8 +49,8 @@
 //!   cada comprimento contra o que resta e contra os limites de [`crate::limits`]
 //!   (inclusive a soma dos anexos de cada entrada, D29), tipo, nível, ordem dos nomes e
 //!   byte sobrando. A segunda monta a configuração e cada entrada por
-//!   [`Rascunho::validar`], aplica o nível guardado por [`Entrada::definir_nivel`] e
-//!   confere o cofre todo por [`Entrada::conferir_no_cofre`]. Qualquer falha recusa o
+//!   [`Draft::validate`], aplica o nível guardado por [`Entry::set_level`] e
+//!   confere o cofre todo por [`Entry::verify_in_vault`]. Qualquer falha recusa o
 //!   corpo inteiro com [`ErroCorpo::Invalido`], sem valor do usuário (S13); nunca se
 //!   abre um cofre pela metade.
 
@@ -59,9 +59,9 @@ use core::fmt;
 use zeroize::Zeroizing;
 
 use crate::configuracao::{self, BackupExterno, Configuracao, HashPin};
-use crate::entrada::{
-    Autenticacao, Dados, Datas, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
-    RascunhoExtra, Segredo, TipoEntrada, ValorExtra,
+use crate::entry::{
+    AccessLevel, AttachmentDraft, Auth, Data, DataDraft, Dates, Draft, Entry, EntryType,
+    ExtraDraft, ExtraValue, Secret,
 };
 use crate::format::{self, FormatError, MasterPassword, OpenVault};
 
@@ -164,7 +164,7 @@ impl std::error::Error for ErroAbrir {}
 pub fn abrir_entradas(
     arquivo: &[u8],
     senha: &MasterPassword,
-) -> Result<(OpenVault, Vec<Entrada>), ErroAbrir> {
+) -> Result<(OpenVault, Vec<Entry>), ErroAbrir> {
     abrir_entradas_desde(arquivo, senha, 0, 0)
 }
 
@@ -182,7 +182,7 @@ pub fn abrir_entradas_desde(
     senha: &MasterPassword,
     geracao_minima: u64,
     geracao_queimada: u64,
-) -> Result<(OpenVault, Vec<Entrada>), ErroAbrir> {
+) -> Result<(OpenVault, Vec<Entry>), ErroAbrir> {
     abrir_entradas_lida(arquivo, senha, geracao_minima, geracao_queimada)
         .map(|(cofre, entradas, _)| (cofre, entradas))
 }
@@ -196,7 +196,7 @@ pub fn abrir_entradas_lida(
     senha: &MasterPassword,
     geracao_minima: u64,
     geracao_queimada: u64,
-) -> Result<(OpenVault, Vec<Entrada>, u64), ErroAbrir> {
+) -> Result<(OpenVault, Vec<Entry>, u64), ErroAbrir> {
     let (chaves, conteudo) = format::open(arquivo, senha).map_err(ErroAbrir::Formato)?;
     let (configuracao, geracao, entradas) = desserializar(&conteudo).map_err(ErroAbrir::Corpo)?;
     drop(conteudo);
@@ -221,7 +221,7 @@ pub fn abrir_entradas_lida(
 pub fn serializar(
     configuracao: &Configuracao,
     geracao: u64,
-    entradas: &[Entrada],
+    entradas: &[Entry],
 ) -> Result<Zeroizing<Vec<u8>>, ErroCorpo> {
     if geracao == 0 {
         return Err(ErroCorpo::Inconsistente);
@@ -229,8 +229,8 @@ pub fn serializar(
     if entradas.len() > MAX_ENTRIES {
         return Err(ErroCorpo::GrandeDemais);
     }
-    let mut ordem: Vec<&Entrada> = entradas.iter().collect();
-    ordem.sort_unstable_by(|a, b| a.nome().cmp(b.nome()));
+    let mut ordem: Vec<&Entry> = entradas.iter().collect();
+    ordem.sort_unstable_by(|a, b| a.name().cmp(b.name()));
     if !conferir_ordenadas(&ordem) {
         return Err(ErroCorpo::Inconsistente);
     }
@@ -265,7 +265,7 @@ pub fn serializar(
 }
 
 /// Corpo lido: a configuração, a geração (≥ 1) e as entradas, em ordem de nome.
-pub type CorpoLido = (Configuracao, u64, Vec<Entrada>);
+pub type CorpoLido = (Configuracao, u64, Vec<Entry>);
 
 /// Lê o corpo decifrado: a configuração, a geração e as entradas. Recusa o corpo
 /// inteiro com [`ErroCorpo::Invalido`] em qualquer problema.
@@ -277,7 +277,7 @@ pub fn desserializar(corpo: &[u8]) -> Result<CorpoLido, ErroCorpo> {
     let n = conferir_estrutura(corpo)?;
 
     // 2ª passada: monta e valida cada entrada (já se sabe que as `n` existem no buffer).
-    let mut entradas: Vec<Entrada> = Vec::new();
+    let mut entradas: Vec<Entry> = Vec::new();
     entradas
         .try_reserve_exact(n)
         .map_err(|_| ErroCorpo::Invalido)?;
@@ -295,7 +295,7 @@ pub fn desserializar(corpo: &[u8]) -> Result<CorpoLido, ErroCorpo> {
         return Err(ErroCorpo::Invalido);
     }
 
-    let ordem: Vec<&Entrada> = entradas.iter().collect();
+    let ordem: Vec<&Entry> = entradas.iter().collect();
     if !conferir_ordenadas(&ordem) {
         return Err(ErroCorpo::Invalido);
     }
@@ -318,25 +318,25 @@ pub(crate) fn geracao_do_corpo(corpo: &[u8]) -> Option<u64> {
 // ---- Conferência do cofre ----
 
 /// Nomes em ordem estrita (sem repetido) e cada entrada conferida por
-/// [`Entrada::conferir_no_cofre`] contra as que importam para ela: a que ela aponta e
+/// [`Entry::verify_in_vault`] contra as que importam para ela: a que ela aponta e
 /// as que apontam para ela. São exatamente as que `conferir_no_cofre` olha (nome igual,
 /// alvo da referência, quem referencia esta), sem custo quadrático em 10 000 entradas.
-fn conferir_ordenadas(ordem: &[&Entrada]) -> bool {
-    if ordem.windows(2).any(|w| w[0].nome() >= w[1].nome()) {
+fn conferir_ordenadas(ordem: &[&Entry]) -> bool {
+    if ordem.windows(2).any(|w| w[0].name() >= w[1].name()) {
         return false;
     }
-    let achar = |nome: &str| ordem.binary_search_by(|e| e.nome().cmp(nome)).ok();
+    let achar = |nome: &str| ordem.binary_search_by(|e| e.name().cmp(nome)).ok();
     // (alvo, quem aponta), em ordem de alvo.
     let mut apontam: Vec<(usize, usize)> = ordem
         .iter()
         .enumerate()
-        .filter_map(|(j, e)| e.referencia().and_then(achar).map(|alvo| (alvo, j)))
+        .filter_map(|(j, e)| e.reference().and_then(achar).map(|alvo| (alvo, j)))
         .collect();
     apontam.sort_unstable();
     let mut vizinhas: Vec<usize> = Vec::new();
     for (i, e) in ordem.iter().enumerate() {
         vizinhas.clear();
-        if let Some(alvo) = e.referencia().and_then(achar)
+        if let Some(alvo) = e.reference().and_then(achar)
             && alvo != i
         {
             vizinhas.push(alvo);
@@ -350,7 +350,7 @@ fn conferir_ordenadas(ordem: &[&Entrada]) -> bool {
                 vizinhas.push(j);
             }
         }
-        if e.conferir_no_cofre(vizinhas.iter().map(|&j| ordem[j]))
+        if e.verify_in_vault(vizinhas.iter().map(|&j| ordem[j]))
             .is_err()
         {
             return false;
@@ -386,26 +386,26 @@ impl Campo {
 }
 
 /// Ordem dos campos de cada tipo no corpo. Leitura e escrita usam esta mesma tabela.
-fn esquema(tipo: TipoEntrada) -> &'static [Campo] {
+fn esquema(tipo: EntryType) -> &'static [Campo] {
     use Campo::{Nota, Porta, Segredo as S, Texto as T};
     match tipo {
         // url, usuário, senha, semente TOTP
-        TipoEntrada::Login => &[T, T, S, S],
+        EntryType::Login => &[T, T, S, S],
         // motor, host, porta, base, usuário, senha, túnel
-        TipoEntrada::Banco => &[T, T, Porta, T, T, S, T],
+        EntryType::Database => &[T, T, Porta, T, T, S, T],
         // host, porta, usuário, senha, chave privada, passphrase, salto
-        TipoEntrada::Servidor => &[T, Porta, T, S, S, S, T],
+        EntryType::Server => &[T, Porta, T, S, S, S, T],
         // url, token, variável
-        TipoEntrada::Api => &[T, S, T],
+        EntryType::Api => &[T, S, T],
         // access key ID, secret, região, role ARN, session token
-        TipoEntrada::Aws => &[T, S, T, T, S],
+        EntryType::Aws => &[T, S, T, T, S],
         // host, porta, usuário, senha, segurança
-        TipoEntrada::Smtp => &[T, Porta, T, S, T],
+        EntryType::Smtp => &[T, Porta, T, S, T],
         // protocolo, host, porta, usuário, senha, chave privada, passphrase
-        TipoEntrada::FtpSftp => &[T, T, Porta, T, S, S, S],
+        EntryType::FtpSftp => &[T, T, Porta, T, S, S, S],
         // texto
-        TipoEntrada::NotaSegura => &[Nota],
-        TipoEntrada::Generico => &[],
+        EntryType::SecureNote => &[Nota],
+        EntryType::Generic => &[],
     }
 }
 
@@ -450,12 +450,7 @@ impl Saida<'_> {
     }
 }
 
-fn escrever_corpo(
-    s: &mut Saida<'_>,
-    configuracao: &Configuracao,
-    geracao: u64,
-    ordem: &[&Entrada],
-) {
+fn escrever_corpo(s: &mut Saida<'_>, configuracao: &Configuracao, geracao: u64, ordem: &[&Entry]) {
     s.por(&VERSAO_CORPO.to_le_bytes());
     if geracao == 0 {
         s.erro = true;
@@ -479,8 +474,8 @@ fn escrever_configuracao(s: &mut Saida<'_>, c: &Configuracao) {
     s.campo(c.backup().uuid().unwrap_or("").as_bytes(), MAX_BACKUP_UUID);
 }
 
-fn opcional(s: &Option<Segredo>) -> &[u8] {
-    s.as_ref().map_or(&[], Segredo::expor)
+fn opcional(s: &Option<Secret>) -> &[u8] {
+    s.as_ref().map_or(&[], Secret::expose)
 }
 
 fn texto_opcional(t: &Option<String>) -> &[u8] {
@@ -488,137 +483,137 @@ fn texto_opcional(t: &Option<String>) -> &[u8] {
 }
 
 /// Senha, chave privada e passphrase (as ausentes vazias).
-fn autenticacao(a: &Autenticacao) -> [&[u8]; 3] {
+fn autenticacao(a: &Auth) -> [&[u8]; 3] {
     match a {
-        Autenticacao::Senha(senha) => [senha.expor(), &[], &[]],
-        Autenticacao::Chave {
-            chave_privada,
+        Auth::Password(senha) => [senha.expose(), &[], &[]],
+        Auth::Key {
+            private_key: chave_privada,
             passphrase,
-        } => [&[], chave_privada.expor(), opcional(passphrase)],
+        } => [&[], chave_privada.expose(), opcional(passphrase)],
     }
 }
 
 /// Os campos do tipo na ordem de [`esquema`].
-fn campos_dados<'e>(dados: &'e Dados, porta: &'e mut [u8; 2]) -> [&'e [u8]; MAX_DADOS] {
+fn campos_dados<'e>(dados: &'e Data, porta: &'e mut [u8; 2]) -> [&'e [u8]; MAX_DADOS] {
     let mut c: [&[u8]; MAX_DADOS] = [&[]; MAX_DADOS];
     match dados {
-        Dados::Login(l) => {
+        Data::Login(l) => {
             c[..4].copy_from_slice(&[
                 l.url.as_bytes(),
-                l.usuario.as_bytes(),
-                l.senha.expor(),
-                opcional(&l.totp_semente),
+                l.username.as_bytes(),
+                l.password.expose(),
+                opcional(&l.totp_seed),
             ]);
         }
-        Dados::Banco(b) => {
-            *porta = b.porta.to_le_bytes();
+        Data::Database(b) => {
+            *porta = b.port.to_le_bytes();
             c.copy_from_slice(&[
-                b.motor.nome().as_bytes(),
+                b.engine.name().as_bytes(),
                 b.host.as_bytes(),
                 &porta[..],
-                texto_opcional(&b.base),
-                b.usuario.as_bytes(),
-                b.senha.expor(),
-                texto_opcional(&b.tunel),
+                texto_opcional(&b.db_name),
+                b.username.as_bytes(),
+                b.password.expose(),
+                texto_opcional(&b.tunnel),
             ]);
         }
-        Dados::Servidor(sv) => {
-            *porta = sv.porta.to_le_bytes();
-            let [senha, chave, passphrase] = autenticacao(&sv.autenticacao);
+        Data::Server(sv) => {
+            *porta = sv.port.to_le_bytes();
+            let [senha, chave, passphrase] = autenticacao(&sv.auth);
             c.copy_from_slice(&[
                 sv.host.as_bytes(),
                 &porta[..],
-                sv.usuario.as_bytes(),
+                sv.username.as_bytes(),
                 senha,
                 chave,
                 passphrase,
-                texto_opcional(&sv.salto),
+                texto_opcional(&sv.jump),
             ]);
         }
-        Dados::Api(a) => {
+        Data::Api(a) => {
             c[..3].copy_from_slice(&[
                 texto_opcional(&a.url),
-                a.token.expor(),
-                texto_opcional(&a.variavel),
+                a.token.expose(),
+                texto_opcional(&a.variable),
             ]);
         }
-        Dados::Aws(a) => {
+        Data::Aws(a) => {
             c[..5].copy_from_slice(&[
                 a.access_key_id.as_bytes(),
-                a.secret_access_key.expor(),
-                a.regiao.as_bytes(),
+                a.secret_access_key.expose(),
+                a.region.as_bytes(),
                 texto_opcional(&a.role_arn),
                 opcional(&a.session_token),
             ]);
         }
-        Dados::Smtp(sm) => {
-            *porta = sm.porta.to_le_bytes();
+        Data::Smtp(sm) => {
+            *porta = sm.port.to_le_bytes();
             c[..5].copy_from_slice(&[
                 sm.host.as_bytes(),
                 &porta[..],
-                sm.usuario.as_bytes(),
-                sm.senha.expor(),
-                sm.seguranca.nome().as_bytes(),
+                sm.username.as_bytes(),
+                sm.password.expose(),
+                sm.security.name().as_bytes(),
             ]);
         }
-        Dados::FtpSftp(f) => {
-            *porta = f.porta.to_le_bytes();
-            let [senha, chave, passphrase] = autenticacao(&f.autenticacao);
+        Data::FtpSftp(f) => {
+            *porta = f.port.to_le_bytes();
+            let [senha, chave, passphrase] = autenticacao(&f.auth);
             c.copy_from_slice(&[
-                f.protocolo.nome().as_bytes(),
+                f.protocol.name().as_bytes(),
                 f.host.as_bytes(),
                 &porta[..],
-                f.usuario.as_bytes(),
+                f.username.as_bytes(),
                 senha,
                 chave,
                 passphrase,
             ]);
         }
-        Dados::NotaSegura(n) => c[0] = n.texto.expor(),
-        Dados::Generico => {}
+        Data::SecureNote(n) => c[0] = n.text.expose(),
+        Data::Generic => {}
     }
     c
 }
 
-fn escrever_entrada(s: &mut Saida<'_>, e: &Entrada) {
-    s.campo(e.tipo().nome().as_bytes(), MAX_TEXT);
-    s.campo(e.nivel().nome().as_bytes(), MAX_TEXT);
-    s.campo(e.nome().as_bytes(), MAX_TEXT);
-    s.campo(e.grupo().as_bytes(), MAX_TEXT);
-    s.campo(e.ambiente().nome().as_bytes(), MAX_TEXT);
-    s.campo(e.projeto().unwrap_or("").as_bytes(), MAX_TEXT);
+fn escrever_entrada(s: &mut Saida<'_>, e: &Entry) {
+    s.campo(e.kind().name().as_bytes(), MAX_TEXT);
+    s.campo(e.level().name().as_bytes(), MAX_TEXT);
+    s.campo(e.name().as_bytes(), MAX_TEXT);
+    s.campo(e.group().as_bytes(), MAX_TEXT);
+    s.campo(e.environment().name().as_bytes(), MAX_TEXT);
+    s.campo(e.project().unwrap_or("").as_bytes(), MAX_TEXT);
     s.u32(e.tags().len());
     for tag in e.tags() {
         s.campo(tag.as_bytes(), MAX_TEXT);
     }
     let mut porta = [0u8; 2];
-    let valores = campos_dados(e.dados(), &mut porta);
-    for (campo, valor) in esquema(e.tipo()).iter().zip(valores) {
+    let valores = campos_dados(e.data(), &mut porta);
+    for (campo, valor) in esquema(e.kind()).iter().zip(valores) {
         s.campo(valor, campo.max());
     }
     s.u32(e.extras().len());
     for extra in e.extras() {
-        s.campo(extra.nome().as_bytes(), MAX_TEXT);
-        match extra.valor() {
-            ValorExtra::Texto(t) => {
+        s.campo(extra.name().as_bytes(), MAX_TEXT);
+        match extra.value() {
+            ExtraValue::Text(t) => {
                 s.por(&[0]);
                 s.campo(t.as_bytes(), MAX_EXTRA_VALUE);
             }
-            ValorExtra::Segredo(v) => {
+            ExtraValue::Secret(v) => {
                 s.por(&[1]);
-                s.campo(v.expor(), MAX_EXTRA_VALUE);
+                s.campo(v.expose(), MAX_EXTRA_VALUE);
             }
         }
     }
-    s.u32(e.anexos().len());
-    for anexo in e.anexos() {
-        s.campo(anexo.nome().as_bytes(), MAX_TEXT);
-        s.campo(anexo.conteudo().expor(), MAX_ATTACHMENTS_TOTAL);
+    s.u32(e.attachments().len());
+    for anexo in e.attachments() {
+        s.campo(anexo.name().as_bytes(), MAX_TEXT);
+        s.campo(anexo.content().expose(), MAX_ATTACHMENTS_TOTAL);
     }
     // D65 d: 0 = sem data. Uma `Datas` só existe dentro da regra; a faixa é conferida
     // de novo para o que se grava sempre reabrir.
-    let datas = e.datas();
-    for d in [datas.criada_em(), datas.alterada_em()] {
+    let datas = e.dates();
+    for d in [datas.created_at(), datas.modified_at()] {
         let d = d.unwrap_or(0);
         if d > MAX_DATE {
             s.erro = true;
@@ -696,8 +691,8 @@ struct Lista<'a> {
 /// Uma entrada como está no buffer: só fatias, nada alocado. Tudo já conferido contra
 /// os limites; o conteúdo ainda não foi validado.
 struct Bruta<'a> {
-    tipo: TipoEntrada,
-    nivel: NivelAcesso,
+    tipo: EntryType,
+    nivel: AccessLevel,
     nome: &'a [u8],
     grupo: &'a [u8],
     ambiente: &'a [u8],
@@ -706,8 +701,8 @@ struct Bruta<'a> {
     dados: [&'a [u8]; MAX_DADOS],
     extras: Lista<'a>,
     anexos: Lista<'a>,
-    /// Já conferidas pela regra de [`Datas`] (D65 d).
-    datas: Datas,
+    /// Já conferidas pela regra de [`Dates`] (D65 d).
+    datas: Dates,
 }
 
 /// A seção de configuração como está no buffer, já conferida inteira (sem alocar).
@@ -838,11 +833,11 @@ fn ler_lista<'a, T>(
 fn ler_bruta<'a>(l: &mut Leitor<'a>) -> Result<Bruta<'a>, ErroCorpo> {
     let tipo = core::str::from_utf8(l.campo(MAX_TEXT)?)
         .ok()
-        .and_then(TipoEntrada::de_nome)
+        .and_then(EntryType::from_name)
         .ok_or(ErroCorpo::Invalido)?;
     let nivel = core::str::from_utf8(l.campo(MAX_TEXT)?)
         .ok()
-        .and_then(NivelAcesso::de_nome)
+        .and_then(AccessLevel::from_name)
         .ok_or(ErroCorpo::Invalido)?;
     let nome = l.campo(MAX_TEXT)?;
     let grupo = l.campo(MAX_TEXT)?;
@@ -875,12 +870,12 @@ fn ler_bruta<'a>(l: &mut Leitor<'a>) -> Result<Bruta<'a>, ErroCorpo> {
     })
 }
 
-/// As datas da entrada (D65 d): 0 = sem; o resto pela regra de [`Datas`].
-fn ler_datas(l: &mut Leitor<'_>) -> Result<Datas, ErroCorpo> {
+/// As datas da entrada (D65 d): 0 = sem; o resto pela regra de [`Dates`].
+fn ler_datas(l: &mut Leitor<'_>) -> Result<Dates, ErroCorpo> {
     let opcional = |d: u64| (d != 0).then_some(d);
     let criada = l.u64()?;
     let alterada = l.u64()?;
-    Datas::de_partes(opcional(criada), opcional(alterada)).ok_or(ErroCorpo::Invalido)
+    Dates::from_parts(opcional(criada), opcional(alterada)).ok_or(ErroCorpo::Invalido)
 }
 
 /// 1ª passada: o corpo inteiro, sem alocar. Devolve o número de entradas.
@@ -909,8 +904,8 @@ fn texto(bytes: &[u8]) -> Result<String, ErroCorpo> {
 }
 
 /// Segredo copiado do buffer para uma alocação do tamanho exato (vazio = ausente).
-fn segredo(bytes: &[u8]) -> Option<Segredo> {
-    (!bytes.is_empty()).then(|| Segredo::de_bytes(bytes.to_vec()))
+fn segredo(bytes: &[u8]) -> Option<Secret> {
+    (!bytes.is_empty()).then(|| Secret::from_bytes(bytes.to_vec()))
 }
 
 fn porta(bytes: &[u8]) -> Result<String, ErroCorpo> {
@@ -920,69 +915,69 @@ fn porta(bytes: &[u8]) -> Result<String, ErroCorpo> {
     }
 }
 
-fn montar_dados(tipo: TipoEntrada, d: &[&[u8]; MAX_DADOS]) -> Result<RascunhoDados, ErroCorpo> {
+fn montar_dados(tipo: EntryType, d: &[&[u8]; MAX_DADOS]) -> Result<DataDraft, ErroCorpo> {
     Ok(match tipo {
-        TipoEntrada::Login => RascunhoDados::Login {
+        EntryType::Login => DataDraft::Login {
             url: texto(d[0])?,
-            usuario: texto(d[1])?,
-            senha: segredo(d[2]),
-            totp_semente: segredo(d[3]),
+            username: texto(d[1])?,
+            password: segredo(d[2]),
+            totp_seed: segredo(d[3]),
         },
-        TipoEntrada::Banco => RascunhoDados::Banco {
-            motor: texto(d[0])?,
+        EntryType::Database => DataDraft::Database {
+            engine: texto(d[0])?,
             host: texto(d[1])?,
-            porta: porta(d[2])?,
-            base: texto(d[3])?,
-            usuario: texto(d[4])?,
-            senha: segredo(d[5]),
-            tunel: texto(d[6])?,
+            port: porta(d[2])?,
+            db_name: texto(d[3])?,
+            username: texto(d[4])?,
+            password: segredo(d[5]),
+            tunnel: texto(d[6])?,
         },
-        TipoEntrada::Servidor => RascunhoDados::Servidor {
+        EntryType::Server => DataDraft::Server {
             host: texto(d[0])?,
-            porta: porta(d[1])?,
-            usuario: texto(d[2])?,
-            senha: segredo(d[3]),
-            chave_privada: segredo(d[4]),
+            port: porta(d[1])?,
+            username: texto(d[2])?,
+            password: segredo(d[3]),
+            private_key: segredo(d[4]),
             passphrase: segredo(d[5]),
-            salto: texto(d[6])?,
+            jump: texto(d[6])?,
         },
-        TipoEntrada::Api => RascunhoDados::Api {
+        EntryType::Api => DataDraft::Api {
             url: texto(d[0])?,
             token: segredo(d[1]),
-            variavel: texto(d[2])?,
+            variable: texto(d[2])?,
         },
-        TipoEntrada::Aws => RascunhoDados::Aws {
+        EntryType::Aws => DataDraft::Aws {
             access_key_id: texto(d[0])?,
             secret_access_key: segredo(d[1]),
-            regiao: texto(d[2])?,
+            region: texto(d[2])?,
             role_arn: texto(d[3])?,
             session_token: segredo(d[4]),
         },
-        TipoEntrada::Smtp => RascunhoDados::Smtp {
+        EntryType::Smtp => DataDraft::Smtp {
             host: texto(d[0])?,
-            porta: porta(d[1])?,
-            usuario: texto(d[2])?,
-            senha: segredo(d[3]),
-            seguranca: texto(d[4])?,
+            port: porta(d[1])?,
+            username: texto(d[2])?,
+            password: segredo(d[3]),
+            security: texto(d[4])?,
         },
-        TipoEntrada::FtpSftp => RascunhoDados::FtpSftp {
-            protocolo: texto(d[0])?,
+        EntryType::FtpSftp => DataDraft::FtpSftp {
+            protocol: texto(d[0])?,
             host: texto(d[1])?,
-            porta: porta(d[2])?,
-            usuario: texto(d[3])?,
-            senha: segredo(d[4]),
-            chave_privada: segredo(d[5]),
+            port: porta(d[2])?,
+            username: texto(d[3])?,
+            password: segredo(d[4]),
+            private_key: segredo(d[5]),
             passphrase: segredo(d[6]),
         },
-        TipoEntrada::NotaSegura => RascunhoDados::NotaSegura {
-            texto: segredo(d[0]),
+        EntryType::SecureNote => DataDraft::SecureNote {
+            text: segredo(d[0]),
         },
-        TipoEntrada::Generico => RascunhoDados::Generico,
+        EntryType::Generic => DataDraft::Generic,
     })
 }
 
-/// 2ª passada de uma entrada: rascunho → [`Rascunho::validar`] → nível guardado.
-fn montar(b: &Bruta<'_>) -> Result<Entrada, ErroCorpo> {
+/// 2ª passada de uma entrada: rascunho → [`Draft::validate`] → nível guardado.
+fn montar(b: &Bruta<'_>) -> Result<Entry, ErroCorpo> {
     let mut tags = Vec::with_capacity(b.tags.n);
     let mut l = Leitor {
         resto: b.tags.bytes,
@@ -996,10 +991,10 @@ fn montar(b: &Bruta<'_>) -> Result<Entrada, ErroCorpo> {
     };
     for _ in 0..b.extras.n {
         let (nome, segredo, valor) = ler_extra(&mut l)?;
-        extras.push(RascunhoExtra {
-            nome: texto(nome)?,
-            valor: Segredo::de_bytes(valor.to_vec()),
-            segredo,
+        extras.push(ExtraDraft {
+            name: texto(nome)?,
+            value: Secret::from_bytes(valor.to_vec()),
+            secret: segredo,
         });
     }
     let mut anexos = Vec::with_capacity(b.anexos.n);
@@ -1008,26 +1003,26 @@ fn montar(b: &Bruta<'_>) -> Result<Entrada, ErroCorpo> {
     };
     for _ in 0..b.anexos.n {
         let (nome, conteudo) = ler_anexo(&mut l)?;
-        anexos.push(RascunhoAnexo {
-            nome: texto(nome)?,
-            conteudo: Segredo::de_bytes(conteudo.to_vec()),
+        anexos.push(AttachmentDraft {
+            name: texto(nome)?,
+            content: Secret::from_bytes(conteudo.to_vec()),
         });
     }
-    let rascunho = Rascunho {
-        nome: texto(b.nome)?,
-        grupo: texto(b.grupo)?,
-        ambiente: texto(b.ambiente)?,
-        projeto: texto(b.projeto)?,
+    let rascunho = Draft {
+        name: texto(b.nome)?,
+        group: texto(b.grupo)?,
+        environment: texto(b.ambiente)?,
+        project: texto(b.projeto)?,
         tags,
-        dados: montar_dados(b.tipo, &b.dados)?,
+        data: montar_dados(b.tipo, &b.dados)?,
         extras,
-        anexos,
+        attachments: anexos,
     };
-    let mut entrada = rascunho.validar().map_err(|_| ErroCorpo::Invalido)?;
-    if entrada.tipo() != b.tipo {
+    let mut entrada = rascunho.validate().map_err(|_| ErroCorpo::Invalido)?;
+    if entrada.kind() != b.tipo {
         return Err(ErroCorpo::Invalido);
     }
-    entrada.definir_nivel(b.nivel);
-    entrada.definir_datas(b.datas);
+    entrada.set_level(b.nivel);
+    entrada.set_dates(b.datas);
     Ok(entrada)
 }

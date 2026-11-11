@@ -16,7 +16,7 @@
 //! [`crate::servico`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
 //! rascunho que volta ao daemon ao editar (Fase 33).
 
-use ward_core::entrada::{NivelAcesso, Rascunho, Segredo as SegredoCore};
+use ward_core::entry::{AccessLevel, Draft, Secret as SegredoCore};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Pendrive, Problema,
     Resposta,
@@ -84,8 +84,8 @@ pub fn criar_cofre<D: Daemon + ?Sized>(
     pin: &[u8],
 ) -> Result<(), ErroApp> {
     let pedido = Pedido::CriarCofre {
-        senha: SegredoCore::de_bytes(senha.to_vec()),
-        pin: SegredoCore::de_bytes(pin.to_vec()),
+        senha: SegredoCore::from_bytes(senha.to_vec()),
+        pin: SegredoCore::from_bytes(pin.to_vec()),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),
@@ -165,7 +165,7 @@ pub fn copiar<D: Daemon + ?Sized>(
         alvo,
     };
     match pedir(daemon, &pedido)? {
-        Resposta::Segredo(s) => Ok(Segredo::novo(s.expor().to_vec())),
+        Resposta::Segredo(s) => Ok(Segredo::novo(s.expose().to_vec())),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }
@@ -182,7 +182,7 @@ pub fn revelar<D: Daemon + ?Sized>(
         alvo,
     };
     match pedir(daemon, &pedido)? {
-        Resposta::Segredo(s) => Ok(Segredo::novo(s.expor().to_vec())),
+        Resposta::Segredo(s) => Ok(Segredo::novo(s.expose().to_vec())),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }
@@ -217,7 +217,7 @@ pub fn emitir_token<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result
         entrada: entrada.to_owned(),
     };
     match pedir(daemon, &pedido)? {
-        Resposta::Token(t) => Token::de_resposta(t.expor()).ok_or(ErroApp::RespostaInvalida),
+        Resposta::Token(t) => Token::de_resposta(t.expose()).ok_or(ErroApp::RespostaInvalida),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }
@@ -233,7 +233,7 @@ pub enum Salvamento {
 pub fn salvar<D: Daemon + ?Sized>(
     daemon: &mut D,
     anterior: Option<String>,
-    rascunho: Rascunho,
+    rascunho: Draft,
     manter_anexos: Vec<String>,
 ) -> Result<Salvamento, ErroApp> {
     let pedido = Pedido::SalvarEntrada {
@@ -260,7 +260,7 @@ pub fn salvar<D: Daemon + ?Sized>(
 pub fn mudar_nivel<D: Daemon + ?Sized>(
     daemon: &mut D,
     entrada: &str,
-    nivel: NivelAcesso,
+    nivel: AccessLevel,
     pin: &crate::nivel::Pin,
 ) -> Result<(), ErroApp> {
     let pedido = Pedido::MudarNivel {
@@ -361,8 +361,8 @@ pub fn trocar_pin<D: Daemon + ?Sized>(
     novo: &[u8],
 ) -> Result<(), ErroApp> {
     let pedido = Pedido::TrocarPin {
-        atual: SegredoCore::de_bytes(atual.to_vec()),
-        novo: SegredoCore::de_bytes(novo.to_vec()),
+        atual: SegredoCore::from_bytes(atual.to_vec()),
+        novo: SegredoCore::from_bytes(novo.to_vec()),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),
@@ -379,8 +379,8 @@ pub fn trocar_senha<D: Daemon + ?Sized>(
     nova: &[u8],
 ) -> Result<(), ErroApp> {
     let pedido = Pedido::TrocarSenha {
-        atual: SegredoCore::de_bytes(atual.to_vec()),
-        nova: SegredoCore::de_bytes(nova.to_vec()),
+        atual: SegredoCore::from_bytes(atual.to_vec()),
+        nova: SegredoCore::from_bytes(nova.to_vec()),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),

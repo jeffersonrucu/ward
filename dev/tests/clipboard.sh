@@ -1,37 +1,37 @@
 #!/bin/bash -p
-# Fase 39f (S2, S12; V5.4, V5.5): o "copiar" do app na sessão gráfica de verdade, sem
-# disco e sem `wl-copy`.
+# Phase 39f (S2, S12; V5.4, V5.5): the app's "copy" in the real graphical session, with no
+# disk and no `wl-copy`.
 #
-# Compila os testes do `app/src-tauri` (o mesmo `target/` do `make app-check`) e passa o
-# binário a `dev/tests/clipboard.py`, que roda o teste ignorado
-# `area_gtk::testes::sessao_real` (a área do GTK de verdade, com o `Copiador` do núcleo)
-# sob `strace -f` e confere, só com valores falsos gerados na hora:
-# - antes, o autoteste: o vigia de arquivos acha o valor que o `wl-copy` grava em
-#   `/tmp/wl-copy-buffer-*/` (o ataque da auditoria do M5 é achado);
-# - nenhum arquivo em `/tmp`, `/var/tmp` nem `$XDG_RUNTIME_DIR` recebe o valor
-#   (inotify durante a rodada e varredura no fim), o processo do teste não executa
-#   nenhum programa (nada de `wl-copy`) nem abre arquivo para escrita nessas pastas;
-# - V5.4: o `wl-paste` devolve o valor copiado, com `x-kde-passwordManagerHint=secret`;
-# - V5.5: some depois do prazo; o texto que o usuário copia depois fica;
-# - a trava vinda de fora (limpar fora da thread principal) tira o valor na hora;
-#   "copiar" fora da thread principal é recusado; ao sair do app o valor some.
+# Builds the tests of `app/src-tauri` (the same `target/` as `make app-check`) and passes
+# the binary to `dev/tests/clipboard.py`, which runs the ignored real-session test of the
+# `area_gtk` module (the real GTK clipboard, with the core's copier) under `strace -f`
+# and verifies, only with fake values generated on the spot:
+# - first, the self-test: the file watcher finds the value that `wl-copy` writes in
+#   `/tmp/wl-copy-buffer-*/` (the attack of the M5 audit is caught);
+# - no file in `/tmp`, `/var/tmp` or `$XDG_RUNTIME_DIR` receives the value
+#   (inotify during the run and a scan at the end), the test process executes no
+#   program (no `wl-copy`) and opens no file for writing in those folders;
+# - V5.4: `wl-paste` returns the copied value, with `x-kde-passwordManagerHint=secret`;
+# - V5.5: it is gone after the deadline; text the user copies afterwards stays;
+# - a lock coming from outside (clearing off the main thread) removes the value at once;
+#   "copy" off the main thread is refused; when the app exits the value is gone.
 #
-# O compositor (COSMIC) só aceita a seleção de um cliente Wayland com foco de teclado,
-# que um teste sem clique não tem: a rodada completa usa o backend X11 do GTK no
-# Xwayland da sessão (o COSMIC repassa a seleção para o Wayland, e o `wl-paste` lê por
-# lá). Uma 2ª rodada com o backend Wayland confere só o strace e o vigia (sem foco o
-# compositor recusa a seleção; o handoff da Fase 39f explica). No fim a área de
-# transferência é limpa.
+# The compositor (COSMIC) only accepts the selection from a Wayland client with keyboard
+# focus, which a test without a click does not have: the full run uses GTK's X11 backend
+# on the session's Xwayland (COSMIC forwards the selection to Wayland, and `wl-paste`
+# reads it there). A 2nd run with the Wayland backend only checks strace and the watcher
+# (without focus the compositor refuses the selection; the Phase 39f handoff explains).
+# At the end the clipboard is cleared.
 #
-# Exige `strace`, `wl-paste`/`wl-copy` (só o teste usa, para ler e para imitar o
-# usuário), python3-gi (GTK 3), `libwebkit2gtk-4.1-dev` (ou PKG_CONFIG_PATH) e uma
-# sessão com `WAYLAND_DISPLAY` e `DISPLAY`; fora do `make check`.
-# Uso: dev/tests/clipboard.sh <cargo>   (ou `make test-clipboard`)
+# Requires `strace`, `wl-paste`/`wl-copy` (only the test uses them, to read and to
+# imitate the user), python3-gi (GTK 3), `libwebkit2gtk-4.1-dev` (or PKG_CONFIG_PATH) and
+# a session with `WAYLAND_DISPLAY` and `DISPLAY`; out of `make check`.
+# Usage: dev/tests/clipboard.sh <cargo>   (or `make test-clipboard`)
 
 set -euo pipefail
 export PATH=/usr/bin:/bin
-RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
-. "$RAIZ/dev/env.sh"
+ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
+. "$ROOT/dev/env.sh"
 
 CARGO="${1:?uso: clipboard.sh <cargo>}"
 [[ -x "$CARGO" ]] || { echo "area-transferencia: cargo não encontrado em $CARGO" >&2; exit 1; }
@@ -39,20 +39,20 @@ for f in strace wl-paste wl-copy python3; do
     command -v "$f" > /dev/null || { echo "area-transferencia: falta $f" >&2; exit 1; }
 done
 
-JSON="$(cd "$RAIZ/app/src-tauri" && "$CARGO" test --all-features --locked --no-run \
+JSON="$(cd "$ROOT/app/src-tauri" && "$CARGO" test --all-features --locked --no-run \
     --message-format=json --quiet)"
 BIN="$(printf '%s\n' "$JSON" | /usr/bin/python3 -I -B -c '
 import json, sys
-for linha in sys.stdin:
+for line in sys.stdin:
     try:
-        m = json.loads(linha)
+        m = json.loads(line)
     except ValueError:
         continue
-    alvo = m.get("target", {})
+    target = m.get("target", {})
     if m.get("reason") == "compiler-artifact" and m.get("executable") \
-            and alvo.get("name") == "ward-app" and m.get("profile", {}).get("test"):
+            and target.get("name") == "ward-app" and m.get("profile", {}).get("test"):
         print(m["executable"])
 ')"
 [[ -n "$BIN" && -x "$BIN" ]] || { echo "area-transferencia: binário de teste do app não encontrado" >&2; exit 1; }
 
-exec /usr/bin/python3 -I -B "$RAIZ/dev/tests/clipboard.py" "$BIN"
+exec /usr/bin/python3 -I -B "$ROOT/dev/tests/clipboard.py" "$BIN"

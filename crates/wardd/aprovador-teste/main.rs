@@ -24,7 +24,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use ward_core::entrada::Segredo;
+use ward_core::entry::Secret;
 use ward_core::protocolo::{self, Decisao, Papel, Pedido, Resposta};
 
 fn socket() -> Option<PathBuf> {
@@ -60,14 +60,14 @@ fn ler(s: &mut UnixStream) -> Option<Vec<u8>> {
 
 /// A decisão do arquivo de modo (a suíte troca entre um caso e outro): decisão, PIN e a
 /// caixa da entrada padrão (Fase 54b).
-fn modo() -> Option<(Decisao, Option<Segredo>, bool)> {
+fn modo() -> Option<(Decisao, Option<Secret>, bool)> {
     let dev = PathBuf::from(std::env::var_os("WARD_DEV_DIR")?);
     let texto = std::fs::read_to_string(dev.join("aprovador.modo")).ok()?;
     let linha = texto.lines().next()?.trim();
     match linha.split_once(' ') {
         Some((m @ ("uma_vez" | "uma_vez_ciente"), pin)) => Some((
             Decisao::PermitirUmaVez,
-            Some(Segredo::de_bytes(pin.trim().as_bytes().to_vec())),
+            Some(Secret::from_bytes(pin.trim().as_bytes().to_vec())),
             m == "uma_vez_ciente",
         )),
         _ => match linha {

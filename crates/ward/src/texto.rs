@@ -95,11 +95,11 @@ pub fn lista_json(itens: &[ItemLista]) -> String {
         out.push_str("{\"nome\":");
         json_texto(&mut out, &item.nome);
         out.push_str(",\"tipo\":");
-        json_texto(&mut out, item.tipo.nome());
+        json_texto(&mut out, item.tipo.name());
         out.push_str(",\"grupo\":");
         json_texto(&mut out, &item.grupo);
         out.push_str(",\"ambiente\":");
-        json_texto(&mut out, item.ambiente.nome());
+        json_texto(&mut out, item.ambiente.name());
         out.push_str(",\"projeto\":");
         json_opcional(&mut out, item.projeto.as_deref());
         out.push_str(",\"endereco\":");
@@ -121,9 +121,9 @@ pub fn lista_tabela(itens: &[ItemLista]) -> String {
         .map(|i| {
             [
                 neutralizar(&i.nome),
-                i.tipo.nome().to_owned(),
+                i.tipo.name().to_owned(),
                 neutralizar(&i.grupo),
-                i.ambiente.nome().to_owned(),
+                i.ambiente.name().to_owned(),
                 i.projeto
                     .as_deref()
                     .map_or_else(|| "-".to_owned(), neutralizar),
@@ -164,14 +164,14 @@ pub fn lista_tabela(itens: &[ItemLista]) -> String {
 #[cfg(test)]
 mod testes {
     use super::*;
-    use ward_core::entrada::{Ambiente, TipoEntrada};
+    use ward_core::entry::{EntryType, Environment};
 
     fn item(nome: &str, endereco: Option<&str>) -> ItemLista {
         ItemLista {
             nome: nome.to_owned(),
-            tipo: TipoEntrada::Banco,
+            tipo: EntryType::Database,
             grupo: "clientex".to_owned(),
-            ambiente: Ambiente::Stage,
+            ambiente: Environment::Stage,
             projeto: None,
             tags: vec!["etiqueta-x".to_owned()],
             nivel: None,

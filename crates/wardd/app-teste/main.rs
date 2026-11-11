@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use ward_core::entrada::Entrada;
+use ward_core::entry::Entry;
 use ward_core::protocolo::{self, Alvo, Papel, Pedido, Resposta};
 use ward_core::totp::Totp;
 
@@ -62,9 +62,9 @@ fn descrever(corpo: &[u8]) -> String {
 }
 
 /// O segredo da entrada do cofre de teste (para comparar, nunca para imprimir).
-fn esperado<'a>(entradas: &'a [Entrada], nome: &str, alvo: &Alvo) -> Option<&'a [u8]> {
-    let e = entradas.iter().find(|e| e.nome() == nome)?;
-    alvo.segredo_em(e).map(|s| s.expor())
+fn esperado<'a>(entradas: &'a [Entry], nome: &str, alvo: &Alvo) -> Option<&'a [u8]> {
+    let e = entradas.iter().find(|e| e.name() == nome)?;
+    alvo.segredo_em(e).map(|s| s.expose())
 }
 
 /// `igual`/`diferente` para um `segredo`; o tipo ou o código do erro para o resto.
@@ -73,7 +73,7 @@ fn comparar(corpo: Option<&[u8]>, esperado: Option<&[u8]>) -> String {
         return String::new();
     };
     match protocolo::decodificar_resposta(Papel::App, corpo) {
-        Ok(Resposta::Segredo(s)) if Some(s.expor()) == esperado => "igual".to_owned(),
+        Ok(Resposta::Segredo(s)) if Some(s.expose()) == esperado => "igual".to_owned(),
         Ok(Resposta::Segredo(_)) => "diferente".to_owned(),
         _ => descrever(corpo),
     }
@@ -114,7 +114,7 @@ fn valores_do_app(s: &mut UnixStream) {
         "acme-totp-dev",
         &Alvo::Campo("totp_semente".into()),
     )
-    .map(|v| wc::entrada::Segredo::de_bytes(v.to_vec()));
+    .map(|v| wc::entry::Secret::from_bytes(v.to_vec()));
     let local = || {
         semente
             .as_ref()

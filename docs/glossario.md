@@ -1220,6 +1220,29 @@ Identificadores de `dev/variations.py`, `dev/tests/variations_test.py`, `login.p
 `read_selections` (e a opção interna `--ler` → `--read`), `no_principal` → `on_main`,
 `sem_valor` → `no_value`, `prova` → `proof`, `neutralizar` → `neutralize`.
 
+Identificadores da Fase 45 (`origins.py`, `services/web/server.py`, `services/generate.py`,
+`compose.yml`, `nm.py`, `socket_attack.py`, `socket_matrix.py`, `real-home.sh`,
+`webkit-real.sh`, `deb.sh`), pela seção 2: `PERMITIDAS_HOME`/`ENV_PERMITIDAS`/
+`TOOLCHAIN_PERMITIDAS` → `HOME_ALLOWED`/`ENV_ALLOWED`/`TOOLCHAIN_ALLOWED`, `CANAL_FIXO` →
+`FIXED_CHANNEL`, `PULAR` → `SKIP`, `CASA` (home do passwd, local) → `PASSWD_HOME`,
+`terminar` → `finish`; no `server.py`: `tela_*` → `*_screen`, `cadastrar`/`entrar` →
+`sign_up`/`log_in`, `CONTAS_CARREGADAS` → `LOADED_ACCOUNTS`, `TRAVA_*` → `*_LOCK`; no
+`generate.py`: `diretorio` → `ensure_dir`, `SERVICOS_SSH` → `SSH_SERVICES`, `trocar`
+(chave de host) → `rotate`, e a primeira linha da docstring (descrição do `--help`) virou
+a constante `DESCRIPTION` com o mesmo texto; nos testes: `rastrear` → `trace_run`,
+`acusados` → `flagged`, `isca` → `decoy`, `valor_fixo` → `fixed_value`, `LANCADOR` →
+`LAUNCHER`, `SEM_MPS`/`SEM_39C` (locais) → `NO_MPS`/`NO_39C`, `RUINS` → `BAD_FRAMES`,
+`VAGAS` → `SLOTS`, `sessao` → `session`. Feitos na Fase 45 (antes da 56): `WARD_MODO` =
+`password`/`key`/`jump`/`internal` (com o `ssh/entrypoint.sh`), `WARD_PORTA` →
+`WARD_LISTEN_PORT`, `WARD_REGISTRO`/`WARD_CONTAS`/`WARD_DESTINO_REDIR` →
+`WARD_RECORD`/`WARD_ACCOUNTS`/`WARD_REDIR_TARGET` (só `compose.yml` e `server.py` os
+usam); âncoras YAML `seguranca`/`wp-ambiente` → `security`/`wp-env`, rede `interno` →
+`internal`; opção interna `--so-host` do `deb.sh` → `--host-only`. Ficam (dados do cofre
+de teste, `allow.txt`): os serviços `ssh-senha`, `ssh-chave`, `ssh-salto`, `ssh-interno`.
+Ficam para a Fase 46 (contrato do `common.sh`): `RAIZ` em quem faz `source` dele,
+`OPCOES_SSH`, `IMAGEM_PG`, `DS`, `SEG` e as funções; para a 56: `WARD_HOME_COBERTO`,
+`WARD_TESTE_PG_SENHA_ARQUIVO`, `WARD_PAI_CHROME_SOCK`.
+
 Identificadores de `dev/tests/dev-vault.sh`, `ssh_home.py`, `install.sh`,
 `attacks-services.sh`, `chrome_policy.py`, `app_e2e.py` e `playwright.py` (Fase 44), pela
 seção 2 e como nas Fases 40–42: `LISTA` (lista de padrões) → `PATTERN_LIST`, `TRAVA`
@@ -1239,6 +1262,30 @@ passwd, no Python) → `PASSWD_HOME`, `fase` (etapa do teste) → `stage`, `escr
 `chrome_pids`, `inodes_escutando` → `listening_inodes`. O `RAIZ` de `common.sh` e o
 `CASA_PASSWD` de `env.sh` ficam para a Fase 46 (os scripts que leem `common.sh` fazem
 `RAIZ="$ROOT"` antes do `.`).
+
+Contrato de `dev/env.sh` e `dev/services/common.sh` (Fase 46; quem carrega define `ROOT`
+antes do `.`, e os `RAIZ="$ROOT"` saíram): `RAIZ` → `ROOT`, `CASA_PASSWD` → `PASSWD_HOME`,
+`DS` → `SERVICES_DIR`, `SEG` → `SECRETS_DIR`, `DOCKER_VAZIO` → `DOCKER_EMPTY`, `IMAGEM_PG` →
+`PG_IMAGE`, `OPCOES_SSH` → `SSH_OPTIONS`; funções `exigir` → `require`, `cliente` → `client`,
+`montar_opcoes_ssh` → `build_ssh_options`, `ssh_senha` → `ssh_password`, `ssh_chave` →
+`ssh_key`, `ssh_interno` → `ssh_internal`, `esperar_wordpress` → `wait_wordpress`
+(`psql_app`, `wp_login`, `COMPOSE` ficam). Resto de `dev/` (Fase 46), pela seção 2 e como
+nas Fases 40–45: no `daemon.sh`, `subir`/`parar` → `start`/`stop_daemon`, `pid_vivo` →
+`live_pid`, `MARCA_APP` → `APP_MARK`, `NIVEL_LOG` → `LOG_LEVEL`, `UID_ATUAL` → `CURRENT_UID`,
+`PASTA_SOCKET` (local) → `SOCKET_DIR`; `COFRE` → `VAULT`, `ESTADO` → `STATE`, `TRAB` →
+`WORK_DIR`, `IMAGEM` → `IMAGE`, `CLIENTE` → `CLIENT`, `APROVADOR` → `APPROVER`, `FALSO` →
+`FAKE`, `SONDA` → `PROBE`, `GUARDA` (cópia do cofre) → `BACKUP`, `ABERTAS` → `OPENED`,
+`rodada` → `run_round`, `rodar` (etapa) → `run_stage`; nos serviços SSH, `definir_senha` →
+`set_password`, `so_chave` → `key_only`, `autorizar_chave` → `authorize_key`,
+`banco_pronto` → `db_ready`; no `pg_select.py`, `Conexao` → `Connection`, `sal`/`salgada` →
+`salt`/`salted`, `chave_cliente` → `client_key`, `guardada` → `stored_key`, `prova` →
+`proof`, `assinatura` → `signature`; no `terminal-test.py`, `mestre`/`escravo` →
+`master`/`slave`, `varrer_proc` → `scan_proc`; no `bidi_icu.py`, `faixas_*` → `*_ranges`.
+Ficam (literais de outras fases ou dados): `terminal-teste.*` e os modos do
+`terminal-test.py`, `aprovador.modo`/`confirmar`, `--adulterado`/`--versao` do
+`fake_crx.py`, os cenários e chaves JSON do `chrome-policy.sh` com o `chrome_policy.py`, a
+pasta `tracos` do `ssh-home.sh`, os caminhos dos contêineres e dos serviços SSH
+(`/etc/ssh/autorizadas`, `senha-*`, `ward-ssh-entrada`), `WARD_*` (Fase 56).
 
 ### Evidência dos scripts (DT1; Fase 5)
 
@@ -1339,6 +1386,27 @@ Feitos na Fase 6: `dev/daemon.sh` (`up`, `stop`, `status`), `--no-mps`/`--no-39c
 `--version`, `--read`, `WARD_MODE` …) não passam pelo Makefile e vão com o script, nas
 Fases 40–46. O `--conferir` do exemplo `dev-cofre` (e `--senha-stdin`, `--cruzado`)
 vai com o exemplo, na Fase 43.
+
+Feitos na Fase 43 (exemplos e scripts de contêiner, sem alias para o nome velho):
+
+| Antes | Depois |
+| --- | --- |
+| `dev-cofre --conferir`, `--senha-stdin`, `--cruzado` (prefixo `dev-cofre:` na saída) | `dev-vault --verify`, `--password-stdin`, `--cross` (prefixo `dev-vault:`) |
+| `falso --ativar`, `--conectar` (`dev/container-platform/fake.c`) | `--activate`, `--connect` |
+| subcomandos do `ward-platform-container`: `ativar`, `servidor`, `cliente`, `prender`, `lancar-app`, `escutar`, `ambiente` (`traceme`, `bind`, `--user` ficam) | `activate`, `server`, `client`, `attach`, `launch-app`, `listen`, `environment` |
+| opções do `ward-platform-container`: `--lancar`, `--abrir-app`, `--abrir-app-com`, `--sistema-em`, `--pausar` (`--chrome` fica) | `--launch`, `--open-app`, `--open-app-with`, `--system-at`, `--pause` |
+| subcomando `servir` do `chrome-parent` | `serve` |
+| cópias no contêiner `/opt/teste/chrome-falso`, `/opt/teste/wardd-cliente-teste` | `/opt/teste/fake-chrome`, `/opt/teste/wardd-test-client` |
+| `/usr/local/sbin/iniciar` (PID 1 das imagens `units`, `install` e `deb`) | `/usr/local/sbin/start` |
+| funções dos `inside.sh`: `confere`, `nao_tem`, `igual`, `falhou`, `como_1000`, `como_usuario`, `instalar`, `caso_grupo`, `nada_do_ward`, `retrato_ssh`, `linha_app`, `ultimo_erro_pid`, `conferir_cli` | `check`, `lacks`, `equal`, `failed`, `as_1000`, `as_user`, `install_ward`, `group_case`, `no_ward_file`, `ssh_snapshot`, `app_line`, `last_error_pid`, `verify_cli` |
+
+Os marcadores impressos pelos exemplos (`servidor: pronto`, `papel=…`, `lancador:`,
+`gerente:`, `inicio`/`depois`/`erro`/`queda` do relatório do app, `saida=`,
+`resposta:`), os subcomandos do `wardd-test-client` (`estado`, `lista`, `destravar`, nomes
+de operação do protocolo, Fase 51), o nome do teste `area_gtk::testes::sessao_real` e o
+protocolo de linhas do `clipboard.py` (vão com o teste do `app/src-tauri`) e os outros
+nomes de dentro do contêiner (`/opt/teste`, `cliente`, `plataforma`, `falso`,
+`ward-servidor`, `libmarca.so`) ficam.
 
 Pasta de build (Fase 6): `target/sem-modo-teste/` → `target/no-test-mode/`.
 
@@ -2134,6 +2202,48 @@ para as fases deles), `gravar_novo_com_pontos` → `write_new_with_points`,
 `Temporario` → `TempFile`. Os ids `ErroResposta::Retrocesso`/`GeracaoEsgotada` do
 protocolo (Fase 17) e `ErroAbrir::Retrocesso` do corpo (Fase 14) são outros e não
 mudaram; o `backup::geracao_selada` (Fase 15) também não.
+
+Fase 12 (`ward-core`: `entry`, `entry/secret`, `entry/validation`): módulo `entrada` →
+`entry` (`segredo` → `secret`, `validacao` → `validation`, `testes` → `tests`);
+`Segredo` → `Secret` (`de_texto`/`de_bytes`/`expor`/`expor_texto` → `from_text`/
+`from_bytes`/`expose`/`expose_text`; o `Segredo` do `app/core` é outro e não mudou);
+`Ambiente` → `Environment`, `NivelAcesso` → `AccessLevel` com `Bloqueado`/`ComAprovacao`/
+`Livre` → `Blocked`/`Approval`/`Free` (`mais_restritivo` → `most_restrictive`);
+`TipoEntrada` → `EntryType` com `Banco` → `Database`, `Servidor` → `Server`, `NotaSegura`
+→ `SecureNote`, `Generico` → `Generic`; `Motor` → `Engine` (o `Motor` do
+`wardd/aprovacao.rs` é outro); `SegurancaSmtp` → `SmtpSecurity` com `Nenhuma` → `None`;
+`Protocolo` → `Protocol`; `TODOS`/`TODAS` → `ALL`; `nome`/`de_nome`/`rotulo`/
+`porta_padrao` → `name`/`from_name`/`label`/`default_port` (os literais de `name()` são
+nomes gravados no cofre e ficam até a Fase 48; os de `label()` são texto exibido e ficam);
+`Autenticacao { Senha, Chave { chave_privada, passphrase } }` → `Auth { Password, Key {
+private_key, passphrase } }`; campos `usuario`/`senha`/`totp_semente`/`motor`/`porta`/
+`base`/`tunel`/`autenticacao`/`salto`/`variavel`/`regiao`/`seguranca`/`protocolo`/`texto`
+→ `username`/`password`/`totp_seed`/`engine`/`port`/`db_name`/`tunnel`/`auth`/`jump`/
+`variable`/`region`/`security`/`protocol`/`text`; `Banco`/`Servidor`/`NotaSegura` (structs)
+→ `Database`/`Server`/`SecureNote`; `Dados` → `Data` (`tipo()` → `kind()`, `Generico` →
+`Generic`); `ValorExtra { Texto, Segredo }` → `ExtraValue { Text, Secret }` (o do
+`app/core/formulario.rs` é outro); `CampoExtra` → `ExtraField` (`e_segredo` →
+`is_secret`); `Anexo` → `Attachment` (`conteudo` → `content`; os `Anexo` de
+`wardd/playwright.rs` e `app/core/credenciais.rs` são outros); `OrigemSegredo { Campo,
+Extra, Anexo }` → `SecretOrigin { Field, Extra, Attachment }`; `SegredoDaEntrada {
+origem, valor }` → `EntrySecret { origin, value }`; `Datas { criada_em, alterada_em }` →
+`Dates { created_at, modified_at }` (`NENHUMA`/`instante`/`de_partes`/`carimbo_novo`/
+`alterado` → `NONE`/`instant`/`from_parts`/`new_stamp`/`modified`); `Entrada` → `Entry`
+(`grupo`/`ambiente`/`projeto`/`nivel`/`definir_nivel`/`datas`/`definir_datas`/`tipo`/
+`dados`/`anexos`/`segredos`/`substituir_por`/`referencia`/`conferir_no_cofre` → `group`/
+`environment`/`project`/`level`/`set_level`/`dates`/`set_dates`/`kind`/`data`/
+`attachments`/`secrets`/`replace_with`/`reference`/`verify_in_vault`).
+`ErroValidacao { campo, posicao, motivo }` → `ValidationError { field, position, reason
+}`; `ErrosValidacao` → `ValidationErrors` (`lista`/`tem`/`tem_motivo` → `list`/`has`/
+`has_reason`); `Rascunho` → `Draft` (`validar` → `validate`), `RascunhoDados` →
+`DataDraft`, `RascunhoExtra { nome, valor, segredo }` → `ExtraDraft { name, value, secret
+}`, `RascunhoAnexo` → `AttachmentDraft`; `GRANDE_PARA_MASCARA` → `TOO_LARGE_FOR_MASK`;
+`nome_variavel` → `variable_name`, `origem_da_url` → `url_origin`,
+`origem_local_da_url` → `local_url_origin`, `url_valida` → `valid_url`,
+`separar_host_porta` → `split_host_port`, `VARIAVEIS_COMUNS` → `COMMON_VARIABLES`,
+`variaveis_do_tipo`/`anexos_do_tipo` → `type_variables`/`type_attachments`; `Coletor` →
+`Collector`; predicados `*_valido(a)` → `valid_*` (`nome_entrada_valido` →
+`valid_entry_name`, `chave_parece_privada` → `looks_like_private_key`).
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →

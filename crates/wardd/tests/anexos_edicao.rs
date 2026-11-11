@@ -6,7 +6,7 @@
 mod comum;
 
 use comum::*;
-use ward_core::entrada::Entrada;
+use ward_core::entry::Entry;
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
 
 const ANEXO_A: &[u8] = b"FALSO_A=falso-anexo-39b-a\n";
@@ -38,7 +38,7 @@ fn editar(anterior: &str, manter: &[&str], novos: &[(&str, &[u8])]) -> String {
 }
 
 /// As entradas como estão no disco (abre com a senha de teste).
-fn no_disco(dir: &Dir) -> Vec<Entrada> {
+fn no_disco(dir: &Dir) -> Vec<Entry> {
     let bytes = std::fs::read(dir.caminhos().cofre).unwrap();
     let s = ward_core::format::MasterPassword::new(SENHA.to_owned());
     ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0)
@@ -49,11 +49,11 @@ fn no_disco(dir: &Dir) -> Vec<Entrada> {
 fn anexos_no_disco(dir: &Dir, nome: &str) -> Vec<(String, Vec<u8>)> {
     no_disco(dir)
         .iter()
-        .find(|e| e.nome() == nome)
+        .find(|e| e.name() == nome)
         .unwrap()
-        .anexos()
+        .attachments()
         .iter()
-        .map(|a| (a.nome().to_owned(), a.conteudo().expor().to_vec()))
+        .map(|a| (a.name().to_owned(), a.content().expose().to_vec()))
         .collect()
 }
 

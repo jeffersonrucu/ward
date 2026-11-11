@@ -22,7 +22,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=dev/env.sh
 . "$ROOT/dev/env.sh"
 # The rustup cargo (there is no cargo in /usr/bin), at the end of the PATH.
-export PATH="$PATH:$CASA_PASSWD/.cargo/bin"
+export PATH="$PATH:$PASSWD_HOME/.cargo/bin"
 # gitleaks is always the one in `.dev/` (not an inherited variable), verified by sha256.
 GITLEAKS="$ROOT/.dev/tools/bin/gitleaks"
 (cd "$ROOT" && make -s gitleaks-binary)
@@ -49,7 +49,7 @@ private_dir() {
         p="$(dirname -- "$p")"
     done
 }
-COPIES_CACHE="$CASA_PASSWD/.cache"
+COPIES_CACHE="$PASSWD_HOME/.cache"
 [ -L "$COPIES_CACHE" ] && { echo "pasta das cópias: $COPIES_CACHE é link" >&2; exit 1; }
 mkdir -p -m 0700 "$COPIES_CACHE"
 private_dir "$COPIES_CACHE"
@@ -232,7 +232,7 @@ EOF
         tail -30 <<<"$output" >&2
     fi
     rc=0
-    output="$(cd "$dir" && "$CASA_PASSWD/.cargo/bin/cargo-deny" --all-features check 2>&1)" || rc=$?
+    output="$(cd "$dir" && "$PASSWD_HOME/.cargo/bin/cargo-deny" --all-features check 2>&1)" || rc=$?
     if [ "$rc" -ne 0 ] && grep -q "source-not-allowed" <<<"$output" && grep -q "fake-git" <<<"$output"; then
         ok "V1.3 cargo deny também recusa a origem git (source-not-allowed)"
     else
@@ -462,7 +462,7 @@ for a in "\$@"; do
 done
 exec "\${args[@]}"
 EOF
-    printf '#!/bin/bash\necho rustc >>"%s"\nexec "%s/.cargo/bin/rustc" "$@"\n' "$MARKS" "$CASA_PASSWD" >"$TMP/decoys/rustc.sh"
+    printf '#!/bin/bash\necho rustc >>"%s"\nexec "%s/.cargo/bin/rustc" "$@"\n' "$MARKS" "$PASSWD_HOME" >"$TMP/decoys/rustc.sh"
     printf '#!/bin/bash\necho linker >>"%s"\nexec cc "$@"\n' "$MARKS" >"$TMP/decoys/linker.sh"
     printf '#!/bin/bash\necho program >>"%s"\nexit 0\n' "$MARKS" >"$TMP/decoys/program.sh"
     chmod +x "$TMP/decoys/"*.sh
@@ -510,7 +510,7 @@ deny = [\"run\", \"-q\", \"--manifest-path\", \"$TMP/fake-ok/Cargo.toml\", \"--\
     blocked_before "[alias] audit/deny para um fake-ok (v13-alias), com RUSTSEC-2020-0071" "$dir"
     # audit and deny go through the binary: even without the pre-check, the alias would not apply.
     local rc=0 output
-    output="$(cd "$dir" && "$CASA_PASSWD/.cargo/bin/cargo-audit" audit --deny warnings 2>&1)" || rc=$?
+    output="$(cd "$dir" && "$PASSWD_HOME/.cargo/bin/cargo-audit" audit --deny warnings 2>&1)" || rc=$?
     if [ "$rc" -ne 0 ] && grep -q 'RUSTSEC-2020-0071' <<<"$output" && ! grep -q 'falsos' <<<"$output"; then
         ok "cargo-audit pelo caminho absoluto ignora o [alias] e acha RUSTSEC-2020-0071"
     else
@@ -640,12 +640,12 @@ exec /usr/bin/python3 -I -B "$m/dev/origins.py"
 EOF
     in_home() { # content [rustup settings.toml]
         local extra=()
-        [ -n "${2:-}" ] && extra=(--ro-bind "$2" "$CASA_PASSWD/.rustup/settings.toml")
-        /usr/bin/env -i PATH=/usr/bin:/bin bwrap --die-with-parent --dev-bind / / --tmpfs "$CASA_PASSWD" \
-            --ro-bind "$CASA_PASSWD/.rustup" "$CASA_PASSWD/.rustup" "${extra[@]}" \
-            --ro-bind "$CASA_PASSWD/.cargo/bin" "$CASA_PASSWD/.cargo/bin" --bind /tmp /tmp \
+        [ -n "${2:-}" ] && extra=(--ro-bind "$2" "$PASSWD_HOME/.rustup/settings.toml")
+        /usr/bin/env -i PATH=/usr/bin:/bin bwrap --die-with-parent --dev-bind / / --tmpfs "$PASSWD_HOME" \
+            --ro-bind "$PASSWD_HOME/.rustup" "$PASSWD_HOME/.rustup" "${extra[@]}" \
+            --ro-bind "$PASSWD_HOME/.cargo/bin" "$PASSWD_HOME/.cargo/bin" --bind /tmp /tmp \
             --bind "$TMP" "$TMP" \
-            -- /bin/bash -p "$TMP/in-home.sh" "$CASA_PASSWD" "$m" "$1"
+            -- /bin/bash -p "$TMP/in-home.sh" "$PASSWD_HOME" "$m" "$1"
     }
     local c rc
     for c in '[alias]
