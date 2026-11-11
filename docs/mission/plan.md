@@ -128,7 +128,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 `ward-core`:
 - [x] Fase 10 — `lib.rs`, `limites` (+ testes), `cripto`, `totp` (+ testes), `gerador`
   (+ testes), `origem`, `exibicao`. — V2.1
-- [ ] Fase 11 — `formato` (+ testes), `gravacao` (+ testes). Gravação atômica intocada.
+- [x] Fase 11 — `formato` (+ testes), `gravacao` (+ testes). Gravação atômica intocada.
   — V2.1
 - [ ] Fase 12 — `entrada.rs`, `entrada/segredo.rs`, `entrada/validacao.rs` (os nomes
   gravados de `nome()`/`de_nome()` são literais congelados; os rótulos pt-BR ficam). —
