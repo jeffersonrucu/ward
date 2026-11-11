@@ -34,7 +34,7 @@
 # por `WARD_DEV_APP`, que responde o que está em `$TRAB/aprovador.modo`): negada, nada é
 # preenchido e o popup avisa; confirmada, preenche.
 #
-# Uso: dev/tests/extension.sh <wardd test-mode> <ward-nm test-mode> <chrome-falso> <ward test-mode>
+# Uso: dev/tests/extension.sh <wardd test-mode> <ward-nm test-mode> <fake-chrome> <ward test-mode>
 #      <wardd-aprovador-teste>
 
 export PATH=/usr/bin:/bin
@@ -45,7 +45,7 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 cd "$RAIZ"
 
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$RAIZ" "$1" ;; esac; }
-USO="uso: extension.sh <wardd> <ward-nm> <chrome-falso> <ward> <wardd-aprovador-teste>"
+USO="uso: extension.sh <wardd> <ward-nm> <fake-chrome> <ward> <wardd-aprovador-teste>"
 WARDD="$(abs "${1:?$USO}")"
 NM="$(abs "${2:?$USO}")"
 FALSO="$(abs "${3:?$USO}")"

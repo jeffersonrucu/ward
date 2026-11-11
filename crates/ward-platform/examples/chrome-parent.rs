@@ -1,12 +1,15 @@
-//! Conferência do pai Chrome com o Chrome real (Fase 40; D5, D47; `make test-nm`).
-//! Sem segredo nenhum.
+//! Verification of the Chrome parent with the real Chrome (Phase 40; D5, D47;
+//! `make test-nm`). No secret at all.
 //!
-//! - `pai-chrome servir <socket> <chrome>`: escuta no socket (pasta do teste), aceita
-//!   uma conexão e imprime uma linha: `pai=<Ok|motivo> ppid=<n> pai_dumpable=<sim|nao>
-//!   cadeia=<a,b,…>`, com [`PeerProcess::verify_parent`] contra o binário dado.
-//! - Como host de native messaging (o Chrome passa `chrome-extension://…/`): conecta no
-//!   socket de `WARD_PAI_CHROME_SOCK`, espera o servidor fechar, responde uma mensagem
-//!   `{"ok":true}` ao Chrome e sai. O mesmo vale executado à mão (controle).
+//! - `chrome-parent serve <socket> <chrome>`: listens on the socket (test folder),
+//!   accepts one connection and prints one line with the verdict of
+//!   [`PeerProcess::verify_parent`] against the given binary (`Ok` or the reason), the
+//!   parent pid, whether the parent is dumpable and the chain of process names.
+//! - As a native messaging host (Chrome passes `chrome-extension://…/`): connects to the
+//!   socket named by the parent-socket variable (renamed in m2:Phase 56), waits for the server to close, answers one message `{"ok":true}` to
+//!   Chrome and exits. The same holds when run by hand (control).
+//!
+//! The printed markers are what `dev/tests/nm.py` looks for and stay as they are.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -14,7 +17,7 @@ use std::process::ExitCode;
 
 use ward_platform::{AllowedBinary, PeerProcess};
 
-fn servir(sock: &str, chrome: &str) -> ExitCode {
+fn serve(sock: &str, chrome: &str) -> ExitCode {
     let _ = std::fs::remove_file(sock);
     let l = match UnixListener::bind(sock) {
         Ok(l) => l,
@@ -28,7 +31,7 @@ fn servir(sock: &str, chrome: &str) -> ExitCode {
     let Ok((s, _)) = l.accept() else {
         return ExitCode::FAILURE;
     };
-    let par = match PeerProcess::from_socket(&s) {
+    let peer = match PeerProcess::from_socket(&s) {
         Ok(p) => p,
         Err(e) => {
             println!("pai=SemIdentidade({})", e.kind());
@@ -36,27 +39,27 @@ fn servir(sock: &str, chrome: &str) -> ExitCode {
         }
     };
     let chrome = AllowedBinary::new(chrome).expect("caminho do chrome");
-    let r = par.verify_parent(&chrome);
-    let ppid = par.parent_pid().unwrap_or(0);
+    let r = peer.verify_parent(&chrome);
+    let ppid = peer.parent_pid().unwrap_or(0);
     let dump = if std::fs::read_link(format!("/proc/{ppid}/exe")).is_ok() {
         "sim"
     } else {
         "nao"
     };
-    let cadeia: Vec<String> = par.chain().into_iter().map(|e| e.name).collect();
+    let chain: Vec<String> = peer.chain().into_iter().map(|e| e.name).collect();
     println!(
         "pai={} ppid={ppid} pai_dumpable={dump} cadeia={}",
         match r {
             Ok(()) => "Ok".to_owned(),
             Err(m) => format!("{m:?}"),
         },
-        cadeia.join(",")
+        chain.join(",")
     );
     drop(s);
     ExitCode::SUCCESS
 }
 
-fn sondar() -> ExitCode {
+fn probe() -> ExitCode {
     let Some(sock) = std::env::var_os("WARD_PAI_CHROME_SOCK") else {
         return ExitCode::FAILURE;
     };
@@ -64,10 +67,10 @@ fn sondar() -> ExitCode {
         let mut b = [0u8; 1];
         let _ = s.read(&mut b);
     }
-    let corpo = br#"{"ok":true}"#;
+    let body = br#"{"ok":true}"#;
     let mut out = std::io::stdout().lock();
-    let _ = out.write_all(&(corpo.len() as u32).to_ne_bytes());
-    let _ = out.write_all(corpo);
+    let _ = out.write_all(&(body.len() as u32).to_ne_bytes());
+    let _ = out.write_all(body);
     let _ = out.flush();
     ExitCode::SUCCESS
 }
@@ -75,10 +78,10 @@ fn sondar() -> ExitCode {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
-        Some("servir") => match (args.get(2), args.get(3)) {
-            (Some(s), Some(c)) => servir(s, c),
+        Some("serve") => match (args.get(2), args.get(3)) {
+            (Some(s), Some(c)) => serve(s, c),
             _ => ExitCode::from(2),
         },
-        _ => sondar(),
+        _ => probe(),
     }
 }

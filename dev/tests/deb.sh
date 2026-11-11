@@ -4,7 +4,7 @@
 # Nunca instala nada no host. Duas partes:
 #
 # 1. Host, sem root: `make deb` com os artefatos sem `test-mode` (debug,
-#    `target/no-test-mode`), o `partida-conteiner` no lugar do `ward-app` e um pacote
+#    `target/no-test-mode`), o `startup-container` no lugar do `ward-app` e um pacote
 #    CRX3 falso (`fake_crx.py`). Confere: a lista de `dpkg-deb -c` é a do staging e a
 #    de `install/tree.txt` (V9.9); todo caminho root/root, nenhum bit setuid/setgid
 #    no pacote (um 2755 root:root daria o gid do root), nada com escrita para grupo e
@@ -37,8 +37,8 @@ SEM="$RAIZ/target/no-test-mode/debug"
 WARD="$SEM/ward"
 WARDD="$SEM/wardd"
 NM="$SEM/ward-nm"
-APP="$SEM/examples/partida-conteiner"
-CLIENTE="$SEM/examples/wardd-cliente-teste"
+APP="$SEM/examples/startup-container"
+CLIENTE="$SEM/examples/wardd-test-client"
 WARDD_TESTE="$RAIZ/target/debug/wardd"
 for b in "$WARD" "$WARDD" "$NM" "$APP" "$CLIENTE" "$WARDD_TESTE"; do
     [ -x "$b" ] || { echo "binário não encontrado: $b (rode pelo 'make test-deb')" >&2; exit 1; }

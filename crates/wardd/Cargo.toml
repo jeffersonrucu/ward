@@ -109,11 +109,11 @@ required-features = ["test-hooks"]
 name = "playwright"
 required-features = ["test-hooks"]
 
-# Cliente mínimo do contêiner de `make test-docker-uid` (V3.2, D49): o `ubuntu:24.04`
-# não tem Python.
+# Minimal client of the container of `make test-docker-uid` (V3.2, D49): the
+# `ubuntu:24.04` image has no Python.
 [[example]]
-name = "wardd-cliente-teste"
-path = "examples/cliente-teste.rs"
+name = "wardd-test-client"
+path = "examples/test-client.rs"
 
 [lints]
 workspace = true

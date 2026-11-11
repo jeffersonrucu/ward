@@ -5,7 +5,7 @@
 # Nunca instala nada no host. Duas partes:
 #
 # 1. Host, sem root: `make install DESTDIR=<pasta em .dev/>` com os artefatos sem
-#    `test-mode` (debug, `target/no-test-mode`), o `partida-conteiner` no lugar do
+#    `test-mode` (debug, `target/no-test-mode`), o `startup-container` no lugar do
 #    `ward-app` (a partida do app real sem GTK) e um pacote CRX3 falso
 #    (`fake_crx.py`: chave e assinatura aleatórias). Confere a árvore exata de
 #    `install/tree.txt` (V9.1), modos, conteúdo, os JSON do Chrome (V9.6), o
@@ -38,8 +38,8 @@ SEM="$RAIZ/target/no-test-mode/debug"
 WARD="$SEM/ward"
 WARDD="$SEM/wardd"
 NM="$SEM/ward-nm"
-APP="$SEM/examples/partida-conteiner"
-CLIENTE="$SEM/examples/wardd-cliente-teste"
+APP="$SEM/examples/startup-container"
+CLIENTE="$SEM/examples/wardd-test-client"
 WARDD_TESTE="$RAIZ/target/debug/wardd"
 PLATAFORMA="$RAIZ/target/debug/examples/ward-platform-container"
 for b in "$WARD" "$WARDD" "$NM" "$APP" "$CLIENTE" "$WARDD_TESTE" "$PLATAFORMA"; do

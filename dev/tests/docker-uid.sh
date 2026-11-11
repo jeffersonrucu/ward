@@ -6,8 +6,8 @@
 # Por isso roda num contêiner `ubuntu:24.04` descartável, sem rede: nada de sudo, nada no
 # /etc nem no /run do host. O contêiner só monta, somente leitura, uma pasta temporária
 # de `.dev/` com o `wardd` de teste (feature `test-mode`) e o cliente mínimo
-# (`wardd-cliente-teste`), mais o script de dentro. Fica fora do `make check` (exige
-# Docker). Uso: dev/tests/docker-uid.sh <wardd> <wardd-cliente-teste>
+# (`wardd-test-client`), mais o script de dentro. Fica fora do `make check` (exige
+# Docker). Uso: dev/tests/docker-uid.sh <wardd> <wardd-test-client>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -17,8 +17,8 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 
 # A mesma imagem (pela digest) do `make test-docker-platform`.
 IMAGEM="ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
-WARDD="${1:?uso: docker-uid.sh <wardd> <wardd-cliente-teste>}"
-CLIENTE="${2:?uso: docker-uid.sh <wardd> <wardd-cliente-teste>}"
+WARDD="${1:?uso: docker-uid.sh <wardd> <wardd-test-client>}"
+CLIENTE="${2:?uso: docker-uid.sh <wardd> <wardd-test-client>}"
 for b in "$WARDD" "$CLIENTE"; do
     [ -x "$b" ] || { echo "binário não encontrado: $b" >&2; exit 1; }
 done

@@ -55,7 +55,7 @@ sem_segredo() { # descrição arquivo
     fi
 }
 
-dev_cofre() { "$CARGO_BIN" run --quiet --locked -p ward-core --example dev-cofre -- "$@"; }
+dev_cofre() { "$CARGO_BIN" run --quiet --locked -p ward-core --example dev-vault -- "$@"; }
 
 # --- Lista de variações primeiro (os outros testes usam) -------------------------------
 variacoes() {
@@ -258,7 +258,7 @@ PY
     # Corpo v4 (Fase 19b, D30; Fase 19c, D39; Fase 22d, D65 d): a conferência abriu a seção de
     # configuração, o cofre recém-criado está na geração 1 e o PIN de teste conferiu no
     # hash Argon2id; o PIN e o texto PHC não aparecem em claro.
-    if grep -qxF 'dev-cofre: configuração: geração 1, hash do PIN Argon2id (m=65536 KiB, t=3, p=1), trava em 240 min, backup externo desligado' "$TMP/conferir.log"; then
+    if grep -qxF 'dev-vault: configuração: geração 1, hash do PIN Argon2id (m=65536 KiB, t=3, p=1), trava em 240 min, backup externo desligado' "$TMP/conferir.log"; then
         ok "configuração do corpo v4: geração 1, hash Argon2id do PIN de teste, trava 240, backup desligado"
     else
         falhou "conferência sem a configuração do corpo v4"
@@ -271,19 +271,19 @@ PY
     printf '%s\n' 'falso-mestra-ward-01' >"$TMP/senha-certa"
     head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' >"$TMP/senha-errada"
     chmod 0600 "$TMP/senha-certa" "$TMP/senha-errada"
-    if dev_cofre --conferir --senha-stdin <"$TMP/senha-certa" >"$TMP/certa.log" 2>&1; then
+    if dev_cofre --verify --password-stdin <"$TMP/senha-certa" >"$TMP/certa.log" 2>&1; then
         ok "abre com a senha de teste (pelo stdin)"
     else
         falhou "não abre com a senha de teste"
     fi
-    if dev_cofre --conferir --senha-stdin <"$TMP/senha-errada" >"$TMP/errada.log" 2>&1; then
+    if dev_cofre --verify --password-stdin <"$TMP/senha-errada" >"$TMP/errada.log" 2>&1; then
         falhou "abriu com senha errada"
     else
         grep -q 'não abriu' "$TMP/errada.log" && ok "senha errada recusada" || falhou "senha errada: erro inesperado"
     fi
     sem_segredo "senha errada" "$TMP/errada.log"
     # Senha em argv não existe.
-    if dev_cofre --conferir --senha falso-mestra-ward-01 >/dev/null 2>&1; then
+    if dev_cofre --verify --password falso-mestra-ward-01 >/dev/null 2>&1; then
         falhou "aceitou senha em argv"
     else
         ok "senha em argv recusada"
@@ -292,10 +292,10 @@ PY
 
 # --- V2.57: teste cruzado oráculo → máscara (Fase 19e, D54) ------------------------------
 # Cada padrão do `variations.py`, sozinho numa saída, passa pela máscara da entrada de
-# onde ele veio e tem de sair `••••`. Os padrões vão do Python para o `dev-cofre` por um
-# pipe (nenhum arquivo); o `dev-cofre` só imprime contagens e números de linha.
+# onde ele veio e tem de sair `••••`. Os padrões vão do Python para o `dev-vault` por um
+# pipe (nenhum arquivo); o `dev-vault` só imprime contagens e números de linha.
 cruzado() {
-    if python3 -I -B - "$RAIZ" <<'PY' | dev_cofre --cruzado >"$TMP/cruzado.log" 2>&1; then
+    if python3 -I -B - "$RAIZ" <<'PY' | dev_cofre --cross >"$TMP/cruzado.log" 2>&1; then
 import importlib.util, json, pathlib, sys
 raiz = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location("variacoes", raiz / "dev" / "variations.py")

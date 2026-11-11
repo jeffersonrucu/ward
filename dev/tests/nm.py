@@ -1,7 +1,7 @@
 """`make test-nm` (Fase 40): o `ward-nm` de teste direto e pelo Chrome real.
 
 Chamado por `dev/tests/nm.sh`, que sobe o `wardd` de teste só dele. Argumentos: raiz,
-pasta de trabalho (em `.dev/`), pasta do socket, `ward-nm`, exemplo `pai-chrome`,
+pasta de trabalho (em `.dev/`), pasta do socket, `ward-nm`, exemplo `chrome-parent`,
 Chrome e a lista de variações. Nunca imprime a lista nem um valor dela.
 """
 
@@ -173,7 +173,7 @@ const enviar = (host, m) => new Promise((r) => chrome.runtime.sendNativeMessage(
 """ % json.dumps(PREENCHER))
 
 sock_sonda = os.path.join(TRAB, "sonda.sock")
-srv = subprocess.Popen([SONDA, "servir", sock_sonda, CHROME], stdout=subprocess.PIPE, text=True)
+srv = subprocess.Popen([SONDA, "serve", sock_sonda, CHROME], stdout=subprocess.PIPE, text=True)
 confere(srv.stdout.readline().strip() == "pronto", "verificador do pai pronto")
 
 r_cmd, w_cmd = os.pipe()
@@ -248,7 +248,7 @@ finally:
         srv.kill()
 
 # Controle: o mesmo host aberto por este processo (não pelo Chrome).
-srv = subprocess.Popen([SONDA, "servir", sock_sonda, CHROME], stdout=subprocess.PIPE, text=True)
+srv = subprocess.Popen([SONDA, "serve", sock_sonda, CHROME], stdout=subprocess.PIPE, text=True)
 srv.stdout.readline()
 subprocess.run([SONDA, ORIGEM], env={"WARD_PAI_CHROME_SOCK": sock_sonda}, capture_output=True, timeout=30)
 linha = srv.communicate(timeout=30)[0].strip()
