@@ -1,52 +1,52 @@
-# Serviços de teste do Ward (Fase 12). Só credenciais FALSAS (D15).
+# Ward test services (Phase 12). Only FAKE credentials (D15).
 #
-#   make dev-services                          # gera .dev/services/ (rodar antes)
+#   make dev-services                          # generates .dev/services/ (run first)
 #   docker compose -f dev/compose.yml up -d --build
-#   make dev-services-verify                 # confere V1.4
+#   make dev-services-verify                 # checks V1.4
 #   docker compose -f dev/compose.yml down
 #
-# Segurança:
-# - Toda porta publicada só em 127.0.0.1: nada de senha conhecida exposta na rede.
-# - Segredos montados de .dev/services/ (0700) como arquivo somente leitura em
-#   /run/ward/; nada de senha em `environment` (sairia no `docker inspect`) nem em argv.
-#   Bind sem `create_host_path`: sem `make dev-services`, o `up` falha em vez de subir
-#   com diretório vazio.
-# - Estado em tmpfs: cada `up` depois de `down` começa limpo (posts.log vazio, banco e
-#   WordPress reinstalados das fixtures). A única exceção é o volume `wp-html`, com o
-#   código do WordPress (sem senha: o wp-config lê tudo de /run/ward/ na hora);
-#   `down -v` o apaga.
-# - `no-new-privileges` em todos; serviços Python com raiz somente leitura e usuário
-#   nobody.
-# - Imagens fixadas por digest.
+# Security:
+# - Every published port only on 127.0.0.1: no known password exposed on the network.
+# - Secrets mounted from .dev/services/ (0700) as read-only files in /run/ward/; no
+#   password in `environment` (it would show in `docker inspect`) nor in argv.
+#   Bind without `create_host_path`: without `make dev-services`, `up` fails instead of
+#   starting with an empty directory.
+# - State in tmpfs: every `up` after `down` starts clean (empty posts.log, database and
+#   WordPress reinstalled from the fixtures). The only exception is the `wp-html`
+#   volume, with the WordPress code (no password: wp-config reads everything from
+#   /run/ward/ at runtime); `down -v` deletes it.
+# - `no-new-privileges` everywhere; Python services with a read-only root filesystem
+#   and user nobody.
+# - Images pinned by digest.
 
 name: ward-teste
 
-x-seguranca: &seguranca
+x-security: &security
   security_opt:
     - no-new-privileges:true
   restart: "no"
 
 x-ssh: &ssh
-  <<: *seguranca
+  <<: *security
   build:
     context: ./services/ssh
   image: ward-teste/ssh:1
   pull_policy: build
 
 x-web: &web
-  <<: *seguranca
+  <<: *security
   image: python:3.13-alpine3.22@sha256:e81548ac35b07a3bd4805f275107592ef458b1e893c0e04d45aedaa19416cca5
   user: "65534:65534"
   read_only: true
   environment:
-    WARD_PORTA: "8080"
+    WARD_LISTEN_PORT: "8080"
     PYTHONDONTWRITEBYTECODE: "1"
   tmpfs:
     - /tmp:size=8m,mode=0700,uid=65534,gid=65534
 
 services:
   postgres:
-    <<: *seguranca
+    <<: *security
     image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     environment:
       POSTGRES_USER: app
@@ -70,11 +70,11 @@ services:
       timeout: 3s
       retries: 30
 
-  # 2222: deploy por senha (túnel só até postgres:5432); sftpuser só sftp.
+  # 2222: deploy by password (tunnel only to postgres:5432); sftpuser only sftp.
   ssh-senha:
     <<: *ssh
     environment:
-      WARD_MODO: senha
+      WARD_MODE: password
     volumes:
       - { type: bind, source: ../.dev/services/ssh-host/ssh-senha/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: ../.dev/services/secrets/ssh-deploy, target: /run/ward/senha-deploy, read_only: true, bind: { create_host_path: false } }
@@ -82,22 +82,22 @@ services:
     ports:
       - "127.0.0.1:2222:22"
 
-  # 2223: deploy só por chave.
+  # 2223: deploy only by key.
   ssh-chave:
     <<: *ssh
     environment:
-      WARD_MODO: chave
+      WARD_MODE: key
     volumes:
       - { type: bind, source: ../.dev/services/ssh-host/ssh-chave/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: ../.dev/services/keys/acme-deploy_ed25519.pub, target: /run/ward/autorizada.pub, read_only: true, bind: { create_host_path: false } }
     ports:
       - "127.0.0.1:2223:22"
 
-  # 2224: salto por senha; encaminha só para ssh-interno:22.
+  # 2224: jump host by password; forwards only to port 22 of the internal SSH server.
   ssh-salto:
     <<: *ssh
     environment:
-      WARD_MODO: salto
+      WARD_MODE: jump
     volumes:
       - { type: bind, source: ../.dev/services/ssh-host/ssh-salto/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: ../.dev/services/secrets/ssh-salto, target: /run/ward/senha-salto, read_only: true, bind: { create_host_path: false } }
@@ -105,22 +105,22 @@ services:
       - "127.0.0.1:2224:22"
     networks:
       - default
-      - interno
+      - internal
 
-  # Sem porta no host; só a rede `interno` (internal) chega, isto é, o ssh-salto.
+  # No port on the host; only the `internal` network reaches it, that is, the jump host.
   ssh-interno:
     <<: *ssh
     hostname: ssh-interno
     environment:
-      WARD_MODO: interno
+      WARD_MODE: internal
     volumes:
       - { type: bind, source: ../.dev/services/ssh-host/ssh-interno/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: ../.dev/services/keys/acme-deploy_ed25519.pub, target: /run/ward/autorizada.pub, read_only: true, bind: { create_host_path: false } }
     networks:
-      - interno
+      - internal
 
   mariadb:
-    <<: *seguranca
+    <<: *security
     image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
     environment:
       MARIADB_ROOT_PASSWORD_FILE: /run/ward/mariadb-root
@@ -139,11 +139,11 @@ services:
       retries: 60
 
   wordpress:
-    <<: *seguranca
+    <<: *security
     image: wordpress:6.8-php8.3-apache@sha256:30bff39330d1693b0ce13d32fc9b7bb67193064f040b7d60d3494e136fa599d4
     depends_on:
       mariadb: { condition: service_healthy }
-    environment: &wp-ambiente
+    environment: &wp-env
       WORDPRESS_DB_HOST: mariadb
       WORDPRESS_DB_USER: wp
       WORDPRESS_DB_PASSWORD_FILE: /run/ward/mariadb-wp
@@ -159,15 +159,15 @@ services:
     ports:
       - "127.0.0.1:8081:80"
 
-  # Serviço de uma vez: instala o WordPress e cria wp_admin e wp_editor; sai com 0.
+  # One-shot service: installs WordPress and creates wp_admin and wp_editor; exits 0.
   wpcli:
-    <<: *seguranca
+    <<: *security
     image: wordpress:cli-2.12-php8.3@sha256:a4fff017eb08c03187e90fe52d4bff8d3a4d4a5103de05829a6e747c4ca3056e
     user: "33:33"
     depends_on:
       wordpress: { condition: service_started }
     environment:
-      <<: *wp-ambiente
+      <<: *wp-env
       HOME: /tmp
     volumes:
       - wp-html:/var/www/html
@@ -177,8 +177,8 @@ services:
       - { type: bind, source: ./services/wordpress/install.sh, target: /usr/local/bin/ward-instalar-wp, read_only: true, bind: { create_host_path: false } }
     entrypoint: ["/bin/sh", "/usr/local/bin/ward-instalar-wp"]
 
-  # 8082: phishing. Grava todo POST em /registro/posts.log (tmpfs; ler com
-  # `docker compose -f dev/compose.yml exec phish cat /registro/posts.log`).
+  # 8082: phishing. Records every POST in posts.log, on a tmpfs (CLAUDE.md has the
+  # command that reads it).
   phish:
     <<: *web
     command: ["python3", "-I", "-B", "/app/server.py", "phish"]
@@ -190,7 +190,7 @@ services:
     ports:
       - "127.0.0.1:8082:8080"
 
-  # 8083: login com usuário, senha e código TOTP; cadastro novo em /cadastro.
+  # 8083: login with username, password and TOTP code, plus a sign-up page.
   totp:
     <<: *web
     command: ["python3", "-I", "-B", "/app/server.py", "totp"]
@@ -200,7 +200,7 @@ services:
     ports:
       - "127.0.0.1:8083:8080"
 
-  # 8084: redireciona tudo para o phishing em 8082.
+  # 8084: redirects everything to the phishing site on 8082.
   redir:
     <<: *web
     command: ["python3", "-I", "-B", "/app/server.py", "redir"]
@@ -214,9 +214,10 @@ volumes:
 
 networks:
   default: {}
-  # Rede só entre ssh-salto e ssh-interno. `internal` corta a saída e o
-  # `inhibit_ipv4` tira o IP da ponte no host: o host não tem rota até o ssh-interno.
-  interno:
+  # Network only between the jump host and the internal SSH server. `internal` cuts the
+  # way out and `inhibit_ipv4` removes the bridge IP on the host: the host has no route
+  # to the internal SSH server.
+  internal:
     internal: true
     driver_opts:
       com.docker.network.bridge.inhibit_ipv4: "true"

@@ -14,6 +14,13 @@ dev/fixtures/*/gama-generico generico entry name of the test vault (user data)
 dev/fixtures/*/gama-generico/app.env falso content of a test vault attachment (user data, m2:V4.19)
 # Proper names in English comments.
 crates/ward-platform/src/launcher.rs frei frei0r is the name of a GStreamer plugin family, not Portuguese
+# Test service names (Phase 45): they are also host names stored in the test vault entries
+# (`dev/fixtures/entries.json`, the 0.1.4 legacy fixtures) and the names of the secret files
+# in `.dev/services/`, so they stay as test data.
+dev/compose.yml ssh-senha name of the test SSH service, host name in the test vault data
+dev/compose.yml ssh-chave name of the test SSH service, host name in the test vault data
+dev/compose.yml ssh-salto name of the test SSH service, host name in the test vault data
+dev/compose.yml ssh-interno name of the test SSH service, host name in the test vault data
 # Fake master password of D15 ("falso-mestra-ward-01") in the doc tests (test data, m2:PRD rule 5).
 crates/ward-core/src/format.rs falso fake test password of D15 in doc tests (test data)
 crates/ward-core/src/format.rs mestra fake test password of D15 in doc tests (test data)
