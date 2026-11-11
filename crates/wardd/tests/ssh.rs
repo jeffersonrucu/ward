@@ -4,7 +4,7 @@
 //! `known_hosts` próprio, ambiente do zero), D34 revisto (sem oráculo de prefixo), D43 (usuário com `@`,
 //! V4.35) e D56 (`sftp` com `User=`, V4.37).
 //!
-//! A sessão roda como no servidor (`wardd::ssh::sessao` numa ponta de um par de
+//! A sessão roda como no servidor (`wardd::ssh::session` numa ponta de um par de
 //! sockets); a outra ponta faz o papel da CLI. O cofre é de teste, criado pelo núcleo
 //! com valores falsos; a chave SSH é gerada aqui, com passphrase aleatória.
 //!
@@ -31,7 +31,7 @@ use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta};
 use wardd::aprovacao::{Motor, RelogioMotor, SemApp, SemCliente};
 use wardd::nucleo::Daemon;
-use wardd::ssh::ProgramasSsh;
+use wardd::ssh::SshPrograms;
 use zeroize::Zeroizing;
 
 /// Senha dos servidores de teste (a de `comum::servidor`, falsa).
@@ -154,7 +154,7 @@ fn cena(rotulo: &str) -> Cena {
     let relogio = RelogioManual::default();
     let d = d
         .com_motor(Motor::novo(Arc::new(relogio.clone()), Box::new(SemApp)))
-        .com_programas_ssh(ProgramasSsh {
+        .com_programas_ssh(SshPrograms {
             ssh: base.join("ssh"),
             sshpass: base.join("sshpass"),
             sftp: base.join("sftp"),
@@ -350,7 +350,7 @@ fn sessao(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream)) -> Sessao
     sessao_de(c, pedido, cli, false)
 }
 
-/// Como [`sessao`]; `run`: a sessão do `ward run` (`wardd::execucao::sessao`).
+/// Como [`sessao`]; `run`: a sessão do `ward run` (`wardd::execution::session`).
 fn sessao_de(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream), run: bool) -> Sessao {
     let (mut lado_cli, lado_daemon) = UnixStream::pair().unwrap();
     lado_cli
@@ -359,9 +359,9 @@ fn sessao_de(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream), run: b
     let d = c.d.clone();
     let t = std::thread::spawn(move || {
         if run {
-            wardd::execucao::sessao(&d, &SemCliente, &lado_daemon, pedido)
+            wardd::execution::session(&d, &SemCliente, &lado_daemon, pedido)
         } else {
-            wardd::ssh::sessao(&d, &SemCliente, &lado_daemon, pedido)
+            wardd::ssh::session(&d, &SemCliente, &lado_daemon, pedido)
         }
     });
     let inicio = Instant::now();
@@ -809,7 +809,7 @@ fn f54l_ataque_cli_cai_no_ward_ssh_nenhum_ssh_sobra() {
         let (mut lado_cli, lado_daemon) = UnixStream::pair().unwrap();
         let d = c.d.clone();
         let t = std::thread::spawn(move || {
-            let _ = wardd::ssh::sessao(&d, &SemCliente, &lado_daemon, pedido);
+            let _ = wardd::ssh::session(&d, &SemCliente, &lado_daemon, pedido);
         });
         fechar_entrada(&mut lado_cli);
         assert!(

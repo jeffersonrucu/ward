@@ -146,9 +146,9 @@ def key_id(key_b64):
 
 def host_id():
     with open(os.path.join(ROOT, "crates", "ward-nm", "src", "lib.rs"), encoding="utf-8") as f:
-        m = re.search(r'pub const ID_EXTENSAO: &str = "([a-p]{32})";', f.read())
+        m = re.search(r'pub const EXTENSION_ID: &str = "([a-p]{32})";', f.read())
     if not m:
-        fail("ID_EXTENSAO não achado em crates/ward-nm/src/lib.rs")
+        fail("EXTENSION_ID não achado em crates/ward-nm/src/lib.rs")
     return m.group(1)
 
 
@@ -180,7 +180,7 @@ def check_manifest(m):
     m["key"] = public_key()
     eid = key_id(m["key"])
     if eid != host_id():
-        fail(f"id da chave do manifesto ({eid}) ≠ ID_EXTENSAO do ward-nm")
+        fail(f"id da chave do manifesto ({eid}) ≠ EXTENSION_ID do ward-nm")
     return eid
 
 

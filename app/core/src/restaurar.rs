@@ -16,7 +16,7 @@
 //!   novo do daemon). Sem valor, sem caminho, sem geração.
 //!
 //! A versão vinda da interface não é confiável: o formato é conferido aqui
-//! ([`ward_core::backup::nome_valido`]) e o serviço só pede o `restaurar_backup` se o
+//! ([`ward_core::backup::valid_name`]) e o serviço só pede o `restaurar_backup` se o
 //! nome estiver na lista que o daemon acabou de dar.
 
 use serde::{Deserialize, Serialize};
@@ -80,7 +80,7 @@ fn dias_de_civil(a: i64, m: i64, d: i64) -> i64 {
 
 #[cfg(unix)]
 fn nome_ok(nome: &str) -> bool {
-    ward_core::backup::nome_valido(nome)
+    ward_core::backup::valid_name(nome)
 }
 
 #[cfg(not(unix))]

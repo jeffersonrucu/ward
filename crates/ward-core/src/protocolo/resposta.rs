@@ -384,7 +384,7 @@ pub struct Pendrive {
 /// - `conferida`: a versão abre com a chave do cofre aberto (AEAD); `false` para versões
 ///   de outra senha mestra;
 /// - `fora_de_ordem`: a geração dela é menor que a de uma versão com data anterior
-///   ([`crate::backup::fora_de_ordem`]); só com `conferida`.
+///   ([`crate::backup::out_of_order`]); só com `conferida`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersaoBackup {
     pub nome: String,
@@ -906,7 +906,7 @@ fn rotulo_ok(r: &str) -> bool {
 fn backup_ok(n: &str) -> bool {
     #[cfg(unix)]
     {
-        crate::backup::nome_valido(n)
+        crate::backup::valid_name(n)
     }
     #[cfg(not(unix))]
     {

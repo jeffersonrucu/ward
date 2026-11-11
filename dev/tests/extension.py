@@ -143,7 +143,7 @@ ENTRIES = {e["nome"]: e for e in fixtures["entradas"]}
 ID = None
 with open(os.path.join(ROOT, "crates", "ward-nm", "src", "lib.rs"), encoding="utf-8") as f:
     for line in f:
-        if line.startswith("pub const ID_EXTENSAO"):
+        if line.startswith("pub const EXTENSION_ID"):
             ID = line.split('"')[1]
 assert ID and len(ID) == 32
 

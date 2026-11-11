@@ -736,7 +736,7 @@ fn nome_ok(n: &str) -> bool {
 fn versao_ok(v: &str) -> bool {
     #[cfg(unix)]
     {
-        crate::backup::nome_valido(v)
+        crate::backup::valid_name(v)
     }
     #[cfg(not(unix))]
     {

@@ -170,7 +170,7 @@ if [ -x /opt/google/chrome/chrome ] && command -v openssl >/dev/null 2>&1; then
             "$ROOT/install/pack-extension.sh" 2>&1
     }
     r="$(crx EXTENSION_KEY="$E/other.pem"; echo "saiu=$?")"
-    verify "extension-crx: outra chave (outro id) recusada" "$r" "não do ID_EXTENSAO"
+    verify "extension-crx: outra chave (outro id) recusada" "$r" "não do EXTENSION_ID"
     nonzero() { [[ "$2" != *"saiu=0"* ]] && ok "$1" || fail "$1 ($2)"; }
     nonzero "extension-crx: outra chave não sai 0" "$r"
     [ ! -e "$E/out/ward.crx" ] && ok "extension-crx: nenhum pacote com a chave errada" || fail "pacote gerado com a chave errada"

@@ -158,9 +158,10 @@
 - **Arquivos de outras trilhas tocados** (só usos): `crates/ward-test-bridge` (Fase 29,
   concluída) e `app/src-tauri/src/main.rs` (Fase 34). Os módulos de `app/core` das Fases
   32–34 também (só usos e o `SECRETS`).
-- O `fake_daemon.rs` usa `ward_core::backup::Versao`/`do_instante`/
-  `nome`/`de_nome`/`nome_valido`/`fora_de_ordem` como estão no master; a Fase 15 (em
-  paralelo) os renomeia: o merge vai precisar trocar esses usos aqui.
+- Merge do master `efa6865` (Fases 15, 21, 28): `daemon_falso.rs` apagado e os renomes da
+  Fase 15 aplicados no `fake_daemon.rs` (`Version::from_instant`/`from_name`/`name`,
+  `out_of_order`, `valid_name`); glossário com os parágrafos das Fases 31, 28, 21 e 15;
+  `make compile` 0 depois do merge (`.dev/logs/fase31-merge-make-compile.log`).
 - `Save` (nome do glossário para `Salvamento`) é curto e genérico; ficou como o glossário
   manda, sempre qualificado como `client::Save` fora do módulo.
 - Um doc comment de `client.rs` (sobre o resultado do salvar) estava solto em cima de
