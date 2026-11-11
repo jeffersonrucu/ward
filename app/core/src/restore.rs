@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 use ward_core::protocol::VersaoBackup;
 
 use crate::AppError;
-use crate::destrave::SenhaMestra;
-use crate::nivel::Pin;
+use crate::level::Pin;
+use crate::unlock::MasterPassword;
 
 /// A version of the local backup, without content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -130,7 +130,7 @@ pub struct Restore {
     #[serde(rename = "versao")]
     pub version: String,
     #[serde(rename = "senha")]
-    pub password: SenhaMestra,
+    pub password: MasterPassword,
     pub pin: Pin,
 }
 
@@ -292,7 +292,7 @@ mod tests {
         use zeroize::Zeroizing;
 
         use super::super::*;
-        use crate::area_transferencia::{AreaTransferencia, Copiador};
+        use crate::clipboard::{Clipboard, Copier};
         use crate::daemon::Daemon;
         use crate::fake_daemon::{FakeDaemon, SECRETS};
         use crate::service::Service;
@@ -300,14 +300,14 @@ mod tests {
         type Frames = Arc<Mutex<Vec<Vec<u8>>>>;
 
         struct NoClipboard;
-        impl AreaTransferencia for NoClipboard {
-            fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
+        impl Clipboard for NoClipboard {
+            fn write(&self, _: &[u8]) -> Result<(), AppError> {
                 Ok(())
             }
-            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+            fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
                 Ok(None)
             }
-            fn limpar(&self) -> Result<(), AppError> {
+            fn clear(&self) -> Result<(), AppError> {
                 Ok(())
             }
         }
@@ -327,7 +327,7 @@ mod tests {
                 Arc::new(Mutex::new(fake.without_wait())),
                 Arc::new(Mutex::new(Vec::new())),
             );
-            (Service::new(e.clone(), Copiador::novo(NoClipboard)), e)
+            (Service::new(e.clone(), Copier::new(NoClipboard)), e)
         }
 
         fn restores(e: &Spy) -> usize {
@@ -487,8 +487,8 @@ mod tests {
             let r = crate::client::restore_backup(
                 &mut e.clone(),
                 "ward-19990101-000000.ward",
-                &crate::destrave::SenhaMestra::nova(PASSWORD.into()).unwrap(),
-                &crate::nivel::Pin::novo(PIN.into()).unwrap(),
+                &crate::unlock::MasterPassword::new(PASSWORD.into()).unwrap(),
+                &crate::level::Pin::new(PIN.into()).unwrap(),
             );
             assert_eq!(r, Err(AppError::BackupNotFound));
             assert_eq!(e.0.lock().unwrap().entry_count(), before);
@@ -540,13 +540,13 @@ mod tests {
             let r = crate::client::restore_backup(
                 &mut d,
                 "ward-20261108-143200.ward",
-                &crate::destrave::SenhaMestra::nova(PASSWORD.into()).unwrap(),
-                &crate::nivel::Pin::novo(PIN.into()).unwrap(),
+                &crate::unlock::MasterPassword::new(PASSWORD.into()).unwrap(),
+                &crate::level::Pin::new(PIN.into()).unwrap(),
             );
             assert_eq!(r, Err(AppError::Unauthorized));
             // Through the service too: the list is already refused and the restore is
             // not even requested.
-            let s = Service::new(AsAgent(Arc::clone(&q)), Copiador::novo(NoClipboard));
+            let s = Service::new(AsAgent(Arc::clone(&q)), Copier::new(NoClipboard));
             assert_eq!(s.list_backups(), Err(AppError::Unauthorized));
             assert_eq!(
                 s.restore_backup(request("ward-20261108-143200.ward", PASSWORD, PIN)),

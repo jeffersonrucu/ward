@@ -267,3 +267,57 @@ crates/ward-core/src/protocol.rs tipo 50 type key of the v1 response envelope (v
 crates/ward-core/src/protocol.rs erro 50 error response type of v1 (v2: error)
 crates/ward-core/src/protocol.rs codigo 50 code key of the v1 error (v2: code)
 crates/ward-core/src/protocol.rs mensagem 50 message key of the v1 error (v2: message)
+
+# Phase 34 (Tauri main): command names and JSON arguments the webview calls.
+app/src-tauri/src/main.rs estado_do_cofre 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs copiar_campo 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs listar_credenciais 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs detalhe_credencial 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs gerar_senha 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs copiar_senha_gerada 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs revelar_senha_gerada 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs descartar_senha_gerada 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs revelar_campo 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs codigo_totp 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs copiar_codigo_totp 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs usar_senha_gerada 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs descartar_formulario 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs salvar_credencial 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs mudar_nivel 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs escolher_anexo 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs remover_anexo 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs carregar_chave 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs conectar 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs criar_cofre 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs destravar 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs ouvir_avisos 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs configuracoes 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs trocar_pin 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs trocar_senha_mestra 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs definir_tempo_trava 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs backup_externo 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs listar_pendrives 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs definir_backup_externo 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs listar_backups 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs restaurar_backup 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs pedido_de_aprovacao 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs responder_aprovacao 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs travar 54 Tauri command name called by the webview
+app/src-tauri/src/main.rs entrada 54 entry argument of the entry commands
+app/src-tauri/src/main.rs campo 54 field argument of copiar_campo, revelar_campo, usar_senha_gerada and carregar_chave
+app/src-tauri/src/main.rs senha 54 password argument of destravar
+app/src-tauri/src/main.rs canal 54 channel argument of ouvir_avisos
+app/src-tauri/src/main.rs tamanho 54 size argument of gerar_senha
+app/src-tauri/src/main.rs minusculas 54 charset argument of gerar_senha
+app/src-tauri/src/main.rs maiusculas 54 charset argument of gerar_senha
+app/src-tauri/src/main.rs digitos 54 charset argument of gerar_senha
+app/src-tauri/src/main.rs simbolos 54 charset argument of gerar_senha
+app/src-tauri/src/main.rs anterior 54 previous name argument of salvar_credencial
+app/src-tauri/src/main.rs formulario 54 form argument of salvar_credencial
+app/src-tauri/src/main.rs nivel 54 level argument of mudar_nivel
+app/src-tauri/src/main.rs edicao 54 edit argument of escolher_anexo
+app/src-tauri/src/main.rs dados 54 data argument of criar_cofre, trocar_pin, trocar_senha_mestra and restaurar_backup
+app/src-tauri/src/main.rs minutos 54 minutes argument of definir_tempo_trava
+app/src-tauri/src/main.rs ligado 54 on argument of definir_backup_externo
+app/src-tauri/src/main.rs decisao 54 decision argument of responder_aprovacao
+app/src-tauri/src/main.rs ciente 54 acknowledged argument of responder_aprovacao

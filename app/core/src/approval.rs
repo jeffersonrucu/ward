@@ -549,9 +549,9 @@ mod tests {
 mod service_tests {
     use super::tests::request;
     use super::*;
-    use crate::area_transferencia::{AreaTransferencia, Copiador};
+    use crate::clipboard::{Clipboard, Copier};
     use crate::fake_daemon::{FakeDaemon, SECRETS};
-    use crate::nivel::Pin;
+    use crate::level::Pin;
     use crate::service::Service;
     use std::sync::Mutex as M;
     use ward_core::entry::{AccessLevel, Environment};
@@ -559,14 +559,14 @@ mod service_tests {
     use zeroize::Zeroizing;
 
     struct NoClipboard;
-    impl AreaTransferencia for NoClipboard {
-        fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
+    impl Clipboard for NoClipboard {
+        fn write(&self, _: &[u8]) -> Result<(), AppError> {
             Err(AppError::Clipboard)
         }
-        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+        fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
             Ok(None)
         }
-        fn limpar(&self) -> Result<(), AppError> {
+        fn clear(&self) -> Result<(), AppError> {
             Ok(())
         }
     }
@@ -583,7 +583,7 @@ mod service_tests {
     const RIGHT_PIN: &str = "135790";
 
     fn pin(s: &str) -> Option<Pin> {
-        Some(Pin::novo(s.to_owned()).unwrap())
+        Some(Pin::new(s.to_owned()).unwrap())
     }
 
     fn setup(requests: &[PedidoDeAprovacao]) -> (Service<Fake, NoClipboard>, Fake) {
@@ -592,7 +592,7 @@ mod service_tests {
             d = d.with_approval(p);
         }
         let f = Fake(Arc::new(M::new(d)));
-        let s = Service::new(f.clone(), Copiador::novo(NoClipboard));
+        let s = Service::new(f.clone(), Copier::new(NoClipboard));
         for p in requests {
             s.approvals().arrived(p.clone());
         }

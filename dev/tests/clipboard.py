@@ -30,7 +30,7 @@ import time
 ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 OUTPUT = os.path.join(ROOT, ".dev", "clipboard")
 TIMEOUT_MS = 3000
-TEST_NAME = "area_gtk::testes::sessao_real"
+TEST_NAME = "gtk_clipboard::tests::real_session"
 
 UID = os.getuid()
 RT = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{UID}")
