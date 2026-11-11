@@ -1,18 +1,19 @@
 #!/usr/bin/python3 -I
-"""Lê um pacote CRX3 da extensão do Ward e imprime "<id> <versão>" (Fase 51; D18).
+"""Reads a CRX3 package of the Ward extension and prints "<id> <version>" (Phase 51; D18).
 
-Uso: crx.py <arquivo.crx>. Sai 1, com a mensagem no stderr, se o pacote não é um CRX3
-bem formado, se o id do cabeçalho assinado não é o sha256 de nenhuma chave RSA do
-cabeçalho (é assim que o Chrome tira o id), se o `manifest.json` do zip falta, não é a
-versão 3 ou traz versão fora do formato do Chrome.
+Usage: crx.py <file.crx>. Exits 1, with the message on stderr, if the package is not a
+well-formed CRX3, if the id of the signed header is not the sha256 of any RSA key of the
+header (that is how Chrome derives the id), if the zip's `manifest.json` is missing, is
+not version 3 or carries a version outside Chrome's format.
 
-O que este script **não** faz: conferir as assinaturas (exigiria cripto de RSA; o Chrome
-confere ao instalar e recusa pacote com assinatura errada). O que ele garante é que o id
-que vai para a política, para o `update.xml` e para o `allowed_origins` do manifesto de
-native messaging é o id deste pacote (o install.sh compara com EXTENSION_ID).
+What this script does **not** do: verify the signatures (that would need RSA crypto;
+Chrome verifies them on install and refuses a package with a wrong signature). What it
+guarantees is that the id that goes into the policy, the `update.xml` and the
+`allowed_origins` of the native messaging manifest is this package's id (install.sh
+compares it with EXTENSION_ID).
 
-Só a biblioteca padrão. O protobuf do cabeçalho (`crx3.proto` do Chromium) é lido à mão,
-só os tipos 0 (varint) e 2 (bytes); qualquer outro tipo recusa.
+Standard library only. The header protobuf (Chromium's `crx3.proto`) is parsed by hand,
+only wire types 0 (varint) and 2 (bytes); any other type refuses.
 """
 
 import hashlib
@@ -23,13 +24,13 @@ import struct
 import sys
 import zipfile
 
-MAX_PACOTE = 64 * 1024 * 1024
-MAX_CABECALHO = 1024 * 1024
-MAX_MANIFESTO = 1024 * 1024
-VERSAO = re.compile(r"^(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){0,3}$")
+MAX_PACKAGE = 64 * 1024 * 1024
+MAX_HEADER = 1024 * 1024
+MAX_MANIFEST = 1024 * 1024
+VERSION_RE = re.compile(r"^(0|[1-9][0-9]{0,8})(\.(0|[1-9][0-9]{0,8})){0,3}$")
 
 
-class Recusa(Exception):
+class Refusal(Exception):
     pass
 
 
@@ -37,87 +38,87 @@ def varint(b, i):
     n = 0
     for k in range(10):
         if i >= len(b):
-            raise Recusa("varint cortado")
+            raise Refusal("varint cortado")
         c = b[i]
         i += 1
         n |= (c & 0x7F) << (7 * k)
         if not c & 0x80:
             return n, i
-    raise Recusa("varint longo demais")
+    raise Refusal("varint longo demais")
 
 
-def campos(b):
-    """(número, valor) de cada campo de uma mensagem protobuf."""
+def fields(b):
+    """(number, kind, value) of each field of a protobuf message."""
     i = 0
     while i < len(b):
-        chave, i = varint(b, i)
-        numero, tipo = chave >> 3, chave & 7
-        if tipo == 0:
-            valor, i = varint(b, i)
-        elif tipo == 2:
+        key, i = varint(b, i)
+        number, kind = key >> 3, key & 7
+        if kind == 0:
+            value, i = varint(b, i)
+        elif kind == 2:
             n, i = varint(b, i)
             if n > len(b) - i:
-                raise Recusa("campo maior que a mensagem")
-            valor, i = b[i : i + n], i + n
+                raise Refusal("campo maior que a mensagem")
+            value, i = b[i : i + n], i + n
         else:
-            raise Recusa(f"tipo de campo {tipo} não aceito")
-        yield numero, tipo, valor
+            raise Refusal(f"tipo de campo {kind} não aceito")
+        yield number, kind, value
 
 
-def ler(caminho):
-    with open(caminho, "rb") as f:
-        dados = f.read(MAX_PACOTE + 1)
-    if len(dados) > MAX_PACOTE:
-        raise Recusa("pacote grande demais")
-    if len(dados) < 12 or dados[:4] != b"Cr24":
-        raise Recusa("não é um pacote CRX")
-    versao, tam = struct.unpack("<II", dados[4:12])
-    if versao != 3:
-        raise Recusa(f"CRX versão {versao}; só a 3 é aceita")
-    if tam > MAX_CABECALHO or 12 + tam > len(dados):
-        raise Recusa("cabeçalho fora do tamanho")
-    cabecalho, zip_ = dados[12 : 12 + tam], dados[12 + tam :]
+def read_package(path):
+    with open(path, "rb") as f:
+        data = f.read(MAX_PACKAGE + 1)
+    if len(data) > MAX_PACKAGE:
+        raise Refusal("pacote grande demais")
+    if len(data) < 12 or data[:4] != b"Cr24":
+        raise Refusal("não é um pacote CRX")
+    version, size = struct.unpack("<II", data[4:12])
+    if version != 3:
+        raise Refusal(f"CRX versão {version}; só a 3 é aceita")
+    if size > MAX_HEADER or 12 + size > len(data):
+        raise Refusal("cabeçalho fora do tamanho")
+    header, zip_ = data[12 : 12 + size], data[12 + size :]
 
-    chaves_rsa, assinado = [], None
-    for numero, tipo, valor in campos(cabecalho):
-        if tipo != 2:
+    rsa_keys, signed = [], None
+    for number, kind, value in fields(header):
+        if kind != 2:
             continue
-        if numero == 2:  # sha256_with_rsa: AsymmetricKeyProof
-            for n2, t2, v2 in campos(valor):
+        if number == 2:  # sha256_with_rsa: AsymmetricKeyProof
+            for n2, t2, v2 in fields(value):
                 if n2 == 1 and t2 == 2:
-                    chaves_rsa.append(bytes(v2))
-        elif numero == 10000:  # signed_header_data
-            if assinado is not None:
-                raise Recusa("dois cabeçalhos assinados")
-            assinado = bytes(valor)
-    if assinado is None:
-        raise Recusa("sem cabeçalho assinado")
+                    rsa_keys.append(bytes(v2))
+        elif number == 10000:  # signed_header_data
+            if signed is not None:
+                raise Refusal("dois cabeçalhos assinados")
+            signed = bytes(value)
+    if signed is None:
+        raise Refusal("sem cabeçalho assinado")
     crx_id = None
-    for numero, tipo, valor in campos(assinado):
-        if numero == 1 and tipo == 2:
+    for number, kind, value in fields(signed):
+        if number == 1 and kind == 2:
             if crx_id is not None:
-                raise Recusa("dois ids")
-            crx_id = bytes(valor)
+                raise Refusal("dois ids")
+            crx_id = bytes(value)
     if crx_id is None or len(crx_id) != 16:
-        raise Recusa("id do pacote ausente ou fora do tamanho")
-    if not any(hashlib.sha256(k).digest()[:16] == crx_id for k in chaves_rsa):
-        raise Recusa("o id do pacote não é o de nenhuma chave do cabeçalho")
+        raise Refusal("id do pacote ausente ou fora do tamanho")
+    if not any(hashlib.sha256(k).digest()[:16] == crx_id for k in rsa_keys):
+        raise Refusal("o id do pacote não é o de nenhuma chave do cabeçalho")
     ident = "".join(chr(ord("a") + int(c, 16)) for c in crx_id.hex())
 
     try:
         with zipfile.ZipFile(io.BytesIO(zip_)) as z:
             info = z.getinfo("manifest.json")
-            if info.file_size > MAX_MANIFESTO:
-                raise Recusa("manifest.json grande demais")
-            manifesto = json.loads(z.read(info).decode("utf-8"))
+            if info.file_size > MAX_MANIFEST:
+                raise Refusal("manifest.json grande demais")
+            manifest = json.loads(z.read(info).decode("utf-8"))
     except (zipfile.BadZipFile, KeyError, UnicodeDecodeError, ValueError) as e:
-        raise Recusa(f"zip ou manifest.json ilegível ({type(e).__name__})") from None
-    if not isinstance(manifesto, dict) or manifesto.get("manifest_version") != 3:
-        raise Recusa("manifest.json não é da versão 3")
-    versao_ext = manifesto.get("version")
-    if not isinstance(versao_ext, str) or not VERSAO.match(versao_ext):
-        raise Recusa("versão da extensão fora do formato")
-    return ident, versao_ext
+        raise Refusal(f"zip ou manifest.json ilegível ({type(e).__name__})") from None
+    if not isinstance(manifest, dict) or manifest.get("manifest_version") != 3:
+        raise Refusal("manifest.json não é da versão 3")
+    ext_version = manifest.get("version")
+    if not isinstance(ext_version, str) or not VERSION_RE.match(ext_version):
+        raise Refusal("versão da extensão fora do formato")
+    return ident, ext_version
 
 
 def main():
@@ -125,11 +126,11 @@ def main():
         print("uso: crx.py <arquivo.crx>", file=sys.stderr)
         return 2
     try:
-        ident, versao = ler(sys.argv[1])
-    except (Recusa, OSError) as e:
+        ident, version = read_package(sys.argv[1])
+    except (Refusal, OSError) as e:
         print(f"crx: {e}", file=sys.stderr)
         return 1
-    print(ident, versao)
+    print(ident, version)
     return 0
 
 

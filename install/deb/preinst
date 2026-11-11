@@ -1,70 +1,70 @@
 #!/bin/bash -p
-# preinst do `.deb` do Ward (Fase 52; D18, D47, D60; V9.9, V9.11). Roda como root antes
-# de o dpkg desempacotar os arquivos. O `deb.sh` troca as marcas abaixo pelas
-# funções de `install/groups.sh` (as mesmas do `make install`) e pelas pastas comuns
-# de `install/tree.txt`.
+# preinst of Ward's `.deb` (Phase 52; D18, D47, D60; V9.9, V9.11). Runs as root before
+# dpkg unpacks the files. `deb.sh` replaces the markers below with the functions of
+# `install/groups.sh` (the same as `make install`'s) and with the common dirs of
+# `install/tree.txt`.
 #
-# Falha fechada: grupo fora de D60, pasta do sistema fora do lugar ou outra política do
-# Chrome com o mesmo nome (Fase 51a) aborta antes de qualquer arquivo. O grupo criado
-# aqui vai para a marca /usr/local/lib/ward/grupos-criados (Fase 51a): o postrm só apaga
-# esses. Os binários setgid vêm no pacote como 0755 root:root; o modo 2755 e
-# o grupo entram pelo `dpkg-statoverride` registrado aqui, que o dpkg aplica ao
-# desempacotar (nunca existe um `ward-app` setgid com outro grupo, nem setgid root).
+# Fail closed: a group outside D60, a system dir out of place or another Chrome policy
+# with the same name (Phase 51a) aborts before any file. The group created here goes
+# into the mark /usr/local/lib/ward/grupos-criados (Phase 51a): postrm only deletes
+# those. The setgid binaries come in the package as 0755 root:root; the 2755 mode and
+# the group come from the `dpkg-statoverride` registered here, which dpkg applies when
+# unpacking (there is never a setgid `ward-app` with another group, nor setgid root).
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
 set -euo pipefail
 umask 022
 
-erro() { printf 'ward (preinst): %s\n' "$*" >&2; exit 1; }
-passo() { printf 'ward: %s\n' "$*"; }
+error() { printf 'ward (preinst): %s\n' "$*" >&2; exit 1; }
+step() { printf 'ward: %s\n' "$*"; }
 
-#@GRUPOS@
+#@GROUPS@
 
 #@CHROME@
 
-# Pastas comuns do sistema que o pacote usa: sem link (o dpkg seguiria), do root e sem
-# escrita para grupo e outros.
-PASTAS=(
-#@PASTAS@
+# Common system dirs the package uses: no link (dpkg would follow it), owned by root and
+# not writable by group and others.
+DIRS=(
+#@DIRS@
 )
 
-conferir_pastas() {
+verify_dirs() {
     local p m
-    for p in "${PASTAS[@]}"; do
+    for p in "${DIRS[@]}"; do
         p="/$p"
         if [ -L "$p" ]; then
-            erro "$p é um link simbólico; o Ward não instala por cima de link"
+            error "$p é um link simbólico; o Ward não instala por cima de link"
         elif [ -e "$p" ]; then
-            [ -d "$p" ] || erro "$p existe e não é uma pasta"
-            [ "$(stat -c %u -- "$p")" = 0 ] || erro "$p não é do root"
+            [ -d "$p" ] || error "$p existe e não é uma pasta"
+            [ "$(stat -c %u -- "$p")" = 0 ] || error "$p não é do root"
             m="$(stat -c %a -- "$p")"
-            [ $((8#$m & 8#022)) = 0 ] || erro "$p tem escrita para grupo ou outros ($m)"
+            [ $((8#$m & 8#022)) = 0 ] || error "$p tem escrita para grupo ou outros ($m)"
         fi
     done
 }
 
-# O override do binário setgid: só o esperado. Um override diferente (de uma instalação
-# velha ou feito à mão) é trocado.
+# The override of the setgid binary: only the expected one. A different override (from
+# an old install or made by hand) is replaced.
 override() {
-    local grupo="$1" caminho="$2" atual
-    atual="$(dpkg-statoverride --list "$caminho" || true)"
-    [ "$atual" = "root $grupo 2755 $caminho" ] && return 0
-    if [ -n "$atual" ]; then
-        dpkg-statoverride --quiet --remove "$caminho"
+    local group="$1" path="$2" current
+    current="$(dpkg-statoverride --list "$path" || true)"
+    [ "$current" = "root $group 2755 $path" ] && return 0
+    if [ -n "$current" ]; then
+        dpkg-statoverride --quiet --remove "$path"
     fi
-    dpkg-statoverride --add root "$grupo" 2755 "$caminho"
+    dpkg-statoverride --add root "$group" 2755 "$path"
 }
 
 case "${1:-}" in
     install | upgrade)
-        conferir_pastas
-        # Fase 51a: outro arquivo de política que cite ExtensionSettings ou
-        # NativeMessagingUserLevelHosts recusa (o Chrome não junta os dois).
+        verify_dirs
+        # Phase 51a: another policy file that names ExtensionSettings or
+        # NativeMessagingUserLevelHosts refuses (Chrome does not merge the two).
         conferir_politicas_chrome /etc/opt/chrome/policies/managed
-        # A marca dos grupos fica em /usr/local/lib/ward/ (Fase 51a), antes de o dpkg
-        # desempacotar: as pastas de cima (conferidas acima) são criadas se faltarem,
-        # 0755 root:root como no pacote.
+        # The groups mark lives in /usr/local/lib/ward/ (Phase 51a), before dpkg unpacks:
+        # the dirs above it (verified above) are created if missing, 0755 root:root as in
+        # the package.
         for p in /usr /usr/local /usr/local/lib; do
             [ -e "$p" ] || mkdir -m 0755 -- "$p"
         done
@@ -78,6 +78,6 @@ case "${1:-}" in
         [ "$suid" != 1 ] || printf 'ward: aviso: fs.suid_dumpable = 1: o daemon recusa os papéis app e extensão (D47)\n' >&2
         ;;
     abort-upgrade) ;;
-    *) erro "argumento desconhecido: ${1:-}" ;;
+    *) error "argumento desconhecido: ${1:-}" ;;
 esac
 exit 0

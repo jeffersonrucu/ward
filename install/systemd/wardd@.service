@@ -1,19 +1,19 @@
-# Ward: daemon do cofre do uid %i (D46, D57, D62, Fases 24 e 51). Unit do systemd do
-# SISTEMA, instalada pelo `sudo make install` em /usr/local/lib/systemd/system/.
+# Ward: vault daemon of uid %i (D46, D57, D62, Phases 24 and 51). Unit of the SYSTEM
+# systemd, installed by `sudo make install` in /usr/local/lib/systemd/system/.
 #
-# Sobe na primeira conexão ao wardd@%i.socket e recebe o socket por LISTEN_FDS.
+# Starts on the first connection to wardd@%i.socket and gets the socket by LISTEN_FDS.
 #
-# Sem NoNewPrivileges=, RestrictSUIDSGID= nem opção que implique no_new_privs num
-# serviço com User= (SystemCallFilter=, SystemCallArchitectures=, RestrictNamespaces=,
+# No NoNewPrivileges=, RestrictSUIDSGID= nor any option that implies no_new_privs in a
+# service with User= (SystemCallFilter=, SystemCallArchitectures=, RestrictNamespaces=,
 # RestrictAddressFamilies=, LockPersonality=, MemoryDenyWriteExecute=, RestrictRealtime=,
-# PrivateDevices=, ProtectKernel*=, ProtectClock=, DynamicUser=...). Com no_new_privs o
-# execve do ward-app, que o daemon lança, não aplica o setgid e o app nunca recebe o
-# papel (D57); MemoryDenyWriteExecute= também quebra o JIT do WebKitGTK. Também sem
-# ProtectHome=/ProtectSystem=/PrivateTmp=: o cofre fica no home e o `ward run` executa
-# o comando do usuário no cwd dele.
+# PrivateDevices=, ProtectKernel*=, ProtectClock=, DynamicUser=...). With no_new_privs
+# the execve of ward-app, which the daemon launches, does not apply the setgid and the
+# app never gets the role (D57); MemoryDenyWriteExecute= also breaks the WebKitGTK JIT.
+# Also no ProtectHome=/ProtectSystem=/PrivateTmp=: the vault lives in the home and
+# `ward run` runs the user's command in their cwd.
 #
-# Sem Environment=/EnvironmentFile=: o wardd recusa LD_* e a lista insegura da glibc
-# (S8, D48) e monta o ambiente dos filhos do zero (D57).
+# No Environment=/EnvironmentFile=: wardd refuses LD_* and glibc's unsecure list
+# (S8, D48) and builds the children's environment from scratch (D57).
 
 [Unit]
 Description=Ward: daemon do cofre do uid %i
@@ -25,10 +25,10 @@ Type=simple
 ExecStart=/usr/local/bin/wardd
 User=%i
 UMask=0077
-# S8: sem core dump.
+# S8: no core dump.
 LimitCORE=0
-# D62: mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) no iniciar_endurecido; com
-# limite, a alocação do Argon2 falharia.
+# D62: mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) at hardened start; with a
+# limit, the Argon2 allocation would fail.
 LimitMEMLOCK=infinity
 Restart=on-failure
 RestartSec=1

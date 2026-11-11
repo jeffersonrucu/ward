@@ -9,9 +9,9 @@ members = [
     "crates/ward-test-bridge",
     "app/core",
 ]
-# O crate do Tauri tem workspace e lockfile próprios (`app/src-tauri/Cargo.lock`): ele
-# precisa das bibliotecas de desenvolvimento do WebKitGTK para compilar e traz a árvore do
-# GTK 3. Fica fora do `make check` e entra no `make app-check` (Fase 29).
+# The Tauri crate has its own workspace and lockfile (`app/src-tauri/Cargo.lock`): it
+# needs the WebKitGTK development libraries to build and brings the GTK 3 tree. It stays
+# out of `make check` and goes into `make app-check` (Phase 29).
 exclude = ["app/src-tauri"]
 
 [workspace.package]
@@ -20,14 +20,14 @@ edition = "2024"
 rust-version = "1.99"
 publish = false
 
-# Dependências novas só com motivo escrito no handoff da fase (S14).
+# New dependencies only with the reason written in the phase handoff (S14).
 [workspace.dependencies]
 ward-core = { path = "crates/ward-core" }
 ward-platform = { path = "crates/ward-platform" }
 ward-app-core = { path = "app/core" }
 
 [workspace.lints.rust]
-# `unsafe` só em `ward-platform`, com `// SAFETY:` e teste; os outros crates usam
+# `unsafe` only in `ward-platform`, with `// SAFETY:` and a test; the other crates use
 # `#![forbid(unsafe_code)]`.
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "deny"
@@ -43,9 +43,9 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 
-# Argon2id com 256 MiB leva dezenas de segundos sem otimização, e os testes do formato
-# usam os parâmetros reais (V2.2, V2.4). As crates de cripto compilam otimizadas também
-# no perfil dev/test; o código do Ward continua sem otimização.
+# Argon2id with 256 MiB takes tens of seconds without optimization, and the format tests
+# use the real parameters (V2.2, V2.4). The crypto crates build optimized in the dev/test
+# profile too; Ward's own code stays unoptimized.
 [profile.dev.package.argon2]
 opt-level = 3
 

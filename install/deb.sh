@@ -1,23 +1,24 @@
 #!/bin/bash -p
-# `make deb` (Fase 52; D18, D47, D60, D63; V9.9): o `.deb` do Ward por `dpkg-deb`, a
-# partir da mesma árvore do `make install`. Roda como o usuário, nunca como root, e
-# nunca chama o cargo (os artefatos vêm do `make release`).
+# `make deb` (Phase 52; D18, D47, D60, D63; V9.9): Ward's `.deb` by `dpkg-deb`, from
+# the same tree as `make install`. Runs as the user, never as root, and never calls
+# cargo (the artifacts come from `make release`).
 #
-#   1. `install.sh instalar` com DESTDIR=<DEB_DIR>/raiz: o staging, com as mesmas
-#      conferências do `make install` (artefato `test-mode` recusado, ELF, sem link,
-#      pacote da extensão com o id de EXTENSION_ID, PREFIX).
-#   2. Cópia do staging para <DEB_DIR>/pacote sem os bits setuid/setgid: no pacote todo
-#      arquivo é root:root (`--root-owner-group`) e um 2755 root:root daria o gid do
-#      root a quem rodasse o binário. O 2755 com o grupo certo entra pelo
-#      `dpkg-statoverride` do preinst.
-#   3. DEBIAN/: control (Depends com sshpass), preinst (grupos de `groups.sh`, políticas
-#      do Chrome de `chrome.sh` e as pastas comuns de `tree.txt`), postinst (aviso de
-#      `chrome.sh`), prerm e postrm (marca dos grupos de `groups.sh`) de `install/deb/`.
-#   4. `dpkg-deb --build`, e a conferência do resultado: a lista de `dpkg-deb -c` é a do
-#      staging (V9.9), todo caminho é root/root, nenhum bit setuid/setgid nem escrita
-#      para grupo e outros, Depends com sshpass.
+#   1. `install.sh install` with DESTDIR=<DEB_DIR>/root: the staging, with the same
+#      checks as `make install` (`test-mode` artifact refused, ELF, no link, extension
+#      package with the id of EXTENSION_ID, PREFIX).
+#   2. Copy of the staging to <DEB_DIR>/package without the setuid/setgid bits: in the
+#      package every file is root:root (`--root-owner-group`) and a 2755 root:root would
+#      give root's gid to whoever ran the binary. The 2755 with the right group comes
+#      from the `dpkg-statoverride` of the preinst.
+#   3. DEBIAN/: control (Depends with sshpass), preinst (groups from `groups.sh`, Chrome
+#      policies from `chrome.sh` and the common dirs of `tree.txt`), postinst (warning
+#      from `chrome.sh`), prerm and postrm (mark of the groups from `groups.sh`) from
+#      `install/deb/`.
+#   4. `dpkg-deb --build`, and the check of the result: the list of `dpkg-deb -c` is the
+#      staging's (V9.9), every path is root/root, no setuid/setgid bit nor write for
+#      group and others, Depends with sshpass.
 #
-# Variáveis (o Makefile exporta): DEB_DIR (padrão: target/deb; caminho absoluto),
+# Variables (the Makefile exports them): DEB_DIR (default: target/deb; absolute path),
 # EXTENSION_ID, EXTENSION_CRX, BIN_WARD, BIN_WARDD, BIN_APP, BIN_NM.
 
 export PATH=/usr/bin:/bin
@@ -25,88 +26,87 @@ export LC_ALL=C
 set -euo pipefail
 umask 022
 
-AQUI="$(cd -P -- "${BASH_SOURCE[0]%/*}" && pwd -P)"
-RAIZ="${AQUI%/*}"
+HERE="$(cd -P -- "${BASH_SOURCE[0]%/*}" && pwd -P)"
+ROOT="${HERE%/*}"
 
-erro() { printf 'ward-deb: %s\n' "$*" >&2; exit 1; }
-passo() { printf '==> %s\n' "$*"; }
+error() { printf 'ward-deb: %s\n' "$*" >&2; exit 1; }
+step() { printf '==> %s\n' "$*"; }
 
-[ $# -eq 0 ] || erro "uso: deb.sh (sem argumentos; as variáveis vêm do ambiente)"
-[ "$(id -u)" != 0 ] || erro "rode como o usuário, sem sudo: o pacote é montado sem root ('make deb')"
-command -v dpkg-deb >/dev/null || erro "falta o dpkg-deb"
+[ $# -eq 0 ] || error "uso: deb.sh (sem argumentos; as variáveis vêm do ambiente)"
+[ "$(id -u)" != 0 ] || error "rode como o usuário, sem sudo: o pacote é montado sem root ('make deb')"
+command -v dpkg-deb >/dev/null || error "falta o dpkg-deb"
 
-DEB_DIR="${DEB_DIR:-$RAIZ/target/deb}"
+DEB_DIR="${DEB_DIR:-$ROOT/target/deb}"
 DEB_DIR="${DEB_DIR%/}"
-[[ "$DEB_DIR" == /* ]] || erro "DEB_DIR tem de ser um caminho absoluto"
+[[ "$DEB_DIR" == /* ]] || error "DEB_DIR tem de ser um caminho absoluto"
 [[ "$DEB_DIR" != *//* && "$DEB_DIR" != */./* && "$DEB_DIR" != */../* && "$DEB_DIR" != */. && "$DEB_DIR" != */.. ]] ||
-    erro "DEB_DIR com '//', '.' ou '..'"
+    error "DEB_DIR com '//', '.' ou '..'"
 mkdir -p -m 0755 -- "$DEB_DIR"
-[ "$(cd -P -- "$DEB_DIR" && pwd -P)" = "$DEB_DIR" ] || erro "DEB_DIR passa por link simbólico"
+[ "$(cd -P -- "$DEB_DIR" && pwd -P)" = "$DEB_DIR" ] || error "DEB_DIR passa por link simbólico"
 
-# Versão do workspace e arquitetura.
-VERSAO="$(awk '/^\[workspace.package\]/{s=1; next} /^\[/{s=0} s && /^version *=/{gsub(/[" ]/, "", $0); sub(/^version=/, "", $0); print; exit}' "$RAIZ/Cargo.toml")"
-[[ "$VERSAO" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || erro "versão do workspace fora do formato ($VERSAO)"
-ARQ="$(dpkg --print-architecture)"
-[[ "$ARQ" =~ ^[a-z0-9-]+$ ]] || erro "arquitetura fora do formato"
+# Workspace version and architecture.
+VERSION="$(awk '/^\[workspace.package\]/{s=1; next} /^\[/{s=0} s && /^version *=/{gsub(/[" ]/, "", $0); sub(/^version=/, "", $0); print; exit}' "$ROOT/Cargo.toml")"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || error "versão do workspace fora do formato ($VERSION)"
+ARCH="$(dpkg --print-architecture)"
+[[ "$ARCH" =~ ^[a-z0-9-]+$ ]] || error "arquitetura fora do formato"
 
-STAGING="$DEB_DIR/raiz"
-PACOTE="$DEB_DIR/pacote"
-SAIDA="$DEB_DIR/ward_${VERSAO}_${ARQ}.deb"
-rm -rf -- "$STAGING" "$PACOTE" "$SAIDA"
+STAGING="$DEB_DIR/root"
+PACKAGE="$DEB_DIR/package"
+OUTPUT="$DEB_DIR/ward_${VERSION}_${ARCH}.deb"
+rm -rf -- "$STAGING" "$PACKAGE" "$OUTPUT"
 
-passo "staging: make install DESTDIR=$STAGING"
-DESTDIR="$STAGING" PREFIX=/usr/local "$AQUI/install.sh" instalar
+step "staging: make install DESTDIR=$STAGING"
+DESTDIR="$STAGING" PREFIX=/usr/local "$HERE/install.sh" install
 
-passo "pacote em $PACOTE (sem setuid/setgid; o 2755 vem do dpkg-statoverride)"
-cp -a -- "$STAGING" "$PACOTE"
-find "$PACOTE" -perm /6000 -exec chmod ug-s -- {} +
-find "$PACOTE" -type d -exec chmod 0755 -- {} +
+step "pacote em $PACKAGE (sem setuid/setgid; o 2755 vem do dpkg-statoverride)"
+cp -a -- "$STAGING" "$PACKAGE"
+find "$PACKAGE" -perm /6000 -exec chmod ug-s -- {} +
+find "$PACKAGE" -type d -exec chmod 0755 -- {} +
 
-# Scripts do mantenedor. As marcas `#@GRUPOS@` (groups.sh), `#@CHROME@` (chrome.sh),
-# `#@DESPEJO@` (dump.sh, Fase 51c) e `#@PASTAS@` (pastas comuns de tree.txt) viram
-# o conteúdo; cada marca que um modelo
-# usa aparece uma vez só, e nenhuma sobra.
-install -d -m 0755 -- "$PACOTE/DEBIAN"
-/usr/bin/python3 -I -B - "$AQUI/deb" "$AQUI/groups.sh" "$AQUI/chrome.sh" "$AQUI/dump.sh" "$AQUI/tree.txt" "$PACOTE/DEBIAN" <<'EOF'
+# Maintainer scripts. The markers `#@GROUPS@` (groups.sh), `#@CHROME@` (chrome.sh),
+# `#@DUMP@` (dump.sh, Phase 51c) and `#@DIRS@` (common dirs of tree.txt) become the
+# content; each marker a template uses appears only once, and none is left over.
+install -d -m 0755 -- "$PACKAGE/DEBIAN"
+/usr/bin/python3 -I -B - "$HERE/deb" "$HERE/groups.sh" "$HERE/chrome.sh" "$HERE/dump.sh" "$HERE/tree.txt" "$PACKAGE/DEBIAN" <<'EOF'
 import re, sys
-modelos, grupos, chrome, despejo, arvore, saida = sys.argv[1:]
-pastas = []
-for linha in open(arvore, encoding="utf-8"):
-    campos = linha.split()
-    if not campos or campos[0].startswith("#"):
+templates, groups, chrome, dump, tree, out_dir = sys.argv[1:]
+dirs = []
+for line in open(tree, encoding="utf-8"):
+    fields = line.split()
+    if not fields or fields[0].startswith("#"):
         continue
-    if campos[0] == "D":
-        if not re.fullmatch(r"[a-z][a-z0-9._/-]*", campos[4]) or ".." in campos[4]:
-            sys.exit(f"pasta fora do formato: {campos[4]}")
-        pastas.append(f"    {campos[4]}")
-trocas = {
-    "#@GRUPOS@\n": open(grupos, encoding="utf-8").read(),
+    if fields[0] == "D":
+        if not re.fullmatch(r"[a-z][a-z0-9._/-]*", fields[4]) or ".." in fields[4]:
+            sys.exit(f"pasta fora do formato: {fields[4]}")
+        dirs.append(f"    {fields[4]}")
+replacements = {
+    "#@GROUPS@\n": open(groups, encoding="utf-8").read(),
     "#@CHROME@\n": open(chrome, encoding="utf-8").read(),
-    "#@DESPEJO@\n": open(despejo, encoding="utf-8").read(),
-    "#@PASTAS@\n": "\n".join(pastas) + "\n",
+    "#@DUMP@\n": open(dump, encoding="utf-8").read(),
+    "#@DIRS@\n": "\n".join(dirs) + "\n",
 }
 for s in ("preinst", "postinst", "prerm", "postrm"):
-    texto = open(f"{modelos}/{s}", encoding="utf-8").read()
-    for marca, conteudo in trocas.items():
-        n = texto.count(marca)
+    text = open(f"{templates}/{s}", encoding="utf-8").read()
+    for marker, content in replacements.items():
+        n = text.count(marker)
         if n > 1:
-            sys.exit(f"marca {marca.strip()} aparece {n} vezes no {s}")
-        texto = texto.replace(marca, conteudo)
-    if "#@" in texto:
+            sys.exit(f"marca {marker.strip()} aparece {n} vezes no {s}")
+        text = text.replace(marker, content)
+    if "#@" in text:
         sys.exit(f"marca de modelo desconhecida no {s}")
-    open(f"{saida}/{s}", "w", encoding="utf-8").write(texto)
+    open(f"{out_dir}/{s}", "w", encoding="utf-8").write(text)
 EOF
 for s in preinst postinst prerm postrm; do
-    chmod 0755 -- "$PACOTE/DEBIAN/$s"
-    bash -n -- "$PACOTE/DEBIAN/$s" || erro "DEBIAN/$s com erro de sintaxe"
+    chmod 0755 -- "$PACKAGE/DEBIAN/$s"
+    bash -n -- "$PACKAGE/DEBIAN/$s" || error "DEBIAN/$s com erro de sintaxe"
 done
-TAM="$(du -sk --exclude=DEBIAN -- "$PACOTE" | cut -f1)"
-cat >"$PACOTE/DEBIAN/control" <<EOF
+SIZE="$(du -sk --exclude=DEBIAN -- "$PACKAGE" | cut -f1)"
+cat >"$PACKAGE/DEBIAN/control" <<EOF
 Package: ward
-Version: $VERSAO
-Architecture: $ARQ
+Version: $VERSION
+Architecture: $ARCH
 Maintainer: Jefferson Oliveira <jefferoidtex7@gmail.com>
-Installed-Size: $TAM
+Installed-Size: $SIZE
 Depends: sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
 Section: admin
 Priority: optional
@@ -121,28 +121,28 @@ Description: offline work-credential vault that lets AI agents use secrets unsee
  ward-app desktop app, the ward-nm native messaging host and the Chrome
  extension, installed by policy. Each use can require approval with a PIN.
 EOF
-chmod 0644 -- "$PACOTE/DEBIAN/control"
+chmod 0644 -- "$PACKAGE/DEBIAN/control"
 
-passo "dpkg-deb --build"
-dpkg-deb --root-owner-group -Zxz --build "$PACOTE" "$SAIDA" >/dev/null
+step "dpkg-deb --build"
+dpkg-deb --root-owner-group -Zxz --build "$PACKAGE" "$OUTPUT" >/dev/null
 
-passo "conferindo o pacote"
-# V9.9: a mesma lista de caminhos do staging.
-esperado="$(cd "$STAGING" && find . -mindepth 1 -printf '%P\n' | sort)"
-lista="$(dpkg-deb -c "$SAIDA")"
-real="$(awk '{print $6}' <<<"$lista" | sed -e 's#^\./##' -e 's#/$##' | grep -v '^$' | sort)"
-[ "$esperado" = "$real" ] || { diff <(printf '%s\n' "$esperado") <(printf '%s\n' "$real") >&2 || true; erro "a lista do pacote difere do staging"; }
-# Donos, bits especiais e escrita para grupo e outros; nenhum link.
-awk '$2 != "root/root" {print "dono: " $0; ruim = 1}
-     substr($1, 1, 1) == "l" {print "link: " $0; ruim = 1}
-     $1 ~ /[sStT]/ {print "bit especial: " $0; ruim = 1}
-     substr($1, 6, 1) == "w" || substr($1, 9, 1) == "w" {print "escrita: " $0; ruim = 1}
-     END {exit ruim}' <<<"$lista" >&2 || erro "pacote com dono, link, bit especial ou escrita fora do esperado"
-dep="$(dpkg-deb -f "$SAIDA" Depends)"
-[[ ", $dep," == *", sshpass,"* ]] || erro "o pacote não declara a dependência de sshpass"
+step "conferindo o pacote"
+# V9.9: the same list of paths as the staging.
+expected="$(cd "$STAGING" && find . -mindepth 1 -printf '%P\n' | sort)"
+listing="$(dpkg-deb -c "$OUTPUT")"
+actual="$(awk '{print $6}' <<<"$listing" | sed -e 's#^\./##' -e 's#/$##' | grep -v '^$' | sort)"
+[ "$expected" = "$actual" ] || { diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true; error "a lista do pacote difere do staging"; }
+# Owners, special bits and write for group and others; no link.
+awk '$2 != "root/root" {print "dono: " $0; bad = 1}
+     substr($1, 1, 1) == "l" {print "link: " $0; bad = 1}
+     $1 ~ /[sStT]/ {print "bit especial: " $0; bad = 1}
+     substr($1, 6, 1) == "w" || substr($1, 9, 1) == "w" {print "escrita: " $0; bad = 1}
+     END {exit bad}' <<<"$listing" >&2 || error "pacote com dono, link, bit especial ou escrita fora do esperado"
+dep="$(dpkg-deb -f "$OUTPUT" Depends)"
+[[ ", $dep," == *", sshpass,"* ]] || error "o pacote não declara a dependência de sshpass"
 for s in preinst postinst prerm postrm; do
-    dpkg-deb -I "$SAIDA" "$s" >/dev/null || erro "o pacote não tem $s"
+    dpkg-deb -I "$OUTPUT" "$s" >/dev/null || error "o pacote não tem $s"
 done
 
-passo "pronto: $SAIDA"
-sha256sum -- "$SAIDA"
+step "pronto: $OUTPUT"
+sha256sum -- "$OUTPUT"
