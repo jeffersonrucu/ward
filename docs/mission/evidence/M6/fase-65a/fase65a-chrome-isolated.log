@@ -1,0 +1,3 @@
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+[1111/155015.521527:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+Google Chrome 156.0.8078.79 

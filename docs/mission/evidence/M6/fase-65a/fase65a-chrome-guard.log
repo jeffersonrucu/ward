@@ -1,0 +1,119 @@
+$ make test-chrome-guard
+/usr/bin/python3 -I -B dev/tests/chrome_guard.py --self-test
+ok    árvore limpa: liberado
+ok    política alheia: liberado
+ok    manifesto alheio: liberado
+ok    cópia da política do host (ward.json): recusado
+ok    cópia da política do host com outro nome: recusado
+ok    ward.json gerado: recusado
+ok    ExtensionSettings com outro nome: recusado
+ok    ward.json vazio: recusado
+ok    ExtensionInstallForcelist: recusado
+ok    só NativeMessagingUserLevelHosts: recusado
+ok    JSON inválido com o id: recusado
+ok    pasta recommended: recusado
+ok    Chromium: recusado
+ok    política por link: recusado
+ok    política ilegível: recusado
+ok    pasta de política ilegível: recusado
+ok    manifesto br.ward.nm.json: recusado
+ok    manifesto com outro nome e o id: recusado
+ok    manifesto que aponta para o ward-nm: recusado
+chrome-guard --self-test: tudo certo
+exit=0
+
+$ python3 -I -B dev/tests/chrome_guard.py check   (no host)
+chrome-guard: RECUSADO. Este Chrome veria o Ward instalado:
+  - /etc/opt/chrome/policies/managed/ward.json: política do Ward instalada
+  - /etc/opt/chrome/policies/managed/ward.json: cita o id da extensão do Ward
+  - /etc/opt/chrome/policies/managed/ward.json: NativeMessagingUserLevelHosts (política do Ward)
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: manifesto de native messaging do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: deixa entrar o id da extensão do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: aponta para um programa do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: host br.ward.nm
+  Uma extensão de teste (ou a forçada pela política) chegaria ao /usr/local/bin/ward-nm,
+  ao wardd instalado e ao cofre real. Rode a suíte no contêiner (make test-nm,
+  test-extension e test-login já rodam lá) ou numa máquina sem o Ward instalado.
+  Nunca apague nem mude a política para rodar o teste.
+exit=3
+
+$ dev/tests/nm.sh <binários>   (direto no host, fora do contêiner)
+chrome-guard: RECUSADO. Este Chrome veria o Ward instalado:
+  - /etc/opt/chrome/policies/managed/ward.json: política do Ward instalada
+  - /etc/opt/chrome/policies/managed/ward.json: cita o id da extensão do Ward
+  - /etc/opt/chrome/policies/managed/ward.json: NativeMessagingUserLevelHosts (política do Ward)
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: manifesto de native messaging do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: deixa entrar o id da extensão do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: aponta para um programa do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: host br.ward.nm
+  Uma extensão de teste (ou a forçada pela política) chegaria ao /usr/local/bin/ward-nm,
+  ao wardd instalado e ao cofre real. Rode a suíte no contêiner (make test-nm,
+  test-extension e test-login já rodam lá) ou numa máquina sem o Ward instalado.
+  Nunca apague nem mude a política para rodar o teste.
+exit=3
+
+$ dev/tests/extension.sh <binários>   (direto no host, fora do contêiner)
+chrome-guard: RECUSADO. Este Chrome veria o Ward instalado:
+  - /etc/opt/chrome/policies/managed/ward.json: política do Ward instalada
+  - /etc/opt/chrome/policies/managed/ward.json: cita o id da extensão do Ward
+  - /etc/opt/chrome/policies/managed/ward.json: NativeMessagingUserLevelHosts (política do Ward)
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: manifesto de native messaging do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: deixa entrar o id da extensão do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: aponta para um programa do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: host br.ward.nm
+  Uma extensão de teste (ou a forçada pela política) chegaria ao /usr/local/bin/ward-nm,
+  ao wardd instalado e ao cofre real. Rode a suíte no contêiner (make test-nm,
+  test-extension e test-login já rodam lá) ou numa máquina sem o Ward instalado.
+  Nunca apague nem mude a política para rodar o teste.
+exit=3
+
+$ dev/tests/login.sh <binários>   (direto no host, fora do contêiner)
+chrome-guard: RECUSADO. Este Chrome veria o Ward instalado:
+  - /etc/opt/chrome/policies/managed/ward.json: política do Ward instalada
+  - /etc/opt/chrome/policies/managed/ward.json: cita o id da extensão do Ward
+  - /etc/opt/chrome/policies/managed/ward.json: NativeMessagingUserLevelHosts (política do Ward)
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: manifesto de native messaging do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: deixa entrar o id da extensão do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: aponta para um programa do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: host br.ward.nm
+  Uma extensão de teste (ou a forçada pela política) chegaria ao /usr/local/bin/ward-nm,
+  ao wardd instalado e ao cofre real. Rode a suíte no contêiner (make test-nm,
+  test-extension e test-login já rodam lá) ou numa máquina sem o Ward instalado.
+  Nunca apague nem mude a política para rodar o teste.
+exit=3
+
+$ make test-playwright   (no host)
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/usr/bin/python3 -I -B dev/tests/chrome_guard.py check
+chrome-guard: RECUSADO. Este Chrome veria o Ward instalado:
+  - /etc/opt/chrome/policies/managed/ward.json: política do Ward instalada
+  - /etc/opt/chrome/policies/managed/ward.json: cita o id da extensão do Ward
+  - /etc/opt/chrome/policies/managed/ward.json: NativeMessagingUserLevelHosts (política do Ward)
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: manifesto de native messaging do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: deixa entrar o id da extensão do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: aponta para um programa do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: host br.ward.nm
+  Uma extensão de teste (ou a forçada pela política) chegaria ao /usr/local/bin/ward-nm,
+  ao wardd instalado e ao cofre real. Rode a suíte no contêiner (make test-nm,
+  test-extension e test-login já rodam lá) ou numa máquina sem o Ward instalado.
+  Nunca apague nem mude a política para rodar o teste.
+make: *** [Makefile:617: test-playwright] Erro 3
+exit=2
+
+$ make test-chrome-policy   (no host)
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/usr/bin/python3 -I -B dev/tests/chrome_guard.py check
+chrome-guard: RECUSADO. Este Chrome veria o Ward instalado:
+  - /etc/opt/chrome/policies/managed/ward.json: política do Ward instalada
+  - /etc/opt/chrome/policies/managed/ward.json: cita o id da extensão do Ward
+  - /etc/opt/chrome/policies/managed/ward.json: NativeMessagingUserLevelHosts (política do Ward)
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: manifesto de native messaging do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: deixa entrar o id da extensão do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: aponta para um programa do Ward
+  - /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json: host br.ward.nm
+  Uma extensão de teste (ou a forçada pela política) chegaria ao /usr/local/bin/ward-nm,
+  ao wardd instalado e ao cofre real. Rode a suíte no contêiner (make test-nm,
+  test-extension e test-login já rodam lá) ou numa máquina sem o Ward instalado.
+  Nunca apague nem mude a política para rodar o teste.
+make: *** [Makefile:520: test-chrome-policy] Erro 3
+exit=2
