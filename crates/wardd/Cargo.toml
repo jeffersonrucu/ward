@@ -90,11 +90,11 @@ name = "trava"
 required-features = ["test-mode"]
 
 [[test]]
-name = "app_teste"
+name = "test_app"
 required-features = ["test-mode"]
 
 [[test]]
-name = "app_valor"
+name = "app_value_binary"
 required-features = ["test-mode"]
 
 [[test]]
