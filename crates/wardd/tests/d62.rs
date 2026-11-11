@@ -17,7 +17,7 @@ use common::*;
 use ward_core::config::{PinHash, VaultConfig};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::protocol::{MSG_ROLLBACK, Response, ResponseError, Role};
-use wardd::arquivos::{self, Geracoes};
+use wardd::files::{self, Generations};
 use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
 
 /// Clock with the time controlled by the test: records the waits and does not sleep.
@@ -65,9 +65,9 @@ fn state_text(dir: &Dir) -> String {
 }
 
 fn failures_on_disk(dir: &Dir) -> u32 {
-    arquivos::ler_estado_completo(&dir.paths().estado)
+    files::read_full_state(&dir.paths().estado)
         .unwrap()
-        .falhas_agente
+        .agent_failures
 }
 
 /// Test vault created and locked; the daemon that created it is dropped.
@@ -229,10 +229,7 @@ fn v3_33_old_format_and_state_without_secret() {
     let g = generations(&dir);
     fs::write(
         dir.paths().estado,
-        format!(
-            "ward-estado 1\nvista {}\nqueimada {}\n",
-            g.vista, g.queimada
-        ),
+        format!("ward-estado 1\nvista {}\nqueimada {}\n", g.seen, g.burned),
     )
     .unwrap();
     let r = MovableClock::default();
@@ -243,7 +240,7 @@ fn v3_33_old_format_and_state_without_secret() {
         state_text(&dir),
         format!(
             "ward-estado 1\nvista {}\nqueimada {}\nfalhas_agente 1\n",
-            g.vista, g.queimada
+            g.seen, g.burned
         )
     );
     // The app does not go to disk.
@@ -289,14 +286,7 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
     .after_generation(4);
     ward_core::atomic_write::write_entries(&old, &mut stale, &[]).unwrap();
     assert_eq!(generation_on_disk(&old, PASSWORD), 5);
-    arquivos::gravar_estado(
-        &c.estado,
-        Geracoes {
-            vista: 7,
-            queimada: 7,
-        },
-    )
-    .unwrap();
+    files::write_state(&c.estado, Generations { seen: 7, burned: 7 }).unwrap();
     assert!(!c.cofre.exists());
 
     let (d, _) = daemon_at(c.clone());
@@ -312,13 +302,7 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
     );
     assert!(ok(&create), "{create:?}");
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), 8);
-    assert_eq!(
-        generations(&dir),
-        Geracoes {
-            vista: 8,
-            queimada: 8
-        }
-    );
+    assert_eq!(generations(&dir), Generations { seen: 8, burned: 8 });
 
     // The attacker puts the old copy in place and unlocks.
     d.travar();
@@ -354,13 +338,7 @@ fn v3_35_create_vault_without_state_and_with_invalid_state() {
     fs::remove_file(&c.estado).unwrap();
     assert!(ok(&request(&d, Role::App, "criar_cofre", &create)));
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), 1);
-    assert_eq!(
-        generations(&dir),
-        Geracoes {
-            vista: 1,
-            queimada: 1
-        }
-    );
+    assert_eq!(generations(&dir), Generations { seen: 1, burned: 1 });
 }
 
 /// Swaps the vault file for a copy with the same bytes in another inode (what a process

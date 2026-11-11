@@ -409,7 +409,7 @@ impl Cdp {
             self.send("Fetch.continueRequest", &params, true)?;
         } else {
             self.blocked = true;
-            crate::aviso!("playwright: navegação para outra origem recusada (D9)");
+            crate::warning!("playwright: navegação para outra origem recusada (D9)");
             self.send("Fetch.failRequest", &params, true)?;
         }
         Ok(())

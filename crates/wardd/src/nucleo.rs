@@ -31,11 +31,11 @@
 //!   bloqueada também). O log registra `revelar <entrada> <campo>` (ou `copiar`,
 //!   `totp`) sem valor (S13); o valor vai só na resposta, num `Segredo` que zera ao
 //!   sair.
-//! - Uso do agente e aprovação (Fase 23): em [`crate::uso`], com o motor de
+//! - Uso do agente e aprovação (Fase 23): em [`crate::usage`], com o motor de
 //!   [`crate::aprovacao`].
 //! - **Backup local** (Fase 45, D17): cada gravação do cofre que deu certo grava a mesma
 //!   versão selada em `<pasta do cofre>/backups/`, aberta pelo fd com `O_NOFOLLOW`
-//!   ([`arquivos::abrir_pasta_backup`]); 30 versões. Se a pasta não abre ou não é
+//!   ([`files::open_backup_dir`]); 30 versões. Se a pasta não abre ou não é
 //!   segura, o cofre é gravado assim mesmo e o log avisa. **Restaurar** é só do app,
 //!   com o cofre destravado, o PIN atual (S9) e a senha mestra da versão: o cofre atual
 //!   vira backup antes, e a versão é selada de novo com geração = maior queimada + 1
@@ -70,9 +70,9 @@ use ward_core::protocol::{
 use ward_core::totp::Totp;
 
 use crate::aprovacao::{Cliente, Motor, SemCliente};
-use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
 use crate::external::{self, BackupCopy, ExternalError, UsbDriveSource};
-use crate::{aviso, depurar};
+use crate::files::{self, FileIdentity, Generations, StateFile};
+use crate::{debug, warning};
 use ward_platform::child::Group;
 
 /// Erros de PIN seguidos que travam o cofre (S9).
@@ -141,14 +141,14 @@ pub(crate) struct Aberto {
     pub(crate) tokens: Vec<crate::ssh::ConnectToken>,
     /// Identidade do arquivo depois da última leitura ou gravação. `None`: não deu para
     /// ler depois de gravar, e a próxima gravação recusa como "mudou".
-    identidade: Option<Identidade>,
-    geracoes: Geracoes,
+    identidade: Option<FileIdentity>,
+    geracoes: Generations,
 }
 
 pub(crate) struct Estado {
     pub(crate) aberto: Option<Aberto>,
     /// Identidade do cofre ao travar, para conferir ao reabrir (D39).
-    identidade_conhecida: Option<Identidade>,
+    identidade_conhecida: Option<FileIdentity>,
     erros_pin: u32,
     /// Último uso com o cofre destravado, no relógio do [`Relogio::agora`] (Fase 24).
     ultimo_uso: Option<Duration>,
@@ -216,19 +216,19 @@ impl Estado {
             // Fase 54 (S8): os `ward run` em curso morrem junto com a trava.
             let mortos = self.sessoes_run.travar(&self.travas);
             if mortos > 0 {
-                aviso!("{mortos} ward run/ssh encerrado(s) ao travar (S8)");
+                warning!("{mortos} ward run/ssh encerrado(s) ao travar (S8)");
             }
             // Fase 55 (S8): o que saiu de uma sessão com `setsid` e ficou filho do
             // daemon morre também, haja sessão em curso ou não.
             let orfaos = ward_platform::descendants::kill_orphans();
             if orfaos.killed > 0 {
-                aviso!(
+                warning!(
                     "{} processo(s) fora do grupo de um ward run/ssh encerrado(s) ao travar (S8)",
                     orfaos.killed
                 );
             }
             if orfaos.remaining > 0 {
-                aviso!(
+                warning!(
                     "{} processo(s) fora do grupo continuam vivos depois da trava (S8)",
                     orfaos.remaining
                 );
@@ -240,7 +240,7 @@ impl Estado {
             if let Some(rt) = &self.rt_playwright {
                 let n = crate::playwright::delete_sessions(rt);
                 if n > 0 {
-                    aviso!("{n} sessão(ões) do ward playwright apagada(s) ao travar (D6)");
+                    warning!("{n} sessão(ões) do ward playwright apagada(s) ao travar (D6)");
                 }
             }
         }
@@ -327,14 +327,14 @@ fn senha_nova(s: &Secret, campo: &str) -> Result<MasterPassword, ResponseError> 
     if senha.is_valid_new() {
         Ok(senha)
     } else {
-        aviso!("senha mestra nova recusada: abaixo do mínimo de caracteres");
+        warning!("senha mestra nova recusada: abaixo do mínimo de caracteres");
         Err(problema(campo, SENHA_CURTA))
     }
 }
 
 /// Confere o cofre e grava as entradas e a configuração do `a` (D39, D53).
 fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Result<(), FalhaGravar> {
-    match arquivos::identidade(&caminhos.cofre) {
+    match files::identity(&caminhos.cofre) {
         Ok(Some(id)) if Some(id) == a.identidade => {}
         _ => return Err(FalhaGravar::Mudou),
     }
@@ -354,13 +354,13 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
         .generation()
         .checked_add(1)
         .ok_or(FalhaGravar::Resposta(ResponseError::GenerationExhausted))?;
-    let antes = Geracoes {
-        vista: a.geracoes.vista,
-        queimada: a.geracoes.queimada.max(proxima),
+    let antes = Generations {
+        seen: a.geracoes.seen,
+        burned: a.geracoes.burned.max(proxima),
     };
     // D53: `queimada` vai para o disco antes do cofre; sem isso, o cofre não é gravado.
-    if arquivos::gravar_estado(&caminhos.estado, antes).is_err() {
-        aviso!("gravação recusada: não deu para gravar o arquivo de estado");
+    if files::write_state(&caminhos.estado, antes).is_err() {
+        warning!("gravação recusada: não deu para gravar o arquivo de estado");
         return Err(FalhaGravar::Resposta(ResponseError::WriteFailed));
     }
     a.geracoes = antes;
@@ -384,19 +384,19 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
                 // com a identidade lida do fd do temporário (D62), sem `stat` do caminho.
                 a.identidade = identity;
             }
-            aviso!("falha ao gravar o cofre: {}", codigo_gravacao(&e));
+            warning!("falha ao gravar o cofre: {}", codigo_gravacao(&e));
             Err(FalhaGravar::Resposta(ResponseError::from(&e)))
         }
     }
 }
 
 /// Abre a pasta de backups ao lado do cofre (Fase 45). Falha vai ao log, sem caminho.
-fn abrir_pasta(caminhos: &Caminhos) -> Option<arquivos::PastaAberta> {
-    let dir = arquivos::dir_backups(&caminhos.cofre)?;
-    match arquivos::abrir_pasta_backup(&dir) {
+fn abrir_pasta(caminhos: &Caminhos) -> Option<files::OpenDir> {
+    let dir = files::backups_dir(&caminhos.cofre)?;
+    match files::open_backup_dir(&dir) {
         Ok(p) => Some(p),
         Err(_) => {
-            aviso!(
+            warning!(
                 "backup local: a pasta de backups não abre ou não é um diretório 0700 do usuário"
             );
             None
@@ -418,8 +418,8 @@ fn codigo_backup(e: &BackupError) -> &'static str {
 
 fn registrar_backup(r: &Result<Version, BackupError>) {
     match r {
-        Ok(_) => depurar!("backup local gravado"),
-        Err(e) => aviso!(
+        Ok(_) => debug!("backup local gravado"),
+        Err(e) => warning!(
             "backup local não gravado ({}); o cofre foi gravado",
             codigo_backup(e)
         ),
@@ -432,14 +432,14 @@ fn gravar_com_backup(
     caminhos: &Caminhos,
     cofre: &mut OpenVault,
     entradas: &[Entry],
-) -> Result<Identidade, WriteError> {
+) -> Result<FileIdentity, WriteError> {
     match abrir_pasta(caminhos) {
         Some(p) => {
             let g = atomic_write::write_entries_with_backup(
                 &caminhos.cofre,
                 cofre,
                 entradas,
-                &p.pasta(),
+                &p.backup_dir(),
                 SystemTime::now(),
             )?;
             registrar_backup(&g.backup);
@@ -453,15 +453,15 @@ fn gravar_com_backup(
 /// gravação leu do fd do temporário (D62). Nenhum `stat` do caminho depois do rename:
 /// um arquivo trocado nesse meio-tempo fica com outra identidade, e a próxima gravação
 /// recusa como "mudou".
-fn confirmar(caminhos: &Caminhos, a: &mut Aberto, id: Identidade) {
+fn confirmar(caminhos: &Caminhos, a: &mut Aberto, id: FileIdentity) {
     let g = a.cofre.generation();
-    a.geracoes = Geracoes {
-        vista: g,
-        queimada: a.geracoes.queimada.max(g),
+    a.geracoes = Generations {
+        seen: g,
+        burned: a.geracoes.burned.max(g),
     };
-    if arquivos::gravar_estado(&caminhos.estado, a.geracoes).is_err() {
+    if files::write_state(&caminhos.estado, a.geracoes).is_err() {
         // O cofre está no disco; a próxima gravação regrava o estado antes.
-        aviso!("não deu para atualizar o arquivo de estado depois de gravar");
+        warning!("não deu para atualizar o arquivo de estado depois de gravar");
     }
     a.identidade = Some(id);
 }
@@ -510,17 +510,17 @@ impl Daemon {
     /// Daemon travado. Lê do arquivo de estado as senhas erradas do agente (D62): a
     /// espera de antes do reinício continua valendo.
     pub fn novo(caminhos: Caminhos, relogio: Box<dyn Relogio>) -> Self {
-        let falhas_agente = arquivos::ler_estado_completo(&caminhos.estado)
-            .map(|e| e.falhas_agente)
+        let falhas_agente = files::read_full_state(&caminhos.estado)
+            .map(|e| e.agent_failures)
             .unwrap_or(0);
         if falhas_agente > 0 {
-            aviso!("{falhas_agente} senha(s) errada(s) do agente antes da partida (D20)");
+            warning!("{falhas_agente} senha(s) errada(s) do agente antes da partida (D20)");
         }
         // Fase 49a: temporários do estado de uma gravação interrompida (outro processo).
-        match arquivos::limpar_temporarios_estado(&caminhos.estado) {
+        match files::clean_state_temp_files(&caminhos.estado) {
             Ok(0) => {}
-            Ok(n) => aviso!("{n} temporário(s) do arquivo de estado apagado(s) na partida"),
-            Err(_) => aviso!("não deu para limpar os temporários do arquivo de estado"),
+            Ok(n) => warning!("{n} temporário(s) do arquivo de estado apagado(s) na partida"),
+            Err(_) => warning!("não deu para limpar os temporários do arquivo de estado"),
         }
         let partida = relogio.agora();
         Self {
@@ -573,7 +573,7 @@ impl Daemon {
             match tx.try_send(()) {
                 Ok(()) | Err(TrySendError::Full(())) => {}
                 Err(TrySendError::Disconnected(())) => {
-                    aviso!("backup externo: a thread da cópia parou");
+                    warning!("backup externo: a thread da cópia parou");
                 }
             }
         }
@@ -670,7 +670,7 @@ impl Daemon {
             .filter(|p| !p.as_os_str().is_empty())
             .map(|p| p.join("known_hosts"))
             .ok_or("known_hosts do Ward sem pasta")?;
-        arquivos::preparar_known_hosts(&caminho).map_err(|_| {
+        files::prepare_known_hosts(&caminho).map_err(|_| {
             "known_hosts do Ward recusado: a pasta tem de ser 0700 e o arquivo 0600, do usuário, sem link"
         })?;
         Ok(caminho)
@@ -758,11 +758,11 @@ impl Daemon {
         // Lido com o estado travado: um uso de outra thread não fica "no futuro".
         let agora = self.relogio.agora();
         let minutos = a.cofre.config().lock_minutes();
-        if !crate::trava::venceu(est.ultimo_uso, agora, minutos) {
+        if !crate::lock::expired(est.ultimo_uso, agora, minutos) {
             return false;
         }
         est.travar();
-        aviso!("{minutos} min sem uso: cofre travado");
+        warning!("{minutos} min sem uso: cofre travado");
         true
     }
 
@@ -788,13 +788,13 @@ impl Daemon {
             return Response::Error(ResponseError::Unauthorized);
         }
         let r = self.atender_permitido(cliente, papel, pedido);
-        if crate::trava::conta_como_uso(papel, op, &r) {
+        if crate::lock::counts_as_use(papel, op, &r) {
             self.registrar_uso();
         }
         if muda_o_externo(op) && !matches!(r, Response::Error(_)) {
             self.cutucar_externo();
         }
-        depurar!(
+        debug!(
             "{} ({}): {}",
             op.name(),
             papel.name(),
@@ -812,7 +812,7 @@ impl Daemon {
                 let travado = self.travado();
                 Ok(Response::Status {
                     locked: travado,
-                    vault_exists: !travado || arquivos::cofre_existe(&self.caminhos.cofre),
+                    vault_exists: !travado || files::vault_exists(&self.caminhos.cofre),
                     // D63: o papel desta conexão, sem nenhum outro dado.
                     role: papel,
                 })
@@ -837,14 +837,14 @@ impl Daemon {
             // pela sessão do servidor (Fases 26/27); aqui o uso autorizado responde erro
             // interno.
             Request::Run(_) | Request::Ssh { .. } => self
-                .autorizar_uso(cliente, &pedido)
+                .authorize_use(cliente, &pedido)
                 .and(Err(ResponseError::Internal)),
             Request::AnswerApproval {
                 request: pedido,
                 decision: decisao,
                 pin,
                 confirmed_entry: entrada_confirmada,
-            } => self.responder_aprovacao(pedido, decisao, pin.as_ref(), entrada_confirmada),
+            } => self.answer_approval(pedido, decisao, pin.as_ref(), entrada_confirmada),
             Request::OpenApp => self.aprovacao.abrir_app().map(|()| Response::Ok),
             // Não há sessão aberta nesta fase (Fases 26/27).
             Request::Stdin { .. } | Request::Resize(_) => Err(ResponseError::InvalidRequest),
@@ -951,32 +951,32 @@ impl Daemon {
         if est.aberto.is_some() {
             return Ok(Response::Ok);
         }
-        let (bytes, id) = match arquivos::ler_cofre(&self.caminhos.cofre) {
+        let (bytes, id) = match files::read_vault(&self.caminhos.cofre) {
             Ok(Some(x)) => x,
             Ok(None) => return Err(ResponseError::VaultNotFound),
             Err(_) => {
-                aviso!("destravar recusado: o arquivo do cofre não pôde ser lido");
+                warning!("destravar recusado: o arquivo do cofre não pôde ser lido");
                 return Err(ResponseError::InvalidVault);
             }
         };
-        let (g, falhas_no_disco) = match arquivos::ler_estado_completo(&self.caminhos.estado) {
-            Ok(e) => (e.geracoes, e.falhas_agente),
+        let (g, falhas_no_disco) = match files::read_full_state(&self.caminhos.estado) {
+            Ok(e) => (e.generations, e.agent_failures),
             Err(_) => {
-                aviso!("destravar recusado: arquivo de estado ausente ou inválido (D39)");
+                warning!("destravar recusado: arquivo de estado ausente ou inválido (D39)");
                 return Err(ResponseError::Rollback);
             }
         };
         let senha = senha_de(senha);
         let (cofre, entradas, lida) =
-            match body::open_entries_with_generation(&bytes, &senha, g.vista, g.queimada) {
+            match body::open_entries_with_generation(&bytes, &senha, g.seen, g.burned) {
                 Ok(x) => x,
                 Err(e) => {
                     match e {
                         OpenError::Format(_) => self.contar_falha(&mut est, agente, g),
                         OpenError::Rollback => {
-                            aviso!("destravar recusado: o cofre no disco é mais antigo (D39)")
+                            warning!("destravar recusado: o cofre no disco é mais antigo (D39)")
                         }
-                        OpenError::Body(_) => aviso!("destravar recusado: corpo inválido"),
+                        OpenError::Body(_) => warning!("destravar recusado: corpo inválido"),
                     }
                     return Err(ResponseError::from(&e));
                 }
@@ -985,24 +985,24 @@ impl Daemon {
         if let Some(conhecida) = est.identidade_conhecida.take()
             && conhecida != id
         {
-            aviso!("destravar recusado: o arquivo do cofre mudou fora do Ward (D39)");
+            warning!("destravar recusado: o arquivo do cofre mudou fora do Ward (D39)");
             return Err(ResponseError::VaultChanged);
         }
-        let novo = Geracoes {
-            vista: g.vista.max(lida),
-            queimada: g.queimada.max(lida),
+        let novo = Generations {
+            seen: g.seen.max(lida),
+            burned: g.burned.max(lida),
         };
         // D62: o destravar certo zera as falhas do agente também no disco.
         if (novo != g || est.falhas_agente != 0 || falhas_no_disco != 0)
-            && arquivos::gravar_estado(&self.caminhos.estado, novo).is_err()
+            && files::write_state(&self.caminhos.estado, novo).is_err()
         {
-            aviso!("destravar recusado: não deu para atualizar o arquivo de estado");
+            warning!("destravar recusado: não deu para atualizar o arquivo de estado");
             return Err(ResponseError::WriteFailed);
         }
         match atomic_write::clean_temp_files(&self.caminhos.cofre) {
             Ok(0) => {}
-            Ok(n) => aviso!("{n} temporário(s) de gravação interrompida apagado(s)"),
-            Err(_) => aviso!("não deu para limpar os temporários do cofre"),
+            Ok(n) => warning!("{n} temporário(s) de gravação interrompida apagado(s)"),
+            Err(_) => warning!("não deu para limpar os temporários do cofre"),
         }
         est.falhas_agente = 0;
         est.falhas_app = 0;
@@ -1022,18 +1022,18 @@ impl Daemon {
     /// Uma senha errada (D20, D62). A do agente vai para o arquivo de estado, com fsync,
     /// antes de a resposta de erro sair; se não der para gravar, fica em memória e vai
     /// ao log.
-    fn contar_falha(&self, est: &mut Estado, agente: bool, g: Geracoes) {
+    fn contar_falha(&self, est: &mut Estado, agente: bool, g: Generations) {
         if !agente {
             est.falhas_app = est.falhas_app.saturating_add(1);
             return;
         }
         est.falhas_agente = est.falhas_agente.saturating_add(1);
-        let e = ArquivoEstado {
-            geracoes: g,
-            falhas_agente: est.falhas_agente,
+        let e = StateFile {
+            generations: g,
+            agent_failures: est.falhas_agente,
         };
-        if arquivos::gravar_estado_completo(&self.caminhos.estado, e).is_err() {
-            aviso!("não deu para gravar a senha errada do agente no arquivo de estado (D62)");
+        if files::write_full_state(&self.caminhos.estado, e).is_err() {
+            warning!("não deu para gravar a senha errada do agente no arquivo de estado (D62)");
         }
     }
 
@@ -1075,8 +1075,8 @@ impl Daemon {
         // O campo do tipo já passou pela lista fixa do protocolo; o nome do extra vem
         // da entrada e sai com escape (sem quebra de linha nem controle no log).
         match alvo {
-            Target::Field(c) => aviso!("{} {} {c}", op.name(), e.name()),
-            Target::Extra(x) => aviso!("{} {} extra {x:?}", op.name(), e.name()),
+            Target::Field(c) => warning!("{} {} {c}", op.name(), e.name()),
+            Target::Extra(x) => warning!("{} {} extra {x:?}", op.name(), e.name()),
         }
         Ok(Response::Secret(Secret::from_bytes(
             valor.expose().to_vec(),
@@ -1107,7 +1107,7 @@ impl Daemon {
         let c = Totp::from_seed(semente)
             .map_err(|_| ResponseError::Internal)?
             .code_at(agora);
-        aviso!("totp {}", e.name());
+        warning!("totp {}", e.name());
         Ok(Response::TotpCode {
             code: Zeroizing::new(c.code().to_owned()),
             remaining: c.remaining(),
@@ -1145,7 +1145,7 @@ impl Daemon {
             })
             .collect();
         itens.sort_by(|x, y| x.name.cmp(&y.name));
-        depurar!("sugerir: {} entrada(s)", itens.len());
+        debug!("sugerir: {} entrada(s)", itens.len());
         Ok(Response::Suggestions(itens))
     }
 
@@ -1182,24 +1182,24 @@ impl Daemon {
                 _ => false,
             };
             if !casa {
-                aviso!("preencher {} recusado: origem diferente (D9)", e.name());
+                warning!("preencher {} recusado: origem diferente (D9)", e.name());
                 return Err(ResponseError::OriginMismatch);
             }
-            crate::uso::origem_a_confirmar(e, Operation::Fill).map(|o| ApprovalRequest {
+            crate::usage::origin_to_confirm(e, Operation::Fill).map(|o| ApprovalRequest {
                 id: 0,
                 entries: vec![e.name().to_owned()],
                 environment: e.environment(),
                 operation: Operation::Fill,
                 command: String::new(),
                 directory: String::new(),
-                chain: crate::uso::cadeia_para_exibir(cliente),
+                chain: crate::usage::display_chain(cliente),
                 origin: o,
                 confirmation: true,
                 hidden_entry: false,
             })
         };
         if let Some(p) = pedido {
-            aviso!("preencher {nome}: origem local, confirmação na janela (D9)");
+            warning!("preencher {nome}: origem local, confirmação na janela (D9)");
             self.aprovacao.pedir_aprovacao(p, cliente)?;
         }
         // A entrada pode ter mudado durante a espera: o `preencher` confere tudo de novo.
@@ -1235,7 +1235,7 @@ impl Daemon {
             _ => false,
         };
         if !casa {
-            aviso!("preencher {} recusado: origem diferente (D9)", e.name());
+            warning!("preencher {} recusado: origem diferente (D9)", e.name());
             return Err(ResponseError::OriginMismatch);
         }
         let totp = match &l.totp_seed {
@@ -1251,7 +1251,7 @@ impl Daemon {
             }
             None => None,
         };
-        aviso!("preencher {}", e.name());
+        warning!("preencher {}", e.name());
         Ok(Response::Fill {
             username: l.username.clone(),
             password: Secret::from_bytes(l.password.expose().to_vec()),
@@ -1262,24 +1262,26 @@ impl Daemon {
     fn criar_cofre(&self, senha: &Secret, pin: &Secret) -> Result<Response, ResponseError> {
         let senha = senha_nova(senha, "senha")?;
         let mut est = self.estado();
-        if est.aberto.is_some() || arquivos::cofre_existe(&self.caminhos.cofre) {
+        if est.aberto.is_some() || files::vault_exists(&self.caminhos.cofre) {
             return Err(ResponseError::VaultAlreadyExists);
         }
         let hash = PinHash::create(pin.expose()).map_err(|_| ResponseError::InvalidRequest)?;
         // D62: um estado velho (cofre apagado) não desce. O cofre novo nasce na geração
         // `queimada` + 1, e uma cópia de um cofre anterior fica abaixo da `vista`.
-        let velho = match arquivos::ler_estado(&self.caminhos.estado) {
+        let velho = match files::read_state(&self.caminhos.estado) {
             Ok(g) => Some(g),
-            Err(arquivos::ErroEstado::Ausente) => None,
-            Err(arquivos::ErroEstado::Invalido) => {
-                aviso!("criar cofre recusado: arquivo de estado inválido (D62)");
+            Err(files::StateError::Missing) => None,
+            Err(files::StateError::Invalid) => {
+                warning!("criar cofre recusado: arquivo de estado inválido (D62)");
                 return Err(ResponseError::WriteFailed);
             }
         };
-        let q = velho.map_or(0, |g| g.queimada);
+        let q = velho.map_or(0, |g| g.burned);
         let primeira = q.checked_add(1).ok_or(ResponseError::GenerationExhausted)?;
         if velho.is_some() {
-            aviso!("criar cofre: estado anterior na geração {q}; o cofre novo nasce na {primeira}");
+            warning!(
+                "criar cofre: estado anterior na geração {q}; o cofre novo nasce na {primeira}"
+            );
         }
         let mut cofre = OpenVault::new(&senha, VaultConfig::new(hash))
             .map_err(|_| ResponseError::Internal)?
@@ -1293,12 +1295,12 @@ impl Daemon {
         }
         // Primeiro uso: o estado nasce (ou continua) aqui (D39), com a primeira geração
         // queimada antes.
-        let antes = Geracoes {
-            vista: velho.map_or(0, |g| g.vista),
-            queimada: primeira,
+        let antes = Generations {
+            seen: velho.map_or(0, |g| g.seen),
+            burned: primeira,
         };
-        if arquivos::gravar_estado(&self.caminhos.estado, antes).is_err() {
-            aviso!("criar cofre: não deu para gravar o arquivo de estado");
+        if files::write_state(&self.caminhos.estado, antes).is_err() {
+            warning!("criar cofre: não deu para gravar o arquivo de estado");
             return Err(ResponseError::WriteFailed);
         }
         let r = gravar_com_backup(&self.caminhos, &mut cofre, &[]);
@@ -1308,7 +1310,7 @@ impl Daemon {
         let id = match r {
             Ok(id) => id,
             Err(e) => {
-                aviso!("criar cofre: falha ao gravar ({})", codigo_gravacao(&e));
+                warning!("criar cofre: falha ao gravar ({})", codigo_gravacao(&e));
                 return Err(ResponseError::WriteFailed);
             }
         };
@@ -1357,7 +1359,7 @@ impl Daemon {
                 Err(r)
             }
             Err(FalhaGravar::Mudou) => {
-                aviso!("gravação recusada: o arquivo do cofre mudou fora do Ward; travado (D39)");
+                warning!("gravação recusada: o arquivo do cofre mudou fora do Ward; travado (D39)");
                 est.travar_mudou();
                 Err(ResponseError::VaultChanged)
             }
@@ -1370,7 +1372,7 @@ impl Daemon {
     fn agora_para_datas(&self) -> Option<u64> {
         let agora = self.relogio.segundos_unix().and_then(Dates::instant);
         if agora.is_none() {
-            aviso!("relógio de parede ilegível: a entrada é gravada sem data nova (D65 d)");
+            warning!("relógio de parede ilegível: a entrada é gravada sem data nova (D65 d)");
         }
         agora
     }
@@ -1480,7 +1482,7 @@ impl Daemon {
         }
         let r = self.salvar_entrada(None, rascunho, &[]);
         if r.is_ok() {
-            aviso!("salvar_login: login novo gravado pela extensão (com aprovação)");
+            warning!("salvar_login: login novo gravado pela extensão (com aprovação)");
         }
         r
     }
@@ -1507,7 +1509,7 @@ impl Daemon {
         }
         est.erros_pin = est.erros_pin.saturating_add(1);
         if est.erros_pin >= MAX_ERROS_PIN {
-            aviso!("{MAX_ERROS_PIN} erros de PIN seguidos: cofre travado (S9)");
+            warning!("{MAX_ERROS_PIN} erros de PIN seguidos: cofre travado (S9)");
             est.travar();
         }
         Err(ResponseError::WrongPin)
@@ -1555,7 +1557,7 @@ impl Daemon {
             Ok(r) => Ok(r),
             Err(e) => {
                 // O hash antigo já zerou: trava, e o destravar relê o PIN do disco.
-                aviso!("troca de PIN não gravada: cofre travado");
+                warning!("troca de PIN não gravada: cofre travado");
                 est.travar();
                 Err(e)
             }
@@ -1585,10 +1587,10 @@ impl Daemon {
         // Fase 55: o arquivo lido para a troca é o da identidade conferida, pelo mesmo
         // fd (`O_NOFOLLOW | O_NONBLOCK`, só arquivo comum do usuário): um link ou um
         // FIFO trocado no lugar não segue nem prende a thread (e o estado do daemon).
-        let arquivo = match arquivos::ler_cofre(&self.caminhos.cofre) {
+        let arquivo = match files::read_vault(&self.caminhos.cofre) {
             Ok(Some((bytes, id))) if Some(id) == a.identidade => bytes,
             _ => {
-                aviso!("troca de senha recusada: o arquivo do cofre mudou fora do Ward; travado");
+                warning!("troca de senha recusada: o arquivo do cofre mudou fora do Ward; travado");
                 est.travar_mudou();
                 return Err(ResponseError::VaultChanged);
             }
@@ -1597,12 +1599,12 @@ impl Daemon {
         let proxima = geracao
             .checked_add(1)
             .ok_or(ResponseError::GenerationExhausted)?;
-        let antes = Geracoes {
-            vista: a.geracoes.vista,
-            queimada: a.geracoes.queimada.max(proxima),
+        let antes = Generations {
+            seen: a.geracoes.seen,
+            burned: a.geracoes.burned.max(proxima),
         };
-        if arquivos::gravar_estado(&self.caminhos.estado, antes).is_err() {
-            aviso!("troca de senha recusada: não deu para gravar o arquivo de estado");
+        if files::write_state(&self.caminhos.estado, antes).is_err() {
+            warning!("troca de senha recusada: não deu para gravar o arquivo de estado");
             return Err(ResponseError::WriteFailed);
         }
         a.geracoes = antes;
@@ -1613,9 +1615,9 @@ impl Daemon {
                 &arquivo,
                 &atual,
                 &nova,
-                a.geracoes.vista,
+                a.geracoes.seen,
                 geracao,
-                &p.pasta(),
+                &p.backup_dir(),
                 SystemTime::now(),
             )
             .map(|(novo, g)| {
@@ -1627,7 +1629,7 @@ impl Daemon {
                 &arquivo,
                 &atual,
                 &nova,
-                a.geracoes.vista,
+                a.geracoes.seen,
                 geracao,
             ),
         };
@@ -1647,7 +1649,7 @@ impl Daemon {
             Err(e) => {
                 // D53: o cofre guardado não passou pela queima da troca; trava, e o
                 // destravar reabre com a `queimada` do estado.
-                aviso!(
+                warning!(
                     "troca de senha falhou ({}): cofre travado",
                     codigo_gravacao(&e)
                 );
@@ -1666,7 +1668,8 @@ impl Daemon {
         let c = a.cofre.config();
         // Fase 49a: a tela avisa quando a pasta do backup local não abre ou não é segura
         // (o cofre é gravado sem backup). Só um sim/não: nenhum caminho.
-        let backup_local = abrir_pasta(&self.caminhos).is_some_and(|p| p.pasta().list().is_ok());
+        let backup_local =
+            abrir_pasta(&self.caminhos).is_some_and(|p| p.backup_dir().list().is_ok());
         Ok(Response::Config {
             lock_minutes: c.lock_minutes(),
             external_backup: c.backup().enabled(),
@@ -1686,15 +1689,18 @@ impl Daemon {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
         let pasta = abrir_pasta(&self.caminhos).ok_or(ResponseError::BackupUnavailable)?;
-        let versoes = pasta.pasta().list_until(SystemTime::now()).map_err(|e| {
-            aviso!("backup local: não deu para listar ({})", codigo_backup(&e));
-            ResponseError::BackupUnavailable
-        })?;
+        let versoes = pasta
+            .backup_dir()
+            .list_until(SystemTime::now())
+            .map_err(|e| {
+                warning!("backup local: não deu para listar ({})", codigo_backup(&e));
+                ResponseError::BackupUnavailable
+            })?;
         let com_geracao: Vec<(Version, Option<u64>)> = versoes
             .into_iter()
             .take(MAX_BACKUPS)
             .map(|v| {
-                let geracao = match arquivos::ler_cofre(&pasta.pasta().path(v)) {
+                let geracao = match files::read_vault(&pasta.backup_dir().path(v)) {
                     Ok(Some((b, _))) => backup::sealed_generation(&a.cofre, &b),
                     _ => None,
                 };
@@ -1741,7 +1747,7 @@ impl Daemon {
             a.cofre.config_mut().set_backup(antes);
         });
         if r.is_ok() {
-            aviso!(
+            warning!(
                 "backup externo {}",
                 if ligado { "ligado" } else { "desligado" }
             );
@@ -1801,27 +1807,27 @@ impl Daemon {
         let pasta = abrir_pasta(&self.caminhos).ok_or(ResponseError::BackupUnavailable)?;
         // Fase 49a: a versão tem de estar na lista que o app vê (sem data futura).
         let na_lista = pasta
-            .pasta()
+            .backup_dir()
             .list_until(SystemTime::now())
             .map_err(|_| ResponseError::BackupUnavailable)?
             .contains(&versao);
         if !na_lista {
-            aviso!(
+            warning!(
                 "restaurar recusado: a versão não está na lista (inexistente ou com data futura)"
             );
             return Err(ResponseError::BackupNotFound);
         }
-        let bytes = match arquivos::ler_cofre(&pasta.pasta().path(versao)) {
+        let bytes = match files::read_vault(&pasta.backup_dir().path(versao)) {
             Ok(Some((b, _))) => b,
             Ok(None) => return Err(ResponseError::BackupNotFound),
             Err(_) => {
-                aviso!("restaurar recusado: a versão não é um arquivo comum do usuário");
+                warning!("restaurar recusado: a versão não é um arquivo comum do usuário");
                 return Err(ResponseError::BackupUnavailable);
             }
         };
         let (mut restaurado, entradas, _) =
             body::open_entries_with_generation(&bytes, &senha_de(senha), 0, 0).map_err(|e| {
-                aviso!("restaurar recusado: a versão não abriu");
+                warning!("restaurar recusado: a versão não abriu");
                 ResponseError::from(&e)
             })?;
         drop(bytes);
@@ -1829,18 +1835,20 @@ impl Daemon {
             return Err(ResponseError::Locked);
         };
         // O cofre atual tem de ser o que o Ward gravou por último (D39, D62).
-        let atual = match arquivos::ler_cofre(&self.caminhos.cofre) {
+        let atual = match files::read_vault(&self.caminhos.cofre) {
             Ok(Some((b, id))) if Some(id) == a.identidade => b,
             _ => {
-                aviso!("restaurar recusado: o arquivo do cofre mudou fora do Ward; travado (D39)");
+                warning!(
+                    "restaurar recusado: o arquivo do cofre mudou fora do Ward; travado (D39)"
+                );
                 est.travar_mudou();
                 return Err(ResponseError::VaultChanged);
             }
         };
         let agora = SystemTime::now();
         // D17: o atual vira backup antes de trocar; sem isso, não troca.
-        if let Err(e) = backup::keep_current(&pasta.pasta(), &a.cofre, &atual, agora) {
-            aviso!(
+        if let Err(e) = backup::keep_current(&pasta.backup_dir(), &a.cofre, &atual, agora) {
+            warning!(
                 "restaurar recusado: o cofre atual não foi guardado ({})",
                 codigo_backup(&e)
             );
@@ -1856,20 +1864,20 @@ impl Daemon {
             let externo = atual.backup().clone();
             let c = restaurado.config_mut();
             if c.set_lock_minutes(minutos).is_err() {
-                aviso!("restaurar: tempo de trava atual fora da faixa; ficou o da versão");
+                warning!("restaurar: tempo de trava atual fora da faixa; ficou o da versão");
             }
             c.set_backup(externo);
         }
         // D39: geração = maior queimada + 1, queimada no estado antes de selar (D53).
-        let q = a.geracoes.queimada.max(a.cofre.generation());
+        let q = a.geracoes.burned.max(a.cofre.generation());
         let proxima = q.checked_add(1).ok_or(ResponseError::GenerationExhausted)?;
         restaurado = restaurado.after_generation(q);
-        let antes = Geracoes {
-            vista: a.geracoes.vista,
-            queimada: proxima,
+        let antes = Generations {
+            seen: a.geracoes.seen,
+            burned: proxima,
         };
-        if arquivos::gravar_estado(&self.caminhos.estado, antes).is_err() {
-            aviso!("restaurar recusado: não deu para gravar o arquivo de estado");
+        if files::write_state(&self.caminhos.estado, antes).is_err() {
+            warning!("restaurar recusado: não deu para gravar o arquivo de estado");
             return Err(ResponseError::WriteFailed);
         }
         a.geracoes = antes;
@@ -1877,7 +1885,7 @@ impl Daemon {
             &self.caminhos.cofre,
             &mut restaurado,
             &entradas,
-            &pasta.pasta(),
+            &pasta.backup_dir(),
             agora,
         );
         if let Some(g) = &self.gancho_gravado {
@@ -1897,9 +1905,9 @@ impl Daemon {
                 // versão restaurada. Todos são negados, com o estado ainda preso.
                 let n = self.aprovacao.cancelar_pendentes();
                 if n > 0 {
-                    aviso!("{n} pedido(s) de aprovação cancelado(s) pelo restaurar");
+                    warning!("{n} pedido(s) de aprovação cancelado(s) pelo restaurar");
                 }
-                aviso!("backup restaurado; o cofre anterior ficou na pasta de backups");
+                warning!("backup restaurado; o cofre anterior ficou na pasta de backups");
                 Ok(Response::Ok)
             }
             Err(e) => {
@@ -1912,7 +1920,7 @@ impl Daemon {
                     // A versão restaurada está no lugar (o rename aconteceu).
                     a.identidade = identity;
                 }
-                aviso!("restaurar falhou ({}): cofre travado", codigo_gravacao(&e));
+                warning!("restaurar falhou ({}): cofre travado", codigo_gravacao(&e));
                 // A geração queimada está no estado; o destravar reabre com ela (D53).
                 est.travar();
                 Err(ResponseError::from(&e))

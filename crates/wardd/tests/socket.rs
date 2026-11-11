@@ -303,9 +303,9 @@ fn v3_33_kill_9_between_the_wrong_passwords() {
     }
     let state = dev.paths().estado;
     let failures = || {
-        wardd::arquivos::ler_estado_completo(&state)
+        wardd::files::read_full_state(&state)
             .unwrap()
-            .falhas_agente
+            .agent_failures
     };
     let sock = SocketDir::new("kill9");
     let mut waits = Vec::new();

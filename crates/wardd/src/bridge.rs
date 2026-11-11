@@ -48,7 +48,7 @@ use zeroize::Zeroizing;
 use crate::execution;
 use crate::ssh::{Cred, Destination, Program, SshAuth, SshPrograms, build_argv};
 use crate::ssh_agent::{Allowed, SshAgent};
-use crate::{aviso, depurar};
+use crate::{debug, warning};
 
 /// How often the listener checks whether it should stop.
 const STEP_MS: i32 = 100;
@@ -187,7 +187,7 @@ impl Bridge {
             .name("wardd-ponte".into())
             .spawn(move || listen(self, group, &s, &g, &stderr));
         if thread.is_err() {
-            aviso!("ponte: a thread não foi criada");
+            warning!("ponte: a thread não foi criada");
         }
         RunningBridge {
             stop,
@@ -256,7 +256,7 @@ fn listen(
             return;
         }
         if bridge.locks.load(Ordering::Acquire) != bridge.initial {
-            depurar!("ponte: o cofre travou; a ponte para de aceitar");
+            debug!("ponte: o cofre travou; a ponte para de aceitar");
             return;
         }
         match child::ready_to_read_fd(bridge.listener.as_fd(), STEP_MS) {
@@ -275,14 +275,14 @@ fn listen(
         let local = SocketAddrV4::new(Ipv4Addr::LOCALHOST, bridge.port);
         if !peer_in_group(peer, local, uid, group) {
             // Without a single byte and without launching anything.
-            aviso!("ponte: conexão de fora da sessão recusada");
+            warning!("ponte: conexão de fora da sessão recusada");
             let _ = tcp.shutdown(Shutdown::Both);
             continue;
         }
         if accepted >= bridge.limits.total
             || active.load(Ordering::Acquire) >= bridge.limits.concurrent
         {
-            aviso!("ponte: limite de conexões da sessão; conexão recusada");
+            warning!("ponte: limite de conexões da sessão; conexão recusada");
             let _ = tcp.shutdown(Shutdown::Both);
             continue;
         }
@@ -316,7 +316,7 @@ fn connect(
             match SshAgent::create(rt, key, passphrase.as_ref()) {
                 Ok(a) => (None, Some(a)),
                 Err(e) => {
-                    aviso!("ponte: {e}");
+                    warning!("ponte: {e}");
                     return None;
                 }
             }
@@ -331,7 +331,7 @@ fn connect(
         },
     };
     let Some(argv) = bridge_argv(plan, auth) else {
-        aviso!("ponte: argv fora do formato; nada foi executado");
+        warning!("ponte: argv fora do formato; nada foi executado");
         return None;
     };
     let mut cmd = Command::new(&argv[0], b"/").ok()?;
@@ -351,7 +351,7 @@ fn connect(
     let (group, pipes) = match launched {
         Ok(x) => x,
         Err(e) => {
-            aviso!(
+            warning!(
                 "ponte: o ssh do salto/túnel não foi criado ({})",
                 e.message()
             );
@@ -359,7 +359,7 @@ fn connect(
         }
     };
     let group = Arc::new(group);
-    depurar!("ponte: ssh do salto/túnel pid {}", group.pid());
+    debug!("ponte: ssh do salto/túnel pid {}", group.pid());
     let agent = agent.map(|a| {
         a.start(
             Allowed {
@@ -406,8 +406,8 @@ fn connect(
             let _ = g.wait_for_end();
             g.kill();
             match g.collect() {
-                Ok(f) => depurar!("ponte: ssh do salto/túnel saiu ({})", f.exit_code()),
-                Err(_) => depurar!("ponte: ssh do salto/túnel já colhido"),
+                Ok(f) => debug!("ponte: ssh do salto/túnel saiu ({})", f.exit_code()),
+                Err(_) => debug!("ponte: ssh do salto/túnel já colhido"),
             }
             drop(agent);
             if let Some(t) = tcp_end {

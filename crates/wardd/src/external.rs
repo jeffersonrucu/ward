@@ -71,7 +71,7 @@ use ward_core::backup::{Version, to_delete_verified};
 use ward_core::format;
 use ward_platform::dir::rename_no_replace;
 
-use crate::arquivos::{self, PastaAberta};
+use crate::files::{self, OpenDir};
 
 /// Directory of the copies on the USB drive (D17).
 pub const BACKUP_DIR: &str = "ward-backup";
@@ -260,15 +260,15 @@ fn read_version(path: &Path) -> Option<Vec<u8>> {
         .ok()?;
     let regular = f
         .metadata()
-        .is_ok_and(|m| m.file_type().is_file() && m.len() <= arquivos::MAX_ARQUIVO_COFRE);
+        .is_ok_and(|m| m.file_type().is_file() && m.len() <= files::MAX_VAULT_FILE);
     if !regular {
         return None;
     }
     let mut bytes = Vec::new();
-    (&f).take(arquivos::MAX_ARQUIVO_COFRE + 1)
+    (&f).take(files::MAX_VAULT_FILE + 1)
         .read_to_end(&mut bytes)
         .ok()?;
-    (bytes.len() as u64 <= arquivos::MAX_ARQUIVO_COFRE).then_some(bytes)
+    (bytes.len() as u64 <= files::MAX_VAULT_FILE).then_some(bytes)
 }
 
 /// Deletes the temporary files of an interrupted copy (only regular files with the
@@ -370,7 +370,7 @@ fn rotate(
 /// Phase 54c: the USB drive rotation also only counts and only deletes what
 /// `generation` recognizes ([`rotate`]).
 pub fn copy(
-    local: &PastaAberta,
+    local: &OpenDir,
     seen: &Seen,
     uuid: &str,
     source: &dyn UsbDriveSource,
@@ -386,7 +386,7 @@ pub fn copy(
     let dir = via_fd(&destination);
     clean_temp_files(&dir);
     let there: BTreeSet<Version> = versions_in(&dir)?.into_iter().collect();
-    let local_dir = local.pasta();
+    let local_dir = local.backup_dir();
     // Without the local versions with a future date (Phase 49a).
     let local_versions = local_dir
         .list_until(now)
@@ -399,7 +399,7 @@ pub fn copy(
             break;
         }
         // The user's regular file, without link, of the format's size.
-        let bytes = match arquivos::ler_cofre(&local_dir.path(v)) {
+        let bytes = match files::read_vault(&local_dir.path(v)) {
             Ok(Some((b, _))) => b,
             // Gone through the local rotation halfway, or not a file of the user.
             Ok(None) | Err(_) => continue,

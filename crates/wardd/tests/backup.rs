@@ -17,7 +17,7 @@ use common::*;
 use ward_core::backup::Version;
 use ward_core::entry::Secret;
 use ward_core::protocol::{BackupVersion, MSG_ROLLBACK, Request, Response, ResponseError, Role};
-use wardd::arquivos::Geracoes;
+use wardd::files::Generations;
 use wardd::nucleo::Daemon;
 
 fn backup_dir(dir: &Dir) -> PathBuf {
@@ -210,9 +210,9 @@ fn v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback() {
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 3);
     assert_eq!(
         generations(&dir),
-        Geracoes {
-            vista: n + 3,
-            queimada: n + 3
+        Generations {
+            seen: n + 3,
+            burned: n + 3
         }
     );
     assert_eq!(list_names(&d), entries_n);

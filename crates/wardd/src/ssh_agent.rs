@@ -40,7 +40,7 @@ use zeroize::Zeroizing;
 use ward_core::entry::Secret;
 use ward_platform::{AcceptError, Listener, SocketDir};
 
-use crate::{aviso, depurar};
+use crate::{debug, warning};
 
 /// Name of the socket inside the session's dir.
 pub const SOCKET_NAME: &str = "agent.sock";
@@ -173,7 +173,7 @@ fn delete_dir(dir: &Path) {
     if let Err(e) = fs::remove_dir_all(dir)
         && e.kind() != io::ErrorKind::NotFound
     {
-        aviso!(
+        warning!(
             "agente SSH: não deu para apagar a pasta da sessão ({})",
             e.kind()
         );
@@ -283,7 +283,7 @@ impl SshAgent {
             .name("wardd-agente-ssh".into())
             .spawn(move || serve_loop(self, allowed, &p, &locks, initial_lock));
         if thread.is_err() {
-            aviso!("agente SSH: a thread não foi criada");
+            warning!("agente SSH: a thread não foi criada");
             delete_dir(&path);
         }
         Running {
@@ -381,25 +381,25 @@ fn serve_loop(
         let peer = match ward_platform::verify_connection(&stream) {
             Ok(p) => p,
             Err(AcceptError::UidRefused { uid, pid }) => {
-                aviso!("agente SSH: conexão recusada (uid {uid}, pid {pid}) (D12)");
+                warning!("agente SSH: conexão recusada (uid {uid}, pid {pid}) (D12)");
                 continue;
             }
             Err(_) => {
-                aviso!("agente SSH: conexão recusada (sem identidade) (D12)");
+                warning!("agente SSH: conexão recusada (sem identidade) (D12)");
                 continue;
             }
         };
         let pid = peer.credentials().pid;
         if !peer_allowed(&peer, allowed, &mut held) {
             // Closes without a single byte: only the session's `ssh` uses the agent.
-            aviso!("agente SSH: conexão do pid {pid} recusada; só o ssh da sessão (D12)");
+            warning!("agente SSH: conexão do pid {pid} recusada; só o ssh da sessão (D12)");
             continue;
         }
         if open.load(Ordering::Acquire) >= MAX_CONNECTIONS {
-            aviso!("agente SSH: conexões demais do pid {pid}; fechada");
+            warning!("agente SSH: conexões demais do pid {pid}; fechada");
             continue;
         }
-        depurar!("agente SSH: conexão do pid {pid}");
+        debug!("agente SSH: conexão do pid {pid}");
         open.fetch_add(1, Ordering::AcqRel);
         let (c, a, pc) = (key.clone(), open.clone(), stop_connections.clone());
         let t = std::thread::Builder::new()
@@ -416,7 +416,7 @@ fn serve_loop(
         }
     }
     if locks.load(Ordering::Acquire) != initial {
-        aviso!("agente SSH: o cofre travou; agente derrubado (D12)");
+        warning!("agente SSH: o cofre travou; agente derrubado (D12)");
     }
     stop_connections.store(true, Ordering::Release);
     for t in connections {
@@ -468,7 +468,7 @@ fn serve(mut s: UnixStream, key: &Key, stop: &AtomicBool) {
         }
         let size = u32::from_be_bytes(n) as usize;
         if size == 0 || size > MAX_MESSAGE {
-            aviso!("agente SSH: mensagem de tamanho inválido; conexão fechada");
+            warning!("agente SSH: mensagem de tamanho inválido; conexão fechada");
             return;
         }
         let mut msg = Zeroizing::new(vec![0u8; size]);
@@ -513,7 +513,7 @@ pub(crate) fn answer_message(
     };
     match kind {
         REQUEST_IDENTITIES if body.is_empty() => {
-            depurar!("agente SSH: lista de chaves");
+            debug!("agente SSH: lista de chaves");
             let mut r = vec![IDENTITIES_ANSWER];
             r.extend_from_slice(&1u32.to_be_bytes());
             put_string(&mut r, blob);
@@ -530,7 +530,7 @@ pub(crate) fn answer_message(
             }
             match sign(data) {
                 Some(signature) => {
-                    depurar!("agente SSH: assinatura feita");
+                    debug!("agente SSH: assinatura feita");
                     let mut r = vec![SIGN_RESPONSE];
                     put_string(&mut r, &signature);
                     r
@@ -540,7 +540,7 @@ pub(crate) fn answer_message(
         }
         other => {
             // Add, remove, lock, unlock, extensions: refused (D12).
-            aviso!("agente SSH: mensagem {other} recusada (só lista e assina, D12)");
+            warning!("agente SSH: mensagem {other} recusada (só lista e assina, D12)");
             vec![FAILURE]
         }
     }

@@ -23,7 +23,7 @@
 //! - No signal or response from the bus unlocks, writes the vault or changes the
 //!   config: the worst a fake udisks2 can do is point to a directory of the very device
 //!   it names, and what goes there is the encrypted backup.
-//! - The address is the same as Phase 24's ([`crate::trava::barramento_do_daemon`]):
+//! - The address is the same as Phase 24's ([`crate::lock::daemon_bus`]):
 //!   fixed in the release; in the test daemon, only `WARD_DEV_DBUS_SISTEMA`, and without
 //!   it neither logind nor udisks2 are turned on.
 
@@ -48,9 +48,9 @@ use ward_core::config::ExternalBackup;
 use ward_core::protocol::MAX_LABEL;
 
 use crate::external::{ExternalError, Seen, UsbDriveSource};
+use crate::lock::{MAX_BUS_WAIT, connect};
 use crate::nucleo::Daemon;
-use crate::trava::{ESPERA_MAXIMA_BARRAMENTO, conectar};
-use crate::{aviso, depurar};
+use crate::{debug, warning};
 
 const UDISKS: &str = "org.freedesktop.UDisks2";
 const UDISKS_PATH: &str = "/org/freedesktop/UDisks2";
@@ -216,7 +216,7 @@ impl Udisks {
 impl UsbDriveSource for Udisks {
     fn usb_drives(&self) -> Option<Vec<Seen>> {
         zbus::block_on(async {
-            let conn = conectar(&self.socket).await?;
+            let conn = connect(&self.socket).await?;
             query(&conn).await
         })
     }
@@ -229,7 +229,7 @@ async fn next_message(signals: &mut MessageStream) -> Option<zbus::Result<zbus::
 /// A signal session: pokes the copy on each udisks2 signal. `false` if it did not
 /// connect.
 async fn session(daemon: &Daemon, socket: &Path, ready: &dyn Fn()) -> bool {
-    let Some(conn) = conectar(socket).await else {
+    let Some(conn) = connect(socket).await else {
         return false;
     };
     let Ok(rule) = MatchRule::builder()
@@ -243,7 +243,7 @@ async fn session(daemon: &Daemon, socket: &Path, ready: &dyn Fn()) -> bool {
     let Ok(mut signals) = MessageStream::for_match_rule(rule, &conn, Some(QUEUE)).await else {
         return false;
     };
-    depurar!("udisks2: vigiando pendrives");
+    debug!("udisks2: vigiando pendrives");
     ready();
     // The USB drive may already be connected.
     daemon.cutucar_externo();
@@ -257,14 +257,14 @@ async fn session(daemon: &Daemon, socket: &Path, ready: &dyn Fn()) -> bool {
 pub fn record(r: &Result<Option<crate::external::BackupCopy>, ExternalError>) {
     match r {
         Ok(None) => {}
-        Ok(Some(c)) if c.copied.is_empty() => depurar!("backup externo: pendrive em dia"),
-        Ok(Some(c)) => aviso!(
+        Ok(Some(c)) if c.copied.is_empty() => debug!("backup externo: pendrive em dia"),
+        Ok(Some(c)) => warning!(
             "backup externo: {} versão(ões) copiada(s) para o pendrive",
             c.copied.len()
         ),
         // An absent USB drive is the normal case.
         Err(ExternalError::NotConnected | ExternalError::NotMounted) => {}
-        Err(e) => aviso!("backup externo não copiado ({})", e.code()),
+        Err(e) => warning!("backup externo não copiado ({})", e.code()),
     }
 }
 
@@ -306,11 +306,13 @@ pub fn watch_udisks(
                     wait = Duration::from_secs(1);
                     warned = false;
                 } else if !warned {
-                    aviso!("udisks2: barramento indisponível; backup externo parado até conectar");
+                    warning!(
+                        "udisks2: barramento indisponível; backup externo parado até conectar"
+                    );
                     warned = true;
                 }
                 std::thread::sleep(wait);
-                wait = (wait * 2).min(ESPERA_MAXIMA_BARRAMENTO);
+                wait = (wait * 2).min(MAX_BUS_WAIT);
             }
         })
 }

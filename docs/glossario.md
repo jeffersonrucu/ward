@@ -2821,6 +2821,57 @@ Hex { start, high, high_char } }`, `Visao` → `View` (`andar`/`ler`/`fechar` �
 homônimos `ErroCodificar::GrandeDemais`, `ErroQuadro::GrandeDemais` e
 `ErroResposta::TipoSemEntrega` (Fase 17) são outros e não mudaram.
 
+Fase 19 (`wardd`: `main`, `lib`, `config`, `log`, `launch`, `files`, `usage`, `lock`):
+módulos `lancamento`/`arquivos`/`uso`/`trava` → `launch`/`files`/`usage`/`lock` (`mod
+testes` → `tests`). `log`: macros `aviso!`/`depurar!` → `warning!`/`debug!` (nível de log,
+seção 2: aviso → warning; não `warn!`, para não ficar ambíguo com o atributo embutido `#[warn]`),
+`configurar` → `configure`, `detalhado`/`DETALHADO` → `detailed`/`DETAILED`. `config`:
+campos `caminhos`/`diretorio_socket_teste`/`app_de_teste`/`extensao_de_teste` → `paths`/
+`test_socket_dir`/`test_app`/`test_extension` (`rt` fica); `do_ambiente`/`de` →
+`from_env`/`from_vars`, `caminhos_de_teste` → `test_paths`, `absoluto_limpo` →
+`clean_absolute`, a função `app_de_teste` → `test_app_binary`. `launch`: `APP_INSTALADO`
+→ `INSTALLED_APP`, `PASSO_VIGIA` → `WATCH_STEP`, `AbridorReal { lancador }` → `RealOpener
+{ launcher }` (`instalado`/`de_teste`/`app_lancado` → `installed`/`for_test`/
+`launched_app`), `AppLancado` → `LaunchedApp`, `AppDeTeste` → `TestApp`, `ExtensaoDeTeste`
+→ `TestExtension` (`novo`/`do_chrome`/`e_o_app`/`classificar` → `new`/`from_chrome`/
+`is_the_app`/`classify`; o campo `nunca` → `never`), `descrever_saida` →
+`describe_exit`. `files`: o alias `Identidade` sai (usa-se `FileIdentity` direto);
+`MAX_ARQUIVO_COFRE`/`MAX_ESTADO`/`CABECALHO_ESTADO` → `MAX_VAULT_FILE`/`MAX_STATE`/
+`STATE_HEADER`; `abrir_leitura` → `open_read`, `conferir_arquivo` → `verify_file`,
+`preparar_known_hosts` → `prepare_known_hosts`, `cofre_existe`/`ler_cofre`/`identidade`
+→ `vault_exists`/`read_vault`/`identity`; `Geracoes { vista, queimada }` → `Generations
+{ seen, burned }`, `ArquivoEstado { geracoes, falhas_agente }` → `StateFile {
+generations, agent_failures }`, `ErroEstado { Ausente, Invalido }` → `StateError {
+Missing, Invalid }` (os nomes gravados no arquivo de estado, `ward-estado 1`, `vista`,
+`queimada`, `falhas_agente`, ficam como literais até a Fase 49, seção 11);
+`ler_estado(_completo)`/`gravar_estado(_completo)` → `read_state`/`read_full_state`/
+`write_state`/`write_full_state`, `analisar_estado`/`texto_estado` → `parse_state`/
+`state_text`, `limpar_temporarios_estado` → `clean_state_temp_files`, `PastaAberta` →
+`OpenDir` (`caminho`/`pasta` → `path`/`backup_dir`), `ler_versao_backup` →
+`read_backup_version`, `dir_backups` → `backups_dir`, `abrir_pasta_backup` →
+`open_backup_dir`. `usage`: `MAX_CADEIA` → `MAX_CHAIN`, `Autorizacao { SemPerguntar,
+Aprovado }` → `Authorization { WithoutAsking, Approved }`, `mais_restritivo`/
+`mais_sensivel` → `most_restrictive`/`most_sensitive`, `segunda_entrada` →
+`second_entry`, `origem_a_confirmar` → `origin_to_confirm`, `nivel_efetivo` →
+`effective_level` (`sem_liberacao` → `without_grant`), `Descricao` → `Description`
+(`entrada_oculta` → `hidden_stdin`), `descrever` → `describe`, `cadeia_para_exibir` →
+`display_chain`, `Daemon::autorizar_uso`/`responder_aprovacao` → `authorize_use`/
+`answer_approval`. `lock`: `BARRAMENTO_SISTEMA`/`INTERVALO_INATIVIDADE`/
+`ESPERA_MAXIMA_BARRAMENTO`/`PRAZO_CHAMADA`/`FILA`/`MAX_CAMINHO` → `SYSTEM_BUS`/
+`INACTIVITY_INTERVAL`/`MAX_BUS_WAIT`/`CALL_DEADLINE`/`QUEUE`/`MAX_PATH`,
+`CAMINHO_LOGIND`/`CAMINHO_SESSOES`/`IFACE_SESSAO`/`IFACE_PROPRIEDADES` → `LOGIND_PATH`/
+`SESSIONS_PATH`/`SESSION_IFACE`/`PROPERTIES_IFACE`; `conta_como_uso` → `counts_as_use`,
+`venceu` → `expired`, `Evento { TelaBloqueada, LockedHint, Suspensao, Acordou }` →
+`Event { ScreenLocked, LockedHint, Suspend, WokeUp }`, `evento_do_sinal` →
+`event_from_signal`, `barramento_do_daemon` → `daemon_bus`, `caminho_do_barramento` →
+`bus_path`, `conectar` → `connect`, `inibir` → `inhibit`, `travar` (função privada) →
+`lock_vault`, `proxima` → `next_message`, `Fim { NaoConectou, Caiu }` → `End {
+NotConnected, Dropped }`, `sessao` → `session`, `vigiar_logind`/`vigiar_inatividade` →
+`watch_logind`/`watch_inactivity`. `main`: `escuta` → `listener`, `abridor_de_teste`/
+`extensao_de_teste` → `test_opener`/`test_extension` (`cutucoes` → `pokes`). Os nomes de
+thread (`wardd-vigia-app`, `wardd-logind`, `wardd-inatividade`) e todas as mensagens de
+log são literais e ficam.
+
 Fase 17 (`ward-core`: `protocol`, `protocol/{fields,errors,json,request,frame}`): módulo
 `protocolo` → `protocol` (`campos`/`erros`/`pedido`/`quadro`/`resposta`/`testes` →
 `fields`/`errors`/`request`/`frame`/`response`/`tests`; os dois últimos só mudam de

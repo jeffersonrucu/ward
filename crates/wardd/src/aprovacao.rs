@@ -29,7 +29,7 @@ use ward_core::protocol::{
     ApprovalRequest, MAX_UNLOCK_REMAINING, Response, ResponseError, UnlockRequest,
 };
 
-use crate::{aviso, depurar};
+use crate::{debug, warning};
 
 /// Prazo da resposta da janela de aprovação (S10).
 pub const PRAZO_APROVACAO: Duration = Duration::from_secs(120);
@@ -189,7 +189,7 @@ impl Estado {
             }
         }
         if !ok {
-            aviso!("entrega ao app falhou: a janela conta como fechada");
+            warning!("entrega ao app falhou: a janela conta como fechada");
             self.sair_assinante(aid);
         }
     }
@@ -350,30 +350,30 @@ impl Motor {
         } else {
             drop(g);
             if self.abrir().is_err() {
-                aviso!("aprovação {id}: app indisponível; negado (D21)");
+                warning!("aprovação {id}: app indisponível; negado (D21)");
                 self.interno.estado().tirar(id);
                 return Err(ResponseError::ApprovalUnavailable);
             }
             g = self.interno.estado();
         }
-        depurar!("aprovação {id}: pendente");
+        debug!("aprovação {id}: pendente");
         loop {
             if let Some(r) = g.pendente(id).and_then(|p| p.resultado.take()) {
                 g.tirar(id);
                 match &r {
-                    Ok(()) => depurar!("aprovação {id}: permitida"),
-                    Err(e) => aviso!("aprovação {id}: {}", e.code()),
+                    Ok(()) => debug!("aprovação {id}: permitida"),
+                    Err(e) => warning!("aprovação {id}: {}", e.code()),
                 }
                 return r;
             }
             if self.relogio.agora() >= prazo {
                 g.tirar(id);
-                aviso!("aprovação {id}: expirou em 2 min (S10)");
+                warning!("aprovação {id}: expirou em 2 min (S10)");
                 return Err(ResponseError::Expired);
             }
             if cliente.saiu() {
                 g.tirar(id);
-                aviso!("aprovação {id}: o cliente saiu; cancelada");
+                warning!("aprovação {id}: o cliente saiu; cancelada");
                 return Err(ResponseError::Denied);
             }
             g = self
@@ -481,21 +481,21 @@ impl Motor {
                     if !self.esperar_sem_app {
                         // Ninguém mostraria a tela; quem pediu fica sabendo já.
                         self.sair_destrave(espera);
-                        aviso!("pedido com o cofre travado: app indisponível");
+                        warning!("pedido com o cofre travado: app indisponível");
                         return Err(ResponseError::Locked);
                     }
                     // V4.21: o usuário pode destravar pela CLI; a CLI avisa quem pediu.
-                    aviso!("pedido com o cofre travado: app indisponível; esperando a CLI");
+                    warning!("pedido com o cofre travado: app indisponível; esperando a CLI");
                 }
             }
         }
-        aviso!("pedido com o cofre travado: esperando o destrave (até 2 min, D16)");
+        warning!("pedido com o cofre travado: esperando o destrave (até 2 min, D16)");
         let r = loop {
             if !travado() {
                 break Ok(());
             }
             if self.relogio.agora() >= prazo {
-                aviso!("pedido com o cofre travado: tempo esgotado");
+                warning!("pedido com o cofre travado: tempo esgotado");
                 break Err(ResponseError::LockedTimedOut);
             }
             if cliente.saiu() {

@@ -40,9 +40,9 @@ use ward_core::protocol::{
 use ward_platform::{AcceptError, Install, KernelPolicy, Listener, PeerClass, PeerProcess};
 
 use crate::aprovacao::{Assinante, Cliente};
-use crate::lancamento::{AppDeTeste, AppLancado, ExtensaoDeTeste};
+use crate::launch::{LaunchedApp, TestApp, TestExtension};
 use crate::nucleo::Daemon;
-use crate::{aviso, depurar};
+use crate::{debug, warning};
 
 /// Agent and extension connections served at the same time.
 pub const MAX_CONNECTIONS: usize = 64;
@@ -133,14 +133,14 @@ pub struct Roles {
     /// `None`: install groups missing or refused; every client is an agent.
     pub install: Option<Install>,
     /// The app that the launcher opened (D63). `None`: nobody is app.
-    pub app: Option<AppLancado>,
+    pub app: Option<LaunchedApp>,
     /// Only in the test daemon (D63): the test app, app without the egid. In the release
     /// it is always `None` (the type is not built without the feature).
-    pub test_app: Option<AppDeTeste>,
+    pub test_app: Option<TestApp>,
     /// Only in the test daemon with `WARD_DEV_EXTENSAO=chrome` (Phase 41): the
     /// extension's test host, extension without the egid. In the release it is always
     /// `None` (the type is not built without the feature).
-    pub test_extension: Option<ExtensaoDeTeste>,
+    pub test_extension: Option<TestExtension>,
 }
 
 /// The role of a peer already classified by the group and by the parent (D47). App role
@@ -151,7 +151,7 @@ pub fn role_from_class(class: PeerClass, pid: u32, is_the_app: impl Fn(u32) -> b
     match class {
         PeerClass::App if is_the_app(pid) => Role::App,
         PeerClass::App => {
-            aviso!("papel app recusado (pid {pid}): não é o app aberto pelo lançador (D63)");
+            warning!("papel app recusado (pid {pid}): não é o app aberto pelo lançador (D63)");
             Role::Agent
         }
         PeerClass::ExtensionHost => Role::Extension,
@@ -165,12 +165,12 @@ impl Roles {
         // D63, test daemon: the launcher's pid and parent = daemon, without the egid. The
         // role comes from the same `role_from_class`.
         if let Some(t) = &self.test_app
-            && t.e_o_app(pid)
+            && t.is_the_app(pid)
         {
-            match t.classificar(peer) {
-                c @ PeerClass::App => return role_from_class(c, pid, |p| t.e_o_app(p)),
+            match t.classify(peer) {
+                c @ PeerClass::App => return role_from_class(c, pid, |p| t.is_the_app(p)),
                 PeerClass::Common { reason } => {
-                    aviso!("papel app de teste recusado (pid {pid}): {reason}");
+                    warning!("papel app de teste recusado (pid {pid}): {reason}");
                 }
                 PeerClass::ExtensionHost => {}
             }
@@ -179,23 +179,23 @@ impl Roles {
         // egid. Whoever does not pass follows the release path (without the groups,
         // agent).
         if let Some(x) = &self.test_extension
-            && let c @ PeerClass::ExtensionHost = x.classificar(peer)
+            && let c @ PeerClass::ExtensionHost = x.classify(peer)
         {
-            aviso!("papel extensão de teste (pid {pid}): pai é o Chrome instalado");
+            warning!("papel extensão de teste (pid {pid}): pai é o Chrome instalado");
             return role_from_class(c, pid, |_| false);
         }
         let Some(inst) = &self.install else {
             return Role::Agent;
         };
         match peer.classify(inst, &KernelPolicy::read()) {
-            c @ (PeerClass::App | PeerClass::ExtensionHost) => {
-                role_from_class(c, pid, |p| self.app.as_ref().is_some_and(|a| a.e_o_app(p)))
-            }
+            c @ (PeerClass::App | PeerClass::ExtensionHost) => role_from_class(c, pid, |p| {
+                self.app.as_ref().is_some_and(|a| a.is_the_app(p))
+            }),
             PeerClass::Common { reason } => {
                 // Only records when the client tried a special group.
                 let cred = peer.credentials();
                 if cred.gid == inst.app_gid() || cred.gid == inst.extension_gid() {
-                    aviso!("papel especial recusado (pid {}): {reason}", cred.pid);
+                    warning!("papel especial recusado (pid {}): {reason}", cred.pid);
                 }
                 Role::Agent
             }
@@ -209,7 +209,7 @@ fn answer(stream: &mut UnixStream, role: Role, r: &Response) -> Result<(), Frame
     let q = match protocol::encode_response(role, r) {
         Ok(q) => q,
         Err(_) => {
-            aviso!("resposta recusada para o papel {}", role.name());
+            warning!("resposta recusada para o papel {}", role.name());
             protocol::encode_response(role, &Response::Error(ResponseError::Internal))
                 .map_err(|_| FrameError::Io(io::ErrorKind::InvalidData))?
         }
@@ -289,7 +289,7 @@ fn serve_connection(
                 break;
             }
             Err(e) => {
-                depurar!("quadro recusado ({}): {e}", role.name());
+                debug!("quadro recusado ({}): {e}", role.name());
                 let _ = answer(
                     &mut stream,
                     role,
@@ -300,7 +300,7 @@ fn serve_connection(
         };
         slots.mark(id, false);
         if role != Role::Agent && peer.reverify_no_debugger().is_err() {
-            aviso!(
+            warning!(
                 "cliente {} sob depurador ou encerrado: conexão fechada",
                 role.name()
             );
@@ -331,7 +331,7 @@ fn serve_connection(
                 daemon.atender_de(&client, role, p)
             }
             Err(e) => {
-                depurar!("pedido recusado ({}): {}", role.name(), e.code());
+                debug!("pedido recusado ({}): {}", role.name(), e.code());
                 Response::Error(e)
             }
         };
@@ -354,7 +354,7 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
             Ok((s, _)) => s,
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(e) => {
-                aviso!("erro ao aceitar conexão ({})", e.kind());
+                warning!("erro ao aceitar conexão ({})", e.kind());
                 std::thread::sleep(Duration::from_millis(50));
                 continue;
             }
@@ -363,17 +363,17 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
             Ok(p) => p,
             Err(AcceptError::UidRefused { uid, pid }) => {
                 // Closes without sending a single byte (V3.2).
-                aviso!("conexão recusada (UidRecusado): uid {uid}, pid {pid}");
+                warning!("conexão recusada (UidRecusado): uid {uid}, pid {pid}");
                 drop(stream);
                 continue;
             }
             Err(AcceptError::NoIdentity(e)) => {
-                aviso!("conexão recusada (SemIdentidade): {}", e.kind());
+                warning!("conexão recusada (SemIdentidade): {}", e.kind());
                 drop(stream);
                 continue;
             }
             Err(AcceptError::Io(e)) => {
-                aviso!("conexão recusada (Io): {}", e.kind());
+                warning!("conexão recusada (Io): {}", e.kind());
                 drop(stream);
                 continue;
             }
@@ -395,7 +395,7 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
                 serve_connection(stream, peer, role, &daemon, &slots_t, id);
             });
         if r.is_err() {
-            aviso!("não deu para criar a thread da conexão");
+            warning!("não deu para criar a thread da conexão");
             slots.release(id);
         }
     }
@@ -466,7 +466,7 @@ mod tests {
         // Phase 41, only in the test daemon: with the extension exception on and the
         // installed Chrome as an accepted parent, this peer (child of the test, not of
         // Chrome) stays an agent. Without the feature, the exception is not even built.
-        let extension = ExtensaoDeTeste::do_chrome("/opt/google/chrome/chrome");
+        let extension = TestExtension::from_chrome("/opt/google/chrome/chrome");
         if !cfg!(feature = "test-mode") {
             assert!(extension.is_none());
         }

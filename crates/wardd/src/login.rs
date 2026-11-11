@@ -36,8 +36,8 @@ use ward_core::generator;
 use ward_core::protocol::{LoginResult, Request, Response, ResponseError, Role};
 
 use crate::aprovacao::Cliente;
-use crate::aviso;
 use crate::nucleo::Daemon;
+use crate::warning;
 
 /// Deadlines of `ward login`.
 #[derive(Debug, Clone, Copy)]
@@ -162,7 +162,7 @@ impl Daemon {
         {
             return Err(ResponseError::TypeWithoutDelivery);
         }
-        self.autorizar_uso(client, request)?;
+        self.authorize_use(client, request)?;
         self.registrar_uso();
         // The entry may have changed during the approval: check again.
         let name = {
@@ -197,11 +197,11 @@ impl Daemon {
             logins.signal.notify_all();
         }
         let _delete = DeleteOnDrop(logins);
-        aviso!("login {name}: pedido à extensão");
+        warning!("login {name}: pedido à extensão");
         let r = self.wait_outcome(logins, &id, client);
         match &r {
-            Ok(()) => aviso!("login {name}: formulário enviado"),
-            Err(e) => aviso!("login {name}: {}", e.code()),
+            Ok(()) => warning!("login {name}: formulário enviado"),
+            Err(e) => warning!("login {name}: {}", e.code()),
         }
         r.map(|()| Response::Ok)
     }

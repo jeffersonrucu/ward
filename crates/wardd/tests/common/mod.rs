@@ -63,7 +63,7 @@ impl Dir {
     }
 
     pub fn paths(&self) -> Caminhos {
-        wardd::config::caminhos_de_teste(&self.0)
+        wardd::config::test_paths(&self.0)
     }
 }
 
@@ -198,8 +198,8 @@ pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-pub fn generations(dir: &Dir) -> wardd::arquivos::Geracoes {
-    wardd::arquivos::ler_estado(&dir.paths().estado).unwrap()
+pub fn generations(dir: &Dir) -> wardd::files::Generations {
+    wardd::files::read_state(&dir.paths().estado).unwrap()
 }
 
 /// Generation read from disk (opens with the test password, no floor).

@@ -14,7 +14,7 @@ use std::time::Duration;
 use common::*;
 use ward_core::entry::AccessLevel;
 use ward_core::protocol::{Response, ResponseError, Role};
-use wardd::arquivos::{self, Geracoes};
+use wardd::files::{self, Generations};
 use wardd::nucleo::{ESPERA_MAXIMA, espera_destrave};
 
 fn list(d: &wardd::nucleo::Daemon, role: Role) -> Vec<ward_core::protocol::ListItem> {
@@ -390,9 +390,9 @@ fn v3_22_rollback_and_swapped_file() {
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 2);
     assert_eq!(
         generations(&dir),
-        Geracoes {
-            vista: n + 2,
-            queimada: n + 2
+        Generations {
+            seen: n + 2,
+            burned: n + 2
         }
     );
     d.travar();
@@ -418,11 +418,11 @@ fn v3_22_rollback_and_swapped_file() {
     // State back (n), unlocks copy n: the generation goes up with the writes.
     // The file is a different one since the last lock: the first unlock warns that it
     // changed outside Ward; the next one decides by the generation only.
-    arquivos::gravar_estado(
+    files::write_state(
         &c.estado,
-        Geracoes {
-            vista: n,
-            queimada: n + 2,
+        Generations {
+            seen: n,
+            burned: n + 2,
         },
     )
     .unwrap();
@@ -495,10 +495,7 @@ fn v3_28_burned_generation_in_the_state() {
     let n = generation_on_disk(&c.cofre, PASSWORD);
     assert_eq!(
         generations_at(&c.estado),
-        Geracoes {
-            vista: n,
-            queimada: n
-        }
+        Generations { seen: n, burned: n }
     );
 
     // A: the rename happens, the directory fsync fails.
@@ -508,9 +505,9 @@ fn v3_28_burned_generation_in_the_state() {
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
         generations_at(&c.estado),
-        Geracoes {
-            vista: n,
-            queimada: n + 1
+        Generations {
+            seen: n,
+            burned: n + 1
         }
     );
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 1);
@@ -522,9 +519,9 @@ fn v3_28_burned_generation_in_the_state() {
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(
         generations_at(&c.estado),
-        Geracoes {
-            vista: n + 1,
-            queimada: n + 1
+        Generations {
+            seen: n + 1,
+            burned: n + 1
         }
     );
     assert!(ok(&request(
@@ -536,9 +533,9 @@ fn v3_28_burned_generation_in_the_state() {
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 2);
     assert_eq!(
         generations_at(&c.estado),
-        Geracoes {
-            vista: n + 2,
-            queimada: n + 2
+        Generations {
+            seen: n + 2,
+            burned: n + 2
         }
     );
 
@@ -557,9 +554,9 @@ fn v3_28_burned_generation_in_the_state() {
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
         generations_at(&c.estado),
-        Geracoes {
-            vista: g,
-            queimada: g + 1
+        Generations {
+            seen: g,
+            burned: g + 1
         }
     );
     assert!(ok(&request(
@@ -571,9 +568,9 @@ fn v3_28_burned_generation_in_the_state() {
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), g + 2);
     assert_eq!(
         generations_at(&c.estado),
-        Geracoes {
-            vista: g + 2,
-            queimada: g + 2
+        Generations {
+            seen: g + 2,
+            burned: g + 2
         }
     );
 
@@ -603,7 +600,7 @@ fn v3_28_burned_generation_in_the_state() {
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert!(d.travado());
-    let q = generations_at(&c.estado).queimada;
+    let q = generations_at(&c.estado).burned;
     assert!(ok(&unlock(&d, new_password)));
     assert!(ok(&request(
         &d,
@@ -628,8 +625,8 @@ fn vault_n2(c: &wardd::nucleo::Caminhos, dir: &Dir) -> (wardd::nucleo::Daemon, F
     (d, r)
 }
 
-fn generations_at(p: &std::path::Path) -> Geracoes {
-    arquivos::ler_estado(p).unwrap()
+fn generations_at(p: &std::path::Path) -> Generations {
+    files::read_state(p).unwrap()
 }
 
 /// V3.28: the password change with a wrong current password answers "wrong password"
