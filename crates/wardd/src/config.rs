@@ -7,12 +7,12 @@
 //! - **`test-mode`** (D7): vault `$WARD_DEV_DIR/test-vault.ward` and state
 //!   `$WARD_DEV_DIR/test-vault.state`; `WARD_DEV_DIR` is required, so the test daemon
 //!   never touches `~/.local/share/ward/`. Without `LISTEN_FDS`, the socket lives in a
-//!   0700 directory of the user: `/run/user/<uid>/ward-teste/` or `WARD_DEV_SOCKET_DIR`.
+//!   0700 directory of the user: `/run/user/<uid>/ward-test/` or `WARD_DEV_SOCKET_DIR`.
 //!   With `WARD_DEV_APP` (D63, Phase 23a), the open-app operation opens that binary (the
 //!   test `ward-app` or the bridge): absolute path of a regular file of the uid, without
 //!   a link, inside the repository (the folder above `WARD_DEV_DIR`), checked here and
 //!   on every opening; the output goes to `$WARD_DEV_DIR/logs/<binary>.log` (0600).
-//!   With `WARD_DEV_EXTENSAO=chrome` (Phase 41), the peer that is a child of the
+//!   With `WARD_DEV_EXTENSION=chrome` (Phase 41), the peer that is a child of the
 //!   installed Chrome gets the extension role without the egid of the `ward-nm` group
 //!   (see [`crate::launch::TestExtension`]).
 //!   The release build reads no `WARD_DEV_*` variable.
@@ -31,7 +31,7 @@ pub struct Config {
     /// The binary that the test daemon's open-app operation opens (D63).
     #[cfg(feature = "test-mode")]
     pub test_app: Option<ward_platform::TestBinary>,
-    /// `WARD_DEV_EXTENSAO=chrome` (Phase 41): the test daemon gives the extension role to
+    /// `WARD_DEV_EXTENSION=chrome` (Phase 41): the test daemon gives the extension role to
     /// the peer that is a child of the installed Chrome without the egid of the `ward-nm`
     /// group. Any other value is refused at startup.
     #[cfg(feature = "test-mode")]
@@ -123,10 +123,10 @@ impl Config {
             Some(v) => Some(test_app_binary(v, &dev, env_socket.as_deref())?),
             None => None,
         };
-        let test_extension = match var("WARD_DEV_EXTENSAO") {
+        let test_extension = match var("WARD_DEV_EXTENSION") {
             None => false,
             Some(v) if v == "chrome" => true,
-            Some(_) => return Err("daemon de teste: WARD_DEV_EXTENSAO só aceita \"chrome\""),
+            Some(_) => return Err("daemon de teste: WARD_DEV_EXTENSION só aceita \"chrome\""),
         };
         let socket = env_socket.unwrap_or_else(|| {
             ward_platform::socket::runtime_dir().join(ward_platform::socket::TEST_DIR_NAME)
@@ -170,7 +170,7 @@ mod tests {
         let c = Config::from_vars(|k| (k == "WARD_DEV_DIR").then(|| "/x/.dev".into())).unwrap();
         assert_eq!(c.paths.vault, Path::new("/x/.dev/test-vault.ward"));
         assert_eq!(c.paths.state, Path::new("/x/.dev/test-vault.state"));
-        assert!(c.test_socket_dir.unwrap().ends_with("ward-teste"));
+        assert!(c.test_socket_dir.unwrap().ends_with("ward-test"));
         assert!(!c.test_extension);
     }
 
@@ -181,7 +181,7 @@ mod tests {
         let with_value = |v: &'static str| {
             Config::from_vars(move |k| match k {
                 "WARD_DEV_DIR" => Some("/x/.dev".into()),
-                "WARD_DEV_EXTENSAO" => Some(v.into()),
+                "WARD_DEV_EXTENSION" => Some(v.into()),
                 _ => None,
             })
         };

@@ -258,8 +258,8 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
         &chain,
     );
     Some(match mode {
-        "aprovacao" => vec![(normal, Duration::ZERO)],
-        "aprovacao-prod" => vec![(
+        "approval" => vec![(normal, Duration::ZERO)],
+        "approval-prod" => vec![(
             request(
                 2,
                 "acme-pg-prod",
@@ -269,8 +269,8 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
             ),
             Duration::ZERO,
         )],
-        "aprovacao-expirando" => vec![(normal, Duration::from_secs(104))],
-        "aprovacao-entrada" => vec![(
+        "approval-expiring" => vec![(normal, Duration::from_secs(104))],
+        "approval-entry" => vec![(
             ApprovalRequest {
                 hidden_entry: true,
                 ..request(
@@ -285,7 +285,7 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
         )],
         // Phase 44c: `ward playwright acme-wp-prod` (free) on an `http` origin: only the
         // confirmation, no PIN.
-        "aprovacao-origem" => vec![(
+        "approval-origin" => vec![(
             at_origin(
                 4,
                 "acme-wp-prod",
@@ -296,7 +296,7 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
             Duration::ZERO,
         )],
         // Phase 44c: the extension popup on an `http` origin.
-        "aprovacao-origem-popup" => vec![(
+        "approval-origin-popup" => vec![(
             at_origin(
                 5,
                 "acme-wp-prod",
@@ -308,7 +308,7 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
         )],
         // Phase 44c: `ward login acme-wp-dev` (with approval) on an `http` origin: PIN
         // and origin.
-        "aprovacao-origem-pin" => vec![(
+        "approval-origin-pin" => vec![(
             at_origin(
                 6,
                 "acme-wp-dev",
@@ -318,7 +318,7 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
             )?,
             Duration::ZERO,
         )],
-        "aprovacao-ataque" => vec![(
+        "approval-attack" => vec![(
             request(
                 3,
                 "acme-pg-aprovacao",
@@ -1013,9 +1013,9 @@ mod tests {
         // `wardd`.
         use ward_core::entry::Environment;
         for (mode, environment, confirmation) in [
-            ("aprovacao-origem", Environment::Prod, true),
-            ("aprovacao-origem-popup", Environment::Prod, true),
-            ("aprovacao-origem-pin", Environment::Dev, false),
+            ("approval-origin", Environment::Prod, true),
+            ("approval-origin-popup", Environment::Prod, true),
+            ("approval-origin-pin", Environment::Dev, false),
         ] {
             let v = simulated_approvals(mode).unwrap();
             let p = &v[0].0;

@@ -41,7 +41,7 @@ ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 cd "$ROOT"
 
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$ROOT" "$1" ;; esac; }
-USAGE="uso: login.sh <wardd> <ward-nm> <ward> <wardd-aprovador-teste>"
+USAGE="uso: login.sh <wardd> <ward-nm> <ward> <wardd-test-approver>"
 WARDD="$(abs "${1:?$USAGE}")"
 NM="$(abs "${2:?$USAGE}")"
 WARD="$(abs "${3:?$USAGE}")"
@@ -83,8 +83,8 @@ cp -- "$VAULT" "$WORK_DIR/test-vault.ward"
 # Phase 44c: the test window, inside the daemon's "repository" (the folder above
 # WARD_DEV_DIR, D63); starts confirming the origin.
 mkdir -m 0700 "$WORK_DIR/logs"
-cp -- "$APPROVER" "$WORK_DIR/wardd-aprovador-teste"
-printf 'confirmar\n' > "$WORK_DIR/aprovador.modo"
+cp -- "$APPROVER" "$WORK_DIR/wardd-test-approver"
+printf 'confirmar\n' > "$WORK_DIR/approver.mode"
 printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' > "$WORK_DIR/test-vault.state"
 LOG="$WORK_DIR/wardd.log"
 env -i \
@@ -94,8 +94,8 @@ env -i \
     LANG=C.UTF-8 \
     WARD_DEV_DIR="$WORK_DIR" \
     WARD_DEV_SOCKET_DIR="$SOCKDIR" \
-    WARD_DEV_EXTENSAO=chrome \
-    WARD_DEV_APP="$WORK_DIR/wardd-aprovador-teste" \
+    WARD_DEV_EXTENSION=chrome \
+    WARD_DEV_APP="$WORK_DIR/wardd-test-approver" \
     RUST_LOG=trace \
     "$WARDD" </dev/null >"$LOG" 2>&1 &
 PID=$!
@@ -106,7 +106,7 @@ for _ in $(seq 1 200); do
     sleep 0.05
 done
 [ -S "$SOCKET" ] || { echo "o wardd de teste não criou o socket" >&2; exit 1; }
-echo "wardd de teste só deste script (WARD_DEV_EXTENSAO=chrome): pid $PID, socket $SOCKET"
+echo "wardd de teste só deste script (WARD_DEV_EXTENSION=chrome): pid $PID, socket $SOCKET"
 
 failures=0
 /usr/bin/python3 -I -B "$ROOT/dev/tests/login.py" "$ROOT" "$WORK_DIR" "$SOCKDIR" "$NM" "$CHROME" "$PATTERN_LIST" "$EXT" "$WARD" \
@@ -116,7 +116,7 @@ kill -0 "$PID" 2>/dev/null || { echo "FALHA o wardd de teste morreu durante o te
 kill -TERM "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 PID=""
-for f in "$LOG" "$WORK_DIR/chrome.log" "$WORK_DIR/console.log" "$WORK_DIR/cli.log" "$WORK_DIR/logs/wardd-aprovador-teste.log"; do
+for f in "$LOG" "$WORK_DIR/chrome.log" "$WORK_DIR/console.log" "$WORK_DIR/cli.log" "$WORK_DIR/logs/wardd-test-approver.log"; do
     if [ ! -f "$f" ]; then
         echo "FALHA ${f##*/} não existe" >&2
         failures=$((failures + 1))

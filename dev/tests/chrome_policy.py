@@ -133,14 +133,14 @@ sys.stdout.buffer.flush()
         shutil.copyfile(f"{root}/.dev/test-vault.ward", f"{t}/test-vault.ward")
         open(f"{t}/test-vault.state", "w").write("ward-state 2\nseen 0\nburned 0\nagent_failures 0\n")
         env_wardd = {"HOME": t, "PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": rt, "LANG": "C.UTF-8",
-                     "WARD_DEV_DIR": t, "WARD_DEV_SOCKET_DIR": sockdir, "WARD_DEV_EXTENSAO": "chrome",
+                     "WARD_DEV_DIR": t, "WARD_DEV_SOCKET_DIR": sockdir, "WARD_DEV_EXTENSION": "chrome",
                      "RUST_LOG": "info"}
         # Phase 44c: the test window confirms the `http` origin (the user who confirms).
         if len(sys.argv) > 7:
             os.makedirs(f"{t}/logs", mode=0o700, exist_ok=True)
-            shutil.copy2(sys.argv[7], f"{t}/wardd-aprovador-teste")
-            open(f"{t}/aprovador.modo", "w").write("confirmar\n")
-            env_wardd["WARD_DEV_APP"] = f"{t}/wardd-aprovador-teste"
+            shutil.copy2(sys.argv[7], f"{t}/wardd-test-approver")
+            open(f"{t}/approver.mode", "w").write("confirmar\n")
+            env_wardd["WARD_DEV_APP"] = f"{t}/wardd-test-approver"
         wardd = subprocess.Popen(
             [wardd_bin], stdin=subprocess.DEVNULL, stdout=open(f"{t}/wardd.log", "w"), stderr=subprocess.STDOUT,
             env=env_wardd)
@@ -167,7 +167,7 @@ sys.stdout.buffer.flush()
         attacker = f"{t}/atacante.py"
         open(attacker, "w").write(r'''#!/usr/bin/python3 -I
 import json, os, struct
-NM, OUTPUT, ID, MARK = os.environ["ATQ_NM"], os.environ["ATQ_SAIDA"], os.environ["ATQ_ID"], os.environ["ATQ_MARCA"]
+NM, OUTPUT, ID, MARK = os.environ["ATK_NM"], os.environ["ATK_OUTPUT"], os.environ["ATK_ID"], os.environ["ATK_MARK"]
 open(MARK, "w").close()
 a_r, a_w = os.pipe()
 b_r, b_w = os.pipe()
@@ -202,8 +202,8 @@ os.execv(NM, ["ward-nm", f"chrome-extension://{ID}/"])
             os.chmod(system_host, 0o700)
             manifest(system_host, f"{nmh}/br.ward.nm.json")
         manifest(attacker, f"{profile}/NativeMessagingHosts/br.ward.nm.json")
-        env_chrome.update({"WARD_DEV_SOCKET_DIR": sockdir, "ATQ_NM": nm_bin, "ATQ_SAIDA": f"{t}/roubado.json",
-                           "ATQ_ID": ward_id, "ATQ_MARCA": f"{t}/atacante-rodou"})
+        env_chrome.update({"WARD_DEV_SOCKET_DIR": sockdir, "ATK_NM": nm_bin, "ATK_OUTPUT": f"{t}/roubado.json",
+                           "ATK_ID": ward_id, "ATK_MARK": f"{t}/atacante-rodou"})
         sw = 'const p = chrome.runtime.connectNative("br.ward.nm");'
 
     json.dump({"manifest_version": 3, "name": "teste-politica", "version": "1",

@@ -187,7 +187,7 @@ for name, path in (("br.ward.nm", NM), ("br.ward.sonda", PROBE), ("br.ward.relat
         json.dump({"name": name, "description": "teste", "path": path, "type": "stdio",
                    "allowed_origins": [f"chrome-extension://{eid}/"]}, f)
 with open(os.path.join(ext, "manifest.json"), "w") as f:
-    json.dump({"manifest_version": 3, "name": "ward-teste-nm", "version": "1", "key": PUBLIC_KEY,
+    json.dump({"manifest_version": 3, "name": "ward-test-nm", "version": "1", "key": PUBLIC_KEY,
                "permissions": ["nativeMessaging"], "background": {"service_worker": "sw.js"}}, f)
 with open(os.path.join(ext, "sw.js"), "w") as f:
     f.write("""
@@ -220,7 +220,7 @@ def prep():
 
 
 chrome_env = {"HOME": home, "PATH": "/usr/bin:/bin", "WARD_DEV_SOCKET_DIR": SOCKDIR,
-              "WARD_PAI_CHROME_SOCK": probe_sock}
+              "WARD_CHROME_PARENT_SOCK": probe_sock}
 log_chrome = open(os.path.join(WORK_DIR, "chrome.log"), "w")
 ch = subprocess.Popen(
     [CHROME, "--headless=new", f"--user-data-dir={profile}", "--remote-debugging-pipe",
@@ -287,7 +287,7 @@ finally:
 # Control: the same host opened by this process (not by Chrome).
 srv = subprocess.Popen([PROBE, "serve", probe_sock, CHROME], stdout=subprocess.PIPE, text=True)
 srv.stdout.readline()
-subprocess.run([PROBE, ORIGIN], env={"WARD_PAI_CHROME_SOCK": probe_sock}, capture_output=True, timeout=30)
+subprocess.run([PROBE, ORIGIN], env={"WARD_CHROME_PARENT_SOCK": probe_sock}, capture_output=True, timeout=30)
 line = srv.communicate(timeout=30)[0].strip()
 verify(line.startswith("pai=ParentNotAllowed"), "controle: o host aberto por outro processo é recusado (ParentNotAllowed)")
 shutil.rmtree(profile, ignore_errors=True)

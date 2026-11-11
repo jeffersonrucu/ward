@@ -27,7 +27,7 @@
 //!     screen lock) and tries again with a growing wait up to [`MAX_BUS_WAIT`]. Without
 //!     a bus since startup, it only warns: the inactivity still holds.
 //! - The bus address is fixed ([`SYSTEM_BUS`]); it never comes from the environment.
-//!   Only the test daemon accepts `WARD_DEV_DBUS_SISTEMA` (path of a socket, for the
+//!   Only the test daemon accepts `WARD_DEV_SYSTEM_DBUS` (path of a socket, for the
 //!   tests' fake `dbus-daemon`); without it, the test daemon does not turn logind on.
 //!
 //! Nothing here touches a secret; the log only has fixed texts.
@@ -196,7 +196,7 @@ pub fn event_from_signal(msg: &Message) -> Option<Event> {
 
 /// Socket of the bus that the daemon watches, or `None` (without logind).
 ///
-/// Release: always [`SYSTEM_BUS`]. Test daemon: only `WARD_DEV_DBUS_SISTEMA`, checked by
+/// Release: always [`SYSTEM_BUS`]. Test daemon: only `WARD_DEV_SYSTEM_DBUS`, checked by
 /// [`bus_path`]; without it, `None`. The variable's name only exists in the binary with
 /// `test-mode` (Phase 51a: `install.sh` refuses any `WARD_DEV_*` in the artifact,
 /// without exception).
@@ -207,10 +207,10 @@ pub fn daemon_bus() -> Result<Option<PathBuf>, String> {
     }
     #[cfg(feature = "test-mode")]
     {
-        match std::env::var_os("WARD_DEV_DBUS_SISTEMA") {
+        match std::env::var_os("WARD_DEV_SYSTEM_DBUS") {
             None => Ok(None),
             Some(v) => bus_path(Path::new(&v)).map(Some).map_err(|_| {
-                "WARD_DEV_DBUS_SISTEMA recusado: caminho absoluto simples de um socket".into()
+                "WARD_DEV_SYSTEM_DBUS recusado: caminho absoluto simples de um socket".into()
             }),
         }
     }
@@ -502,6 +502,6 @@ mod tests {
         }
         let long = format!("/{}", "a".repeat(MAX_PATH));
         assert!(bus_path(Path::new(&long)).is_err());
-        assert!(bus_path(Path::new("/run/user/1000/ward-teste/bus-1")).is_ok());
+        assert!(bus_path(Path::new("/run/user/1000/ward-test/bus-1")).is_ok());
     }
 }

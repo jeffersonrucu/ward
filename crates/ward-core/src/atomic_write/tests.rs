@@ -21,10 +21,10 @@ use crate::format::{MasterPassword, open};
 
 const PASSWORD: &str = "falso-mestra-ward-01";
 const CHILD_NAME: &str = "atomic_write::tests::child_write";
-const ENV_MODE: &str = "WARD_TESTE_GRAVACAO_MODO";
-const ENV_DIR: &str = "WARD_TESTE_GRAVACAO_DIR";
-const ENV_MARK: &str = "WARD_TESTE_GRAVACAO_MARCA";
-const ENV_CONTROL: &str = "WARD_TESTE_GRAVACAO_CONTROLE";
+const ENV_MODE: &str = "WARD_TEST_WRITE_MODE";
+const ENV_DIR: &str = "WARD_TEST_WRITE_DIR";
+const ENV_MARK: &str = "WARD_TEST_WRITE_MARK";
+const ENV_CONTROL: &str = "WARD_TEST_WRITE_CONTROL";
 const STRACE: &str = "/usr/bin/strace";
 /// Maximum lifetime of the child: if the parent dies without killing it (interrupted
 /// test), the child exits on its own instead of writing or sleeping forever.

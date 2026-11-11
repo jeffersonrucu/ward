@@ -92,14 +92,20 @@ done <"$TREE"
 
 # Marks of a `test-mode` artifact (D7, D63; V9.2): the variables of the test daemon, the
 # bridge and the test app, and the name of the test socket dir. Any `WARD_DEV_*`
-# refuses, no exception (Phase 51a: the release carries none of them as text).
+# refuses, no exception (Phase 51a: the release carries none of them as text); that
+# prefix covers the 0.1.x names and the new ones (m2:DT12). The names of the bridge,
+# the test binaries and the test socket dir are refused in the new form and in the 0.1.x
+# one (m2:Phase 56, m2:V5.4): an old test artifact is still refused. A mark that
+# contains another comes first, so the message names the longer one.
+TEST_MODE_MARKS=(ward-test-bridge ward-ponte-teste wardd-test-approver wardd-aprovador-teste
+    wardd-test-app wardd-app-teste ward-teste ward-test)
 verify_no_test_mode() {
     local file="$1" name="$2" found
     found="$(grep -a -o -E 'WARD_DEV_[A-Z0-9_]*' -- "$file" | head -n 1 || true)"
-    [ -z "$found" ] || error "$name foi compilado com modo-teste (contém $found); use o build de release ('make release')"
-    for mark in ward-ponte-teste wardd-app-teste ward-teste; do
+    [ -z "$found" ] || error "$name foi compilado com test-mode (contém $found); use o build de release ('make release')"
+    for mark in "${TEST_MODE_MARKS[@]}"; do
         if grep -a -q -F -- "$mark" "$file"; then
-            error "$name foi compilado com modo-teste (contém $mark); use o build de release ('make release')"
+            error "$name foi compilado com test-mode (contém $mark); use o build de release ('make release')"
         fi
     done
 }

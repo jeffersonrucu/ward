@@ -495,7 +495,17 @@ const CFG_HOOKS: &str = "#[cfg(feature = \"test-hooks\")]";
 
 fn check_v3_15(rel: &str, text: &str, hooks: &mut Vec<&'static str>) {
     let name = rel.rsplit('/').next().unwrap_or(rel);
-    for forbidden in ["env::args", "aprovador_teste", "WARD_APROV", "auto_aprov"] {
+    // m2:Phase 56: the old (pt-BR) names and the new ones of the test approver.
+    for forbidden in [
+        "env::args",
+        "aprovador_teste",
+        "WARD_APROV",
+        "auto_aprov",
+        "test_approver",
+        "test-approver",
+        "WARD_APPROV",
+        "auto_approv",
+    ] {
         assert!(!text.contains(forbidden), "{rel}: {forbidden}");
     }
     // The lock module (Phase 24): only the test logind bus, outside the approval.

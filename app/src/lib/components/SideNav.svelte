@@ -19,9 +19,9 @@
   let { active, onnavigate = undefined, onlock = undefined } = $props();
 
   const ITEMS = [
-    { screen: 'credenciais', label: 'Credenciais', icon: 'key' },
-    { screen: 'gerador', label: 'Gerador de senha', icon: 'generator' },
-    { screen: 'configuracoes', label: 'Configurações', icon: 'gear' },
+    { screen: 'credentials', label: 'Credenciais', icon: 'key' },
+    { screen: 'generator', label: 'Gerador de senha', icon: 'generator' },
+    { screen: 'settings', label: 'Configurações', icon: 'gear' },
   ];
 </script>
 

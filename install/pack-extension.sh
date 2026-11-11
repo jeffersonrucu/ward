@@ -9,8 +9,8 @@
 # be the extension id constant of `ward-nm` (another key gives another id and is refused).
 #
 # Variables: EXTENSION_KEY (default .dev/extension/key.pem, 0600, the user's),
-# EXTENSAO_DIST (default extension/dist), CHROME (default /opt/google/chrome/chrome),
-# CRX_SAIDA (default target/extension/ward.crx).
+# EXTENSION_DIST (default extension/dist), CHROME (default /opt/google/chrome/chrome),
+# CRX_OUTPUT (default target/extension/ward.crx).
 
 export PATH=/usr/bin:/bin
 export LC_ALL=C
@@ -25,9 +25,9 @@ error() { printf 'ward-extensao: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" != 0 ] || error "rode como o usuário, sem sudo"
 
 KEY="${EXTENSION_KEY:-$ROOT/.dev/extension/key.pem}"
-DIST="${EXTENSAO_DIST:-$ROOT/extension/dist}"
+DIST="${EXTENSION_DIST:-$ROOT/extension/dist}"
 CHROME="${CHROME:-/opt/google/chrome/chrome}"
-OUTPUT="${CRX_SAIDA:-$ROOT/target/extension/ward.crx}"
+OUTPUT="${CRX_OUTPUT:-$ROOT/target/extension/ward.crx}"
 for v in "$KEY" "$DIST" "$CHROME" "$OUTPUT"; do
     [[ "$v" == /* ]] || error "caminho relativo: $v"
 done

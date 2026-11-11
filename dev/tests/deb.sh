@@ -176,7 +176,7 @@ refusal() {
     verify "$label: mensagem" "$r" "$msg"
     verify "$label: nenhum .deb" "$(no_deb "$d")" "sem deb"
 }
-refusal "V9.2: wardd com test-mode" "modo-teste" "$TMP/r1" BIN_WARDD="$WARDD_TEST"
+refusal "V9.2: wardd com test-mode" "compilado com test-mode" "$TMP/r1" BIN_WARDD="$WARDD_TEST"
 other_id="$(/usr/bin/python3 -I "$ROOT/dev/tests/fake_crx.py" "$TMP/other.crx")"
 refusal "EXTENSION_ID de outra extensão" "não de EXTENSION_ID" "$TMP/r2" EXTENSION_ID="$other_id"
 refusal "EXTENSION_ID vazio" "EXTENSION_ID" "$TMP/r3" EXTENSION_ID=
@@ -197,7 +197,7 @@ if [ -x /opt/google/chrome/chrome ] && command -v openssl >/dev/null 2>&1; then
     printf '{"manifest_version": 3, "name": "ward-teste", "version": "0.1.0"}\n' >"$E/dist/manifest.json"
     (umask 077 && openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$E/other.pem" 2>/dev/null)
     crx() {
-        env -i PATH=/usr/bin:/bin EXTENSAO_DIST="$E/dist" CRX_SAIDA="$E/out/ward.crx" "$@" \
+        env -i PATH=/usr/bin:/bin EXTENSION_DIST="$E/dist" CRX_OUTPUT="$E/out/ward.crx" "$@" \
             "$ROOT/install/pack-extension.sh" 2>&1
     }
     r="$(crx EXTENSION_KEY="$E/other.pem"; echo "saiu=$?")"

@@ -387,7 +387,7 @@ fn v3_6_running_wardd_denies_proc_ptrace_and_core() {
     let mut control = Command::new("/usr/bin/sleep")
         .arg("30")
         .env_clear()
-        .env("WARD_CONTROLE", "1")
+        .env("WARD_CONTROL", "1")
         .spawn()
         .unwrap();
     // The `environ` is only right after the exec: try for a moment.

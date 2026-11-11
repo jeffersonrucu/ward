@@ -253,7 +253,7 @@ check "V5.31: o ward-app aberto por outro processo não recebe o papel app" \
 install -d -o 1000 -g 1000 -m 0755 /tmp/gerente
 install -o 1000 -g 1000 -m 0755 "$BIN" /tmp/gerente/systemd
 rm -f /tmp/gerente.log
-as_1000 /usr/bin/env WARD_GERENTE_PROGRAMA=/usr/local/bin/ward-app /usr/bin/bash -c \
+as_1000 /usr/bin/env WARD_MANAGER_PROGRAM=/usr/local/bin/ward-app /usr/bin/bash -c \
     '( exec -a /usr/lib/systemd/systemd /tmp/gerente/systemd --user >/tmp/gerente.log 2>&1 & )'
 for _ in $(seq 50); do grep -q "gerente: Ok" /tmp/gerente.log 2>/dev/null && break; sleep 0.1; done
 r="$(cat /tmp/gerente.log 2>/dev/null || true)"
@@ -299,7 +299,7 @@ CLI=/opt/teste/ward-release
 WARDD_REL=/opt/teste/wardd-release
 FAKE=/opt/teste/falso
 install -o root -g root -m 0755 "$CLI" /usr/local/bin/ward
-install -d -o 1000 -g 1000 -m 0700 /run/user/1000/ward /run/user/1000/ward-teste /run/user/1000/copia /tmp/v42
+install -d -o 1000 -g 1000 -m 0700 /run/user/1000/ward /run/user/1000/ward-test /run/user/1000/copia /tmp/v42
 RECORD=/tmp/v42/registro
 as_1000 touch "$RECORD"
 
@@ -320,11 +320,11 @@ echo "   (wardd copiado sem LISTEN_FDS: $(tr '\n' ' ' <<<"$r"))"
 # The non-dumpable fakes of uid 1000: at the old path (/run/user/<uid>/ward/), at the
 # test daemon's folder and at the copy's.
 FPIDS=()
-for d in ward ward-teste copia; do
+for d in ward ward-test copia; do
     as_1000 "$FAKE" "/run/user/1000/$d/wardd.sock" "$RECORD" 40 >"/tmp/v42/falso-$d.out" 2>&1 &
     FPIDS+=("$!")
 done
-for d in ward ward-teste copia; do
+for d in ward ward-test copia; do
     for _ in $(seq 50); do grep -q pronto "/tmp/v42/falso-$d.out" 2>/dev/null && break; sleep 0.1; done
     check "V4.2: falso não-dumpable do uid 1000 escutando em /run/user/1000/$d" "$(cat "/tmp/v42/falso-$d.out")" "pronto dumpable=0"
 done
@@ -345,7 +345,7 @@ check "V4.2: com o socket velho do root, o falso não toma o caminho do wardd" "
 PASSWORD_V42="falso-mestra-ward-01"
 cli_pty() {
     printf '%s\n' "$PASSWORD_V42" | as_1000 /usr/bin/env -i HOME=/tmp/v42 PATH=/usr/bin:/bin LANG=C.UTF-8 \
-        XDG_RUNTIME_DIR=/run/user/1000 WARD_DEV_SOCKET_DIR=/run/user/1000/ward-teste \
+        XDG_RUNTIME_DIR=/run/user/1000 WARD_DEV_SOCKET_DIR=/run/user/1000/ward-test \
         /usr/bin/script -qec "/usr/local/bin/ward $1" /dev/null 2>&1
     echo "saiu=$?"
 }

@@ -105,7 +105,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             }
             let bridge = Arc::clone(self);
             let r = thread::Builder::new()
-                .name("ward-ponte".into())
+                .name("ward-bridge".into())
                 .spawn(move || {
                     let _ = bridge.handle(conn);
                     bridge.open_conns.fetch_sub(1, Ordering::SeqCst);
@@ -134,8 +134,8 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
         }
         match (p.method.as_str(), p.path.as_str()) {
             ("GET", path) => self.static_file(path),
-            ("POST", path) if path.starts_with("/ponte/") => {
-                self.command(p, &path["/ponte/".len()..])
+            ("POST", path) if path.starts_with("/test-bridge/") => {
+                self.command(p, &path["/test-bridge/".len()..])
             }
             _ => Response::text(405),
         }

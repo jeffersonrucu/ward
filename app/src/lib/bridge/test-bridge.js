@@ -13,7 +13,7 @@ function readToken() {
   // The optional screen parameter after the token (test mode only): opens straight on a
   // screen for QA in Chrome, before the unlock screens existed. Leaves the URL together
   // with the token.
-  const m = /^#token=([0-9a-f]{64})(?:&tela=([a-z-]{1,32}))?$/.exec(window.location.hash);
+  const m = /^#token=([0-9a-f]{64})(?:&screen=([a-z-]{1,32}))?$/.exec(window.location.hash);
   token = m ? m[1] : '';
   openingScreen = m && m[2] ? m[2] : null;
   // Takes the token out of the address bar and of the history.
@@ -26,7 +26,7 @@ export function createTransport() {
   return async (command, args) => {
     let reply;
     try {
-      reply = await fetch(`/ponte/${command}`, {
+      reply = await fetch(`/test-bridge/${command}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -39,17 +39,17 @@ export function createTransport() {
         referrerPolicy: 'no-referrer',
       });
     } catch {
-      throw { 'code': 'ponte-indisponivel', 'message': 'a ponte de teste não respondeu' };
+      throw { 'code': 'bridge-unavailable', 'message': 'a ponte de teste não respondeu' };
     }
     let body;
     try {
       body = await reply.json();
     } catch {
-      throw { 'code': 'ponte-invalida', 'message': 'resposta inválida da ponte de teste' };
+      throw { 'code': 'bridge-invalid', 'message': 'resposta inválida da ponte de teste' };
     }
     if (body && body.ok === true) return body.value ?? null;
     throw {
-      'code': String(body?.code ?? 'falha'),
+      'code': String(body?.code ?? 'failure'),
       'message': String(body?.message ?? 'falha na ponte de teste'),
     };
   };

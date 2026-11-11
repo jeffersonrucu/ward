@@ -137,7 +137,7 @@ pub struct Roles {
     /// Only in the test daemon (D63): the test app, app without the egid. In the release
     /// it is always `None` (the type is not built without the feature).
     pub test_app: Option<TestApp>,
-    /// Only in the test daemon with `WARD_DEV_EXTENSAO=chrome` (Phase 41): the
+    /// Only in the test daemon with `WARD_DEV_EXTENSION=chrome` (Phase 41): the
     /// extension's test host, extension without the egid. In the release it is always
     /// `None` (the type is not built without the feature).
     pub test_extension: Option<TestExtension>,
@@ -368,12 +368,12 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
             Ok(p) => p,
             Err(AcceptError::UidRefused { uid, pid }) => {
                 // Closes without sending a single byte (V3.2).
-                warning!("conexão recusada (UidRecusado): uid {uid}, pid {pid}");
+                warning!("conexão recusada (UidRefused): uid {uid}, pid {pid}");
                 drop(stream);
                 continue;
             }
             Err(AcceptError::NoIdentity(e)) => {
-                warning!("conexão recusada (SemIdentidade): {}", e.kind());
+                warning!("conexão recusada (NoIdentity): {}", e.kind());
                 drop(stream);
                 continue;
             }

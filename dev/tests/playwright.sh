@@ -40,9 +40,9 @@ ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 . "$ROOT/dev/env.sh"
 cd "$ROOT"
 
-WARDD="${1:?uso: playwright.sh <wardd> <ward> <wardd-aprovador-teste>}"
-WARD="${2:?uso: playwright.sh <wardd> <ward> <wardd-aprovador-teste>}"
-APPROVER="${3:?uso: playwright.sh <wardd> <ward> <wardd-aprovador-teste>}"
+WARDD="${1:?uso: playwright.sh <wardd> <ward> <wardd-test-approver>}"
+WARD="${2:?uso: playwright.sh <wardd> <ward> <wardd-test-approver>}"
+APPROVER="${3:?uso: playwright.sh <wardd> <ward> <wardd-test-approver>}"
 case "$WARDD" in /*) ;; *) WARDD="$ROOT/$WARDD" ;; esac
 case "$WARD" in /*) ;; *) WARD="$ROOT/$WARD" ;; esac
 case "$APPROVER" in /*) ;; *) APPROVER="$ROOT/$APPROVER" ;; esac
@@ -78,8 +78,8 @@ cp -- "$VAULT" "$WORK_DIR/test-vault.ward"
 # Phase 44c: the test window, inside the daemon's "repository" (the folder above
 # WARD_DEV_DIR, D63); starts confirming the origin.
 mkdir -m 0700 "$WORK_DIR/logs"
-cp -- "$APPROVER" "$WORK_DIR/wardd-aprovador-teste"
-printf 'confirmar\n' > "$WORK_DIR/aprovador.modo"
+cp -- "$APPROVER" "$WORK_DIR/wardd-test-approver"
+printf 'confirmar\n' > "$WORK_DIR/approver.mode"
 printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' > "$WORK_DIR/test-vault.state"
 LOG="$WORK_DIR/wardd.log"
 
@@ -90,7 +90,7 @@ env -i \
     LANG=C.UTF-8 \
     WARD_DEV_DIR="$WORK_DIR" \
     WARD_DEV_SOCKET_DIR="$SOCKDIR" \
-    WARD_DEV_APP="$WORK_DIR/wardd-aprovador-teste" \
+    WARD_DEV_APP="$WORK_DIR/wardd-test-approver" \
     RUST_LOG=trace \
     "$WARDD" </dev/null >"$LOG" 2>&1 &
 PID=$!

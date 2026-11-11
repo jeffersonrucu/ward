@@ -31,10 +31,10 @@ for p in bwrap strace getent python3; do
 done
 
 # --- Outside the sandbox: re-executes inside it -------------------------------------------
-if [ "${WARD_HOME_COBERTO:-}" != 1 ]; then
+if [ "${WARD_HOME_COVERED:-}" != 1 ]; then
     args=(--die-with-parent --dev-bind / / --tmpfs "$PASSWD_HOME")
     # Only the repository comes back; /tmp too, in case the home tmpfs covered it.
-    args+=(--bind "$ROOT" "$ROOT" --bind /tmp /tmp --setenv WARD_HOME_COBERTO 1 --chdir "$ROOT")
+    args+=(--bind "$ROOT" "$ROOT" --bind /tmp /tmp --setenv WARD_HOME_COVERED 1 --chdir "$ROOT")
     exec bwrap "${args[@]}" -- /bin/bash -p "$ROOT/dev/tests/real-home.sh" "$@"
 fi
 
@@ -207,7 +207,7 @@ channel() { printf 'x' | ssh_password "$SECRETS_DIR/ssh-deploy" 2222 deploy -W p
 sftp_ls() { printf 'ls\n' | ssh_password "$SECRETS_DIR/ssh-sftpuser" 2222 sftpuser -s sftp; }
 keygen_y() { ssh-keygen -y -P '' -f "$SERVICES_DIR/keys/acme-deploy_ed25519"; }
 # The way generate.py generates the keys (ssh-keygen -t … -f), in a temporary directory.
-keygen_new() { ssh-keygen -q -t ed25519 -N '' -C ward-teste-home -f "$TMP/new-key"; }
+keygen_new() { ssh-keygen -q -t ed25519 -N '' -C ward-test-home -f "$TMP/new-key"; }
 wp() { wp_login wp_admin "$SECRETS_DIR/wp-admin"; }
 # git and docker the way the scripts use them (Phase 12b): environment of dev/env.sh and common.sh.
 git_ignore() { git -C "$ROOT" check-ignore -q .dev/services/secrets/pg-app; }
@@ -216,7 +216,7 @@ psql_one() { psql_app 'select 1'; }
 # Phase 28 Python Postgres client (V4.29): password from a file, never in argv.
 pg_select_one() {
     client PGHOST=127.0.0.1 PGPORT=55432 PGUSER=app PGDATABASE=app_teste \
-        WARD_TESTE_PG_SENHA_ARQUIVO="$SECRETS_DIR/pg-app" python3 -I -B "$ROOT/dev/tests/pg_select.py" 'select 1'
+        WARD_TEST_PG_PASSWORD_FILE="$SECRETS_DIR/pg-app" python3 -I -B "$ROOT/dev/tests/pg_select.py" 'select 1'
 }
 
 trace_ok password ssh_password "$SECRETS_DIR/ssh-deploy" 2222 deploy whoami

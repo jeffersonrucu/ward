@@ -415,7 +415,7 @@ fn save_login(d: &Daemon, role: Role, name: &str, password: &str, extra: &str) -
         role,
         "save_login",
         &format!(
-            r#"{{"entry":{{"name":"{name}","group":"localhost","environment":"dev","type":"login","fields":{{"url":"http://localhost:8083/cadastro","username":"novo.usuario","password":"{}"}}{extra}}}}}"#,
+            r#"{{"entry":{{"name":"{name}","group":"localhost","environment":"dev","type":"login","fields":{{"url":"http://localhost:8083/registration","username":"novo.usuario","password":"{}"}}{extra}}}}}"#,
             b64(password.as_bytes())
         ),
     )

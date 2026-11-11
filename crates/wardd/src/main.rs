@@ -49,7 +49,7 @@ fn test_opener(config: &Config) -> (Option<RealOpener>, Option<TestApp>) {
     }
 }
 
-/// Only in the test daemon with `WARD_DEV_EXTENSAO=chrome` (Phase 41): the extension
+/// Only in the test daemon with `WARD_DEV_EXTENSION=chrome` (Phase 41): the extension
 /// role for the child of the installed Chrome, without the egid. In the release, never.
 #[cfg(feature = "test-mode")]
 fn test_extension(config: &Config) -> Option<TestExtension> {

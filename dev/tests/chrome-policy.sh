@@ -43,7 +43,7 @@ ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 unset MAKEFLAGS MAKELEVEL MFLAGS
 cd "$ROOT"
 
-usage="uso: chrome-policy.sh <wardd-teste> <ward-nm-teste> <ward> <wardd> <ward-nm> <ward-app> <wardd-aprovador-teste>"
+usage="uso: chrome-policy.sh <wardd-teste> <ward-nm-teste> <ward> <wardd> <ward-nm> <ward-app> <wardd-test-approver>"
 [ $# -eq 7 ] || { echo "$usage" >&2; exit 2; }
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$ROOT" "$1" ;; esac; }
 WARDD_T="$(abs "$1")" NM_T="$(abs "$2")" APPROVER="$(abs "$7")"
@@ -139,7 +139,7 @@ else
         ok "sem a política, o host do atacante faz exec do ward-nm e tira senhas (controle)" ||
         failed "controle: o ataque da auditoria não reproduziu"
     for f in "$WORK_DIR/roubo-sem-politica/wardd.log" "$WORK_DIR/roubo-sem-politica/chrome.log" \
-        "$WORK_DIR/roubo-sem-politica/logs/wardd-aprovador-teste.log"; do
+        "$WORK_DIR/roubo-sem-politica/logs/wardd-test-approver.log"; do
         if [ -f "$f" ] && grep -qaF -f "$PATTERN_LIST" -- "$f"; then
             failed "padrão de .dev/variations.txt em ${f#"$WORK_DIR"/}"
         else

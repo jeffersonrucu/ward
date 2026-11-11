@@ -17,7 +17,7 @@ set -euo pipefail
 
 WARDD=/opt/teste/wardd
 CLIENT=/opt/teste/cliente
-DIR=/run/user/1000/ward-teste
+DIR=/run/user/1000/ward-test
 SOCK=$DIR/wardd.sock
 LOG=/tmp/wardd.log
 failures=0
@@ -66,8 +66,8 @@ check "uid 1000: atendido" "$r" "resposta: status"
 
 sleep 0.3
 log="$(cat "$LOG")"
-check "log: uid 4242 recusado por SO_PEERCRED" "$log" "conexão recusada (UidRecusado): uid 4242"
-check "log: root recusado por SO_PEERCRED" "$log" "conexão recusada (UidRecusado): uid 0"
+check "log: uid 4242 recusado por SO_PEERCRED" "$log" "conexão recusada (UidRefused): uid 4242"
+check "log: root recusado por SO_PEERCRED" "$log" "conexão recusada (UidRefused): uid 0"
 
 kill "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true

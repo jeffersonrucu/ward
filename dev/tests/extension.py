@@ -149,8 +149,8 @@ assert ID and len(ID) == 32
 
 
 # --- Phase 44c: the test approval window (the test approver binary) -------------------
-APPROVER_LOG = os.path.join(WORK_DIR, "logs", "wardd-aprovador-teste.log")
-APPROVER_MODE = os.path.join(WORK_DIR, "aprovador.modo")
+APPROVER_LOG = os.path.join(WORK_DIR, "logs", "wardd-test-approver.log")
+APPROVER_MODE = os.path.join(WORK_DIR, "approver.mode")
 
 
 def set_window_mode(m):
@@ -346,7 +346,7 @@ PAGES = {
         '<input type="hidden" name="form" value="x"></form>'
         '<div style="position:absolute;left:-10000px" aria-hidden="true">'
         '<input type="password" id="isca_pw"></div>'
-        '<script src="/ward-teste/clobbering.js"></script>'
+        '<script src="/ward-test/clobbering.js"></script>'
     ),
     "clobbering.js": (
         "window.__chamadas = [];"
@@ -383,7 +383,7 @@ PAGES = {
         '<input type="password" id="isca_pw" style="display:none"></form>'
     ),
     # Page that tries to talk to the extension and to read the popup.
-    "mensagens.html": "<h1>Mensagens</h1>" + FORM + '<script src="/ward-teste/mensagens.js"></script>',
+    "mensagens.html": "<h1>Mensagens</h1>" + FORM + '<script src="/ward-test/mensagens.js"></script>',
     "mensagens.js": (
         "window.__res = {};"
         f"const ID = '{ID}';"
@@ -406,10 +406,10 @@ PAGES = {
 # iframe of another origin.
 PAGES.update({
     "envio-forjado.html": (
-        '<form id="f" action="/ward-teste/fim.html" method="get">'
+        '<form id="f" action="/ward-test/fim.html" method="get">'
         '<input type="text" name="u" id="u" autocomplete="username">'
         '<input type="password" name="p" id="p"><button type="submit">Entrar</button></form>'
-        '<script src="/ward-teste/envio-forjado.js"></script>'
+        '<script src="/ward-test/envio-forjado.js"></script>'
     ),
     "envio-forjado.js": (
         "document.getElementById('u').value = 'forjado.usuario';"
@@ -418,15 +418,15 @@ PAGES.update({
         "setTimeout(() => { window.__enviou = 1; document.getElementById('f').requestSubmit(); }, 300);"
     ),
     "fim.html": "<h1>Fim</h1>",
-    "iframe-cadastro.html": (
+    "iframe-registration.html": (
         "<h1>Cadastro só no iframe</h1>"
-        '<iframe id="cad" src="http://localhost:8083/cadastro" width="600" height="500" style="position:absolute;left:0;top:80px;border:0"></iframe>'
+        '<iframe id="reg" src="http://localhost:8083/registration" width="600" height="500" style="position:absolute;left:0;top:80px;border:0"></iframe>'
     ),
 })
 
 
 def serve_pages(cdp, session):
-    cdp.cmd("Fetch.enable", {"patterns": [{"urlPattern": "http://localhost:8081/ward-teste/*", "requestStage": "Request"}]}, session)
+    cdp.cmd("Fetch.enable", {"patterns": [{"urlPattern": "http://localhost:8081/ward-test/*", "requestStage": "Request"}]}, session)
 
 
 def handle_pause(e):
@@ -786,8 +786,8 @@ def phase_42_section(t, s):
     new_passwords.append(new_password)
 
     # 1. Submit forged by the page's script (requestSubmit without activation): nothing.
-    navigate(t, "http://localhost:8081/ward-teste/envio-forjado.html")
-    wait_for_load(s, "location.pathname === '/ward-teste/fim.html'")
+    navigate(t, "http://localhost:8081/ward-test/envio-forjado.html")
+    wait_for_load(s, "location.pathname === '/ward-test/fim.html'")
     verify(new_popup(3) is None, "ataque: requestSubmit do script da página (sem ativação do usuário) não oferece salvar", "f42_forjado_sem_popup")
     pt, ps = open_popup(t)
     verify(pending_from_popup(ps) is None and evaluate(cdp, ps, "!document.querySelector('.popup-save')"),
@@ -805,7 +805,7 @@ def phase_42_section(t, s):
     verify(new_popup(3) is None, "login já cadastrado (acme-totp-dev): enviar não oferece salvar", "f42_conhecido_sem_popup")
 
     # 3. Form only in an iframe of another origin: the content script does not run in it.
-    navigate(t, "http://localhost:8081/ward-teste/iframe-cadastro.html")
+    navigate(t, "http://localhost:8081/ward-test/iframe-registration.html")
     cdp.pump(1.0)
     children = cdp.cmd("Page.getFrameTree", {}, s)["frameTree"].get("childFrames", [])
     if children:
@@ -814,7 +814,7 @@ def phase_42_section(t, s):
         for field, value in (("usuario", "iframe." + secrets.token_hex(3)), ("senha", "falso-iframe-" + secrets.token_hex(6))):
             evaluate(cdp, s, f"document.getElementById({json.dumps(field)}).focus(), true", context=ctx)
             cdp.cmd("Input.insertText", {"text": value}, s)
-        b = evaluate(cdp, s, "(() => { const b = document.querySelector('#cadastro button').getBoundingClientRect(); return [b.x + b.width/2, b.y + b.height/2]; })()", context=ctx)
+        b = evaluate(cdp, s, "(() => { const b = document.querySelector('#registration button').getBoundingClientRect(); return [b.x + b.width/2, b.y + b.height/2]; })()", context=ctx)
         for kind in ("mousePressed", "mouseReleased"):
             cdp.cmd("Input.dispatchMouseEvent", {"type": kind, "x": b[0], "y": b[1] + 80, "button": "left", "clickCount": 1}, s)
         cdp.pump(2.0)
@@ -823,11 +823,11 @@ def phase_42_section(t, s):
     # 4. Vault locked at submit: the login is discarded at once (nothing stays in the
     # service worker).
     verify(req({"v": 2, "op": "lock"}).get("type") == "ok", "cofre travado antes do envio")
-    navigate(t, "http://localhost:8083/cadastro")
+    navigate(t, "http://localhost:8083/registration")
     activate(t)
     type_text(s, "usuario", "travado." + secrets.token_hex(3))
     type_text(s, "senha", "falso-travado-" + secrets.token_hex(6))
-    click(s, "#cadastro button")
+    click(s, "#registration button")
     wait_for_load(s, "!!document.getElementById('mensagem')")
     verify(new_popup(3) is None, "cofre travado no envio: não oferece salvar", "f42_travado_sem_popup")
     unlock()
@@ -839,11 +839,11 @@ def phase_42_section(t, s):
     close_popup(pt)
 
     # 5. V6.8: new sign-up on localhost:8083, submitted by the user.
-    navigate(t, "http://localhost:8083/cadastro")
+    navigate(t, "http://localhost:8083/registration")
     activate(t)
     type_text(s, "usuario", username)
     type_text(s, "senha", new_password)
-    click(s, "#cadastro button")
+    click(s, "#registration button")
     pt = new_popup(15)
     alone = pt is not None
     report["f42_popup_abre_sozinho"] = alone
@@ -976,11 +976,11 @@ def phase_42_section(t, s):
     evaluate(cdp, s, "document.getElementById('usuario').value = ''; document.getElementById('senha').value = ''; true")
 
     # 9. "Not now" discards the pending login.
-    navigate(t, "http://localhost:8083/cadastro")
+    navigate(t, "http://localhost:8083/registration")
     activate(t)
     type_text(s, "usuario", "agora.nao." + secrets.token_hex(3))
     type_text(s, "senha", "falso-agora-nao-" + secrets.token_hex(6))
-    click(s, "#cadastro button")
+    click(s, "#registration button")
     pt = new_popup(15)
     ps = attach_popup(pt, ".popup-save") if pt else None
     if ps:
@@ -1211,7 +1211,7 @@ try:
 
     # --- V6.4: phishing iframe in the right origin -------------------------------------
     cdp.cmd("Network.enable", {}, s)
-    navigate(t, "http://localhost:8081/ward-teste/iframe.html")
+    navigate(t, "http://localhost:8081/ward-test/iframe.html")
     cdp.pump(1.0)
     for e in cdp.events:
         if e.get("method") == "Network.loadingFailed":
@@ -1235,7 +1235,7 @@ try:
            f"V6.4: o iframe do phishing (localhost:8082) não recebe nada (iframe: {None if vi is None else {k: (None if x is None else bool(x)) for k, x in vi.items()}}, quadros filhos: {len(children)})",
            "v64_iframe_vazio")
 
-    navigate(t, "http://localhost:8081/ward-teste/iframe-sem-campo.html")
+    navigate(t, "http://localhost:8081/ward-test/iframe-sem-campo.html")
     cdp.pump(1.0)
     pt, ps = open_popup(t)
     click_entry(ps, "acme-wp-prod")
@@ -1249,7 +1249,7 @@ try:
     close_popup(pt)
 
     # --- DOM clobbering -----------------------------------------------------------------
-    navigate(t, "http://localhost:8081/ward-teste/clobbering.html")
+    navigate(t, "http://localhost:8081/ward-test/clobbering.html")
     pt, ps = open_popup(t)
     click_entry(ps, "acme-wp-prod")
     closed(pt)
@@ -1260,7 +1260,7 @@ try:
     verify(calls == [], "DOM clobbering: os protótipos trocados pela página não são chamados", "clobbering_prototipos")
 
     # --- hidden password field ----------------------------------------------------------
-    navigate(t, "http://localhost:8081/ward-teste/escondido.html")
+    navigate(t, "http://localhost:8081/ward-test/escondido.html")
     pt, ps = open_popup(t)
     click_entry(ps, "acme-wp-prod")
     closed(pt)
@@ -1271,7 +1271,7 @@ try:
     verify(not filled, "campo escondido: nenhuma das 10 iscas recebe valor" + (f" ({filled})" if filled else ""), "escondido_iscas")
     verify(v["user_login"] == USERNAME["acme-wp-prod"] and v["user_pass"] == PASSWORD["acme-wp-prod"],
            "campo escondido: só os campos visíveis recebem", "escondido_visiveis")
-    navigate(t, "http://localhost:8081/ward-teste/so-escondido.html")
+    navigate(t, "http://localhost:8081/ward-test/so-escondido.html")
     pt, ps = open_popup(t)
     click_entry(ps, "acme-wp-prod")
     cdp.pump(1.5)
@@ -1283,7 +1283,7 @@ try:
     close_popup(pt)
 
     # --- V6.6: page that talks to the extension ----------------------------------------
-    navigate(t, "http://localhost:8081/ward-teste/mensagens.html")
+    navigate(t, "http://localhost:8081/ward-test/mensagens.html")
     cdp.pump(2.0)
     res = evaluate(cdp, s, "window.__res")
     v = values(s, ["user_login", "user_pass"])
@@ -1463,7 +1463,7 @@ with open(os.path.join(EVIDENCE_POPUP, "qa.json"), "w", encoding="utf-8") as f:
     json.dump({k: v for k, v in report.items() if k.startswith(("f42_", "v68_", "v69_", "medidas_17414", "medidas_18850", "cores_17414"))},
               f, ensure_ascii=False, indent=2, sort_keys=True)
     f.write("\n")
-if os.environ.get("WARD_TESTE_MANTER_PERFIL") != "1":
+if os.environ.get("WARD_TEST_KEEP_PROFILE") != "1":
     shutil.rmtree(profile, ignore_errors=True)
 if failures:
     print(f"extension.py: {len(failures)} conferência(s) falharam", file=sys.stderr)

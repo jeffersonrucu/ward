@@ -69,7 +69,7 @@ def totp_matches(seed: str, code: str) -> bool:
 
 
 class Base(BaseHTTPRequestHandler):
-    server_version = "ward-teste"
+    server_version = "ward-test"
     sys_version = ""
     protocol_version = "HTTP/1.1"
     timeout = 10  # a slow client does not hold the thread
@@ -184,7 +184,7 @@ def totp_screen(msg: str = "", css_class: str = "erro") -> bytes:
         "<input type=\"text\" name=\"codigo\" id=\"codigo\" inputmode=\"numeric\" "
         "autocomplete=\"one-time-code\" maxlength=\"6\">"
         "<button type=\"submit\">Entrar</button></form>"
-        "<p><a href=\"/cadastro\">Criar conta</a></p>",
+        "<p><a href=\"/registration\">Criar conta</a></p>",
     )
 
 
@@ -193,7 +193,7 @@ def signup_screen(msg: str = "", css_class: str = "erro") -> bytes:
     return page(
         "Criar conta — Portal de teste",
         "<h1>Criar conta</h1>" + notice +
-        "<form id=\"cadastro\" action=\"/cadastro\" method=\"post\">"
+        "<form id=\"registration\" action=\"/registration\" method=\"post\">"
         "<label for=\"usuario\">Usuário</label>"
         "<input type=\"text\" name=\"usuario\" id=\"usuario\" autocomplete=\"username\">"
         "<label for=\"senha\">Senha</label>"
@@ -208,14 +208,14 @@ class Totp(Base):
         url_path = urlsplit(self.path).path
         if url_path in ("/", "/login"):
             self.respond(200, totp_screen())
-        elif url_path == "/cadastro":
+        elif url_path == "/registration":
             self.respond(200, signup_screen())
         else:
             self.respond(404, page("Não encontrado", "<p>Não encontrado.</p>"))
 
     def do_POST(self) -> None:
         url_path = urlsplit(self.path).path
-        if url_path not in ("/login", "/cadastro"):
+        if url_path not in ("/login", "/registration"):
             self.respond(404, page("Não encontrado", "<p>Não encontrado.</p>"))
             return
         body = self.read_body()
@@ -226,7 +226,7 @@ class Totp(Base):
             return
         username = fields.get("usuario", "")
         password = fields.get("senha", "")
-        if url_path == "/cadastro":
+        if url_path == "/registration":
             self.sign_up(username, password)
         else:
             self.log_in(username, password, fields.get("codigo", ""))
@@ -284,7 +284,7 @@ def main() -> None:
     port = int(os.environ.get("WARD_LISTEN_PORT", "8080"))
     server = ThreadingHTTPServer(("0.0.0.0", port), modes[mode])
     server.daemon_threads = True
-    sys.stderr.write(f"ward-teste {mode} escutando na porta {port}\n")
+    sys.stderr.write(f"ward-test {mode} escutando na porta {port}\n")
     server.serve_forever()
 
 

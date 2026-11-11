@@ -24,7 +24,7 @@
 //!   config: the worst a fake udisks2 can do is point to a directory of the very device
 //!   it names, and what goes there is the encrypted backup.
 //! - The address is the same as Phase 24's ([`crate::lock::daemon_bus`]):
-//!   fixed in the release; in the test daemon, only `WARD_DEV_DBUS_SISTEMA`, and without
+//!   fixed in the release; in the test daemon, only `WARD_DEV_SYSTEM_DBUS`, and without
 //!   it neither logind nor udisks2 are turned on.
 
 use std::collections::HashMap;

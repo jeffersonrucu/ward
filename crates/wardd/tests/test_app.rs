@@ -32,7 +32,7 @@ use common::Dir;
 use ward_core::protocol::{self, Response, ResponseError, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
-const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
+const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-test-app");
 
 struct SocketDir(PathBuf);
 
@@ -119,7 +119,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
         .mode(0o700)
         .create(repo.0.join("bin"))
         .unwrap();
-    let app = repo.0.join("bin/wardd-app-teste");
+    let app = repo.0.join("bin/wardd-test-app");
     fs::hard_link(TEST_APP, &app).unwrap();
     let sock = SocketDir::new("v337");
     let log = dev.join("wardd.log");
@@ -168,7 +168,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     ));
     // Open-app with a path, arguments or environment in the request: refused,
     // nothing opens.
-    let app_output = dev.join("logs/wardd-app-teste.log");
+    let app_output = dev.join("logs/wardd-test-app.log");
     for data in [
         r#"{"path":"/usr/bin/sh"}"#,
         r#"{"argumentos":["-c","id"]}"#,

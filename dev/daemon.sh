@@ -71,7 +71,7 @@ case "$SOCKET_DIR" in
     /*) ;;
     *) echo "WARD_DEV_SOCKET_DIR não é absoluto" >&2; exit 1 ;;
 esac
-SOCKET="${SOCKET_DIR:-$RUNTIME/ward-teste}/wardd.sock"
+SOCKET="${SOCKET_DIR:-$RUNTIME/ward-test}/wardd.sock"
 
 # PID of the test daemon that is up, if it really is it (the binary of this repository):
 # an old PID reused by another program is neither killed nor taken for the daemon.
@@ -118,10 +118,10 @@ start() {
         LANG="${LANG:-C.UTF-8}" \
         WARD_DEV_DIR="$DEV" \
         RUST_LOG="$LOG_LEVEL" \
-        ${WARD_DEV_DBUS_SISTEMA:+"WARD_DEV_DBUS_SISTEMA=$WARD_DEV_DBUS_SISTEMA"} \
+        ${WARD_DEV_SYSTEM_DBUS:+"WARD_DEV_SYSTEM_DBUS=$WARD_DEV_SYSTEM_DBUS"} \
         ${SOCKET_DIR:+"WARD_DEV_SOCKET_DIR=$SOCKET_DIR"} \
         ${APP:+"WARD_DEV_APP=$APP"} \
-        ${WARD_DEV_EXTENSAO:+"WARD_DEV_EXTENSAO=$WARD_DEV_EXTENSAO"} \
+        ${WARD_DEV_EXTENSION:+"WARD_DEV_EXTENSION=$WARD_DEV_EXTENSION"} \
         "$BIN" </dev/null >>"$LOG" 2>&1 &
     local p=$!
     echo "$p" > "$PID"

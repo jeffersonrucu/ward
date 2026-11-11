@@ -19,7 +19,7 @@ LOG="$ROOT/.dev/logs/ward-test-bridge.log"
 # WARD_DEV_SOCKET_DIR (Phase 39c): the test daemon in another folder (dev/daemon.sh); the
 # daemon passes the same folder to the bridge it opens.
 case "${WARD_DEV_SOCKET_DIR:-}" in
-    "") SOCKET="/run/user/$(id -u)/ward-teste/wardd.sock" ;;
+    "") SOCKET="/run/user/$(id -u)/ward-test/wardd.sock" ;;
     /*) SOCKET="$WARD_DEV_SOCKET_DIR/wardd.sock" ;;
     *) echo "WARD_DEV_SOCKET_DIR não é absoluto" >&2; exit 1 ;;
 esac
@@ -38,9 +38,11 @@ for _ in $(seq 1 150); do
         echo "$url"
         exit 0
     fi
-    if new_output | grep -q -- '^ward-ponte-teste:'; then
+    # m2:Phase 56: the bridge prefixes its errors with `ward-test-bridge:`; the 0.1.x
+    # prefix is accepted too, for a bridge built before the rename.
+    if new_output | grep -q -E -- '^(ward-test-bridge|ward-ponte-teste):'; then
         echo "a ponte não subiu; saída dela:" >&2
-        new_output | grep -- '^ward-ponte-teste:' >&2
+        new_output | grep -E -- '^(ward-test-bridge|ward-ponte-teste):' >&2
         exit 1
     fi
     sleep 0.1

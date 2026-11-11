@@ -716,7 +716,7 @@ fn v3_19_binary_locks_on_lock_session_of_the_fake_logind() {
             .env("PATH", "/usr/bin:/bin")
             .env("WARD_DEV_DIR", &dev.0)
             .env("WARD_DEV_SOCKET_DIR", &sock)
-            .env("WARD_DEV_DBUS_SISTEMA", &b.socket)
+            .env("WARD_DEV_SYSTEM_DBUS", &b.socket)
             .env("RUST_LOG", "trace")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -793,7 +793,7 @@ fn test_daemon_without_fake_bus_does_not_enable_logind() {
         .env("PATH", "/usr/bin:/bin")
         .env("WARD_DEV_DIR", &dev.0)
         .env("WARD_DEV_SOCKET_DIR", b.dir.join("sock3"))
-        .env("WARD_DEV_DBUS_SISTEMA", "/run/dbus/../x;unix:path=/tmp/x")
+        .env("WARD_DEV_SYSTEM_DBUS", "/run/dbus/../x;unix:path=/tmp/x")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(fs::File::create(&log2).unwrap())
@@ -803,6 +803,6 @@ fn test_daemon_without_fake_bus_does_not_enable_logind() {
     assert!(
         fs::read_to_string(&log2)
             .unwrap()
-            .contains("WARD_DEV_DBUS_SISTEMA recusado")
+            .contains("WARD_DEV_SYSTEM_DBUS recusado")
     );
 }

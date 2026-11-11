@@ -66,7 +66,7 @@ fn v2_25_contract_seed_known_codes() {
 /// in this test.
 #[test]
 fn v2_25_matches_oathtool() {
-    let require = std::env::var_os("WARD_EXIGIR_OATHTOOL").is_some_and(|v| v == "1");
+    let require = std::env::var_os("WARD_REQUIRE_OATHTOOL").is_some_and(|v| v == "1");
     let t = Totp::from_seed(&seed(D15_SEED)).unwrap();
     let mut times: Vec<u64> = D15_KNOWN.iter().map(|(t, _)| *t).collect();
     times.push(
@@ -83,7 +83,7 @@ fn v2_25_matches_oathtool() {
         let output = match output {
             Ok(s) => s,
             Err(_) if !require => {
-                eprintln!("oathtool ausente: comparação pulada (WARD_EXIGIR_OATHTOOL=1 exige)");
+                eprintln!("oathtool ausente: comparação pulada (WARD_REQUIRE_OATHTOOL=1 exige)");
                 return;
             }
             Err(e) => panic!("oathtool exigido e ausente: {e}"),

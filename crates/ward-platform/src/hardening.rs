@@ -298,7 +298,7 @@ mod tests {
                 (true, Ok(Memory::NotLocked(StartError::MemlockLimit(n)))) => {
                     assert_eq!(n, eight_mib)
                 }
-                (m, r) => panic!("modo_teste={m}: {r:?}"),
+                (m, r) => panic!("test_mode={m}: {r:?}"),
             }
             let r = decide_memory(Ok(libc::RLIM_INFINITY), test_mode, || {
                 Err(io::Error::from_raw_os_error(libc::ENOMEM))
@@ -306,7 +306,7 @@ mod tests {
             match (test_mode, r) {
                 (false, Err(StartError::LockMemory(_))) => {}
                 (true, Ok(Memory::NotLocked(StartError::LockMemory(_)))) => {}
-                (m, r) => panic!("modo_teste={m}: {r:?}"),
+                (m, r) => panic!("test_mode={m}: {r:?}"),
             }
             let r = decide_memory(Err(io::ErrorKind::Other.into()), test_mode, || Ok(()));
             assert_eq!(r.is_err(), !test_mode);

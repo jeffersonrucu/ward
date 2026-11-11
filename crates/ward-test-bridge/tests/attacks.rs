@@ -94,7 +94,12 @@ fn post(
         .iter()
         .map(|(a, b)| (a.as_str(), b.as_str()))
         .collect();
-    Request::new("POST", &format!("/ponte/{command}"), &refs, body.as_bytes())
+    Request::new(
+        "POST",
+        &format!("/test-bridge/{command}"),
+        &refs,
+        body.as_bytes(),
+    )
 }
 
 #[test]
@@ -115,6 +120,49 @@ fn copy_works_and_the_response_has_no_value() {
     assert_eq!(clipboard.0.lock().unwrap().as_deref(), Some(SECRET));
     let r = p.respond(&post(&p, "vault_status", "{}", &[]));
     assert_eq!(r.body_json().unwrap()["value"]["status"], "unlocked");
+    fs::remove_dir_all(base).unwrap();
+}
+
+/// m2:Phase 56: the 0.1.x (pt-BR) path of the commands is gone (no alias):
+/// even with the token, the origin and the right body, nothing runs and the clipboard
+/// stays empty.
+#[test]
+fn attack_old_command_path_is_refused() {
+    let (p, _l, clipboard, base) = bridge("caminho-antigo");
+    let host = p.origin().trim_start_matches("http://").to_owned();
+    let auth = format!("Bearer {}", p.token_for_test());
+    let headers = [
+        ("Host", host.as_str()),
+        ("Origin", p.origin()),
+        ("Authorization", auth.as_str()),
+        ("Content-Type", "application/json"),
+    ];
+    for path in [
+        "/ponte/copy_field",
+        "/ponte/copiar_campo",
+        "/ponte/vault_status",
+        "/test-bridge",
+        "/test-bridge-copy_field",
+    ] {
+        let r = p.respond(&Request::new(
+            "POST",
+            path,
+            &headers,
+            br#"{"entry":"acme-pg-dev","field":"password"}"#,
+        ));
+        assert_ne!(r.status, 200, "{path}");
+        assert!(!has_secret(&r.body), "{path}");
+    }
+    assert_eq!(clipboard.0.lock().unwrap().as_deref(), None);
+    // Control: the new path works with the same request.
+    let r = p.respond(&post(
+        &p,
+        "copy_field",
+        r#"{"entry":"acme-pg-dev","field":"password"}"#,
+        &[],
+    ));
+    assert_eq!(r.status, 200);
+    assert_eq!(clipboard.0.lock().unwrap().as_deref(), Some(SECRET));
     fs::remove_dir_all(base).unwrap();
 }
 
@@ -512,20 +560,21 @@ fn attack_request_outside_the_limits() {
         (b"GET /%2e%2e/x HTTP/1.1\r\n\r\n".to_vec(), 400),
         (b"GET / HTTP/1.0\r\n\r\n".to_vec(), 400),
         (
-            b"POST /ponte/x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec(),
+            b"POST /test-bridge/x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec(),
             501,
         ),
         (
-            b"POST /ponte/x HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nab".to_vec(),
+            b"POST /test-bridge/x HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nab"
+                .to_vec(),
             400,
         ),
         (
-            b"POST /ponte/x HTTP/1.1\r\nContent-Length: -1\r\n\r\n".to_vec(),
+            b"POST /test-bridge/x HTTP/1.1\r\nContent-Length: -1\r\n\r\n".to_vec(),
             400,
         ),
         (
             format!(
-                "POST /ponte/x HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+                "POST /test-bridge/x HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
                 MAX_BODY + 1
             )
             .into_bytes(),
@@ -536,7 +585,7 @@ fn attack_request_outside_the_limits() {
             431,
         ),
         (
-            b"POST /ponte/x HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc".to_vec(),
+            b"POST /test-bridge/x HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc".to_vec(),
             400,
         ),
     ] {
@@ -547,7 +596,7 @@ fn attack_request_outside_the_limits() {
             String::from_utf8_lossy(&raw[..40.min(raw.len())])
         );
     }
-    let ok = read_request(&b"POST /ponte/x HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}"[..])
+    let ok = read_request(&b"POST /test-bridge/x HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}"[..])
         .ok()
         .unwrap();
     assert_eq!(ok.body, b"{}");

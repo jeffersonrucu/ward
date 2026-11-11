@@ -109,8 +109,8 @@ def unlock():
 
 
 # --- Phase 44c: the test window (the test approver binary) ------------------------------
-APPROVER_LOG = os.path.join(WORK_DIR, "logs", "wardd-aprovador-teste.log")
-APPROVER_MODE = os.path.join(WORK_DIR, "aprovador.modo")
+APPROVER_LOG = os.path.join(WORK_DIR, "logs", "wardd-test-approver.log")
+APPROVER_MODE = os.path.join(WORK_DIR, "approver.mode")
 
 
 def set_window_mode(m):
@@ -235,7 +235,7 @@ def evaluate(cdp, session, expr, deadline=30):
 
 
 # --- pages of the right origin served by CDP ------------------------------------------
-def form(action="/ward-teste/fim.html", method="post", extra_form="", extra_fields="", button='<button type="submit">Acessar</button>'):
+def form(action="/ward-test/fim.html", method="post", extra_form="", extra_fields="", button='<button type="submit">Acessar</button>'):
     return (
         f'<form id="f" action="{action}" method="{method}" {extra_form}>'
         '<input type="text" name="log" id="user_login" autocomplete="username">'
@@ -246,10 +246,10 @@ def form(action="/ward-teste/fim.html", method="post", extra_form="", extra_fiel
 
 PAGES = {
     # The site refuses: the POST returns to the same login page (empty fields).
-    "recusa.html": "<h1>Login</h1>" + form(action="/ward-teste/recusa.html"),
+    "recusa.html": "<h1>Login</h1>" + form(action="/ward-test/recusa.html"),
     # A page that does not navigate (the submission is handled by a script and
     # cancelled): after the submission the fields are empty.
-    "nao-navega.html": "<h1>Login por script</h1>" + form() + '<script src="/ward-teste/nao-navega.js"></script>',
+    "nao-navega.html": "<h1>Login por script</h1>" + form() + '<script src="/ward-test/nao-navega.js"></script>',
     "nao-navega.js": (
         "window.__envios = 0;"
         "document.getElementById('f').addEventListener('submit', (e) => { window.__envios += 1; e.preventDefault(); });"
@@ -266,13 +266,13 @@ PAGES = {
     # right origin.
     "mascarado.html": "<h1>action mascarado</h1>" + form(
         action="http://localhost:8082/wp-login.php",
-        extra_fields='<input type="hidden" name="action" value="/ward-teste/fim.html">'),
+        extra_fields='<input type="hidden" name="action" value="/ward-test/fim.html">'),
 }
 submissions = []  # (page, sha256 of the submitted password or None)
 
 
 def serve_pages(cdp, session):
-    cdp.cmd("Fetch.enable", {"patterns": [{"urlPattern": "http://localhost:8081/ward-teste/*", "requestStage": "Request"}]}, session)
+    cdp.cmd("Fetch.enable", {"patterns": [{"urlPattern": "http://localhost:8081/ward-test/*", "requestStage": "Request"}]}, session)
 
 
 def handle_pause(e):
@@ -522,7 +522,7 @@ try:
 
     # --- V6.10: the site refuses; the fields are left empty -------------------------------
     n_submissions = len(submissions)
-    t, s = open_tab("http://localhost:8081/ward-teste/recusa.html")
+    t, s = open_tab("http://localhost:8081/ward-test/recusa.html")
     code, out, err = ward_login("acme-wp-prod", t)
     sent = [h for (n, h) in submissions[n_submissions:] if n == "recusa.html"]
     verify(sent == [HASH_PROD], "V6.10: o formulário foi enviado uma vez, à origem certa, com a senha da entrada", "v610_recusa_enviado")
@@ -531,7 +531,7 @@ try:
     v = values(s)
     verify(v is not None and v["u"] == "" and v["p"] == "", "V6.10: depois do envio recusado os campos estão vazios", "v610_recusa_vazios")
 
-    t, s = open_tab("http://localhost:8081/ward-teste/nao-navega.html")
+    t, s = open_tab("http://localhost:8081/ward-test/nao-navega.html")
     code, out, err = ward_login("acme-wp-prod", t)
     v = values(s)
     script_submissions = evaluate(cdp, s, "window.__envios", deadline=10)
@@ -568,7 +568,7 @@ try:
         ("mascarado.html", "action para fora tapado por <input name=action>"),
     ]:
         n_submissions = len(submissions)
-        t, s = open_tab(f"http://localhost:8081/ward-teste/{page}")
+        t, s = open_tab(f"http://localhost:8081/ward-test/{page}")
         code, out, err = ward_login("acme-wp-prod", t)
         v = values(s)
         verify(code != 0 and "formulário de login seguro" in err,
