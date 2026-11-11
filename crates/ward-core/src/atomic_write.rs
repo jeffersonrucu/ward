@@ -68,7 +68,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::backup::{ErroBackup, PastaBackup, Versao};
+use crate::backup::{BackupDir, BackupError, Version};
 use crate::body::{self, BodyError};
 use crate::crypto;
 use crate::entry::Entry;
@@ -259,7 +259,7 @@ pub struct Written {
     /// Identity of the vault file, read from the temporary file's fd (D62).
     pub identity: FileIdentity,
     /// The version written in the backups folder, or why it was not.
-    pub backup: Result<Versao, ErroBackup>,
+    pub backup: Result<Version, BackupError>,
 }
 
 /// [`write_entries`] and, after the vault write succeeded in full (up to the directory
@@ -270,13 +270,13 @@ pub fn write_entries_with_backup(
     destination: &Path,
     vault: &mut OpenVault,
     entries: &[Entry],
-    dir: &PastaBackup,
+    dir: &BackupDir,
     instant: SystemTime,
 ) -> Result<Written, WriteError> {
     let (identity, file) = write_entries_sealed(destination, vault, entries, &mut |_| Ok(()))?;
     Ok(Written {
         identity,
-        backup: dir.guardar(&file, instant, vault),
+        backup: dir.keep(&file, instant, vault),
     })
 }
 
@@ -332,7 +332,7 @@ pub fn change_password_with_backup_from_bytes(
     new: &MasterPassword,
     min_generation: u64,
     burned_generation: u64,
-    dir: &PastaBackup,
+    dir: &BackupDir,
     instant: SystemTime,
 ) -> Result<(OpenVault, Written), WriteError> {
     let (vault, identity, file) = change_password_sealed(
@@ -343,7 +343,7 @@ pub fn change_password_with_backup_from_bytes(
         min_generation,
         burned_generation,
     )?;
-    let backup = dir.guardar(&file, instant, &vault);
+    let backup = dir.keep(&file, instant, &vault);
     Ok((vault, Written { identity, backup }))
 }
 
@@ -377,7 +377,7 @@ pub(crate) fn change_password_with_backup(
     new: &MasterPassword,
     min_generation: u64,
     burned_generation: u64,
-    dir: &PastaBackup,
+    dir: &BackupDir,
     instant: SystemTime,
 ) -> Result<(OpenVault, Written), WriteError> {
     let file = read_file(destination)?;

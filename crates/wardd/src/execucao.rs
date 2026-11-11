@@ -3,7 +3,7 @@
 //! Uma sessão por conexão do papel agente:
 //! 1. `nota segura` (visível) responde `tipo_sem_entrega` antes de qualquer pergunta;
 //! 2. [`Daemon::autorizar_uso`]: espera do destrave (D16), nível, aprovação (Fase 23);
-//! 3. com o estado travado, a entrega de D10 ([`ward_core::entrega::montar`]): anexos e
+//! 3. com o estado travado, a entrega de D10 ([`ward_core::delivery::build`]): anexos e
 //!    chave em `<rt>tmp/<sessão>/`, 0600, numa pasta 0700 só da sessão (S2); e a
 //!    máscara da entrada e da entrega (D11);
 //! 4. o ambiente do filho é montado do zero (Fase 26a; D13, D60): `PATH` fixo
@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
-use ward_core::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
+use ward_core::delivery::{self, Delivery, DeliveryError, ResourceError, Resources};
 use ward_core::entry::{AccessLevel, Data, Entry, Secret};
 use ward_core::limits::{MAX_COMMON_FRAME, MAX_DISPLAYED_TEXT};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
@@ -239,60 +239,60 @@ struct ContextoTunel<'a> {
     travas: (Arc<std::sync::atomic::AtomicU64>, u64),
 }
 
-impl Recursos for RecursosRun<'_> {
-    fn codigo_totp(&mut self, semente: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+impl Resources for RecursosRun<'_> {
+    fn totp_code(&mut self, semente: &Secret) -> Result<Zeroizing<String>, ResourceError> {
         let c = Totp::from_seed(semente)
             .and_then(|t| t.code_now())
-            .map_err(|_| ErroRecurso("código TOTP"))?;
+            .map_err(|_| ResourceError("código TOTP"))?;
         let mut s = Zeroizing::new(String::with_capacity(c.code().len()));
         s.push_str(c.code());
         Ok(s)
     }
 
-    fn arquivo(&mut self, nome: &str, conteudo: &Secret) -> Result<String, ErroRecurso> {
-        let rt = self.rt.ok_or(ErroRecurso("sem pasta de temporários"))?;
+    fn file(&mut self, nome: &str, conteudo: &Secret) -> Result<String, ResourceError> {
+        let rt = self.rt.ok_or(ResourceError("sem pasta de temporários"))?;
         if self.temporarios.is_none() {
             self.temporarios =
-                Some(Temporarios::criar(rt).map_err(|_| ErroRecurso("pasta de temporários"))?);
+                Some(Temporarios::criar(rt).map_err(|_| ResourceError("pasta de temporários"))?);
         }
         let t = self
             .temporarios
             .as_mut()
-            .ok_or(ErroRecurso("pasta de temporários"))?;
+            .ok_or(ResourceError("pasta de temporários"))?;
         t.gravar(nome, conteudo.expose())
-            .map_err(|_| ErroRecurso("arquivo temporário"))
+            .map_err(|_| ResourceError("arquivo temporário"))
     }
 
     /// D10/D19 (Fase 28): o túnel do `banco` pelo `servidor` referenciado é a ponte de
     /// [`crate::ponte`] (`ssh -W <host>:<porta>` por conexão, sem shell), escutando em
     /// `127.0.0.1:<porta livre>` e aceitando só o grupo de processos do comando.
-    fn tunel(&mut self, servidor: &str, host: &str, porta: u16) -> Result<u16, ErroRecurso> {
+    fn tunnel(&mut self, servidor: &str, host: &str, porta: u16) -> Result<u16, ResourceError> {
         if self.ponte.is_some() {
-            return Err(ErroRecurso("um túnel só por entrega"));
+            return Err(ResourceError("um túnel só por entrega"));
         }
         let ctx = self
             .tunel
             .as_ref()
-            .ok_or(ErroRecurso("túnel indisponível"))?;
+            .ok_or(ResourceError("túnel indisponível"))?;
         let (es, via) = crate::ssh::intermediario(ctx.entradas, servidor)
-            .map_err(|_| ErroRecurso("servidor do túnel"))?;
+            .map_err(|_| ResourceError("servidor do túnel"))?;
         let mascara = ConstrutorMascara::new()
             .entrada(ctx.principal)
             .entrada(es)
             .construir()
-            .map_err(|_| ErroRecurso("máscara do túnel"))?;
+            .map_err(|_| ResourceError("máscara do túnel"))?;
         let ponte = Ponte::abrir(Abertura {
             via,
             alvo_host: host,
             alvo_porta: porta,
             programas: ctx.daemon.programas_ssh(),
-            known_hosts: &ctx.daemon.known_hosts().map_err(ErroRecurso)?,
+            known_hosts: &ctx.daemon.known_hosts().map_err(ResourceError)?,
             rt: ctx.daemon.temporarios(),
             mascara,
             limites: LIMITES_TUNEL,
             travas: ctx.travas.clone(),
         })
-        .map_err(ErroRecurso)?;
+        .map_err(ResourceError)?;
         let p = ponte.porta();
         self.ponte = Some(ponte);
         self.servidor_do_tunel = Some(es);
@@ -488,9 +488,9 @@ fn montar_ambiente(
     cmd: &mut Command,
     cli: &[Variavel],
     conta: &Conta,
-    entrega: &Entrega,
+    entrega: &Delivery,
 ) -> Result<usize, ErroResposta> {
-    let da_entrega: HashSet<&[u8]> = entrega.nomes().map(str::as_bytes).collect();
+    let da_entrega: HashSet<&[u8]> = entrega.names().map(str::as_bytes).collect();
     // A entrega nunca troca o que o daemon fixa (D42 já recusa; segunda camada).
     if DO_DAEMON.iter().any(|n| da_entrega.contains(n)) {
         aviso!("executar: a entrega traz uma variável fixa do daemon; nada foi executado");
@@ -520,8 +520,8 @@ fn montar_ambiente(
         cmd.variable(k, v)
             .map_err(|_| ErroResposta::PedidoInvalido)?;
     }
-    for v in entrega.variaveis() {
-        cmd.variable(v.nome().as_bytes(), v.expor().as_bytes())
+    for v in entrega.variables() {
+        cmd.variable(v.name().as_bytes(), v.expose().as_bytes())
             .map_err(|_| ErroResposta::EntregaFalhou)?;
     }
     Ok(tirados)
@@ -590,9 +590,9 @@ impl Daemon {
             ponte: None,
             servidor_do_tunel: None,
         };
-        let entrega = match entrega::montar(e, &mut recursos) {
+        let entrega = match delivery::build(e, &mut recursos) {
             Ok(g) => g,
-            Err(ErroEntrega::TipoSemEntrega) => return Err(ErroResposta::TipoSemEntrega),
+            Err(DeliveryError::TypeWithoutDelivery) => return Err(ErroResposta::TipoSemEntrega),
             Err(erro) => {
                 aviso!("executar: {erro}");
                 return Err(ErroResposta::EntregaFalhou);

@@ -57,7 +57,7 @@ use std::time::{Duration, SystemTime};
 use zeroize::Zeroizing;
 
 use ward_core::atomic_write::{self, Step, WriteError};
-use ward_core::backup::{self, ErroBackup, Versao};
+use ward_core::backup::{self, BackupError, Version};
 use ward_core::body::{self, BodyError, OpenError};
 use ward_core::config::{ExternalBackup, PinHash, VaultConfig};
 use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret};
@@ -405,18 +405,18 @@ fn abrir_pasta(caminhos: &Caminhos) -> Option<arquivos::PastaAberta> {
 }
 
 /// Nome fixo do erro do backup para o log (sem caminho nem valor).
-fn codigo_backup(e: &ErroBackup) -> &'static str {
+fn codigo_backup(e: &BackupError) -> &'static str {
     match e {
-        ErroBackup::PastaInsegura => "pasta insegura",
-        ErroBackup::NaoAutentico => "cofre atual não autêntico",
-        ErroBackup::Relogio => "relógio fora do intervalo",
-        ErroBackup::NomesEsgotados => "nomes do segundo esgotados",
-        ErroBackup::Gravacao(g) => codigo_gravacao(g),
-        ErroBackup::Io(_) => "e/s na pasta",
+        BackupError::UnsafeDir => "pasta insegura",
+        BackupError::NotAuthentic => "cofre atual não autêntico",
+        BackupError::Clock => "relógio fora do intervalo",
+        BackupError::NamesExhausted => "nomes do segundo esgotados",
+        BackupError::Write(g) => codigo_gravacao(g),
+        BackupError::Io(_) => "e/s na pasta",
     }
 }
 
-fn registrar_backup(r: &Result<Versao, ErroBackup>) {
+fn registrar_backup(r: &Result<Version, BackupError>) {
     match r {
         Ok(_) => depurar!("backup local gravado"),
         Err(e) => aviso!(
@@ -608,7 +608,7 @@ impl Daemon {
         // nenhuma). O estado fica preso só durante a conferência de cada versão.
         let geracao = |b: &[u8]| {
             let est = self.estado();
-            backup::geracao_selada(&est.aberto.as_ref()?.cofre, b)
+            backup::sealed_generation(&est.aberto.as_ref()?.cofre, b)
         };
         externo::copiar(&local, &visto, &uuid, fonte, &geracao).map(Some)
     }
@@ -1642,7 +1642,7 @@ impl Daemon {
         let c = a.cofre.config();
         // Fase 49a: a tela avisa quando a pasta do backup local não abre ou não é segura
         // (o cofre é gravado sem backup). Só um sim/não: nenhum caminho.
-        let backup_local = abrir_pasta(&self.caminhos).is_some_and(|p| p.pasta().listar().is_ok());
+        let backup_local = abrir_pasta(&self.caminhos).is_some_and(|p| p.pasta().list().is_ok());
         Ok(Resposta::Configuracao {
             minutos_trava: c.lock_minutes(),
             backup_externo: c.backup().enabled(),
@@ -1655,34 +1655,34 @@ impl Daemon {
     ///
     /// Fase 49a: sem as versões com data depois de agora + margem (a data do nome é de
     /// quem criou o arquivo), e com a geração selada de cada versão da chave do cofre
-    /// aberto ([`backup::geracao_selada`], autenticada), que vira as marcas `conferida`
-    /// e `fora_de_ordem` ([`backup::fora_de_ordem`]): uma cópia antiga com nome novo sai
+    /// aberto ([`backup::sealed_generation`], autenticada), que vira as marcas `conferida`
+    /// e `fora_de_ordem` ([`backup::out_of_order`]): uma cópia antiga com nome novo sai
     /// marcada. A geração não vai na resposta (D39).
     fn backups(&self) -> Result<Resposta, ErroResposta> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
         let pasta = abrir_pasta(&self.caminhos).ok_or(ErroResposta::BackupIndisponivel)?;
-        let versoes = pasta.pasta().listar_ate(SystemTime::now()).map_err(|e| {
+        let versoes = pasta.pasta().list_until(SystemTime::now()).map_err(|e| {
             aviso!("backup local: não deu para listar ({})", codigo_backup(&e));
             ErroResposta::BackupIndisponivel
         })?;
-        let com_geracao: Vec<(Versao, Option<u64>)> = versoes
+        let com_geracao: Vec<(Version, Option<u64>)> = versoes
             .into_iter()
             .take(MAX_BACKUPS)
             .map(|v| {
-                let geracao = match arquivos::ler_cofre(&pasta.pasta().caminho(v)) {
-                    Ok(Some((b, _))) => backup::geracao_selada(&a.cofre, &b),
+                let geracao = match arquivos::ler_cofre(&pasta.pasta().path(v)) {
+                    Ok(Some((b, _))) => backup::sealed_generation(&a.cofre, &b),
                     _ => None,
                 };
                 (v, geracao)
             })
             .collect();
-        let marcas = backup::fora_de_ordem(&com_geracao);
+        let marcas = backup::out_of_order(&com_geracao);
         let lista = com_geracao
             .iter()
             .zip(marcas)
             .map(|((v, g), fora)| VersaoBackup {
-                nome: v.nome(),
+                nome: v.name(),
                 conferida: g.is_some(),
                 fora_de_ordem: fora,
             })
@@ -1771,14 +1771,14 @@ impl Daemon {
         senha: &Secret,
         pin: &Secret,
     ) -> Result<Resposta, ErroResposta> {
-        let versao = Versao::de_nome(versao).ok_or(ErroResposta::PedidoInvalido)?;
+        let versao = Version::from_name(versao).ok_or(ErroResposta::PedidoInvalido)?;
         let mut est = self.estado();
         Self::conferir_pin(&mut est, pin)?;
         let pasta = abrir_pasta(&self.caminhos).ok_or(ErroResposta::BackupIndisponivel)?;
         // Fase 49a: a versão tem de estar na lista que o app vê (sem data futura).
         let na_lista = pasta
             .pasta()
-            .listar_ate(SystemTime::now())
+            .list_until(SystemTime::now())
             .map_err(|_| ErroResposta::BackupIndisponivel)?
             .contains(&versao);
         if !na_lista {
@@ -1787,7 +1787,7 @@ impl Daemon {
             );
             return Err(ErroResposta::BackupInexistente);
         }
-        let bytes = match arquivos::ler_cofre(&pasta.pasta().caminho(versao)) {
+        let bytes = match arquivos::ler_cofre(&pasta.pasta().path(versao)) {
             Ok(Some((b, _))) => b,
             Ok(None) => return Err(ErroResposta::BackupInexistente),
             Err(_) => {
@@ -1815,7 +1815,7 @@ impl Daemon {
         };
         let agora = SystemTime::now();
         // D17: o atual vira backup antes de trocar; sem isso, não troca.
-        if let Err(e) = backup::guardar_atual(&pasta.pasta(), &a.cofre, &atual, agora) {
+        if let Err(e) = backup::keep_current(&pasta.pasta(), &a.cofre, &atual, agora) {
             aviso!(
                 "restaurar recusado: o cofre atual não foi guardado ({})",
                 codigo_backup(&e)

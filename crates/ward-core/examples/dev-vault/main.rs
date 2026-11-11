@@ -50,7 +50,7 @@ use std::process::ExitCode;
 use ward_core::atomic_write::write_entries;
 use ward_core::body::{open_entries, serialize};
 use ward_core::config::{KDF_PIN, PinHash, VaultConfig};
-use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
+use ward_core::delivery::{self, DeliveryError, ResourceError, Resources};
 use ward_core::entry::{
     AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, EntryType, ExtraDraft, Secret,
 };
@@ -336,14 +336,14 @@ fn verify_config(cfg: &VaultConfig, pin: &str) -> Result<(), Error> {
 /// go into the mask; the tunnel port is any one).
 struct FakeResources;
 
-impl Recursos for FakeResources {
-    fn codigo_totp(&mut self, _: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+impl Resources for FakeResources {
+    fn totp_code(&mut self, _: &Secret) -> Result<Zeroizing<String>, ResourceError> {
         Ok(Zeroizing::new(String::from("000000")))
     }
-    fn arquivo(&mut self, name: &str, _: &Secret) -> Result<String, ErroRecurso> {
+    fn file(&mut self, name: &str, _: &Secret) -> Result<String, ResourceError> {
         Ok(format!("/run/user/0/ward-teste/{name}"))
     }
-    fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
+    fn tunnel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ResourceError> {
         Ok(40123)
     }
 }
@@ -407,9 +407,9 @@ fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
             return Err(Error::Usage("padrão do stdin não está em hex"));
         };
         if !masks.iter().any(|(n, _)| *n == name) {
-            let g = match entrega::montar(e, &mut FakeResources) {
+            let g = match delivery::build(e, &mut FakeResources) {
                 Ok(g) => Some(g),
-                Err(ErroEntrega::TipoSemEntrega) => None,
+                Err(DeliveryError::TypeWithoutDelivery) => None,
                 Err(_) => return Err(Error::Vault(format!("cruzado: entrega de {name} falhou"))),
             };
             let m = Mascara::da_entrada(e, g.as_ref())

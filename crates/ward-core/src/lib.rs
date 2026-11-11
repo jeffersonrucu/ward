@@ -16,7 +16,7 @@ mod crypto;
 pub mod display;
 pub mod entry;
 // Delivery through environment variables (D10, Phase 16).
-pub mod entrega;
+pub mod delivery;
 // Vault file format: header, key wrapping and sealing (S6).
 pub mod format;
 // Limits in a single source (D32, Phase 19a).

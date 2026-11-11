@@ -2301,6 +2301,38 @@ com `Formato` → `Format`, `Corpo` → `Body`, `Retrocesso` → `Rollback`; `ab
 `wardd/tests/comum`, o `chave_falsa` de `entrega/testes.rs` e de `app/core/chave.rs` e o
 re-export `daemon_falso::SEGREDOS` (Fase 31) são outros e não mudaram.
 
+Fase 15 (`ward-core`: `backup`, `delivery`): módulo `entrega` → `delivery` (`testes` →
+`tests`, também em `backup`). Backup: `VERSOES` → `VERSIONS`, `MAX_SUFIXO` → `MAX_SUFFIX`,
+`MAX_NOME` → `MAX_NAME`, `MARGEM_FUTURO` → `FUTURE_MARGIN`, `BASE_TEMPORARIO` → `TEMP_BASE`;
+`Versao { data, hora, sufixo }` → `Version { date, time, suffix }` (`do_instante`/`de_nome`/
+`nome`/`fim_do_segundo`/`com_sufixo`/`possivel` → `from_instant`/`from_name`/`name`/
+`end_of_second`/`with_suffix`/`is_possible`); `ErroBackup` → `BackupError` com
+`PastaInsegura` → `UnsafeDir`, `NaoAutentico` → `NotAuthentic`, `Relogio` → `Clock`,
+`NomesEsgotados` → `NamesExhausted`, `Gravacao` → `Write` (`Io` fica); `LerVersao` →
+`ReadVersion`; `PastaBackup` → `BackupDir` (`nova`/`com_leitor`/`caminho`/`listar`/
+`listar_ate`/`guardar`/`guardar_com_pontos`/`rodar`/`conferir` → `new`/`with_reader`/`path`/
+`list`/`list_until`/`keep`/`keep_with_points`/`rotate`/`check`); `para_apagar_conferidas` →
+`to_delete_verified`, `fora_de_ordem` → `out_of_order` (só a função: o campo
+`fora_de_ordem` do fio fica até a Fase 50), `geracao_selada` → `sealed_generation`,
+`guardar_atual` → `keep_current`, `nome_valido` → `valid_name`; privados `teto_de` →
+`ceiling_of`, `ler_versao_padrao` → `read_version_default`, `civil_de_dias` →
+`civil_from_days`, `digitos` → `digits`. Entrega: `ErroRecurso` → `ResourceError`;
+`Recursos` → `Resources` (`codigo_totp`/`arquivo`/`tunel` → `totp_code`/`file`/`tunnel`);
+`ErroEntrega` → `DeliveryError` com `TipoSemEntrega` → `TypeWithoutDelivery`, `Recurso` →
+`Resource`, `RecursoInvalido` → `InvalidResource`, `Invalida` → `Invalid`; `Variavel` (da
+entrega) → `Variable` (`nome`/`expor`/`e_segredo` → `name`/`expose`/`is_secret`); `Entrega`
+→ `Delivery` (`variaveis`/`valor`/`nomes` → `variables`/`value`/`names`); `montar` →
+`build`; privados `Montagem` → `Builder` (`texto`/`segredo`/`arquivo`/`conferir` →
+`text`/`secret`/`file`/`check`), `prefixado` → `prefixed`, `autenticacao` → `auth`, `banco`
+→ `database`, `url_do_banco` → `database_url`, `juntar` → `join_parts`, `livre` →
+`unreserved`, `codificar_em` → `encode_into`, `texto_do_segredo` → `secret_text`,
+`nome_de_variavel_valido` → `valid_variable_name`. Os nomes das variáveis entregues
+(`WARD_ENTRADA`, `WARD_ARQUIVO_*`…) ficam até a Fase 53. Os homônimos
+`ErroResposta::TipoSemEntrega`/`EntregaFalhou` e `ErroEnvelope::Versao` (Fase 17),
+`protocolo::Variavel` (Fase 17), `VersaoBackup` (Fase 18), `ErroMascara::SemEntrega`
+(Fase 16), `RecursosRun` (Fase 21) e `RecursosDoOrcamento` (Fase 16) são outros e não
+mudaram.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

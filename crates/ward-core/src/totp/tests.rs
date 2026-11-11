@@ -228,24 +228,24 @@ fn v2_28_totp_without_clone_and_seed_zeroes() {
 /// digits), on a fixed clock. The file and tunnel resources are not used by a `login`.
 #[test]
 fn v2_25_delivered_ward_totp_comes_from_this_module() {
-    use crate::entrega::{ErroRecurso, Recursos, montar};
+    use crate::delivery::{ResourceError, Resources, build};
     use crate::entry::{DataDraft, Draft};
 
     struct FixedClock {
         time: u64,
         digits: u32,
     }
-    impl Recursos for FixedClock {
-        fn codigo_totp(&mut self, seed: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+    impl Resources for FixedClock {
+        fn totp_code(&mut self, seed: &Secret) -> Result<Zeroizing<String>, ResourceError> {
             let t = Totp::with_digits(seed, self.digits)
-                .map_err(|_| ErroRecurso("semente TOTP inválida"))?;
+                .map_err(|_| ResourceError("semente TOTP inválida"))?;
             Ok(Zeroizing::new(t.code_at(self.time).code().to_owned()))
         }
-        fn arquivo(&mut self, _: &str, _: &Secret) -> Result<String, ErroRecurso> {
-            Err(ErroRecurso("sem arquivo no teste"))
+        fn file(&mut self, _: &str, _: &Secret) -> Result<String, ResourceError> {
+            Err(ResourceError("sem arquivo no teste"))
         }
-        fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
-            Err(ErroRecurso("sem túnel no teste"))
+        fn tunnel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ResourceError> {
+            Err(ResourceError("sem túnel no teste"))
         }
     }
 
@@ -278,17 +278,17 @@ fn v2_25_delivered_ward_totp_comes_from_this_module() {
         (2_000_000_000, "69279037"),
     ] {
         let mut r = FixedClock { time, digits: 8 };
-        let e = montar(&rfc, &mut r).unwrap();
-        assert_eq!(e.valor("WARD_TOTP"), Some(expected), "T = {time}");
+        let e = build(&rfc, &mut r).unwrap();
+        assert_eq!(e.value("WARD_TOTP"), Some(expected), "T = {time}");
     }
     let d15 = login(D15_SEED);
     for (time, expected) in D15_KNOWN {
         let mut r = FixedClock { time, digits: 6 };
-        let e = montar(&d15, &mut r).unwrap();
-        assert_eq!(e.valor("WARD_TOTP"), Some(expected), "T = {time}");
+        let e = build(&d15, &mut r).unwrap();
+        assert_eq!(e.value("WARD_TOTP"), Some(expected), "T = {time}");
         // The seed does not go to the environment (R8): no variable contains it.
-        for v in e.variaveis() {
-            assert!(!v.expor().contains(D15_SEED), "{}", v.nome());
+        for v in e.variables() {
+            assert!(!v.expose().contains(D15_SEED), "{}", v.name());
         }
     }
 }

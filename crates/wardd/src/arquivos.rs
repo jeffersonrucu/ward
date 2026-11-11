@@ -340,9 +340,9 @@ impl PastaAberta {
     }
 
     /// A pasta para o núcleo, com o uid esperado e o leitor da rotação (Fase 54c).
-    pub fn pasta(&self) -> ward_core::backup::PastaBackup {
-        ward_core::backup::PastaBackup::nova(self.caminho(), ward_platform::effective_uid())
-            .com_leitor(ler_versao_backup)
+    pub fn pasta(&self) -> ward_core::backup::BackupDir {
+        ward_core::backup::BackupDir::new(self.caminho(), ward_platform::effective_uid())
+            .with_reader(ler_versao_backup)
     }
 }
 

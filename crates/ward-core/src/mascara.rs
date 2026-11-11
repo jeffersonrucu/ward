@@ -4,7 +4,7 @@
 //!
 //! O que entra na máscara, para cada segredo da entrada (campos secretos do tipo,
 //! extras secretos, passphrase, semente TOTP) e para cada variável que a
-//! [`Entrega`] marcou como segredo (`Variavel::e_segredo`, que inclui o
+//! [`Delivery`] marcou como segredo (`Variable::is_secret`, que inclui o
 //! `DATABASE_URL` inteiro):
 //! - o valor literal;
 //! - percent-encoding em qualquer forma (maiúsculas, minúsculas, `+` para espaço,
@@ -100,7 +100,7 @@ use std::collections::VecDeque;
 
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
+use crate::delivery::{self, Delivery, DeliveryError, ResourceError, Resources};
 use crate::entry::{Data, Entry, Secret, SecretOrigin};
 use automato::{Automato, reservar};
 
@@ -144,7 +144,7 @@ impl std::error::Error for ErroMascara {}
 #[derive(Default)]
 pub struct ConstrutorMascara<'a> {
     entradas: Vec<&'a Entry>,
-    entregas: Vec<&'a Entrega>,
+    entregas: Vec<&'a Delivery>,
 }
 
 impl fmt::Debug for ConstrutorMascara<'_> {
@@ -165,7 +165,7 @@ impl<'a> ConstrutorMascara<'a> {
     }
 
     /// Cobre os valores que a entrega marcou como segredo (`DATABASE_URL`, senha…).
-    pub fn entrega(mut self, entrega: &'a Entrega) -> Self {
+    pub fn entrega(mut self, entrega: &'a Delivery) -> Self {
         self.entregas.push(entrega);
         self
     }
@@ -206,7 +206,7 @@ impl fmt::Debug for Mascara {
 
 impl Mascara {
     /// Atalho: a máscara de uma entrada e, se houver, da entrega dela.
-    pub fn da_entrada(entrada: &Entry, entrega: Option<&Entrega>) -> Result<Self, ErroMascara> {
+    pub fn da_entrada(entrada: &Entry, entrega: Option<&Delivery>) -> Result<Self, ErroMascara> {
         let mut c = ConstrutorMascara::new().entrada(entrada);
         if let Some(g) = entrega {
             c = c.entrega(g);
@@ -271,16 +271,16 @@ pub(crate) fn somar(c: &ConstrutorMascara<'_>, limite: usize) -> Result<usize, E
 /// do `ward run` (com túnel o host é sempre `127.0.0.1`).
 struct RecursosDoOrcamento;
 
-impl Recursos for RecursosDoOrcamento {
-    fn codigo_totp(&mut self, _semente: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+impl Resources for RecursosDoOrcamento {
+    fn totp_code(&mut self, _semente: &Secret) -> Result<Zeroizing<String>, ResourceError> {
         Ok(Zeroizing::new(String::from("000000")))
     }
 
-    fn arquivo(&mut self, _nome: &str, _conteudo: &Secret) -> Result<String, ErroRecurso> {
+    fn file(&mut self, _nome: &str, _conteudo: &Secret) -> Result<String, ResourceError> {
         Ok(String::from("/orcamento"))
     }
 
-    fn tunel(&mut self, _servidor: &str, _host: &str, _porta: u16) -> Result<u16, ErroRecurso> {
+    fn tunnel(&mut self, _servidor: &str, _host: &str, _porta: u16) -> Result<u16, ResourceError> {
         Ok(u16::MAX)
     }
 }
@@ -293,9 +293,9 @@ impl Recursos for RecursosDoOrcamento {
 /// Como cada entrada cabe em metade de [`PATTERN_LIMIT`], as duas de um uso combinado
 /// (D19) cabem juntas: nenhuma entrada aceita pelo cofre fica sem `ward run`.
 pub fn custo_da_entrada(entrada: &Entry) -> Result<usize, ErroMascara> {
-    let entrega = match entrega::montar(entrada, &mut RecursosDoOrcamento) {
+    let entrega = match delivery::build(entrada, &mut RecursosDoOrcamento) {
         Ok(g) => g,
-        Err(ErroEntrega::TipoSemEntrega) => return Ok(0),
+        Err(DeliveryError::TypeWithoutDelivery) => return Ok(0),
         Err(_) => return Err(ErroMascara::SemEntrega),
     };
     let c = ConstrutorMascara::new().entrada(entrada).entrega(&entrega);
@@ -328,11 +328,11 @@ fn visitar(c: &ConstrutorMascara<'_>, f: &mut Visitante<'_>) -> Result<(), ErroM
         }
     }
     for g_ in &c.entregas {
-        for v in g_.variaveis().iter().filter(|v| v.e_segredo()) {
+        for v in g_.variables().iter().filter(|v| v.is_secret()) {
             // D54: valor secreto de entrega com `\n` (o token de `api` de várias
             // linhas) também por linha, mesmo sem `.entrada(…)` no construtor; e o JSON
             // de uma linha só (D61), do mesmo jeito.
-            g.segredo_de_campo(v.expor().as_bytes(), f)?;
+            g.segredo_de_campo(v.expose().as_bytes(), f)?;
         }
     }
     Ok(())
