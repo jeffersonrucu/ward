@@ -173,7 +173,7 @@ Clientes Rust:
   `tests/ataques.rs`). — V2.1
 - [x] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
 - [x] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
-- [ ] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
+- [x] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
   `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1
 - [ ] Fase 33 — `app/core`: `comandos.rs`, `configuracoes.rs`, `backup_externo.rs`,
   `terminal.rs`, `chave.rs`, `partida.rs`, `credenciais.rs`. — V2.1
