@@ -264,7 +264,7 @@ fn attack_f55_denied_ward_run_and_window_do_not_delay_the_lock() {
         r.set(t);
         let (denied, seen) = with_window(&d, "negar", None, || {
             let p = req(Role::Agent, "executar", &run_request("t-aprov")).unwrap();
-            d.autorizar_uso(&wardd::aprovacao::SemCliente, &p)
+            d.authorize_use(&wardd::aprovacao::SemCliente, &p)
         });
         assert_eq!(denied.err(), Some(ResponseError::Denied));
         assert_eq!(seen.len(), 1);
@@ -541,7 +541,7 @@ fn watched_daemon(dir: &Dir, b: &FakeBus) -> (Arc<Daemon>, mpsc::Receiver<()>) {
     let d = Arc::new(d);
     let (tx, rx) = mpsc::channel();
     let tx = Mutex::new(tx);
-    wardd::trava::vigiar_logind(
+    wardd::lock::watch_logind(
         d.clone(),
         b.socket.clone(),
         Box::new(move || {

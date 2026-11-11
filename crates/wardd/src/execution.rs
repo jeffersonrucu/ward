@@ -55,7 +55,7 @@ use crate::ssh_agent::{Allowed, SshAgent};
 use crate::aprovacao::Cliente;
 use crate::bridge::{Bridge, Opening, TUNNEL_LIMITS};
 use crate::nucleo::Daemon;
-use crate::{aviso, depurar};
+use crate::{debug, warning};
 
 /// Dir of the temporaries inside `<rt>`.
 pub const TEMP_DIR: &str = "tmp";
@@ -177,7 +177,7 @@ impl Drop for TempFiles {
         }
         // `remove_dir_all` does not follow symbolic links.
         if fs::remove_dir_all(&self.dir).is_err() {
-            aviso!("não deu para apagar a pasta temporária da sessão");
+            warning!("não deu para apagar a pasta temporária da sessão");
         }
     }
 }
@@ -469,7 +469,7 @@ impl Account {
     pub(crate) fn from_passwd() -> Result<Account, ResponseError> {
         use std::os::unix::ffi::OsStringExt;
         let (user, home) = ward_platform::user_account().map_err(|_| {
-            aviso!("executar: usuário sem entrada no passwd");
+            warning!("executar: usuário sem entrada no passwd");
             ResponseError::DeliveryFailed
         })?;
         Ok(Account {
@@ -494,7 +494,7 @@ fn build_environment(
     // The delivery never changes what the daemon fixes (D42 already refuses; second
     // layer).
     if FROM_DAEMON.iter().any(|n| from_delivery.contains(n)) {
-        aviso!("executar: a entrega traz uma variável fixa do daemon; nada foi executado");
+        warning!("executar: a entrega traz uma variável fixa do daemon; nada foi executado");
         return Err(ResponseError::DeliveryFailed);
     }
     let mut seen: HashSet<&[u8]> = HashSet::new();
@@ -546,7 +546,7 @@ impl Daemon {
             return Err(ResponseError::InvalidRequest);
         };
         // Phase 54b: only the kind (fixed text), for the CLI suite to verify the `fstat`.
-        depurar!("executar: entrada padrão {}", x.stdin_kind.name());
+        debug!("executar: entrada padrão {}", x.stdin_kind.name());
         // A visible secure note: refuses before asking for approval (V4.11).
         if let Some(a) = self.estado().aberto.as_ref()
             && visible(&a.entradas, &x.entry)
@@ -554,7 +554,7 @@ impl Daemon {
         {
             return Err(ResponseError::TypeWithoutDelivery);
         }
-        self.autorizar_uso(client, &request)?;
+        self.authorize_use(client, &request)?;
         let Request::Run(x) = request else {
             return Err(ResponseError::InvalidRequest);
         };
@@ -597,7 +597,7 @@ impl Daemon {
                 return Err(ResponseError::TypeWithoutDelivery);
             }
             Err(err) => {
-                aviso!("executar: {err}");
+                warning!("executar: {err}");
                 return Err(ResponseError::DeliveryFailed);
             }
         };
@@ -607,7 +607,7 @@ impl Daemon {
             builder = builder.entry(s);
         }
         let mask = builder.build().map_err(|err| {
-            aviso!("executar: {err}");
+            warning!("executar: {err}");
             ResponseError::DeliveryFailed
         })?;
         let RunResources {
@@ -617,10 +617,10 @@ impl Daemon {
         let account = Account::from_passwd()?;
         let removed = build_environment(&mut command, &x.env, &account, &delivery)?;
         if removed > 0 {
-            depurar!("executar: {removed} variável(is) da CLI fora da lista (Fase 26a)");
+            debug!("executar: {removed} variável(is) da CLI fora da lista (Fase 26a)");
         }
         if bridge.is_some() {
-            depurar!("executar: com túnel (ponte em 127.0.0.1)");
+            debug!("executar: com túnel (ponte em 127.0.0.1)");
         }
         Ok(Preparation {
             command,
@@ -645,7 +645,7 @@ impl Cli {
     /// Writes the response; `false` if the CLI is no longer there.
     fn send(&self, r: &Resposta) -> bool {
         let Ok(q) = protocol::encode_response(Role::Agent, r) else {
-            aviso!("executar: resposta recusada para o agente");
+            warning!("executar: resposta recusada para o agente");
             return false;
         };
         let mut s = self.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -781,7 +781,7 @@ fn read_from_cli(
             Ok(b) => b,
             Err(_) => {
                 if !end.load(Ordering::Acquire) {
-                    aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
+                    warning!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
                     group.kill_with_child_sessions();
                 }
                 return;
@@ -790,7 +790,7 @@ fn read_from_cli(
         match protocol::decode_request(Role::Agent, &bytes) {
             Ok(Request::Stdin { data: dados }) if null_stdin && !dados.is_empty() => {
                 if !end.load(Ordering::Acquire) {
-                    aviso!(
+                    warning!(
                         "executar: dado na entrada padrão declarada nula; o grupo do comando foi morto (D68)"
                     );
                     group.kill_with_child_sessions();
@@ -818,7 +818,7 @@ fn read_from_cli(
             }
             _ => {
                 if !end.load(Ordering::Acquire) {
-                    aviso!("executar: quadro fora da sessão; o grupo do comando foi morto");
+                    warning!("executar: quadro fora da sessão; o grupo do comando foi morto");
                     group.kill_with_child_sessions();
                 }
                 return;
@@ -847,7 +847,7 @@ fn enqueue(
                     return false;
                 }
                 if ward_platform::peer_closed(s) {
-                    aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
+                    warning!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
                     group.kill_with_child_sessions();
                     return false;
                 }
@@ -879,7 +879,7 @@ pub fn session(
         |c| {
             let r = daemon.prepare_run(c, request);
             if let Err(e) = &r {
-                depurar!("executar (agente): {}", e.code());
+                debug!("executar (agente): {}", e.code());
             }
             r
         },
@@ -932,7 +932,7 @@ pub(crate) fn session_with(
     let (group, launched) = match launched {
         Ok(g) => g,
         Err(e) => {
-            depurar!("executar: o filho não foi criado ({e:?})");
+            debug!("executar: o filho não foi criado ({e:?})");
             drop(bridge);
             drop(temp_files);
             drop(agent);
@@ -952,7 +952,7 @@ pub(crate) fn session_with(
         }
     };
     let pid = group.pid();
-    depurar!("executar: filho pid {pid}");
+    debug!("executar: filho pid {pid}");
     // D12: the agent serves only the child that has just been born (the pid is not
     // reused: the daemon only reaps the child at the end).
     let agent = agent.map(|a| {
@@ -982,7 +982,7 @@ pub(crate) fn session_with(
     if let Some(t) = &lock
         && !t.sessions.registrar(&group, &t.locks, t.initial)
     {
-        depurar!("executar: o cofre travou antes do lançamento; pid {pid} encerrado");
+        debug!("executar: o cofre travou antes do lançamento; pid {pid} encerrado");
     }
     let mask = Arc::new(mask);
     let stop = Arc::new(AtomicBool::new(false));
@@ -1078,13 +1078,13 @@ pub(crate) fn session_with(
     let code = match result {
         Ok(f) => {
             match f {
-                child::End::Code(c) => depurar!("executar: pid {pid} saiu com código {c}"),
-                child::End::Signal(s) => depurar!("executar: pid {pid} encerrado pelo sinal {s}"),
+                child::End::Code(c) => debug!("executar: pid {pid} saiu com código {c}"),
+                child::End::Signal(s) => debug!("executar: pid {pid} encerrado pelo sinal {s}"),
             }
             f.exit_code()
         }
         Err(_) => {
-            aviso!("executar: não deu para colher o pid {pid}");
+            warning!("executar: não deu para colher o pid {pid}");
             1
         }
     };

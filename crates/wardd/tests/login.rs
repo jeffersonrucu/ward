@@ -391,12 +391,12 @@ fn cli_that_drops_kills_the_request() {
 /// hold off the inactivity lock (Phase 24).
 #[test]
 fn await_does_not_count_as_use() {
-    assert!(!wardd::trava::conta_como_uso(
+    assert!(!wardd::lock::counts_as_use(
         Role::Extension,
         Operation::AwaitLogin,
         &Resposta::Ok
     ));
-    assert!(wardd::trava::conta_como_uso(
+    assert!(wardd::lock::counts_as_use(
         Role::Extension,
         Operation::FillLogin,
         &Resposta::Ok
