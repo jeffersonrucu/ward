@@ -1,7 +1,7 @@
 //! Gerador de senha avulso (Fase 37, tela `Gerador de senha / Avulso`).
 //!
 //! A senha nasce só em `ward_core::generator` (RNG do sistema, sem viés, símbolos de D35),
-//! nunca no JavaScript. Ela fica aqui, no lado Rust, num [`Segredo`] que zera ao sair:
+//! nunca no JavaScript. Ela fica aqui, no lado Rust, num [`Secret`] que zera ao sair:
 //!
 //! - `gerar_senha` devolve à interface só o que não é segredo: o tamanho, a força
 //!   estimada pelas opções e o conjunto de símbolos de D35 (para a tela mostrar o mesmo
@@ -18,8 +18,8 @@ use std::fmt;
 use ward_core::generator::{self as nucleo, GeneratorOptions};
 use zeroize::Zeroizing;
 
-use crate::ErroApp;
-use crate::segredo::Segredo;
+use crate::AppError;
+use crate::secret::Secret;
 
 /// Menor tamanho da tela (o design diz "De 8 a 64"). Fica dentro de
 /// `ward_core::generator::MIN_SIZE..=MAX_SIZE`.
@@ -41,13 +41,13 @@ pub struct Opcoes {
 }
 
 impl Opcoes {
-    fn validar(self) -> Result<GeneratorOptions, ErroApp> {
-        let tamanho = usize::try_from(self.tamanho).map_err(|_| ErroApp::PedidoInvalido)?;
+    fn validar(self) -> Result<GeneratorOptions, AppError> {
+        let tamanho = usize::try_from(self.tamanho).map_err(|_| AppError::InvalidRequest)?;
         if !(TAMANHO_MIN..=TAMANHO_MAX).contains(&tamanho) {
-            return Err(ErroApp::PedidoInvalido);
+            return Err(AppError::InvalidRequest);
         }
         if !(self.minusculas || self.maiusculas || self.digitos || self.simbolos) {
-            return Err(ErroApp::PedidoInvalido);
+            return Err(AppError::InvalidRequest);
         }
         Ok(GeneratorOptions {
             size: tamanho,
@@ -132,8 +132,8 @@ pub struct Revelada(Zeroizing<String>);
 
 impl Revelada {
     /// Valor de um segredo do cofre para o "revelar" do formulário (Fase 33). Só UTF-8.
-    pub(crate) fn de_segredo(s: &Segredo) -> Option<Revelada> {
-        let texto = core::str::from_utf8(s.expor()).ok()?;
+    pub(crate) fn de_segredo(s: &Secret) -> Option<Revelada> {
+        let texto = core::str::from_utf8(s.expose()).ok()?;
         Some(Revelada(Zeroizing::new(texto.to_owned())))
     }
 
@@ -152,23 +152,23 @@ impl fmt::Debug for Revelada {
 /// A senha avulsa atual, só em memória do lado Rust.
 #[derive(Default)]
 pub struct Gerador {
-    atual: Option<Segredo>,
+    atual: Option<Secret>,
 }
 
 impl Gerador {
     /// Gera uma senha nova (a anterior zera) e devolve só os dados sem segredo.
-    pub fn gerar(&mut self, opcoes: Opcoes) -> Result<Gerada, ErroApp> {
+    pub fn gerar(&mut self, opcoes: Opcoes) -> Result<Gerada, AppError> {
         let o = opcoes.validar()?;
         // Antes de gerar: se o RNG falhar, não sobra a senha antiga com opções novas.
         self.atual = None;
         let senha = nucleo::generate(&o).map_err(|e| match e {
-            nucleo::GeneratorError::RandomUnavailable => ErroApp::AleatorioIndisponivel,
+            nucleo::GeneratorError::RandomUnavailable => AppError::RandomUnavailable,
             nucleo::GeneratorError::InvalidSize | nucleo::GeneratorError::NoSet => {
-                ErroApp::PedidoInvalido
+                AppError::InvalidRequest
             }
         })?;
         // Copia para o tipo do app, que zera ao sair; o `ward_core::Segredo` zera no drop.
-        self.atual = Some(Segredo::novo(senha.expose().to_vec()));
+        self.atual = Some(Secret::new(senha.expose().to_vec()));
         drop(senha);
         let bits = bits(&o);
         Ok(Gerada {
@@ -180,17 +180,17 @@ impl Gerador {
     }
 
     /// Uma cópia para a área de transferência (o `Copiador` toma posse e zera).
-    pub fn para_copiar(&self) -> Result<Segredo, ErroApp> {
+    pub fn para_copiar(&self) -> Result<Secret, AppError> {
         self.atual
             .as_ref()
-            .map(|s| Segredo::novo(s.expor().to_vec()))
-            .ok_or(ErroApp::SemSenhaGerada)
+            .map(|s| Secret::new(s.expose().to_vec()))
+            .ok_or(AppError::NoGeneratedPassword)
     }
 
     /// O valor para o "revelar".
-    pub fn revelar(&self) -> Result<Revelada, ErroApp> {
-        let s = self.atual.as_ref().ok_or(ErroApp::SemSenhaGerada)?;
-        let texto = core::str::from_utf8(s.expor()).map_err(|_| ErroApp::SemSenhaGerada)?;
+    pub fn revelar(&self) -> Result<Revelada, AppError> {
+        let s = self.atual.as_ref().ok_or(AppError::NoGeneratedPassword)?;
+        let texto = core::str::from_utf8(s.expose()).map_err(|_| AppError::NoGeneratedPassword)?;
         Ok(Revelada(Zeroizing::new(texto.to_owned())))
     }
 
@@ -290,7 +290,7 @@ mod testes {
     fn ataque_opcoes_fora_do_formato_sao_recusadas() {
         let mut g = Gerador::default();
         for t in [0, 4, 7, 65, 128, 129, u64::from(u32::MAX) + 1, u64::MAX] {
-            assert_eq!(g.gerar(opcoes(t)), Err(ErroApp::PedidoInvalido), "{t}");
+            assert_eq!(g.gerar(opcoes(t)), Err(AppError::InvalidRequest), "{t}");
         }
         let nenhum = Opcoes {
             tamanho: 24,
@@ -299,10 +299,10 @@ mod testes {
             digitos: false,
             simbolos: false,
         };
-        assert_eq!(g.gerar(nenhum), Err(ErroApp::PedidoInvalido));
+        assert_eq!(g.gerar(nenhum), Err(AppError::InvalidRequest));
         assert!(!g.tem_senha());
-        assert_eq!(g.revelar().err(), Some(ErroApp::SemSenhaGerada));
-        assert_eq!(g.para_copiar().err(), Some(ErroApp::SemSenhaGerada));
+        assert_eq!(g.revelar().err(), Some(AppError::NoGeneratedPassword));
+        assert_eq!(g.para_copiar().err(), Some(AppError::NoGeneratedPassword));
     }
 
     /// A resposta do "gerar" não carrega o valor: nem no tipo nem no `Debug`.
@@ -329,6 +329,6 @@ mod testes {
         let b = g.revelar().unwrap().expor().to_owned();
         assert_ne!(a, b);
         g.descartar();
-        assert_eq!(g.revelar().err(), Some(ErroApp::SemSenhaGerada));
+        assert_eq!(g.revelar().err(), Some(AppError::NoGeneratedPassword));
     }
 }

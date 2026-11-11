@@ -37,7 +37,7 @@ use ward_platform::{AppEnvironment, SessionError, harden_process, verify_app_env
 
 use ward_core::protocolo::Papel;
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::cliente;
 use crate::daemon::DaemonSocket;
 
@@ -53,7 +53,7 @@ pub enum ErroPartida {
     /// O pai não é (ou não parece) o daemon.
     Pai(ParentMismatch),
     /// O daemon não aceitou a conexão ou não é confiável (D46).
-    Daemon(ErroApp),
+    Daemon(AppError),
     /// O socket não ficou com `CLOEXEC`.
     SemCloexec,
     /// `setresgid` não deixou os três gids no real.
@@ -120,7 +120,7 @@ fn tracer_zero() -> bool {
 fn iniciar_com<I, F>(ambiente: I, daemon: F, pai_e_o_daemon: bool) -> Result<Partida, ErroPartida>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
-    F: FnOnce() -> Result<DaemonSocket, ErroApp>,
+    F: FnOnce() -> Result<DaemonSocket, AppError>,
 {
     harden_process().map_err(|_| ErroPartida::Endurecer)?;
     if !tracer_zero() {
@@ -139,7 +139,7 @@ where
     }
     let vigia = conexao
         .try_clone()
-        .map_err(|_| ErroPartida::Daemon(ErroApp::DaemonIndisponivel))?;
+        .map_err(|_| ErroPartida::Daemon(AppError::DaemonUnavailable))?;
 
     app::release_group().map_err(|_| ErroPartida::Grupo)?;
     harden_process().map_err(|_| ErroPartida::Endurecer)?;
@@ -170,7 +170,7 @@ where
 /// conectar, para a conexão não levar o egid do app, e pede a instância verdadeira.
 fn delegar<F>(daemon: F) -> ErroPartida
 where
-    F: FnOnce() -> Result<DaemonSocket, ErroApp>,
+    F: FnOnce() -> Result<DaemonSocket, AppError>,
 {
     if app::release_group().is_err() {
         return ErroPartida::Grupo;
@@ -367,7 +367,7 @@ mod testes {
         // aqui falha na conferência do servidor (D46), e não para o erro de ambiente.
         let r = iniciar_com(
             vec![(OsString::from("ALACRITTY_WINDOW_ID"), OsString::from("1"))],
-            || Err(ErroApp::DaemonIndisponivel),
+            || Err(AppError::DaemonUnavailable),
             false,
         );
         assert!(matches!(r, Err(ErroPartida::Daemon(_))), "{:?}", r.err());

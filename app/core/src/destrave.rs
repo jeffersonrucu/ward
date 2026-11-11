@@ -29,7 +29,7 @@ use ward_core::limits::MAX_SECRET;
 use ward_core::protocolo::PedidoDeDestrave;
 use zeroize::Zeroizing;
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::daemon::FilaAvisos;
 
 /// Quanto o pedido do agente espera o destrave (D16; o `PRAZO_DESTRAVE` do `wardd`).
@@ -43,12 +43,12 @@ pub struct SenhaMestra(Zeroizing<String>);
 
 impl SenhaMestra {
     /// Confere o tamanho e toma posse do texto (sem cópia que fique sem zerar).
-    pub fn nova(texto: String) -> Result<SenhaMestra, ErroApp> {
+    pub fn nova(texto: String) -> Result<SenhaMestra, AppError> {
         let texto = Zeroizing::new(texto);
         if !texto.is_empty() && texto.len() <= MAX_SECRET {
             Ok(SenhaMestra(texto))
         } else {
-            Err(ErroApp::PedidoInvalido)
+            Err(AppError::InvalidRequest)
         }
     }
 
@@ -205,7 +205,7 @@ pub fn vigiar(
     fila: Arc<FilaAvisos>,
     pedido: Arc<PedidoPendente>,
     ao_chegar: impl Fn() + Send + 'static,
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     std::thread::Builder::new()
         .name("ward-app-destrave".into())
         .spawn(move || {
@@ -217,7 +217,7 @@ pub fn vigiar(
             }
         })
         .map(|_| ())
-        .map_err(|_| ErroApp::ConexaoPerdida)
+        .map_err(|_| AppError::ConnectionLost)
 }
 
 #[cfg(test)]
@@ -259,7 +259,7 @@ mod testes {
         assert!(!d.contains("falso"), "{d}");
         assert_eq!(
             SenhaMestra::nova(String::new()).unwrap_err(),
-            ErroApp::PedidoInvalido
+            AppError::InvalidRequest
         );
     }
 

@@ -7,10 +7,10 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::area_transferencia::{AreaTransferencia, Copiador};
 use ward_app_core::daemon_falso::{DaemonFalso, SEGREDOS};
-use ward_app_core::servico::Servico;
+use ward_app_core::service::Service;
 use ward_test_bridge::http::{MAX_CABECALHO, MAX_CORPO, Pedido, Ponte, ler_pedido};
 use zeroize::Zeroizing;
 
@@ -20,14 +20,14 @@ const SEGREDO: &[u8] = b"falso-PG:s3nha/01@#";
 #[derive(Default, Clone)]
 struct Area(Arc<Mutex<Option<Vec<u8>>>>);
 impl AreaTransferencia for Area {
-    fn escrever(&self, v: &[u8]) -> Result<(), ErroApp> {
+    fn escrever(&self, v: &[u8]) -> Result<(), AppError> {
         *self.0.lock().unwrap() = Some(v.to_vec());
         Ok(())
     }
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
         Ok(self.0.lock().unwrap().clone().map(Zeroizing::new))
     }
-    fn limpar(&self) -> Result<(), ErroApp> {
+    fn limpar(&self) -> Result<(), AppError> {
         *self.0.lock().unwrap() = None;
         Ok(())
     }
@@ -58,7 +58,7 @@ fn ponte(
 ) {
     let base = dist(nome);
     let area = Area::default();
-    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(area.clone()));
+    let servico = Service::new(DaemonFalso::cheio(), Copiador::novo(area.clone()));
     let (p, l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     (p, l, area, base)
 }
@@ -576,9 +576,9 @@ fn ataque_anexos_e_conectar_pela_ponte() {
     let pasta = base.join("anexos");
     fs::create_dir_all(&pasta).unwrap();
     fs::write(pasta.join("deploy.pem"), "falso-anexo-ponte-34\n").unwrap();
-    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()))
-        .com_seletor(SeletorDePasta(pasta.clone()))
-        .com_terminal(TerminalDeTeste);
+    let servico = Service::new(DaemonFalso::cheio(), Copiador::novo(Area::default()))
+        .with_picker(SeletorDePasta(pasta.clone()))
+        .with_terminal(TerminalDeTeste);
     let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     let r = p.responder(&post(&p, "escolher_anexo", "{}", &[]));
     let v = r.corpo_json().unwrap();
@@ -648,8 +648,8 @@ fn ataque_carregar_chave_pela_ponte() {
     let rotulo = ["OPENSSH", " PRIVATE", " KEY"].concat();
     let chave = format!("-----BEGIN {rotulo}-----\n{miolo}\n-----END {rotulo}-----\n");
     fs::write(pasta.join("deploy_ed25519"), &chave).unwrap();
-    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()))
-        .com_seletor(SeletorDePasta(pasta.clone()));
+    let servico = Service::new(DaemonFalso::cheio(), Copiador::novo(Area::default()))
+        .with_picker(SeletorDePasta(pasta.clone()));
     let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     for corpo in [
         r#"{}"#,
@@ -746,7 +746,7 @@ fn ataque_carregar_chave_pela_ponte() {
 #[test]
 fn ataque_primeiro_uso_pela_ponte() {
     let base = dist("primeiro-uso");
-    let servico = Servico::novo(DaemonFalso::sem_cofre(), Copiador::novo(Area::default()));
+    let servico = Service::new(DaemonFalso::sem_cofre(), Copiador::novo(Area::default()));
     let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     let estado = || {
         p.responder(&post(&p, "estado_do_cofre", "{}", &[]))
@@ -986,7 +986,7 @@ fn ataque_travar_pela_ponte() {
 #[test]
 fn ataque_configuracoes_pela_ponte() {
     let base = dist("configuracoes");
-    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()));
+    let servico = Service::new(DaemonFalso::cheio(), Copiador::novo(Area::default()));
     let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     let pedir = |comando: &str, corpo: &str| {
         let r = p.responder(&post(&p, comando, corpo, &[]));
@@ -1086,7 +1086,7 @@ fn ataque_configuracoes_pela_ponte() {
 #[test]
 fn ataque_backup_externo_pela_ponte() {
     let base = dist("backup-externo");
-    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()));
+    let servico = Service::new(DaemonFalso::cheio(), Copiador::novo(Area::default()));
     let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     let pedir = |comando: &str, corpo: &str| {
         let r = p.responder(&post(&p, comando, corpo, &[]));
@@ -1170,7 +1170,7 @@ fn ataque_backup_externo_pela_ponte() {
 #[test]
 fn ataque_restaurar_backup_pela_ponte() {
     let base = dist("restaurar-backup");
-    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()));
+    let servico = Service::new(DaemonFalso::cheio(), Copiador::novo(Area::default()));
     let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     let pedir = |comando: &str, corpo: &str| {
         let r = p.responder(&post(&p, comando, corpo, &[]));

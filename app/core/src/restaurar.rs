@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use ward_core::protocolo::VersaoBackup;
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::destrave::SenhaMestra;
 use crate::nivel::Pin;
 
@@ -91,14 +91,14 @@ fn nome_ok(_nome: &str) -> bool {
 /// A resposta `backups` vira versões, com as marcas do daemon; um nome fora do formato
 /// (ou "fora de ordem" sem "conferida") faz a resposta inteira ser recusada (o daemon não
 /// manda isso).
-pub fn versoes_de(lista: &[VersaoBackup]) -> Result<Vec<VersaoVista>, ErroApp> {
+pub fn versoes_de(lista: &[VersaoBackup]) -> Result<Vec<VersaoVista>, AppError> {
     lista
         .iter()
         .map(|b| {
             if b.fora_de_ordem && !b.conferida {
-                return Err(ErroApp::RespostaInvalida);
+                return Err(AppError::InvalidResponse);
             }
-            let mut v = VersaoVista::de_nome(&b.nome).ok_or(ErroApp::RespostaInvalida)?;
+            let mut v = VersaoVista::de_nome(&b.nome).ok_or(AppError::InvalidResponse)?;
             v.conferida = b.conferida;
             v.fora_de_ordem = b.fora_de_ordem;
             Ok(v)
@@ -108,11 +108,11 @@ pub fn versoes_de(lista: &[VersaoBackup]) -> Result<Vec<VersaoVista>, ErroApp> {
 
 /// A versão escolhida na interface: o nome tem de estar no formato. Não confere a lista
 /// (isso é do serviço, com o daemon).
-pub fn versao_pedida(nome: &str) -> Result<&str, ErroApp> {
+pub fn versao_pedida(nome: &str) -> Result<&str, AppError> {
     if nome_ok(nome) {
         Ok(nome)
     } else {
-        Err(ErroApp::PedidoInvalido)
+        Err(AppError::InvalidRequest)
     }
 }
 
@@ -188,7 +188,7 @@ mod testes {
         ] {
             assert_eq!(
                 versao_pedida(ruim),
-                Err(ErroApp::PedidoInvalido),
+                Err(AppError::InvalidRequest),
                 "{ruim:?}"
             );
             assert_eq!(VersaoVista::de_nome(ruim), None, "{ruim:?}");
@@ -199,11 +199,11 @@ mod testes {
                 vb("ward-20261108-143200.ward", true, false),
                 vb("../x", true, false)
             ]),
-            Err(ErroApp::RespostaInvalida)
+            Err(AppError::InvalidResponse)
         );
         assert_eq!(
             versoes_de(&[vb("ward-20261108-143200.ward", false, true)]),
-            Err(ErroApp::RespostaInvalida)
+            Err(AppError::InvalidResponse)
         );
     }
 
@@ -263,19 +263,19 @@ mod testes {
         use crate::area_transferencia::{AreaTransferencia, Copiador};
         use crate::daemon::Daemon;
         use crate::daemon_falso::{DaemonFalso, SEGREDOS};
-        use crate::servico::Servico;
+        use crate::service::Service;
 
         type Quadros = Arc<Mutex<Vec<Vec<u8>>>>;
 
         struct SemArea;
         impl AreaTransferencia for SemArea {
-            fn escrever(&self, _: &[u8]) -> Result<(), ErroApp> {
+            fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
                 Ok(())
             }
-            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
                 Ok(None)
             }
-            fn limpar(&self) -> Result<(), ErroApp> {
+            fn limpar(&self) -> Result<(), AppError> {
                 Ok(())
             }
         }
@@ -284,18 +284,18 @@ mod testes {
         #[derive(Clone)]
         struct Espiao(Arc<Mutex<DaemonFalso>>, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
                 self.0.lock().unwrap().trocar(pedido)
             }
         }
 
-        fn servico(falso: DaemonFalso) -> (Servico<Espiao, SemArea>, Espiao) {
+        fn servico(falso: DaemonFalso) -> (Service<Espiao, SemArea>, Espiao) {
             let e = Espiao(
                 Arc::new(Mutex::new(falso.sem_espera())),
                 Arc::new(Mutex::new(Vec::new())),
             );
-            (Servico::novo(e.clone(), Copiador::novo(SemArea)), e)
+            (Service::new(e.clone(), Copiador::novo(SemArea)), e)
         }
 
         fn restauracoes(e: &Espiao) -> usize {
@@ -330,29 +330,29 @@ mod testes {
         #[test]
         fn v7_7_escolhe_versao_confirma_e_as_entradas_da_versao_aparecem() {
             let (s, e) = servico(DaemonFalso::cheio());
-            let antes = s.listar_credenciais().unwrap().len();
-            let versoes = s.listar_backups().unwrap();
+            let antes = s.list_credentials().unwrap().len();
+            let versoes = s.list_backups().unwrap();
             assert_eq!(versoes.len(), 30);
             sem_segredo(&serde_json::to_string(&versoes).unwrap());
             // Da mais nova para a mais antiga.
             assert!(versoes.windows(2).all(|w| w[0].instante > w[1].instante));
             let escolhida = versoes[2].clone();
             let r = s
-                .restaurar_backup(pedido(&escolhida.nome, SENHA, PIN))
+                .restore_backup(pedido(&escolhida.nome, SENHA, PIN))
                 .unwrap();
             assert!(r.restaurado);
             // A versão 2 tem duas entradas a menos que o cofre de teste.
             assert_eq!(r.entradas, antes - 2);
-            assert_eq!(s.listar_credenciais().unwrap().len(), antes - 2);
+            assert_eq!(s.list_credentials().unwrap().len(), antes - 2);
             sem_segredo(&serde_json::to_string(&r).unwrap());
             // O atual virou a versão mais nova; continuam 30.
-            let depois = s.listar_backups().unwrap();
+            let depois = s.list_backups().unwrap();
             assert_eq!(depois.len(), 30);
             assert_ne!(depois[0].nome, versoes[0].nome);
             assert_eq!(restauracoes(&e), 1);
             // O atual guardado volta com a senha de antes e as entradas de antes.
             let r = s
-                .restaurar_backup(pedido(&depois[0].nome, SENHA, PIN))
+                .restore_backup(pedido(&depois[0].nome, SENHA, PIN))
                 .unwrap();
             assert_eq!(r.entradas, antes);
         }
@@ -363,14 +363,14 @@ mod testes {
         #[test]
         fn ataque_copia_plantada_chega_marcada_pela_geracao() {
             let (s, _) = servico(DaemonFalso::backup_plantado());
-            let v = s.listar_backups().unwrap();
+            let v = s.list_backups().unwrap();
             assert_eq!(v.len(), 31);
             assert!(v[0].fora_de_ordem && v[0].conferida);
             assert!(v[1..].iter().all(|x| !x.fora_de_ordem && x.conferida));
             assert!(!serde_json::to_string(&v).unwrap().contains("geracao"));
-            let r = s.restaurar_backup(pedido(&v[2].nome, SENHA, PIN)).unwrap();
+            let r = s.restore_backup(pedido(&v[2].nome, SENHA, PIN)).unwrap();
             assert!(r.restaurado);
-            let depois = s.listar_backups().unwrap();
+            let depois = s.list_backups().unwrap();
             let marcadas: Vec<&str> = depois
                 .iter()
                 .filter(|x| x.fora_de_ordem)
@@ -382,25 +382,25 @@ mod testes {
         #[test]
         fn ataque_pin_errado_nao_restaura_e_o_quinto_trava() {
             let (s, e) = servico(DaemonFalso::cheio());
-            let v = s.listar_backups().unwrap()[3].nome.clone();
+            let v = s.list_backups().unwrap()[3].nome.clone();
             let antes = e.0.lock().unwrap().quantas_entradas();
             for n in 1..=4 {
                 assert_eq!(
-                    s.restaurar_backup(pedido(&v, SENHA, "000000")),
-                    Err(ErroApp::PinIncorreto)
+                    s.restore_backup(pedido(&v, SENHA, "000000")),
+                    Err(AppError::WrongPin)
                 );
                 assert_eq!(e.0.lock().unwrap().erros_de_pin(), n);
             }
             assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
             assert_eq!(
-                s.restaurar_backup(pedido(&v, SENHA, "000000")),
-                Err(ErroApp::PinIncorreto)
+                s.restore_backup(pedido(&v, SENHA, "000000")),
+                Err(AppError::WrongPin)
             );
             // O 5.º trava: nada mais é listado nem restaurado, nem com o PIN certo.
-            assert_eq!(s.listar_backups(), Err(ErroApp::Travado));
+            assert_eq!(s.list_backups(), Err(AppError::Locked));
             assert_eq!(
-                s.restaurar_backup(pedido(&v, SENHA, PIN)),
-                Err(ErroApp::Travado)
+                s.restore_backup(pedido(&v, SENHA, PIN)),
+                Err(AppError::Locked)
             );
             assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
         }
@@ -412,8 +412,8 @@ mod testes {
             let antes = e.0.lock().unwrap().quantas_entradas();
             for errada in ["falso-mestra-ward-02", "falso-mestra-ward-0", "x"] {
                 assert_eq!(
-                    s.restaurar_backup(pedido(&nomes[1], errada, PIN)),
-                    Err(ErroApp::SenhaIncorreta)
+                    s.restore_backup(pedido(&nomes[1], errada, PIN)),
+                    Err(AppError::WrongPassword)
                 );
             }
             assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
@@ -433,16 +433,16 @@ mod testes {
                 "ward-20261108-143200\u{202E}.ward",
             ] {
                 assert_eq!(
-                    s.restaurar_backup(pedido(ruim, SENHA, PIN)),
-                    Err(ErroApp::PedidoInvalido),
+                    s.restore_backup(pedido(ruim, SENHA, PIN)),
+                    Err(AppError::InvalidRequest),
                     "{ruim:?}"
                 );
             }
             assert!(e.1.lock().unwrap().is_empty());
             // No formato, mas fora da lista do daemon: nenhum `restaurar_backup`.
             assert_eq!(
-                s.restaurar_backup(pedido("ward-19990101-000000.ward", SENHA, PIN)),
-                Err(ErroApp::BackupInexistente)
+                s.restore_backup(pedido("ward-19990101-000000.ward", SENHA, PIN)),
+                Err(AppError::BackupNotFound)
             );
             assert_eq!(restauracoes(&e), 0);
             // Um cliente que pule o serviço e mande direto: o falso responde como o
@@ -454,20 +454,20 @@ mod testes {
                 &crate::destrave::SenhaMestra::nova(SENHA.into()).unwrap(),
                 &crate::nivel::Pin::novo(PIN.into()).unwrap(),
             );
-            assert_eq!(r, Err(ErroApp::BackupInexistente));
+            assert_eq!(r, Err(AppError::BackupNotFound));
             assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
         }
 
         #[test]
         fn ataque_cofre_travado_no_meio_nao_restaura() {
             let (s, e) = servico(DaemonFalso::cheio());
-            let v = s.listar_backups().unwrap()[1].nome.clone();
+            let v = s.list_backups().unwrap()[1].nome.clone();
             let antes = e.0.lock().unwrap().quantas_entradas();
             // Travou (tempo, bandeja, outra janela) entre escolher e confirmar.
-            s.travar().unwrap();
+            s.lock().unwrap();
             assert_eq!(
-                s.restaurar_backup(pedido(&v, SENHA, PIN)),
-                Err(ErroApp::Travado)
+                s.restore_backup(pedido(&v, SENHA, PIN)),
+                Err(AppError::Locked)
             );
             assert_eq!(restauracoes(&e), 0);
             assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
@@ -476,23 +476,23 @@ mod testes {
         #[test]
         fn pasta_indisponivel_e_sem_versoes() {
             let (s, _) = servico(DaemonFalso::cheio().com_backups(None));
-            assert_eq!(s.listar_backups(), Err(ErroApp::BackupIndisponivel));
+            assert_eq!(s.list_backups(), Err(AppError::BackupUnavailable));
             let (s, _) = servico(DaemonFalso::cheio().com_backups(Some(Vec::new())));
-            assert_eq!(s.listar_backups(), Ok(Vec::new()));
+            assert_eq!(s.list_backups(), Ok(Vec::new()));
         }
 
         /// O daemon que vê esta conexão como agente (o `wardd` com outro papel, D5).
         #[derive(Clone)]
         struct ComoAgente(Quadros);
         impl Daemon for ComoAgente {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.0.lock().unwrap().push(pedido.to_vec());
                 let r = match protocolo::decodificar_pedido(Papel::Agente, pedido) {
                     Ok(_) => Resposta::Erro(ErroResposta::Interno),
                     Err(e) => Resposta::Erro(e),
                 };
                 protocolo::codificar_resposta(Papel::Agente, &r)
-                    .map_err(|_| ErroApp::RespostaInvalida)
+                    .map_err(|_| AppError::InvalidResponse)
             }
         }
 
@@ -500,20 +500,20 @@ mod testes {
         fn v7_8_papel_agente_recebe_nao_autorizado() {
             let q: Quadros = Arc::new(Mutex::new(Vec::new()));
             let mut d = ComoAgente(Arc::clone(&q));
-            assert_eq!(crate::cliente::backups(&mut d), Err(ErroApp::NaoAutorizado));
+            assert_eq!(crate::cliente::backups(&mut d), Err(AppError::Unauthorized));
             let r = crate::cliente::restaurar_backup(
                 &mut d,
                 "ward-20261108-143200.ward",
                 &crate::destrave::SenhaMestra::nova(SENHA.into()).unwrap(),
                 &crate::nivel::Pin::novo(PIN.into()).unwrap(),
             );
-            assert_eq!(r, Err(ErroApp::NaoAutorizado));
+            assert_eq!(r, Err(AppError::Unauthorized));
             // Pelo serviço também: a lista já é recusada e o restaurar nem é pedido.
-            let s = Servico::novo(ComoAgente(Arc::clone(&q)), Copiador::novo(SemArea));
-            assert_eq!(s.listar_backups(), Err(ErroApp::NaoAutorizado));
+            let s = Service::new(ComoAgente(Arc::clone(&q)), Copiador::novo(SemArea));
+            assert_eq!(s.list_backups(), Err(AppError::Unauthorized));
             assert_eq!(
-                s.restaurar_backup(pedido("ward-20261108-143200.ward", SENHA, PIN)),
-                Err(ErroApp::NaoAutorizado)
+                s.restore_backup(pedido("ward-20261108-143200.ward", SENHA, PIN)),
+                Err(AppError::Unauthorized)
             );
             assert_eq!(q.lock().unwrap().len(), 4);
         }

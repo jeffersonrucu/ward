@@ -29,7 +29,7 @@ use serde::Serialize;
 use ward_core::display::neutralize;
 use ward_core::protocolo::{Decisao, PedidoDeAprovacao};
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::daemon::{FilaAvisos, MAX_AVISOS};
 
 /// Quanto o pedido espera resposta (S10; o mesmo prazo do `wardd`).
@@ -45,7 +45,7 @@ pub const MAX_PENDENTES: usize = MAX_AVISOS;
 pub const SEPARADOR_CADEIA: char = '\u{2192}';
 
 /// A decisão pelo nome que vem da interface (não confiável).
-pub fn decisao_de_nome(nome: &str) -> Result<Decisao, ErroApp> {
+pub fn decisao_de_nome(nome: &str) -> Result<Decisao, AppError> {
     match nome {
         "negar" => Ok(Decisao::Negar),
         "uma_vez" => Ok(Decisao::PermitirUmaVez),
@@ -53,7 +53,7 @@ pub fn decisao_de_nome(nome: &str) -> Result<Decisao, ErroApp> {
         "sempre" => Ok(Decisao::PermitirSempre),
         // Fase 44c: só a confirmação da origem `http` (sem PIN).
         "confirmar" => Ok(Decisao::Confirmar),
-        _ => Err(ErroApp::PedidoInvalido),
+        _ => Err(AppError::InvalidRequest),
     }
 }
 
@@ -300,7 +300,7 @@ pub fn vigiar(
     fila: Arc<FilaAvisos>,
     aprovacoes: Arc<Aprovacoes>,
     ao_chegar: impl Fn() + Send + 'static,
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     std::thread::Builder::new()
         .name("ward-app-aprovacao".into())
         .spawn(move || {
@@ -312,7 +312,7 @@ pub fn vigiar(
             }
         })
         .map(|_| ())
-        .map_err(|_| ErroApp::ConexaoPerdida)
+        .map_err(|_| AppError::ConnectionLost)
 }
 
 #[cfg(test)]
@@ -347,7 +347,7 @@ mod testes {
         for ruim in ["", "Negar", "permitir", "uma-vez", "sempre ", "livre"] {
             assert_eq!(
                 decisao_de_nome(ruim),
-                Err(ErroApp::PedidoInvalido),
+                Err(AppError::InvalidRequest),
                 "{ruim}"
             );
         }
@@ -491,7 +491,7 @@ mod testes_servico {
     use crate::area_transferencia::{AreaTransferencia, Copiador};
     use crate::daemon_falso::{DaemonFalso, SEGREDOS};
     use crate::nivel::Pin;
-    use crate::servico::Servico;
+    use crate::service::Service;
     use std::sync::Mutex as M;
     use ward_core::entry::{AccessLevel, Environment};
     use ward_core::protocolo;
@@ -499,13 +499,13 @@ mod testes_servico {
 
     struct SemArea;
     impl AreaTransferencia for SemArea {
-        fn escrever(&self, _: &[u8]) -> Result<(), ErroApp> {
-            Err(ErroApp::AreaTransferencia)
+        fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
+            Err(AppError::Clipboard)
         }
-        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
             Ok(None)
         }
-        fn limpar(&self) -> Result<(), ErroApp> {
+        fn limpar(&self) -> Result<(), AppError> {
             Ok(())
         }
     }
@@ -514,7 +514,7 @@ mod testes_servico {
     #[derive(Clone)]
     struct Falso(Arc<M<DaemonFalso>>);
     impl crate::daemon::Daemon for Falso {
-        fn trocar(&mut self, p: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+        fn trocar(&mut self, p: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
             self.0.lock().unwrap().trocar(p)
         }
     }
@@ -525,15 +525,15 @@ mod testes_servico {
         Some(Pin::novo(s.to_owned()).unwrap())
     }
 
-    fn montar(pedidos: &[PedidoDeAprovacao]) -> (Servico<Falso, SemArea>, Falso) {
+    fn montar(pedidos: &[PedidoDeAprovacao]) -> (Service<Falso, SemArea>, Falso) {
         let mut d = DaemonFalso::cheio();
         for p in pedidos {
             d = d.com_aprovacao(p);
         }
         let f = Falso(Arc::new(M::new(d)));
-        let s = Servico::novo(f.clone(), Copiador::novo(SemArea));
+        let s = Service::new(f.clone(), Copiador::novo(SemArea));
         for p in pedidos {
-            s.aprovacoes().chegou(p.clone());
+            s.approvals().chegou(p.clone());
         }
         (s, f)
     }
@@ -545,18 +545,18 @@ mod testes_servico {
     #[test]
     fn negar_sem_pin_e_permitir_uma_vez_com_pin() {
         let (s, f) = montar(&[pedido(1, "\"ls\"", &["claude"]), pedido(2, "\"ls\"", &[])]);
-        let e = s.pedido_de_aprovacao().unwrap().unwrap();
+        let e = s.approval_request().unwrap().unwrap();
         assert_eq!((e.id, e.ambiente, e.operacao), (1, "stage", "executar"));
         assert_eq!(e.entradas[0].tipo, Some("banco"));
-        let r = s.responder_aprovacao(1, "negar", None, false).unwrap();
+        let r = s.answer_approval(1, "negar", None, false).unwrap();
         assert_eq!((r.resultado, r.ha_outro), ("respondido", true));
         assert_eq!(pendentes_no_daemon(&f), [2]);
         let r = s
-            .responder_aprovacao(2, "uma_vez", pin(PIN_CERTO), false)
+            .answer_approval(2, "uma_vez", pin(PIN_CERTO), false)
             .unwrap();
         assert_eq!((r.resultado, r.ha_outro), ("respondido", false));
         assert!(pendentes_no_daemon(&f).is_empty());
-        assert_eq!(s.pedido_de_aprovacao().unwrap(), None);
+        assert_eq!(s.approval_request().unwrap(), None);
     }
 
     /// V5.18 (S9): PIN errado deixa pendente; o 5º trava o cofre, nega e a janela mostra
@@ -566,24 +566,24 @@ mod testes_servico {
         let (s, f) = montar(&[pedido(7, "\"ls\"", &[])]);
         for _ in 0..4 {
             let r = s
-                .responder_aprovacao(7, "uma_vez", pin("000000"), false)
+                .answer_approval(7, "uma_vez", pin("000000"), false)
                 .unwrap();
             assert_eq!(r.resultado, "pin-incorreto");
             assert_eq!(pendentes_no_daemon(&f), [7]);
-            assert_eq!(s.pedido_de_aprovacao().unwrap().unwrap().estado, "pendente");
+            assert_eq!(s.approval_request().unwrap().unwrap().estado, "pendente");
         }
         let r = s
-            .responder_aprovacao(7, "sempre", pin("000000"), false)
+            .answer_approval(7, "sempre", pin("000000"), false)
             .unwrap();
         assert_eq!((r.resultado, r.ha_outro), ("bloqueado", true));
         assert!(pendentes_no_daemon(&f).is_empty(), "o daemon negou");
-        let e = s.pedido_de_aprovacao().unwrap().unwrap();
+        let e = s.approval_request().unwrap().unwrap();
         assert_eq!((e.estado, e.restante), ("bloqueado", 0));
         assert_eq!(
-            s.responder_aprovacao(7, "uma_vez", pin(PIN_CERTO), false),
-            Err(ErroApp::Travado)
+            s.answer_approval(7, "uma_vez", pin(PIN_CERTO), false),
+            Err(AppError::Locked)
         );
-        let r = s.responder_aprovacao(7, "negar", None, false).unwrap();
+        let r = s.answer_approval(7, "negar", None, false).unwrap();
         assert_eq!((r.resultado, r.ha_outro), ("respondido", false));
         // A entrada não virou livre.
         assert_eq!(
@@ -599,26 +599,26 @@ mod testes_servico {
     fn ataque_resposta_forjada_nao_chega_ao_daemon() {
         let (s, f) = montar(&[pedido(3, "\"ls\"", &[])]);
         assert_eq!(
-            s.responder_aprovacao(4, "uma_vez", pin(PIN_CERTO), false),
-            Err(ErroApp::PedidoInvalido)
+            s.answer_approval(4, "uma_vez", pin(PIN_CERTO), false),
+            Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            s.responder_aprovacao(3, "livre", pin(PIN_CERTO), false),
-            Err(ErroApp::PedidoInvalido)
+            s.answer_approval(3, "livre", pin(PIN_CERTO), false),
+            Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            s.responder_aprovacao(3, "negar", pin(PIN_CERTO), false),
-            Err(ErroApp::PedidoInvalido)
+            s.answer_approval(3, "negar", pin(PIN_CERTO), false),
+            Err(AppError::InvalidRequest)
         );
         for d in ["uma_vez", "uma_hora", "sempre"] {
             assert_eq!(
-                s.responder_aprovacao(3, d, None, false),
-                Err(ErroApp::PedidoInvalido),
+                s.answer_approval(3, d, None, false),
+                Err(AppError::InvalidRequest),
                 "{d}"
             );
         }
         assert_eq!(pendentes_no_daemon(&f), [3]);
-        assert_eq!(s.aprovacoes().pendentes(), [3]);
+        assert_eq!(s.approvals().pendentes(), [3]);
     }
 
     /// Fase 44c (D9): a confirmação da origem `http` vai à janela com a origem (escape
@@ -633,28 +633,28 @@ mod testes_servico {
         c.confirmacao = true;
         let n = pedido(12, "\"ls\"", &["claude"]);
         let (s, f) = montar(&[c, n]);
-        let e = s.pedido_de_aprovacao().unwrap().unwrap();
+        let e = s.approval_request().unwrap().unwrap();
         assert_eq!(e.id, 11);
         assert!(e.confirmacao);
         assert_eq!(e.origem, "http://localhost:8081\\u{202E}");
         for d in ["uma_vez", "uma_hora", "sempre"] {
             assert_eq!(
-                s.responder_aprovacao(11, d, pin(PIN_CERTO), false),
-                Err(ErroApp::PedidoInvalido),
+                s.answer_approval(11, d, pin(PIN_CERTO), false),
+                Err(AppError::InvalidRequest),
                 "{d} numa confirmação"
             );
         }
         assert_eq!(
-            s.responder_aprovacao(11, "confirmar", pin(PIN_CERTO), false),
-            Err(ErroApp::PedidoInvalido)
+            s.answer_approval(11, "confirmar", pin(PIN_CERTO), false),
+            Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            s.responder_aprovacao(12, "confirmar", None, false),
-            Err(ErroApp::PedidoInvalido),
+            s.answer_approval(12, "confirmar", None, false),
+            Err(AppError::InvalidRequest),
             "confirmar num pedido com PIN"
         );
         assert_eq!(pendentes_no_daemon(&f), [11, 12]);
-        let r = s.responder_aprovacao(11, "confirmar", None, false).unwrap();
+        let r = s.answer_approval(11, "confirmar", None, false).unwrap();
         assert_eq!(r.resultado, "respondido");
         assert_eq!(pendentes_no_daemon(&f), [12]);
     }
@@ -668,23 +668,23 @@ mod testes_servico {
         o.entrada_oculta = true;
         let n = pedido(22, "\"ls\"", &["claude"]);
         let (s, f) = montar(&[o, n]);
-        let e = s.pedido_de_aprovacao().unwrap().unwrap();
+        let e = s.approval_request().unwrap().unwrap();
         assert_eq!(e.id, 21);
         assert!(e.entrada_oculta);
         for d in ["uma_vez", "uma_hora", "sempre"] {
             assert_eq!(
-                s.responder_aprovacao(21, d, pin(PIN_CERTO), false),
-                Err(ErroApp::PedidoInvalido),
+                s.answer_approval(21, d, pin(PIN_CERTO), false),
+                Err(AppError::InvalidRequest),
                 "{d} sem a caixa"
             );
         }
         assert_eq!(
-            s.responder_aprovacao(21, "negar", None, true),
-            Err(ErroApp::PedidoInvalido)
+            s.answer_approval(21, "negar", None, true),
+            Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            s.responder_aprovacao(22, "uma_vez", pin(PIN_CERTO), true),
-            Err(ErroApp::PedidoInvalido),
+            s.answer_approval(22, "uma_vez", pin(PIN_CERTO), true),
+            Err(AppError::InvalidRequest),
             "caixa num pedido sem o aviso"
         );
         assert_eq!(pendentes_no_daemon(&f), [21, 22]);
@@ -707,11 +707,11 @@ mod testes_servico {
             ))
         ));
         let r = s
-            .responder_aprovacao(21, "uma_vez", pin(PIN_CERTO), true)
+            .answer_approval(21, "uma_vez", pin(PIN_CERTO), true)
             .unwrap();
         assert_eq!(r.resultado, "respondido");
         let r = s
-            .responder_aprovacao(22, "uma_vez", pin(PIN_CERTO), false)
+            .answer_approval(22, "uma_vez", pin(PIN_CERTO), false)
             .unwrap();
         assert_eq!(r.resultado, "respondido");
         assert!(pendentes_no_daemon(&f).is_empty());
@@ -722,7 +722,7 @@ mod testes_servico {
     #[test]
     fn sempre_deixa_livre_e_fechar_nega_todos() {
         let (s, f) = montar(&[pedido(5, "\"ls\"", &[])]);
-        s.responder_aprovacao(5, "sempre", pin(PIN_CERTO), false)
+        s.answer_approval(5, "sempre", pin(PIN_CERTO), false)
             .unwrap();
         assert_eq!(
             f.0.lock().unwrap().nivel_de("acme-pg-aprovacao"),
@@ -732,25 +732,25 @@ mod testes_servico {
         prod.entradas = vec!["acme-pg-prod".into()];
         prod.ambiente = Environment::Prod;
         let (s, f) = montar(&[prod, pedido(8, "\"ls\"", &[])]);
-        assert_eq!(s.pedido_de_aprovacao().unwrap().unwrap().ambiente, "prod");
-        s.negar_aprovacoes_pendentes();
+        assert_eq!(s.approval_request().unwrap().unwrap().ambiente, "prod");
+        s.deny_pending_approvals();
         assert!(pendentes_no_daemon(&f).is_empty());
-        assert_eq!(s.pedido_de_aprovacao().unwrap(), None);
+        assert_eq!(s.approval_request().unwrap(), None);
     }
 
     /// S1, S11: nada do que a janela recebe tem PIN ou segredo do cofre.
     #[test]
     fn ataque_nada_de_segredo_ou_pin_na_janela() {
         let (s, _f) = montar(&[pedido(9, "\"psql\" \"-c\" \"select 1\"", &["claude"])]);
-        let mut textos = vec![serde_json::to_string(&s.pedido_de_aprovacao().unwrap()).unwrap()];
+        let mut textos = vec![serde_json::to_string(&s.approval_request().unwrap()).unwrap()];
         for _ in 0..2 {
             let r = s
-                .responder_aprovacao(9, "uma_hora", pin("000000"), false)
+                .answer_approval(9, "uma_hora", pin("000000"), false)
                 .unwrap();
             textos.push(serde_json::to_string(&r).unwrap());
         }
         let r = s
-            .responder_aprovacao(9, "uma_hora", pin(PIN_CERTO), false)
+            .answer_approval(9, "uma_hora", pin(PIN_CERTO), false)
             .unwrap();
         textos.push(serde_json::to_string(&r).unwrap());
         for t in &textos {

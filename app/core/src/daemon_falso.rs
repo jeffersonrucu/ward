@@ -49,7 +49,7 @@ use ward_core::protocolo::{
 };
 use ward_core::totp::Totp;
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::daemon::Daemon;
 
 // O arquivo do cofre de teste usa a API pública do `ward-core` pelo apelido `wc`.
@@ -932,12 +932,12 @@ impl DaemonFalso {
 }
 
 impl Daemon for DaemonFalso {
-    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
         let resposta = match protocolo::decodificar_pedido(Papel::App, pedido) {
             Ok(p) => self.atender(p),
             Err(e) => Resposta::Erro(e),
         };
-        protocolo::codificar_resposta(Papel::App, &resposta).map_err(|_| ErroApp::RespostaInvalida)
+        protocolo::codificar_resposta(Papel::App, &resposta).map_err(|_| AppError::InvalidResponse)
     }
 }
 

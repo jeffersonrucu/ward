@@ -10,7 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::anexos::EdicaoDosAnexos;
 use ward_app_core::area_transferencia::AreaTransferencia;
 use ward_app_core::comandos::Comando;
@@ -22,7 +22,7 @@ use ward_app_core::gerador::Opcoes;
 use ward_app_core::nivel::Pin;
 use ward_app_core::primeiro_uso::NovoCofre;
 use ward_app_core::restaurar::Restauracao;
-use ward_app_core::servico::Servico;
+use ward_app_core::service::Service;
 use zeroize::Zeroizing;
 
 /// Cabeçalho da requisição (linha + cabeçalhos).
@@ -40,7 +40,7 @@ frame-src 'none'; worker-src 'none'; object-src 'none'; media-src 'none'; manife
 
 /// Ponte ligada a um serviço do app e a um diretório `dist-teste/`.
 pub struct Ponte<D: Daemon, A: AreaTransferencia> {
-    servico: Servico<D, A>,
+    servico: Service<D, A>,
     dist: PathBuf,
     token: Zeroizing<String>,
     host: String,
@@ -50,7 +50,7 @@ pub struct Ponte<D: Daemon, A: AreaTransferencia> {
 
 impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
     /// Abre `127.0.0.1:0` e sorteia o token.
-    pub fn abrir(servico: Servico<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
+    pub fn abrir(servico: Service<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
         let dist = fs::canonicalize(dist)?;
         if !dist.join("index.html").is_file() {
             return Err(io::Error::new(
@@ -184,10 +184,10 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             return Resposta::texto(415);
         }
         let Some(comando) = Comando::de_nome(nome) else {
-            return Resposta::erro(404, ErroApp::PedidoInvalido);
+            return Resposta::erro(404, AppError::InvalidRequest);
         };
         let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.corpo) else {
-            return Resposta::erro(400, ErroApp::PedidoInvalido);
+            return Resposta::erro(400, AppError::InvalidRequest);
         };
         // Fase 35: o PIN sai do mapa (posse, sem cópia) e vira um `Pin` que zera.
         let pin = match comando {
@@ -226,275 +226,277 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
         };
         let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
         let marcado = |chave: &str| args.get(chave).and_then(Value::as_bool);
-        let resultado = match comando {
-            // Fase 31: com o cofre travado, o pedido do agente que espera (só id e os
-            // segundos que faltam).
-            Comando::EstadoDoCofre => self
-                .servico
-                .estado_do_cofre()
-                .map(|e| json!({ "estado": e.codigo(), "pedido": self.servico.info_do_pedido(e) })),
-            Comando::CopiarCampo => match (texto("entrada"), texto("campo")) {
-                (Some(e), Some(c)) => self.servico.copiar_campo(e, c).map(|()| Value::Null),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::ListarCredenciais => self
-                .servico
-                .listar_credenciais()
-                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::DetalheCredencial => match texto("entrada") {
-                Some(e) => self
+        let resultado =
+            match comando {
+                // Fase 31: com o cofre travado, o pedido do agente que espera (só id e os
+                // segundos que faltam).
+                Comando::EstadoDoCofre => self.servico.vault_status().map(
+                    |e| json!({ "estado": e.codigo(), "pedido": self.servico.request_info(e) }),
+                ),
+                Comando::CopiarCampo => match (texto("entrada"), texto("campo")) {
+                    (Some(e), Some(c)) => self.servico.copy_field(e, c).map(|()| Value::Null),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                Comando::ListarCredenciais => self
                     .servico
-                    .detalhe_credencial(e)
-                    .and_then(|d| serde_json::to_value(d).map_err(|_| ErroApp::RespostaInvalida)),
-                None => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::GerarSenha => match (
-                args.get("tamanho").and_then(Value::as_u64),
-                marcado("minusculas"),
-                marcado("maiusculas"),
-                marcado("digitos"),
-                marcado("simbolos"),
-            ) {
-                (
-                    Some(tamanho),
-                    Some(minusculas),
-                    Some(maiusculas),
-                    Some(digitos),
-                    Some(simbolos),
-                ) => self
-                    .servico
-                    .gerar_senha(Opcoes {
-                        tamanho,
-                        minusculas,
-                        maiusculas,
-                        digitos,
-                        simbolos,
-                    })
-                    .map(|g| {
-                        json!({
-                            "tamanho": g.tamanho,
-                            "bits": g.bits,
-                            "forca": g.forca.codigo(),
-                            "simbolos": g.simbolos,
+                    .list_credentials()
+                    .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+                Comando::DetalheCredencial => match texto("entrada") {
+                    Some(e) => self.servico.credential_detail(e).and_then(|d| {
+                        serde_json::to_value(d).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    None => Err(AppError::InvalidRequest),
+                },
+                Comando::GerarSenha => match (
+                    args.get("tamanho").and_then(Value::as_u64),
+                    marcado("minusculas"),
+                    marcado("maiusculas"),
+                    marcado("digitos"),
+                    marcado("simbolos"),
+                ) {
+                    (
+                        Some(tamanho),
+                        Some(minusculas),
+                        Some(maiusculas),
+                        Some(digitos),
+                        Some(simbolos),
+                    ) => self
+                        .servico
+                        .generate_password(Opcoes {
+                            tamanho,
+                            minusculas,
+                            maiusculas,
+                            digitos,
+                            simbolos,
                         })
-                    }),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::CopiarSenhaGerada => self.servico.copiar_senha_gerada().map(|()| Value::Null),
-            // S11: o valor só sai no "revelar", como no app.
-            Comando::RevelarSenhaGerada => self
-                .servico
-                .revelar_senha_gerada()
-                .map(|r| json!({ "valor": r.expor() })),
-            Comando::DescartarSenhaGerada => {
-                self.servico.descartar_senha_gerada().map(|()| Value::Null)
-            }
-            // S11 (D65 b): o valor só no "revelar", como no app.
-            Comando::RevelarCampo => match (texto("entrada"), texto("campo")) {
-                (Some(e), Some(c)) => self
+                        .map(|g| {
+                            json!({
+                                "tamanho": g.tamanho,
+                                "bits": g.bits,
+                                "forca": g.forca.codigo(),
+                                "simbolos": g.simbolos,
+                            })
+                        }),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                Comando::CopiarSenhaGerada => {
+                    self.servico.copy_generated_password().map(|()| Value::Null)
+                }
+                // S11: o valor só sai no "revelar", como no app.
+                Comando::RevelarSenhaGerada => self
                     .servico
-                    .revelar_campo(e, c)
+                    .reveal_generated_password()
                     .map(|r| json!({ "valor": r.expor() })),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::CodigoTotp => match texto("entrada") {
-                Some(e) => self
+                Comando::DescartarSenhaGerada => self
                     .servico
-                    .codigo_totp(e)
-                    .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
-                None => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::CopiarCodigoTotp => match texto("entrada") {
-                Some(e) => self.servico.copiar_codigo_totp(e).map(|()| Value::Null),
-                None => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::UsarSenhaGerada => match texto("campo") {
-                Some(c) => self
-                    .servico
-                    .usar_senha_gerada(c)
-                    .map(|t| json!({ "tamanho": t })),
-                None => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::DescartarFormulario => {
-                self.servico.descartar_formulario();
-                Ok(Value::Null)
-            }
-            Comando::SalvarCredencial => {
-                let anterior = match args.get("anterior") {
-                    None | Some(Value::Null) => Ok(None),
-                    Some(Value::String(a)) => Ok(Some(a.as_str())),
-                    Some(_) => Err(ErroApp::PedidoInvalido),
-                };
-                let formulario = args
-                    .get("formulario")
-                    .cloned()
-                    .map(serde_json::from_value::<Formulario>)
-                    .and_then(Result::ok)
-                    .ok_or(ErroApp::PedidoInvalido);
-                match (anterior, formulario) {
-                    (Ok(a), Ok(f)) => self.servico.salvar_credencial(a, f).and_then(|r| {
-                        serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)
+                    .discard_generated_password()
+                    .map(|()| Value::Null),
+                // S11 (D65 b): o valor só no "revelar", como no app.
+                Comando::RevelarCampo => match (texto("entrada"), texto("campo")) {
+                    (Some(e), Some(c)) => self
+                        .servico
+                        .reveal_field(e, c)
+                        .map(|r| json!({ "valor": r.expor() })),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                Comando::CodigoTotp => match texto("entrada") {
+                    Some(e) => self.servico.totp_code(e).and_then(|c| {
+                        serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)
                     }),
-                    _ => Err(ErroApp::PedidoInvalido),
+                    None => Err(AppError::InvalidRequest),
+                },
+                Comando::CopiarCodigoTotp => match texto("entrada") {
+                    Some(e) => self.servico.copy_totp_code(e).map(|()| Value::Null),
+                    None => Err(AppError::InvalidRequest),
+                },
+                Comando::UsarSenhaGerada => match texto("campo") {
+                    Some(c) => self
+                        .servico
+                        .use_generated_password(c)
+                        .map(|t| json!({ "tamanho": t })),
+                    None => Err(AppError::InvalidRequest),
+                },
+                Comando::DescartarFormulario => {
+                    self.servico.discard_form();
+                    Ok(Value::Null)
                 }
-            }
-            Comando::MudarNivel => match (texto("entrada"), texto("nivel"), pin) {
-                (Some(e), Some(n), Some(Ok(pin))) => self
-                    .servico
-                    .mudar_nivel(e, n, pin)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            // Fase 34: o arquivo é escolhido e lido no lado Rust; volta id, nome e
-            // tamanho, ou o aviso (S11, V5.12).
-            // Fase 39b: na edição, `edicao { entrada, mantidos }` (os anexos guardados que
-            // continuam contam nos limites).
-            Comando::EscolherAnexo => {
-                let edicao = match args.get("edicao") {
-                    None | Some(Value::Null) => Ok(None),
-                    Some(v) => serde_json::from_value::<EdicaoDosAnexos>(v.clone())
-                        .map(Some)
-                        .map_err(|_| ErroApp::PedidoInvalido),
-                };
-                edicao
-                    .and_then(|ed| self.servico.escolher_anexo(ed.as_ref()))
-                    .and_then(|e| serde_json::to_value(e).map_err(|_| ErroApp::RespostaInvalida))
-            }
-            Comando::RemoverAnexo => match args.get("id").and_then(Value::as_u64) {
-                Some(id) => self.servico.remover_anexo(id).map(|()| Value::Null),
-                None => Err(ErroApp::PedidoInvalido),
-            },
-            // Fase 53a: "Carregar de arquivo" da chave privada; o arquivo é escolhido,
-            // lido e conferido no lado Rust; volta só o tamanho, ou o aviso (S2, S11).
-            Comando::CarregarChave => match texto("campo") {
-                Some(c) if args.len() == 1 => self
-                    .servico
-                    .carregar_chave(c)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            // D3: o token não volta à interface.
-            Comando::Conectar => match texto("entrada") {
-                Some(e) => self.servico.conectar(e).map(|()| Value::Null),
-                None => Err(ErroApp::PedidoInvalido),
-            },
-            // Fase 31: a resposta não traz a senha nem quantas tentativas houve.
-            Comando::Destravar => match senha {
-                Some(Ok(senha)) if args.is_empty() => {
-                    self.servico.destravar(senha).map(|()| Value::Null)
+                Comando::SalvarCredencial => {
+                    let anterior = match args.get("anterior") {
+                        None | Some(Value::Null) => Ok(None),
+                        Some(Value::String(a)) => Ok(Some(a.as_str())),
+                        Some(_) => Err(AppError::InvalidRequest),
+                    };
+                    let formulario = args
+                        .get("formulario")
+                        .cloned()
+                        .map(serde_json::from_value::<Formulario>)
+                        .and_then(Result::ok)
+                        .ok_or(AppError::InvalidRequest);
+                    match (anterior, formulario) {
+                        (Ok(a), Ok(f)) => self.servico.save_credential(a, f).and_then(|r| {
+                            serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                        }),
+                        _ => Err(AppError::InvalidRequest),
+                    }
                 }
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            // Fase 39: "Travar agora"; limpa a área e o formulário antes.
-            Comando::Travar if args.is_empty() => self.servico.travar().map(|()| Value::Null),
-            Comando::Travar => Err(ErroApp::PedidoInvalido),
-            // O canal do Tauri não existe na ponte: a tela de teste consulta o estado
-            // (`ponte-teste.js` › `ouvirAvisos`).
-            Comando::OuvirAvisos => Err(ErroApp::PedidoInvalido),
-            // Fase 36: a janela de aprovação. Na ponte não há janelas separadas (a ACL por
-            // janela é do Tauri); o serviço confere id, decisão e PIN do mesmo jeito.
-            Comando::PedidoDeAprovacao => self
-                .servico
-                .pedido_de_aprovacao()
-                .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-            // Fase 54b: `ciente` (a caixa da entrada padrão) só como `true`/`false`.
-            Comando::ResponderAprovacao => match (
-                args.get("id").and_then(Value::as_u64),
-                texto("decisao"),
-                pin,
-                args.get("ciente").map(Value::as_bool),
-            ) {
-                (Some(id), Some(d), None, None | Some(Some(false))) => {
-                    self.servico.responder_aprovacao(id, d, None, false)
-                }
-                (Some(id), Some(d), Some(Ok(p)), c @ (None | Some(Some(_)))) => self
-                    .servico
-                    .responder_aprovacao(id, d, Some(p), c == Some(Some(true))),
-                _ => Err(ErroApp::PedidoInvalido),
-            }
-            .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-            // Fase 30: senha mestra e PIN conferidos no lado Rust; a resposta não traz
-            // valor. `dados` sai do objeto por `remove`, sem cópia do texto.
-            Comando::CriarCofre => match args
-                .remove("dados")
-                .map(serde_json::from_value::<NovoCofre>)
-            {
-                Some(Ok(n)) => self
-                    .servico
-                    .criar_cofre(n)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            // Fase 38 (V5.22): nenhuma resposta traz PIN, senha ou hash.
-            Comando::Configuracoes if args.is_empty() => self
-                .servico
-                .configuracoes()
-                .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::Configuracoes => Err(ErroApp::PedidoInvalido),
-            Comando::TrocarPin => match troca_pin {
-                Some(Ok(t)) if args.is_empty() => self
-                    .servico
-                    .trocar_pin(t)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::TrocarSenhaMestra => match troca_senha {
-                Some(Ok(t)) if args.is_empty() => self
-                    .servico
-                    .trocar_senha_mestra(t)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::DefinirTempoTrava => match args.get("minutos").and_then(Value::as_u64) {
-                Some(m) if args.len() == 1 => self
-                    .servico
-                    .definir_tempo_trava(m)
-                    .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            // Fase 48 (V7.9): sem caminho de montagem; o UUID é conferido no serviço
-            // (formato e lista do daemon).
-            Comando::BackupExterno if args.is_empty() => self
-                .servico
-                .backup_externo()
-                .and_then(|b| serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::ListarPendrives if args.is_empty() => self
-                .servico
-                .listar_pendrives()
-                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::BackupExterno | Comando::ListarPendrives => Err(ErroApp::PedidoInvalido),
-            // Fase 47 (V7.7): só nome e instante das versões; a resposta do restaurar só
-            // diz restaurado e quantas entradas. A versão é conferida no serviço
-            // (formato e lista do daemon).
-            Comando::ListarBackups if args.is_empty() => self
-                .servico
-                .listar_backups()
-                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::ListarBackups => Err(ErroApp::PedidoInvalido),
-            Comando::RestaurarBackup => match restauracao {
-                Some(Ok(r)) if args.is_empty() => self
-                    .servico
-                    .restaurar_backup(r)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
-            },
-            Comando::DefinirBackupExterno => {
-                let uuid = match args.get("uuid") {
-                    None | Some(Value::Null) => Ok(None),
-                    Some(Value::String(u)) => Ok(Some(u.as_str())),
-                    Some(_) => Err(ErroApp::PedidoInvalido),
-                };
-                let so_conhecidos = args.keys().all(|k| k == "ligado" || k == "uuid");
-                match (marcado("ligado"), uuid) {
-                    (Some(l), Ok(u)) if so_conhecidos => {
-                        self.servico.definir_backup_externo(l, u).and_then(|b| {
-                            serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)
+                Comando::MudarNivel => match (texto("entrada"), texto("nivel"), pin) {
+                    (Some(e), Some(n), Some(Ok(pin))) => {
+                        self.servico.set_level(e, n, pin).and_then(|r| {
+                            serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
                         })
                     }
-                    _ => Err(ErroApp::PedidoInvalido),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                // Fase 34: o arquivo é escolhido e lido no lado Rust; volta id, nome e
+                // tamanho, ou o aviso (S11, V5.12).
+                // Fase 39b: na edição, `edicao { entrada, mantidos }` (os anexos guardados que
+                // continuam contam nos limites).
+                Comando::EscolherAnexo => {
+                    let edicao = match args.get("edicao") {
+                        None | Some(Value::Null) => Ok(None),
+                        Some(v) => serde_json::from_value::<EdicaoDosAnexos>(v.clone())
+                            .map(Some)
+                            .map_err(|_| AppError::InvalidRequest),
+                    };
+                    edicao
+                        .and_then(|ed| self.servico.choose_attachment(ed.as_ref()))
+                        .and_then(|e| {
+                            serde_json::to_value(e).map_err(|_| AppError::InvalidResponse)
+                        })
                 }
-            }
-        };
+                Comando::RemoverAnexo => match args.get("id").and_then(Value::as_u64) {
+                    Some(id) => self.servico.remove_attachment(id).map(|()| Value::Null),
+                    None => Err(AppError::InvalidRequest),
+                },
+                // Fase 53a: "Carregar de arquivo" da chave privada; o arquivo é escolhido,
+                // lido e conferido no lado Rust; volta só o tamanho, ou o aviso (S2, S11).
+                Comando::CarregarChave => match texto("campo") {
+                    Some(c) if args.len() == 1 => self.servico.load_key(c).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                // D3: o token não volta à interface.
+                Comando::Conectar => match texto("entrada") {
+                    Some(e) => self.servico.connect(e).map(|()| Value::Null),
+                    None => Err(AppError::InvalidRequest),
+                },
+                // Fase 31: a resposta não traz a senha nem quantas tentativas houve.
+                Comando::Destravar => match senha {
+                    Some(Ok(senha)) if args.is_empty() => {
+                        self.servico.unlock(senha).map(|()| Value::Null)
+                    }
+                    _ => Err(AppError::InvalidRequest),
+                },
+                // Fase 39: "Travar agora"; limpa a área e o formulário antes.
+                Comando::Travar if args.is_empty() => self.servico.lock().map(|()| Value::Null),
+                Comando::Travar => Err(AppError::InvalidRequest),
+                // O canal do Tauri não existe na ponte: a tela de teste consulta o estado
+                // (`ponte-teste.js` › `ouvirAvisos`).
+                Comando::OuvirAvisos => Err(AppError::InvalidRequest),
+                // Fase 36: a janela de aprovação. Na ponte não há janelas separadas (a ACL por
+                // janela é do Tauri); o serviço confere id, decisão e PIN do mesmo jeito.
+                Comando::PedidoDeAprovacao => self
+                    .servico
+                    .approval_request()
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                // Fase 54b: `ciente` (a caixa da entrada padrão) só como `true`/`false`.
+                Comando::ResponderAprovacao => match (
+                    args.get("id").and_then(Value::as_u64),
+                    texto("decisao"),
+                    pin,
+                    args.get("ciente").map(Value::as_bool),
+                ) {
+                    (Some(id), Some(d), None, None | Some(Some(false))) => {
+                        self.servico.answer_approval(id, d, None, false)
+                    }
+                    (Some(id), Some(d), Some(Ok(p)), c @ (None | Some(Some(_)))) => self
+                        .servico
+                        .answer_approval(id, d, Some(p), c == Some(Some(true))),
+                    _ => Err(AppError::InvalidRequest),
+                }
+                .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                // Fase 30: senha mestra e PIN conferidos no lado Rust; a resposta não traz
+                // valor. `dados` sai do objeto por `remove`, sem cópia do texto.
+                Comando::CriarCofre => match args
+                    .remove("dados")
+                    .map(serde_json::from_value::<NovoCofre>)
+                {
+                    Some(Ok(n)) => self.servico.create_vault(n).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                // Fase 38 (V5.22): nenhuma resposta traz PIN, senha ou hash.
+                Comando::Configuracoes if args.is_empty() => self
+                    .servico
+                    .settings()
+                    .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
+                Comando::Configuracoes => Err(AppError::InvalidRequest),
+                Comando::TrocarPin => match troca_pin {
+                    Some(Ok(t)) if args.is_empty() => self.servico.change_pin(t).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                Comando::TrocarSenhaMestra => match troca_senha {
+                    Some(Ok(t)) if args.is_empty() => {
+                        self.servico.change_master_password(t).and_then(|r| {
+                            serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                        })
+                    }
+                    _ => Err(AppError::InvalidRequest),
+                },
+                Comando::DefinirTempoTrava => match args.get("minutos").and_then(Value::as_u64) {
+                    Some(m) if args.len() == 1 => self.servico.set_lock_timeout(m).and_then(|c| {
+                        serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    _ => Err(AppError::InvalidRequest),
+                },
+                // Fase 48 (V7.9): sem caminho de montagem; o UUID é conferido no serviço
+                // (formato e lista do daemon).
+                Comando::BackupExterno if args.is_empty() => self
+                    .servico
+                    .external_backup()
+                    .and_then(|b| serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)),
+                Comando::ListarPendrives if args.is_empty() => self
+                    .servico
+                    .list_usb_drives()
+                    .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+                Comando::BackupExterno | Comando::ListarPendrives => Err(AppError::InvalidRequest),
+                // Fase 47 (V7.7): só nome e instante das versões; a resposta do restaurar só
+                // diz restaurado e quantas entradas. A versão é conferida no serviço
+                // (formato e lista do daemon).
+                Comando::ListarBackups if args.is_empty() => self
+                    .servico
+                    .list_backups()
+                    .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+                Comando::ListarBackups => Err(AppError::InvalidRequest),
+                Comando::RestaurarBackup => match restauracao {
+                    Some(Ok(r)) if args.is_empty() => {
+                        self.servico.restore_backup(r).and_then(|r| {
+                            serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                        })
+                    }
+                    _ => Err(AppError::InvalidRequest),
+                },
+                Comando::DefinirBackupExterno => {
+                    let uuid = match args.get("uuid") {
+                        None | Some(Value::Null) => Ok(None),
+                        Some(Value::String(u)) => Ok(Some(u.as_str())),
+                        Some(_) => Err(AppError::InvalidRequest),
+                    };
+                    let so_conhecidos = args.keys().all(|k| k == "ligado" || k == "uuid");
+                    match (marcado("ligado"), uuid) {
+                        (Some(l), Ok(u)) if so_conhecidos => {
+                            self.servico.set_external_backup(l, u).and_then(|b| {
+                                serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)
+                            })
+                        }
+                        _ => Err(AppError::InvalidRequest),
+                    }
+                }
+            };
         match resultado {
             Ok(valor) => Resposta::json(200, &json!({ "ok": true, "valor": valor })),
             Err(e) => Resposta::erro(200, e),
@@ -667,10 +669,10 @@ impl Resposta {
         }
     }
 
-    fn erro(status: u16, e: ErroApp) -> Resposta {
+    fn erro(status: u16, e: AppError) -> Resposta {
         Resposta::json(
             status,
-            &json!({ "ok": false, "codigo": e.codigo(), "mensagem": e.to_string() }),
+            &json!({ "ok": false, "codigo": e.code(), "mensagem": e.to_string() }),
         )
     }
 

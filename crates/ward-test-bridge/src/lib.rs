@@ -9,7 +9,7 @@
 //! - confere `Host` (contra DNS rebinding) e `Origin` (contra outra página do Chrome);
 //! - serve `dist-teste/` (só `index.html` e `assets/<nome>`) com a mesma CSP do app;
 //! - expõe em `POST /ponte/<comando>` só os comandos de
-//!   `ward_app_core::comandos::COMANDOS`, pelo mesmo `Servico` do Tauri: nenhuma
+//!   `ward_app_core::comandos::COMANDOS`, pelo mesmo `Service` do Tauri: nenhuma
 //!   resposta leva segredo (o "copiar" é resolvido no Rust, D4).
 
 #![forbid(unsafe_code)]

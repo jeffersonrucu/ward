@@ -11,7 +11,7 @@
 
 use ward_core::limits;
 
-use crate::ErroApp;
+use crate::AppError;
 
 /// `estado_do_cofre`: travado, destravado ou sem cofre. Sem argumento.
 pub const ESTADO_DO_COFRE: &str = "estado_do_cofre";
@@ -295,9 +295,9 @@ pub struct Referencia {
 }
 
 impl Referencia {
-    pub fn nova(entrada: &str, campo: &str) -> Result<Referencia, ErroApp> {
+    pub fn nova(entrada: &str, campo: &str) -> Result<Referencia, AppError> {
         if !nome_valido(entrada, limits::MAX_NAME) || !nome_valido(campo, limits::MAX_EXTRA_NAME) {
-            return Err(ErroApp::PedidoInvalido);
+            return Err(AppError::InvalidRequest);
         }
         Ok(Referencia {
             entrada: entrada.to_owned(),
@@ -316,11 +316,11 @@ impl Referencia {
 
 /// Nome de entrada vindo da interface (não confiável), com a mesma regra da
 /// [`Referencia`].
-pub fn validar_nome_entrada(nome: &str) -> Result<(), ErroApp> {
+pub fn validar_nome_entrada(nome: &str) -> Result<(), AppError> {
     if nome_valido(nome, limits::MAX_NAME) {
         Ok(())
     } else {
-        Err(ErroApp::PedidoInvalido)
+        Err(AppError::InvalidRequest)
     }
 }
 
@@ -435,7 +435,7 @@ mod testes {
         ] {
             assert_eq!(
                 Referencia::nova(e, c),
-                Err(ErroApp::PedidoInvalido),
+                Err(AppError::InvalidRequest),
                 "{e:?} {c:?}"
             );
         }

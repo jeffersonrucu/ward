@@ -247,3 +247,8 @@ crates/ward-core/src/entry/validation.rs grupo 53 delivered variable WARD_GRUPO
 crates/ward-core/src/entry/validation.rs ambiente 53 delivered variable WARD_AMBIENTE
 crates/ward-core/src/entry/validation.rs arquivo 53 delivered variable prefix WARD_ARQUIVO_
 crates/ward-core/src/entry/validation.rs chave 53 delivered variable WARD_ARQUIVO_CHAVE
+
+# Phase 30 (app/core service): wire values quoted in test comments.
+app/core/src/service.rs livre 48 v4 vault name of AccessLevel::Free
+app/core/src/service.rs carregada 54 "loaded" value of a form secret sent by the webview
+app/core/src/service.rs chave 53 reserved attachment name CHAVE (delivered variable WARD_ARQUIVO_CHAVE)

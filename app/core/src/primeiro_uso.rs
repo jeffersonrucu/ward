@@ -246,24 +246,24 @@ mod testes {
         use zeroize::Zeroizing;
 
         use super::*;
-        use crate::ErroApp;
+        use crate::AppError;
         use crate::area_transferencia::{AreaTransferencia, Copiador};
         use crate::cliente;
         use crate::daemon::{Daemon, EstadoCofre};
         use crate::daemon_falso::DaemonFalso;
-        use crate::servico::Servico;
+        use crate::service::Service;
 
         type Quadros = Arc<Mutex<Vec<Vec<u8>>>>;
 
         struct SemArea;
         impl AreaTransferencia for SemArea {
-            fn escrever(&self, _: &[u8]) -> Result<(), ErroApp> {
+            fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
                 Ok(())
             }
-            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
                 Ok(None)
             }
-            fn limpar(&self) -> Result<(), ErroApp> {
+            fn limpar(&self) -> Result<(), AppError> {
                 Ok(())
             }
         }
@@ -271,28 +271,28 @@ mod testes {
         /// Daemon falso que guarda cada quadro recebido (o "daemon" é quem olha).
         struct Espiao(DaemonFalso, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
                 self.0.trocar(pedido)
             }
         }
 
-        fn servico() -> (Servico<Espiao, SemArea>, Quadros) {
+        fn servico() -> (Service<Espiao, SemArea>, Quadros) {
             let quadros = Arc::new(Mutex::new(Vec::new()));
             let d = Espiao(DaemonFalso::sem_cofre(), Arc::clone(&quadros));
-            (Servico::novo(d, Copiador::novo(SemArea)), quadros)
+            (Service::new(d, Copiador::novo(SemArea)), quadros)
         }
 
         #[test]
         fn cria_o_cofre_e_fica_destravado() {
             let (s, quadros) = servico();
-            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::SemCofre));
+            assert_eq!(s.vault_status(), Ok(EstadoCofre::SemCofre));
             let r = s
-                .criar_cofre(novo(SENHA, SENHA, "135790", "135790"))
+                .create_vault(novo(SENHA, SENHA, "135790", "135790"))
                 .unwrap();
-            assert!(r.criado && r.erros.is_empty());
-            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Destravado));
-            assert!(s.listar_credenciais().unwrap().is_empty());
+            assert!(r.created && r.errors.is_empty());
+            assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+            assert!(s.list_credentials().unwrap().is_empty());
             // Só senha e PIN vão ao daemon; as confirmações ficam no app.
             let q = quadros.lock().unwrap();
             let criar: Vec<_> = q
@@ -323,37 +323,37 @@ mod testes {
                 novo(SENHA, "outra-senha-qualquer", "135790", "135790"),
                 novo("curta", "curta", "135790", "135790"),
             ] {
-                let r = s.criar_cofre(n).unwrap();
-                assert!(!r.criado && !r.erros.is_empty());
+                let r = s.create_vault(n).unwrap();
+                assert!(!r.created && !r.errors.is_empty());
             }
             assert!(quadros.lock().unwrap().is_empty());
-            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::SemCofre));
+            assert_eq!(s.vault_status(), Ok(EstadoCofre::SemCofre));
         }
 
         #[test]
         fn ataque_criar_por_cima_de_cofre_existente_e_recusado() {
             let (s, _) = servico();
             assert!(
-                s.criar_cofre(novo(SENHA, SENHA, "135790", "135790"))
+                s.create_vault(novo(SENHA, SENHA, "135790", "135790"))
                     .unwrap()
-                    .criado
+                    .created
             );
             assert_eq!(
-                s.criar_cofre(novo(SENHA, SENHA, "2468", "2468")),
-                Err(ErroApp::CofreJaExiste)
+                s.create_vault(novo(SENHA, SENHA, "2468", "2468")),
+                Err(AppError::VaultAlreadyExists)
             );
-            let cheio = Servico::novo(DaemonFalso::cheio(), Copiador::novo(SemArea));
+            let cheio = Service::new(DaemonFalso::cheio(), Copiador::novo(SemArea));
             assert_eq!(
-                cheio.criar_cofre(novo(SENHA, SENHA, "2468", "2468")),
-                Err(ErroApp::CofreJaExiste)
+                cheio.create_vault(novo(SENHA, SENHA, "2468", "2468")),
+                Err(AppError::VaultAlreadyExists)
             );
         }
 
         #[test]
         fn sem_cofre_o_resto_e_recusado() {
             let (s, _) = servico();
-            assert!(s.listar_credenciais().is_err());
-            assert!(s.detalhe_credencial("acme-pg-dev").is_err());
+            assert!(s.list_credentials().is_err());
+            assert!(s.credential_detail("acme-pg-dev").is_err());
         }
     }
 }

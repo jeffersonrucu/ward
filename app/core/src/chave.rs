@@ -5,7 +5,7 @@
 //! interface só pede `carregar_chave { campo }`; quem escolhe o arquivo é o mesmo
 //! [`Seletor`](crate::anexos::Seletor) dos anexos (no app, o diálogo do GTK; na ponte de
 //! teste, a pasta fixa da linha de comando). O arquivo é lido aqui, conferido e guardado
-//! num [`Segredo`] (zera ao sair) até salvar, cancelar ou sair do formulário; o salvar o
+//! num [`Secret`] (zera ao sair) até salvar, cancelar ou sair do formulário; o salvar o
 //! põe no rascunho (`"carregada"`). A resposta traz só o tamanho, ou um aviso fixo.
 //!
 //! Recusas (nenhuma guarda nada nem diz o caminho ou o erro do sistema, S13):
@@ -29,7 +29,7 @@ use std::path::Path;
 use serde::Serialize;
 use ward_core::limits;
 
-use crate::segredo::Segredo;
+use crate::secret::Secret;
 
 /// Campos do formulário que aceitam "Carregar de arquivo".
 pub const CAMPOS_CARREGAVEIS: &[&str] = &["chave_privada"];
@@ -75,7 +75,7 @@ pub enum Carregamento {
 }
 
 /// Lê e confere o arquivo da chave. `Err` traz o aviso fixo.
-pub fn ler_chave(caminho: &Path) -> Result<Segredo, String> {
+pub fn ler_chave(caminho: &Path) -> Result<Secret, String> {
     let arquivo = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY)
@@ -98,7 +98,7 @@ pub fn ler_chave(caminho: &Path) -> Result<Segredo, String> {
     if !e_chave_privada(&conteudo) {
         return Err(AVISO_NAO_E_CHAVE.to_owned());
     }
-    Ok(Segredo::novo(core::mem::take(&mut *conteudo)))
+    Ok(Secret::new(core::mem::take(&mut *conteudo)))
 }
 
 type Lido = zeroize::Zeroizing<Vec<u8>>;
@@ -107,7 +107,7 @@ type Lido = zeroize::Zeroizing<Vec<u8>>;
 /// num buffer fixo de `MAX_CHAVE + 1`, alocado uma vez e zerado ao sair (Fase 53d): a
 /// leitura nunca realoca, então nenhum pedaço da chave fica num bloco antigo do heap sem
 /// zerar. O `truncate` só muda o tamanho; a capacidade (e o bloco) continuam os mesmos e
-/// o `Segredo` toma posse dele sem cópia.
+/// o `Secret` toma posse dele sem cópia.
 fn ler_ate(mut arquivo: File) -> Result<Lido, String> {
     let mut buf = zeroize::Zeroizing::new(vec![0u8; MAX_CHAVE + 1]);
     let mut lidos = 0usize;
@@ -277,7 +277,7 @@ mod testes {
         let p = escrever(&d, "deploy_ed25519", k.as_bytes());
         let s = ler_chave(&p).unwrap();
         assert_eq!(s.len(), k.len());
-        assert_eq!(s.expor(), k.as_bytes());
+        assert_eq!(s.expose(), k.as_bytes());
         assert!(!format!("{s:?}").contains("QUFB"));
         let resposta = serde_json::to_string(&Carregamento::Carregada {
             tamanho: s.len() as u64,
@@ -291,7 +291,7 @@ mod testes {
     }
 
     /// Fase 53d: a leitura usa um buffer fixo de `MAX_CHAVE + 1` e não realoca; o
-    /// `Segredo` fica com o mesmo bloco (capacidade igual), pequeno, no limite ou acima.
+    /// `Secret` fica com o mesmo bloco (capacidade igual), pequeno, no limite ou acima.
     #[test]
     fn ataque_leitura_nao_realoca_o_buffer_da_chave() {
         let d = pasta("buffer");
@@ -301,11 +301,11 @@ mod testes {
         assert_eq!(lido.len(), k.len());
         assert_eq!(lido.capacity(), MAX_CHAVE + 1);
         let ptr = lido.as_ptr();
-        let s = Segredo::novo({
+        let s = Secret::new({
             let mut l = lido;
             core::mem::take(&mut *l)
         });
-        assert_eq!(s.expor().as_ptr(), ptr, "o Segredo fica com o mesmo bloco");
+        assert_eq!(s.expose().as_ptr(), ptr, "o Segredo fica com o mesmo bloco");
 
         let no_limite = escrever(&d, "limite", &vec![b'Q'; MAX_CHAVE]);
         let lido = ler_ate(File::open(&no_limite).unwrap()).unwrap();

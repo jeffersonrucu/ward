@@ -2263,6 +2263,30 @@ e `minutos_validos` do `app/core/configuracoes.rs` (Fase 33) são outros e não 
 Nos testes de `entry`: `rascunho` → `draft`, `sem` → `without`, `NaoClone` → `NotClone`,
 `zera_ao_sair` → `zeroes_on_drop`.
 
+Fase 30 (`app/core`: `service`, `secret`, `error`, `lib`): módulos `servico` → `service`,
+`segredo` → `secret`, `erro` → `error`. `Servico` → `Service` (`novo` → `new`; os métodos
+seguem os comandos da seção 13: `estado_do_cofre` → `vault_status`, `listar_credenciais`
+→ `list_credentials`, `mudar_nivel` → `set_level`, `escolher_anexo` → `choose_attachment`
+etc.; os outros: `pedido_de_destrave` → `unlock_request`, `info_do_pedido` →
+`request_info`, `aprovacoes` → `approvals`, `negar_aprovacoes_pendentes` →
+`deny_pending_approvals`, `com_seletor`/`com_terminal` → `with_picker`/`with_terminal`,
+`estado_da_bandeja` → `tray_state`, `na_passagem_da_bandeja` → `on_tray_transition`,
+`ver_passagem` → `check_transition`, `ao_sair` → `on_exit`); `ResultadoSalvar { salvo,
+erros }` → `SaveResult { saved, errors }`, `ResultadoCriar { criado, erros }` →
+`CreateResult { created, errors }`, `CodigoTotp { codigo, restante }` (o do `service`) →
+`TotpCode { code, remaining }`, com `#[serde(rename = "<antigo>")]` até a Fase 54;
+`FontesDoServico` → `ServiceSources`, `CAMPOS_GERAVEIS` → `GENERATABLE_FIELDS`. O
+`Segredo` do `app/core` → `Secret` (`novo`/`expor` → `new`/`expose`; `Debug`
+`"Secret(••••)"`). `ErroApp` → `AppError` (`codigo()` → `code()`; os códigos do fio ficam)
+com os variantes pelos códigos da seção 13: `DaemonUnavailable`, `DaemonUntrusted`,
+`ConnectionLost`, `InvalidRequest`, `Locked`, `Clipboard`, `EntryNotFound`,
+`FieldNotFound`, `Unauthorized`, `Refused`, `InvalidResponse`, `RandomUnavailable`,
+`NoGeneratedPassword`, `WrongPin`, `PickerUnavailable`, `TerminalUnavailable`,
+`NotAServer`, `VaultAlreadyExists`, `VaultNotWritten`, `WrongPassword`, `VaultRollback`,
+`UsbDrivesUnavailable`, `UsbDriveNotConnected`, `BackupNotFound`, `BackupUnavailable`,
+`VaultChanged`. Os homônimos `cliente::CodigoTotp`, `Comando::CodigoTotp` e
+`Resposta::CodigoTotp` são outros e não mudaram.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

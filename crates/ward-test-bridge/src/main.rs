@@ -29,7 +29,7 @@ use ward_app_core::area_transferencia::Copiador;
 
 use ward_app_core::daemon::{Aviso, Daemon, DaemonSocket, FilaAvisos};
 use ward_app_core::daemon_falso::{AprovacaoSimulada, DaemonFalso, aprovacoes_simuladas};
-use ward_app_core::servico::Servico;
+use ward_app_core::service::Service;
 use ward_app_core::terminal::Terminal;
 use ward_app_core::{aprovacao, destrave};
 use ward_test_bridge::area_wl::WlCopy;
@@ -244,9 +244,9 @@ fn servir_com<D: Daemon + 'static>(
     let dist: PathBuf = dist.to_path_buf();
     let servico = match WlCopy::novo() {
         Ok(a) => {
-            let s = Servico::novo(daemon, Copiador::novo(a)).com_terminal(terminal);
+            let s = Service::new(daemon, Copiador::novo(a)).with_terminal(terminal);
             match anexos {
-                Some(p) => s.com_seletor(SeletorDePasta(p)),
+                Some(p) => s.with_picker(SeletorDePasta(p)),
                 None => s,
             }
         }
@@ -256,15 +256,15 @@ fn servir_com<D: Daemon + 'static>(
         }
     };
     for (p, decorrido) in aprovacoes {
-        servico.aprovacoes().chegou_ha(p.clone(), *decorrido);
+        servico.approvals().chegou_ha(p.clone(), *decorrido);
     }
     // Fase 31 (D65 a): os `pedido_de_destrave` da conexão marcam o pedido que a tela lê
     // no `estado_do_cofre` (a ponte não tem o canal do Tauri; a tela consulta).
     // Fase 36: os `pedido_de_aprovacao` da mesma fila vão para a janela de aprovação
     // (`&tela=aprovacao`), que consulta `pedido_de_aprovacao` a cada segundo.
     if let Some(fila) = avisos
-        && (aprovacao::vigiar(Arc::clone(&fila), servico.aprovacoes(), || {}).is_err()
-            || destrave::vigiar(fila, servico.pedido_de_destrave(), || {}).is_err())
+        && (aprovacao::vigiar(Arc::clone(&fila), servico.approvals(), || {}).is_err()
+            || destrave::vigiar(fila, servico.unlock_request(), || {}).is_err())
     {
         eprintln!("ward-ponte-teste: não foi possível vigiar os avisos do daemon");
         return ExitCode::FAILURE;
