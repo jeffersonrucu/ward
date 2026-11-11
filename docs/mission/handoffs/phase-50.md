@@ -178,8 +178,8 @@
   podem ter o mesmo efeito nos testes que montam JSON com `"password":"<base64>"`.
   Decisão do orchestrator se prefere outro caminho.
 - **Achado de gitleaks pré-existente**: `crates/ward-core/src/backup/tests.rs:369`
-  (`new_password = "falso-mestra-ward-03"`) é acusado pela `generic-api-key` no `dir` com
-  `.gitleaks.toml`. O valor não está na allowlist de D15 e o arquivo não é desta fase.
+  (a nova senha mestra do teste, valor falso fora de D15; o valor saiu deste handoff na
+  Fase 54a) é acusado pela `generic-api-key` no `dir` com `.gitleaks.toml`. O valor não está na allowlist de D15 e o arquivo não é desta fase.
   Fica para o `make check` da Fase 61 confirmar.
 - `ambiente` → `environment` também no `run`, onde é a lista de variáveis da CLI e não o
   ambiente da entrada. Segui o glossário (troca 1:1). Se o planner preferir `env`, muda

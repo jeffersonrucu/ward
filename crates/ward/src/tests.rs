@@ -4,6 +4,14 @@
 //! `/run/user/<uid>/` (the path does not fit in `target/tmp`), removed at the end. Never
 //! the real vault nor the test daemon.
 
+// m2:Phase 54a: without `test-mode` the binaries this test runs are the release ones,
+// which only know the system socket (`/run/ward/<uid>/wardd.sock`, the installed
+// daemon). The build fails, loudly, instead of a test reaching it.
+#[cfg(not(feature = "test-mode"))]
+compile_error!(
+    "este teste exige a feature test-mode (cargo test --all-features ou --features test-mode): sem ela os binários do teste são os de release, que só conhecem o socket do sistema"
+);
+
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -24,6 +32,14 @@ use crate::commands::{EXIT_ERROR, EXIT_OK, EXIT_USAGE, Env};
 const PASSWORD: &str = "falso-mestra-ward-01";
 
 static N: AtomicU32 = AtomicU32::new(0);
+
+/// m2:Phase 54a: the release rules (root's folder, peer uid 0) on a path that never
+/// exists (`/run` is root's, the folder below it is not there), in place of
+/// `ExpectedServer::system()`: a test that connects by mistake gets "daemon not
+/// running", never the installed daemon.
+fn unreachable_server() -> ExpectedServer {
+    ExpectedServer::system_at(PathBuf::from("/run/ward-nao-existe-falso/1/wardd.sock"))
+}
 
 /// 0700 folder of this test alone, removed on `Drop`.
 struct TestDir(PathBuf);
@@ -209,7 +225,7 @@ impl Env for TestEnv {
 fn d52_run_too_large_refused_before_connecting() {
     use crate::commands::{EXIT_RUN_ERROR, MSG_RUN_FIELD, MSG_RUN_TOO_LARGE};
     let value = "falso-grande-".repeat(70 * 1024 / 13);
-    let mut t = TestEnv::new(ExpectedServer::system(), true);
+    let mut t = TestEnv::new(unreachable_server(), true);
     t.env = (0..12)
         .map(|i| (format!("V{i}").into(), value.clone().into()))
         .collect();
@@ -218,21 +234,18 @@ fn d52_run_too_large_refused_before_connecting() {
     assert!(t.events.is_empty(), "{:?}", t.events);
     assert!(!t.err().contains("falso-grande") && t.out.is_empty());
 
-    let mut t = TestEnv::new(ExpectedServer::system(), true);
+    let mut t = TestEnv::new(unreachable_server(), true);
     t.env = vec![("X".into(), "falso-campo-".repeat(12 * 1024).into())];
     assert_eq!(t.run(&["run", "e", "--", "true"]), EXIT_RUN_ERROR);
     assert_eq!(t.err(), format!("ward: {MSG_RUN_FIELD}\n"));
     assert!(t.events.is_empty());
 
     // Below the limit: passes the measure (here, it stops at the missing daemon).
-    let mut t = TestEnv::new(
-        ExpectedServer::system_at(PathBuf::from("/run/ward/4294967294/wardd.sock")),
-        true,
-    );
+    let mut t = TestEnv::new(unreachable_server(), true);
     t.env = vec![("X".into(), "x".repeat(600 * 1024 / 8).into())];
     assert_eq!(t.run(&["run", "e", "--", "true"]), EXIT_RUN_ERROR);
     assert_eq!(t.events, ["conectar"]);
-    let mut t = TestEnv::new(ExpectedServer::system(), true);
+    let mut t = TestEnv::new(unreachable_server(), true);
     assert_eq!(t.run(&["run", "e", "true"]), EXIT_USAGE);
     assert!(t.events.is_empty());
 }
@@ -311,10 +324,7 @@ fn daemon_missing() {
     let mut t = TestEnv::new(ExpectedServer::system_at(dir.socket()), true);
     // The folder belongs to the user: refuses even before seeing there is no socket.
     assert_eq!(t.run(&["lista"]), EXIT_ERROR);
-    let mut t = TestEnv::new(
-        ExpectedServer::system_at(PathBuf::from("/run/ward/4294967294/wardd.sock")),
-        true,
-    );
+    let mut t = TestEnv::new(unreachable_server(), true);
     assert_eq!(t.run(&["destravar"]), EXIT_ERROR);
     assert_eq!(t.err(), "ward: o daemon não está rodando\n");
     assert_eq!(t.events, ["conectar"]);
@@ -322,19 +332,19 @@ fn daemon_missing() {
 
 #[test]
 fn usage_and_help() {
-    let mut t = TestEnv::new(ExpectedServer::system(), true);
+    let mut t = TestEnv::new(unreachable_server(), true);
     assert_eq!(t.run(&["--help"]), EXIT_OK);
     assert!(t.out().contains("ward lista [--json]"));
     assert!(t.out().contains("ward destravar"));
     assert!(t.out().contains("ward travar"));
-    let mut t = TestEnv::new(ExpectedServer::system(), true);
+    let mut t = TestEnv::new(unreachable_server(), true);
     assert_eq!(t.run(&[]), EXIT_USAGE);
     assert!(t.err().contains("Uso:"));
-    let mut t = TestEnv::new(ExpectedServer::system(), true);
+    let mut t = TestEnv::new(unreachable_server(), true);
     assert_eq!(t.run(&["destravar", PASSWORD]), EXIT_USAGE);
     assert!(!t.err().contains(PASSWORD));
     assert!(t.events.is_empty(), "uso errado não conecta");
-    let mut t = TestEnv::new(ExpectedServer::system(), true);
+    let mut t = TestEnv::new(unreachable_server(), true);
     assert_eq!(t.run(&["--version"]), EXIT_OK);
     assert!(t.out().starts_with("ward "));
 }

@@ -422,7 +422,7 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     };
     assert!(ok(&unlock(&d2, PASSWORD)));
     armed2.store(true, Ordering::SeqCst);
-    let new_password = "falso-nova-ward-03";
+    let new_password = "falso-SALTO-01";
     assert!(ok(&request(
         &d2,
         Role::App,
