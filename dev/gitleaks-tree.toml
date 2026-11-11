@@ -1,24 +1,24 @@
-# gitleaks para a varredura da árvore de trabalho (`gitleaks dir`, em `make gitleaks`).
-# Herda `.gitleaks.toml` (regras padrão + allowlist de D15) e só acrescenta os
-# diretórios que o `.gitignore` tira do git. As varreduras do índice (`--staged`) e do
-# histórico usam `.gitleaks.toml` direto, sem esta lista: um arquivo de `.dev/` forçado
-# para o git (`git add -f`) é achado.
+# gitleaks for the working tree scan (`gitleaks dir`, in `make gitleaks`).
+# Inherits `.gitleaks.toml` (default rules + D15 allowlist) and only adds the dirs that
+# `.gitignore` keeps out of git. The index (`--staged`) and history scans use
+# `.gitleaks.toml` directly, without this list: a `.dev/` file forced into git
+# (`git add -f`) is found.
 
 title = "Ward (árvore de trabalho)"
 
 [extend]
-# Caminho relativo à raiz do repositório (o Makefile roda de lá).
+# Path relative to the repository root (the Makefile runs from there).
 path = ".gitleaks.toml"
 
 [[allowlists]]
-# Diretórios que o `.gitignore` já tira do git (cofre de teste, build, dependências).
+# Dirs that `.gitignore` already keeps out of git (test vault, build, dependencies).
 description = "Diretórios ignorados pelo git"
 paths = [
     '''^\.dev/''',
     '''^target/''',
     '''(^|/)node_modules/''',
     '''(^|/)dist/''',
-    '''^\.claude/worktrees/''',   # worktrees dos workers: cada um roda o próprio make check
+    '''^\.claude/worktrees/''',   # the workers' worktrees: each one runs its own make check
     '''(^|/)dist-teste/''',
     '''^app/src-tauri/target/''',
     '''^app/src-tauri/gen/''',

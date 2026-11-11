@@ -1,11 +1,11 @@
-# Varredura extra da árvore de trabalho: as regras de `dev/gitleaks-extra.toml` menos
-# os diretórios que o `.gitignore` tira do git (os mesmos de `dev/gitleaks-tree.toml`).
-# O índice e o histórico usam `dev/gitleaks-extra.toml` direto, sem exceção nenhuma.
+# Extra scan of the working tree: the rules of `dev/gitleaks-extra.toml` minus the dirs
+# that `.gitignore` keeps out of git (the same as in `dev/gitleaks-tree.toml`).
+# The index and the history use `dev/gitleaks-extra.toml` directly, with no exception.
 
 title = "Ward (extra, árvore de trabalho)"
 
 [extend]
-# Relativo à raiz do repositório (o Makefile roda de lá).
+# Relative to the repository root (the Makefile runs from there).
 path = "dev/gitleaks-extra.toml"
 
 [[allowlists]]
@@ -15,7 +15,7 @@ paths = [
     '''^target/''',
     '''(^|/)node_modules/''',
     '''(^|/)dist/''',
-    '''^\.claude/worktrees/''',   # worktrees dos workers: cada um roda o próprio make check
+    '''^\.claude/worktrees/''',   # the workers' worktrees: each one runs its own make check
     '''(^|/)dist-teste/''',
     '''^app/src-tauri/target/''',
     '''^app/src-tauri/gen/''',

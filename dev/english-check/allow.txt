@@ -27,3 +27,8 @@ crates/ward-core/src/format.rs falso fake test password of D15 in doc tests (tes
 crates/ward-core/src/format.rs mestra fake test password of D15 in doc tests (test data)
 crates/ward-core/src/atomic_write.rs falso fake test password of D15 in doc tests (test data)
 crates/ward-core/src/atomic_write.rs mestra fake test password of D15 in doc tests (test data)
+Makefile frei frei0r is the name of a GStreamer plugin family, not Portuguese
+# File names of the pt-BR documentation (docs/ stays in pt-BR, m2:PRD rule 1).
+Makefile instalacao docs/instalacao.md, the pt-BR install guide
+Makefile migracao docs/migracao.md, the pt-BR migration guide
+install/* instalacao docs/instalacao.md, the pt-BR install guide

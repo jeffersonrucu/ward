@@ -176,18 +176,18 @@ fi
 # dump.sh from the inside, with fake dpkg/dpkg-query (functions beat commands).
 dump() {
     env -i PATH=/usr/bin:/bin /bin/bash -p -c '
-        erro() { printf "ERRO: %s\n" "$*" >&2; exit 1; }
-        aviso() { printf "AVISO: %s\n" "$*" >&2; }
+        error() { printf "ERRO: %s\n" "$*" >&2; exit 1; }
+        warning() { printf "AVISO: %s\n" "$*" >&2; }
         . "$1"; shift; eval "$1"' _ "$ROOT/install/dump.sh" "$1" 2>&1
     echo "saiu=$?"
 }
-r="$(dump 'dpkg() { echo amd64; }; dpkg-query() { printf "%s\n" /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitPrintProcess; }; lista_apport')"
+r="$(dump 'dpkg() { echo amd64; }; dpkg-query() { printf "%s\n" /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitPrintProcess; }; apport_list')"
 verify "51c ataque: auxiliar novo no pacote (WebKitPrintProcess) recusa a lista" "$r" "WebKitPrintProcess, fora da lista"
 lacks "51c ataque: auxiliar novo não sai 0" "$r" "saiu=0"
-r="$(dump 'dpkg() { echo sparc64; }; lista_apport')"
+r="$(dump 'dpkg() { echo sparc64; }; apport_list')"
 verify "51c: arquitetura fora da tabela recusa" "$r" "fora da tabela"
 lacks "51c: arquitetura fora da tabela não sai 0" "$r" "saiu=0"
-r="$(dump 'dpkg() { echo arm64; }; dpkg-query() { return 1; }; lista_apport')"
+r="$(dump 'dpkg() { echo arm64; }; dpkg-query() { return 1; }; apport_list')"
 verify "51c: sem o libwebkit2gtk, avisa e usa o caminho do multiarch" "$r" "AVISO: libwebkit2gtk-4.1-0 (arm64) não está instalado"
 verify "51c: arm64 -> aarch64-linux-gnu" "$r" "/usr/lib/aarch64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess"
 printf '%s' '|/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -F%F -- %E' >"$TMP/cp-apport"

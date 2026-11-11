@@ -1,17 +1,17 @@
-# gitleaks — varredura extra de chave privada e credencial AWS (Fase 12a, S15).
+# gitleaks - extra scan for private keys and AWS credentials (Phase 12a, S15).
 #
-# Sem `useDefault`: não herda a allowlist global de caminhos das regras padrão do
-# gitleaks (`gitleaks.toml`, lockfiles, imagens, svg, pdf, fontes, vendor...), que deixava
-# passar uma chave privada num `package-lock.json`, num `.svg` ou num `gitleaks.toml`.
-# Só três regras, de falso positivo raro, e NENHUMA allowlist de caminho ou de valor:
-# não há valor falso de D15 que case com elas. Usada direto no índice e no histórico;
-# a árvore usa `dev/gitleaks-extra-tree.toml`, que só tira os diretórios ignorados.
-# O Makefile roda com `--max-archive-depth`, para entrar em .gz/.zip/.tar.
+# No `useDefault`: does not inherit the global path allowlist of the default gitleaks
+# rules (`gitleaks.toml`, lockfiles, images, svg, pdf, fonts, vendor...), which let a private
+# key through in a `package-lock.json`, an `.svg` or a `gitleaks.toml`.
+# Only three rules, with rare false positives, and NO path or value allowlist: no fake
+# D15 value matches them. Used directly on the index and the history; the working tree
+# uses `dev/gitleaks-extra-tree.toml`, which only drops the ignored dirs.
+# The Makefile runs it with `--max-archive-depth`, to go into .gz/.zip/.tar.
 
 title = "Ward (extra: chave privada e AWS, sem allowlist de caminho)"
 
 [[rules]]
-id = "ward-chave-privada"
+id = "ward-private-key"
 description = "Chave privada (PEM/OpenSSH/PGP)"
 regex = '''(?i)-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\s\S-]{64,}?KEY(?: BLOCK)?-----'''
 keywords = ["-----begin"]

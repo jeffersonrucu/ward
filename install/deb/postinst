@@ -1,49 +1,50 @@
 #!/bin/bash -p
-# postinst do `.deb` do Ward (Fase 52; D46, D47; V9.7, V9.9). Roda como root depois de
-# os arquivos estarem no lugar: confere os binários setgid (o override do preinst),
-# cria /run/ward (tmpfiles.d) e liga o `wardd@<uid>.socket` do usuário do cofre.
+# postinst of Ward's `.deb` (Phase 52; D46, D47; V9.7, V9.9). Runs as root after the
+# files are in place: verifies the setgid binaries (the preinst's override), creates
+# /run/ward (tmpfiles.d) and enables the vault user's `wardd@<uid>.socket`.
 #
-# O uid vem de WARD_UID ou, com `sudo dpkg -i`/`sudo apt install`, do SUDO_UID. Sem
-# nenhum dos dois (loja de apps/PackageKit, que não diz quem pediu), o socket é ligado
-# para cada usuário humano: uid entre UID_MIN e UID_MAX do /etc/login.defs, fora o
-# nobody, com shell de login. É só o socket: cada wardd roda com o uid dele e só sobe
-# na primeira conexão; o socket de cada um fica em /run/ward/<uid>/, 0600 do dono.
+# The uid comes from WARD_UID or, with `sudo dpkg -i`/`sudo apt install`, from SUDO_UID.
+# Without either (app store/PackageKit, which does not say who asked), the socket is
+# enabled for each human user: uid between UID_MIN and UID_MAX of /etc/login.defs, except
+# nobody, with a login shell. It is only the socket: each wardd runs with its own uid and
+# only starts on the first connection; each one's socket lives in /run/ward/<uid>/, 0600
+# of the owner.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
 set -euo pipefail
 umask 022
 
-erro() { printf 'ward (postinst): %s\n' "$*" >&2; exit 1; }
-aviso() { printf 'ward: aviso: %s\n' "$*" >&2; }
-passo() { printf 'ward: %s\n' "$*"; }
+error() { printf 'ward (postinst): %s\n' "$*" >&2; exit 1; }
+warning() { printf 'ward: aviso: %s\n' "$*" >&2; }
+step() { printf 'ward: %s\n' "$*"; }
 
-# avisar_manifestos_de_usuario (Fase 51a) e conferir_politicas_chrome, de chrome.sh.
+# The user-manifests warning (Phase 51a) and the policies check, from chrome.sh.
 #@CHROME@
 
-# avisar_core_pattern (Fase 51c), de dump.sh. A lista do apport e o drop-in do
-# systemd-coredump vêm no pacote (gerados no staging pelo install.sh).
-#@DESPEJO@
+# The core_pattern warning (Phase 51c), from dump.sh. The apport list and the
+# systemd-coredump drop-in come in the package (generated in the staging by install.sh).
+#@DUMP@
 
-# Binário setgid: root:<grupo> 2755, arquivo regular. Na primeira instalação o dpkg já
-# leu a base de overrides antes do preinst registrar o do Ward, então o arquivo chega
-# 0755 root:root (sem setgid: seguro) e o modo entra aqui, com o mesmo valor do
-# override; nas atualizações o dpkg já o aplica ao desempacotar.
-conferir_setgid() {
-    local grupo="$1" caminho="$2"
-    [ -f "$caminho" ] && [ ! -L "$caminho" ] || erro "$caminho não é um arquivo"
-    [ "$(dpkg-statoverride --list "$caminho" || true)" = "root $grupo 2755 $caminho" ] ||
-        erro "override de $caminho fora do esperado"
-    if [ "$(stat -c '%U %G %a' -- "$caminho")" != "root $grupo 2755" ]; then
-        # chown antes do chmod (o chown tira o setgid).
-        chown -h -- "root:$grupo" "$caminho"
-        chmod -- 2755 "$caminho"
+# setgid binary: root:<group> 2755, regular file. On the first install dpkg already read
+# the overrides database before the preinst registered Ward's, so the file arrives
+# 0755 root:root (no setgid: safe) and the mode is applied here, with the same value as
+# the override; on upgrades dpkg already applies it when unpacking.
+verify_setgid() {
+    local group="$1" path="$2"
+    [ -f "$path" ] && [ ! -L "$path" ] || error "$path não é um arquivo"
+    [ "$(dpkg-statoverride --list "$path" || true)" = "root $group 2755 $path" ] ||
+        error "override de $path fora do esperado"
+    if [ "$(stat -c '%U %G %a' -- "$path")" != "root $group 2755" ]; then
+        # chown before chmod (chown clears the setgid bit).
+        chown -h -- "root:$group" "$path"
+        chmod -- 2755 "$path"
     fi
-    [ "$(stat -c '%U %G %a' -- "$caminho")" = "root $grupo 2755" ] ||
-        erro "$caminho está $(stat -c '%U:%G %a' -- "$caminho") (esperado root:$grupo 2755)"
+    [ "$(stat -c '%U %G %a' -- "$path")" = "root $group 2755" ] ||
+        error "$path está $(stat -c '%U:%G %a' -- "$path") (esperado root:$group 2755)"
 }
 
-uid_do_cofre() {
+vault_uid() {
     local uid="${WARD_UID:-${SUDO_UID:-}}"
     [ -n "$uid" ] || return 1
     if [[ ! "$uid" =~ ^[1-9][0-9]{3,9}$ ]] || [ "$uid" -eq 65534 ] || ! getent passwd "$uid" >/dev/null; then
@@ -53,16 +54,16 @@ uid_do_cofre() {
     printf '%s\n' "$uid"
 }
 
-# Usuários humanos do passwd local (sem NSS remoto: getent passwd lista o que o
-# sistema resolve, e um diretório grande seria lento; só /etc/passwd).
-usuarios_humanos() {
-    local min max nome _x uid _g _c _h shell
+# Human users of the local passwd (no remote NSS: getent passwd lists what the system
+# resolves, and a large directory would be slow; only /etc/passwd).
+human_users() {
+    local min max name _x uid _g _c _h shell
     min="$(awk '$1=="UID_MIN"{print $2}' /etc/login.defs 2>/dev/null || true)"
     max="$(awk '$1=="UID_MAX"{print $2}' /etc/login.defs 2>/dev/null || true)"
     [[ "$min" =~ ^[0-9]+$ ]] || min=1000
     [[ "$max" =~ ^[0-9]+$ ]] || max=60000
     [ "$min" -ge 1000 ] || min=1000
-    while IFS=: read -r nome _x uid _g _c _h shell; do
+    while IFS=: read -r name _x uid _g _c _h shell; do
         [[ "$uid" =~ ^[1-9][0-9]{3,9}$ ]] || continue
         [ "$uid" -ge "$min" ] && [ "$uid" -le "$max" ] && [ "$uid" -ne 65534 ] || continue
         case "$shell" in */nologin | */false | "") continue ;; esac
@@ -70,44 +71,44 @@ usuarios_humanos() {
     done </etc/passwd
 }
 
-ligar_socket() {
+enable_socket() {
     local uid="$1"
     systemctl enable --now "wardd@$uid.socket"
-    passo "wardd@$uid.socket ligado: o wardd sobe na primeira conexão; o uso diário não pede sudo"
+    step "wardd@$uid.socket ligado: o wardd sobe na primeira conexão; o uso diário não pede sudo"
     avisar_manifestos_de_usuario "$uid"
 }
 
 case "${1:-}" in
     configure)
-        conferir_setgid ward-app /usr/local/bin/ward-app
-        conferir_setgid ward-nm /usr/local/lib/ward/ward-nm
+        verify_setgid ward-app /usr/local/bin/ward-app
+        verify_setgid ward-nm /usr/local/lib/ward/ward-nm
         avisar_core_pattern
         if [ -d /run/systemd/system ]; then
             systemd-tmpfiles --create /usr/local/lib/tmpfiles.d/ward.conf
             systemctl daemon-reload
             if [ -n "${WARD_UID:-${SUDO_UID:-}}" ]; then
-                if uid="$(uid_do_cofre)"; then
-                    ligar_socket "$uid"
+                if uid="$(vault_uid)"; then
+                    enable_socket "$uid"
                 fi
             else
-                ligados=0
+                enabled=0
                 while read -r uid; do
-                    ligar_socket "$uid"
-                    ligados=$((ligados + 1))
-                done < <(usuarios_humanos)
-                [ "$ligados" -gt 0 ] ||
-                    passo "nenhum usuário humano achado; ligue o socket do seu usuário com: sudo systemctl enable --now wardd@\$(id -u).socket"
+                    enable_socket "$uid"
+                    enabled=$((enabled + 1))
+                done < <(human_users)
+                [ "$enabled" -gt 0 ] ||
+                    step "nenhum usuário humano achado; ligue o socket do seu usuário com: sudo systemctl enable --now wardd@\$(id -u).socket"
             fi
-            # Atualização: o daemon que já roda passa ao binário novo (o cofre trava).
+            # Upgrade: the daemon already running moves to the new binary (the vault locks).
             while read -r u _; do
                 [[ "$u" =~ ^wardd@[0-9]+\.service$ ]] || continue
                 systemctl try-restart "$u" || printf 'ward: aviso: não deu para reiniciar %s\n' "$u" >&2
             done < <(systemctl list-units --plain --no-legend --full --state=active 'wardd@*.service' 2>/dev/null || true)
         else
-            passo "sem systemd no ar: rode 'systemd-tmpfiles --create' e ligue wardd@<uid>.socket depois"
+            step "sem systemd no ar: rode 'systemd-tmpfiles --create' e ligue wardd@<uid>.socket depois"
         fi
         ;;
     abort-upgrade | abort-remove | abort-deconfigure) ;;
-    *) erro "argumento desconhecido: ${1:-}" ;;
+    *) error "argumento desconhecido: ${1:-}" ;;
 esac
 exit 0

@@ -1,8 +1,8 @@
-# gitleaks (S15): o repositório nunca contém segredo real.
-# Regras padrão do gitleaks + allowlist SÓ dos valores falsos fixos do cofre de teste
-# (D15, tabela "Cofre de teste" do contrato). Cada valor é casado inteiro (^…$):
-# "falso-x" seguido de um segredo real continua sendo achado.
-# Não acrescente padrão genérico (ex.: `falso-.*`) nem caminho inteiro.
+# gitleaks (S15): the repository never holds a real secret.
+# Default gitleaks rules + an allowlist ONLY of the fixed fake values of the test vault
+# (D15, the test vault table of the contract). Each value is matched whole (^...$): a
+# fake value followed by a real secret is still found.
+# Do not add a generic pattern (e.g. the fake prefix followed by `.*`) nor a whole path.
 
 title = "Ward"
 

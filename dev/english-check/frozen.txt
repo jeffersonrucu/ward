@@ -217,6 +217,24 @@ extension/service.js campos 52 fields field of the salvar_login entry
 extension/service.js problemas 52 problems field of the protocol validation error
 extension/service.js campo 52 field of a validation problem
 extension/service.js motivo 52 reason field of a validation problem
+
+# Phase 47 (install/, Makefile): shell functions that dev/tests/deb.sh (Phase 45) looks for
+# by name in the built maintainer scripts (`grep '^name()'`); Phase 57 renames them with
+# install/deb/* and dev/tests/deb.sh.
+install/groups.sh conferir_grupo 57 function the deb test greps in the built preinst
+install/chrome.sh conferir_politicas_chrome 57 function the deb test greps in the built preinst
+install/chrome.sh avisar_manifestos_de_usuario 57 function the deb test greps in the built postinst
+# Installed path of 0.1.x, frozen until Phase 57 (m2:DT15).
+install/deb/* grupos 57 installed mark path /usr/local/lib/ward/grupos-criados
+install/deb/* criados 57 installed mark path /usr/local/lib/ward/grupos-criados
+# Environment variables (m2:DT12), renamed by Phase 56 with all their uses.
+install/pack-extension.sh extensao 56 variable EXTENSAO_DIST, set by dev/tests/deb.sh
+install/pack-extension.sh saida 56 variable CRX_SAIDA, set by dev/tests/deb.sh
+Makefile extensao 56 variable WARD_DEV_EXTENSAO cited in target comments
+# Test socket dirs (`ward-teste`, `ward-teste-e2e`, `ward-teste-selecao`), Phase 56.
+Makefile teste 56 test socket dir names ward-teste, ward-teste-e2e and ward-teste-selecao
+Makefile selecao 56 test socket dir name ward-teste-selecao
+
 # Phase 12 (ward-core entry): vault names and delivered variables quoted in comments.
 crates/ward-core/src/entry.rs bloqueado 48 v4 vault name of AccessLevel::Blocked
 crates/ward-core/src/entry.rs aprovacao 48 v4 vault name of AccessLevel::Approval (com-aprovacao)

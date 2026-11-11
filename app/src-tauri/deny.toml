@@ -1,6 +1,6 @@
-# cargo-deny do app Tauri (S14). Mesma política do `deny.toml` da raiz; as exceções
-# abaixo existem só por causa da árvore do Tauri/GTK 3 no Linux, com o motivo de cada
-# uma no handoff da Fase 29. Exceção nova precisa de motivo escrito no handoff.
+# cargo-deny of the Tauri app (S14). Same policy as the root `deny.toml`; the exceptions
+# below exist only because of the Tauri/GTK 3 tree on Linux, with the reason for each one
+# in the Phase 29 handoff. A new exception needs a reason written in the handoff.
 
 [graph]
 all-features = true
@@ -10,18 +10,19 @@ version = 2
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 unmaintained = "all"
-# `unsound` padrão ("workspace") só olha os crates do workspace e as dependências
-# diretas; com ele o cargo-deny não via a RUSTSEC-2024-0429 (glib, transitiva) e
-# avisava `advisory-not-detected`, enquanto o `cargo audit` a acha. Com "all" os dois
-# veem a mesma coisa, e a exceção abaixo deixa de ser cega (D64, Fase 29b).
+# The default `unsound` ("workspace") only looks at the workspace crates and the direct
+# dependencies; with it cargo-deny did not see RUSTSEC-2024-0429 (glib, transitive) and
+# warned `advisory-not-detected`, while `cargo audit` finds it. With "all" both see the
+# same thing, and the exception below is no longer blind (D64, Phase 29b).
 unsound = "all"
 ignore = [
-    # proc-macro-error 1.0.4: sem manutenção. Só proc-macro de compilação do
-    # glib-macros/gtk3-macros (gtk-rs 0.18, base do Tauri 2 no Linux); não roda no app.
+    # proc-macro-error 1.0.4: unmaintained. Only a build-time proc-macro of
+    # glib-macros/gtk3-macros (gtk-rs 0.18, the base of Tauri 2 on Linux); does not run in
+    # the app.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro de compilação do gtk-rs 0.18 (Tauri 2 no Linux); sem alternativa até o Tauri sair do GTK 3" },
-    # glib 0.18.5: `VariantStrIter` com `Iterator` não sólido. O app não usa
-    # `glib::Variant`; vem do gtk-rs 0.18 que o Tauri 2 exige no Linux. Fica (D64):
-    # o `cargo audit` em app/src-tauri ainda a detecta (Fase 29b, 2026-11-09).
+    # glib 0.18.5: `VariantStrIter` with an unsound `Iterator`. The app does not use
+    # `glib::Variant`; it comes from the gtk-rs 0.18 that Tauri 2 requires on Linux. Stays
+    # (D64): `cargo audit` in app/src-tauri still detects it (Phase 29b, 2026-11-09).
     { id = "RUSTSEC-2024-0429", reason = "glib 0.18 do gtk-rs (Tauri 2 no Linux); o app não usa VariantStrIter" },
 ]
 
@@ -39,8 +40,8 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
-# MPL-2.0 (copyleft por arquivo, sem alterar os arquivos): crates do parser de CSS e de
-# HTML que o tauri-utils usa para injetar a CSP na página, e o `option-ext` do `dirs`.
+# MPL-2.0 (per-file copyleft, files not modified): crates of the CSS and HTML parser that
+# tauri-utils uses to inject the CSP into the page, and `option-ext` of `dirs`.
 exceptions = [
     { allow = ["MPL-2.0"], crate = "cssparser" },
     { allow = ["MPL-2.0"], crate = "cssparser-macros" },

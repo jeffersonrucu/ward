@@ -82,7 +82,7 @@ verify "make deb imprime o sha256" "$r" "$(sha256sum "$DEB" | cut -d' ' -f1)"
 
 listing="$(dpkg-deb -c "$DEB")"
 paths="$(awk '{print $6}' <<<"$listing" | sed -e 's#^\./##' -e 's#/$##' | grep -v '^$' | sort)"
-staging="$(cd "$D/raiz" && find . -mindepth 1 -printf '%P\n' | sort)"
+staging="$(cd "$D/root" && find . -mindepth 1 -printf '%P\n' | sort)"
 tree="$(awk '!/^#/ && NF >= 5 {print $5}' "$ROOT/install/tree.txt" | sort)"
 [ "$paths" = "$staging" ] && ok "V9.9: dpkg -c tem a mesma lista do staging" || {
     diff <(printf '%s\n' "$staging") <(printf '%s\n' "$paths") || true
@@ -95,7 +95,7 @@ verify "nada com escrita para grupo e outros" "$(awk 'substr($1,6,1) == "w" || s
 verify "nenhum link no pacote" "$(awk 'substr($1,1,1) == "l"' <<<"$listing" | wc -l)" "0"
 verify "ward-app vai 0755 no pacote (2755 só pelo statoverride)" "$(grep ' ./usr/local/bin/ward-app$' <<<"$listing" | cut -c1-10)" "-rwxr-xr-x"
 verify "ward-nm vai 0755 no pacote" "$(grep ' ./usr/local/lib/ward/ward-nm$' <<<"$listing" | cut -c1-10)" "-rwxr-xr-x"
-verify "staging tem ward-app 2755 (o modo da árvore)" "$(stat -c %a "$D/raiz/usr/local/bin/ward-app")" "2755"
+verify "staging tem ward-app 2755 (o modo da árvore)" "$(stat -c %a "$D/root/usr/local/bin/ward-app")" "2755"
 
 dep="$(dpkg-deb -f "$DEB" Depends)"
 verify "V9.9: Depends declara sshpass" ", $dep," ", sshpass,"
@@ -107,7 +107,7 @@ dpkg-deb -x "$DEB" "$X"
 cmp -s "$WARD" "$X/usr/local/bin/ward" && cmp -s "$WARDD" "$X/usr/local/bin/wardd" &&
     cmp -s "$APP" "$X/usr/local/bin/ward-app" && cmp -s "$NM" "$X/usr/local/lib/ward/ward-nm" &&
     ok "binários do pacote iguais aos artefatos" || fail "binário do pacote diferente do artefato"
-diff -r -q "$D/raiz" "$X" >/dev/null && ok "conteúdo do pacote igual ao staging" || fail "conteúdo do pacote ≠ staging"
+diff -r -q "$D/root" "$X" >/dev/null && ok "conteúdo do pacote igual ao staging" || fail "conteúdo do pacote ≠ staging"
 verify "manifesto de native messaging com o id" "$(cat "$X/etc/opt/chrome/native-messaging-hosts/br.ward.nm.json")" "chrome-extension://$ID/"
 
 dpkg-deb -e "$DEB" "$TMP/control"
