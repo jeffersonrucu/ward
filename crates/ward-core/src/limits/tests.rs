@@ -10,7 +10,7 @@ use zeroize::Zeroizing;
 use super::*;
 use crate::body::{BodyError, deserialize, serialize};
 use crate::config::{PinHash, VaultConfig};
-use crate::entrega::{self, Entrega, ErroRecurso, Recursos};
+use crate::delivery::{self, Delivery, ResourceError, Resources};
 use crate::entry::{
     AttachmentDraft, DataDraft, Draft, Entry, EntryType, ExtraDraft, Secret, TOO_LARGE_FOR_MASK,
     ValidationErrors,
@@ -256,24 +256,24 @@ fn largest_accepted(kind: EntryType, tunnel: Option<&str>) -> (usize, Entry) {
 /// Fake `ward run` resources (the real ones belong to the daemon).
 struct Fakes;
 
-impl Recursos for Fakes {
-    fn codigo_totp(&mut self, _: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+impl Resources for Fakes {
+    fn totp_code(&mut self, _: &Secret) -> Result<Zeroizing<String>, ResourceError> {
         Ok(Zeroizing::new(t("123456")))
     }
-    fn arquivo(&mut self, name: &str, _: &Secret) -> Result<String, ErroRecurso> {
+    fn file(&mut self, name: &str, _: &Secret) -> Result<String, ResourceError> {
         Ok(format!("/run/user/1000/ward/tmp/1-{name}"))
     }
-    fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
+    fn tunnel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ResourceError> {
         Ok(40123)
     }
 }
 
-fn delivery_of(e: &Entry) -> Entrega {
-    entrega::montar(e, &mut Fakes).unwrap()
+fn delivery_of(e: &Entry) -> Delivery {
+    delivery::build(e, &mut Fakes).unwrap()
 }
 
 /// Real sum of the patterns of the `ward run` mask (entries and deliveries).
-fn real_cost(entries: &[&Entry], deliveries: &[&Entrega]) -> usize {
+fn real_cost(entries: &[&Entry], deliveries: &[&Delivery]) -> usize {
     let mut c = ConstrutorMascara::new();
     for e in entries {
         c = c.entrada(e);

@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
-use ward_core::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
+use ward_core::delivery::{self, Delivery, DeliveryError, ResourceError, Resources};
 use ward_core::entry::{AccessLevel, Data, Entry, Secret};
 use ward_core::limits::{MAX_COMMON_FRAME, MAX_DISPLAYED_TEXT};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
@@ -236,61 +236,61 @@ struct TunnelContext<'a> {
     locks: (Arc<std::sync::atomic::AtomicU64>, u64),
 }
 
-impl Recursos for RunResources<'_> {
-    fn codigo_totp(&mut self, seed: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+impl Resources for RunResources<'_> {
+    fn totp_code(&mut self, seed: &Secret) -> Result<Zeroizing<String>, ResourceError> {
         let c = Totp::from_seed(seed)
             .and_then(|t| t.code_now())
-            .map_err(|_| ErroRecurso("código TOTP"))?;
+            .map_err(|_| ResourceError("código TOTP"))?;
         let mut s = Zeroizing::new(String::with_capacity(c.code().len()));
         s.push_str(c.code());
         Ok(s)
     }
 
-    fn arquivo(&mut self, name: &str, content: &Secret) -> Result<String, ErroRecurso> {
-        let rt = self.rt.ok_or(ErroRecurso("sem pasta de temporários"))?;
+    fn file(&mut self, name: &str, content: &Secret) -> Result<String, ResourceError> {
+        let rt = self.rt.ok_or(ResourceError("sem pasta de temporários"))?;
         if self.temp_files.is_none() {
             self.temp_files =
-                Some(TempFiles::create(rt).map_err(|_| ErroRecurso("pasta de temporários"))?);
+                Some(TempFiles::create(rt).map_err(|_| ResourceError("pasta de temporários"))?);
         }
         let t = self
             .temp_files
             .as_mut()
-            .ok_or(ErroRecurso("pasta de temporários"))?;
+            .ok_or(ResourceError("pasta de temporários"))?;
         t.write(name, content.expose())
-            .map_err(|_| ErroRecurso("arquivo temporário"))
+            .map_err(|_| ResourceError("arquivo temporário"))
     }
 
     /// D10/D19 (Phase 28): the database tunnel through the referenced server entry is
     /// the bridge module's bridge (`ssh -W <host>:<port>` per connection, no shell),
     /// listening on `127.0.0.1:<free port>` and accepting only the command's process
     /// group.
-    fn tunel(&mut self, server: &str, host: &str, port: u16) -> Result<u16, ErroRecurso> {
+    fn tunnel(&mut self, server: &str, host: &str, port: u16) -> Result<u16, ResourceError> {
         if self.bridge.is_some() {
-            return Err(ErroRecurso("um túnel só por entrega"));
+            return Err(ResourceError("um túnel só por entrega"));
         }
         let ctx = self
             .tunnel
             .as_ref()
-            .ok_or(ErroRecurso("túnel indisponível"))?;
+            .ok_or(ResourceError("túnel indisponível"))?;
         let (es, via) = crate::ssh::intermediate(ctx.entries, server)
-            .map_err(|_| ErroRecurso("servidor do túnel"))?;
+            .map_err(|_| ResourceError("servidor do túnel"))?;
         let mask = ConstrutorMascara::new()
             .entrada(ctx.main)
             .entrada(es)
             .construir()
-            .map_err(|_| ErroRecurso("máscara do túnel"))?;
+            .map_err(|_| ResourceError("máscara do túnel"))?;
         let bridge = Ponte::abrir(Abertura {
             via,
             alvo_host: host,
             alvo_porta: port,
             programas: ctx.daemon.programas_ssh(),
-            known_hosts: &ctx.daemon.known_hosts().map_err(ErroRecurso)?,
+            known_hosts: &ctx.daemon.known_hosts().map_err(ResourceError)?,
             rt: ctx.daemon.temporarios(),
             mascara: mask,
             limites: LIMITES_TUNEL,
             travas: ctx.locks.clone(),
         })
-        .map_err(ErroRecurso)?;
+        .map_err(ResourceError)?;
         let p = bridge.porta();
         self.bridge = Some(bridge);
         self.tunnel_server = Some(es);
@@ -488,9 +488,9 @@ fn build_environment(
     cmd: &mut Command,
     cli: &[Variavel],
     account: &Account,
-    delivery: &Entrega,
+    delivery: &Delivery,
 ) -> Result<usize, ErroResposta> {
-    let from_delivery: HashSet<&[u8]> = delivery.nomes().map(str::as_bytes).collect();
+    let from_delivery: HashSet<&[u8]> = delivery.names().map(str::as_bytes).collect();
     // The delivery never changes what the daemon fixes (D42 already refuses; second
     // layer).
     if FROM_DAEMON.iter().any(|n| from_delivery.contains(n)) {
@@ -521,8 +521,8 @@ fn build_environment(
         cmd.variable(k, v)
             .map_err(|_| ErroResposta::PedidoInvalido)?;
     }
-    for v in delivery.variaveis() {
-        cmd.variable(v.nome().as_bytes(), v.expor().as_bytes())
+    for v in delivery.variables() {
+        cmd.variable(v.name().as_bytes(), v.expose().as_bytes())
             .map_err(|_| ErroResposta::EntregaFalhou)?;
     }
     Ok(removed)
@@ -591,9 +591,9 @@ impl Daemon {
             bridge: None,
             tunnel_server: None,
         };
-        let delivery = match entrega::montar(e, &mut resources) {
+        let delivery = match delivery::build(e, &mut resources) {
             Ok(g) => g,
-            Err(ErroEntrega::TipoSemEntrega) => return Err(ErroResposta::TipoSemEntrega),
+            Err(DeliveryError::TypeWithoutDelivery) => return Err(ErroResposta::TipoSemEntrega),
             Err(err) => {
                 aviso!("executar: {err}");
                 return Err(ErroResposta::EntregaFalhou);
