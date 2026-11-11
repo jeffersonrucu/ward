@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 use common::{Dir, b64};
 use ward_core::atomic_write::write_entries;
 use ward_core::format::{MasterPassword, OpenVault};
-use ward_core::protocol::{self, ResponseError, Resposta, Role};
+use ward_core::protocol::{self, Response, ResponseError, Role};
 
 // The test vault through the public API (the same as the test app's and the fake
 // daemon's).
@@ -174,7 +174,7 @@ fn python_client(sock: &Path, unlock: bool, name: &str) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-fn send(s: &mut UnixStream, json: &str) -> Resposta {
+fn send(s: &mut UnixStream, json: &str) -> Response {
     s.write_all(&(json.len() as u32).to_be_bytes())
         .and_then(|()| s.write_all(json.as_bytes()))
         .unwrap();
@@ -259,7 +259,7 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
             let (request, answer) = l.split_at(l.find('{').unwrap());
             let r = protocol::decode_response(Role::Agent, answer.as_bytes());
             assert!(
-                matches!(r, Ok(Resposta::Erro(ResponseError::Unauthorized))),
+                matches!(r, Ok(Response::Error(ResponseError::Unauthorized))),
                 "{name} {request}"
             );
         }
@@ -285,7 +285,7 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
     c.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
     assert!(matches!(
         send(&mut c, r#"{"v":1,"op":"abrir_app","dados":{}}"#),
-        Resposta::Ok
+        Response::Ok
     ));
     let app_output = dev.join("logs/wardd-app-teste.log");
     wait_for(|| read(&app_output).contains("fim=1"), "a saída do app");

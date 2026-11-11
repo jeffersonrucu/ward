@@ -44,8 +44,8 @@ use zeroize::Zeroizing;
 use ward_core::config::PinHash;
 use ward_core::entry::{AccessLevel, Dates, Draft, Entry, EntryType, Secret as CoreSecret};
 use ward_core::protocol::{
-    self, Decision, DetalheEntrada, ItemLista, PedidoDeAprovacao, Pendrive, Request, ResponseError,
-    Resposta, Role, Target,
+    self, ApprovalRequest, Decision, EntryDetail, ListItem, Request, Response, ResponseError, Role,
+    Target, UsbDrive,
 };
 use ward_core::totp::Totp;
 
@@ -86,7 +86,7 @@ pub struct FakeDaemon {
     /// External backup of the config (Phase 48; D30: off and no UUID by default).
     backup: wc::config::ExternalBackup,
     /// USB drives that "udisks2" sees; `None` is udisks2 with no answer.
-    usb_drives: Option<Vec<Pendrive>>,
+    usb_drives: Option<Vec<UsbDrive>>,
     /// Local backup versions (Phase 47), from the newest to the oldest; `None` is the
     /// backup folder unavailable.
     backups: Option<Vec<FakeBackup>>,
@@ -164,11 +164,11 @@ pub fn test_backups(now: std::time::SystemTime) -> Vec<FakeBackup> {
 /// The fake USB drives of the test bridge (Phase 48). Data only: no device, no path. The
 /// 3rd has a label with HTML, U+202E and zero width (udisks2 accepts any label); the 4th
 /// has no label.
-pub fn test_usb_drives() -> Vec<Pendrive> {
-    let p = |uuid: &str, label: &str, mounted| Pendrive {
+pub fn test_usb_drives() -> Vec<UsbDrive> {
+    let p = |uuid: &str, label: &str, mounted| UsbDrive {
         uuid: uuid.to_owned(),
-        rotulo: label.to_owned(),
-        montado: mounted,
+        label: label.to_owned(),
+        mounted,
     };
     vec![
         p("7C1E-42A9", "WARD-BACKUP", true),
@@ -183,7 +183,7 @@ pub fn test_usb_drives() -> Vec<Pendrive> {
 }
 
 /// Simulated approval request and how long ago it "arrived" (Phase 36, test bridge).
-pub type SimulatedApproval = (PedidoDeAprovacao, std::time::Duration);
+pub type SimulatedApproval = (ApprovalRequest, std::time::Duration);
 
 /// The approval requests of the test bridge (approval modes of the fake daemon option),
 /// for the QA of the M0 states in Chrome. All fake; no secret (the request has no field
@@ -201,17 +201,17 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
     use std::time::Duration;
     use ward_core::entry::Environment;
     use ward_core::protocol::Operation;
-    let request = |id, entry: &str, environment, command: &str, chain: &[&str]| PedidoDeAprovacao {
+    let request = |id, entry: &str, environment, command: &str, chain: &[&str]| ApprovalRequest {
         id,
-        entradas: vec![entry.to_owned()],
-        ambiente: environment,
-        operacao: Operation::Run,
-        comando: command.to_owned(),
-        diretorio: "\"/home/dev/projetos/acme\"".to_owned(),
-        cadeia: chain.iter().map(|c| (*c).to_owned()).collect(),
-        origem: String::new(),
-        confirmacao: false,
-        entrada_oculta: false,
+        entries: vec![entry.to_owned()],
+        environment,
+        operation: Operation::Run,
+        command: command.to_owned(),
+        directory: "\"/home/dev/projetos/acme\"".to_owned(),
+        chain: chain.iter().map(|c| (*c).to_owned()).collect(),
+        origin: String::new(),
+        confirmation: false,
+        hidden_entry: false,
     };
     // Phase 44c (D9): fill on an `http` origin.
     // Phase 44e: environment and origin of the real test vault entry (`acme-wp-dev` is
@@ -222,17 +222,17 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
         let ward_core::entry::Data::Login(l) = e.data() else {
             return None;
         };
-        Some(PedidoDeAprovacao {
+        Some(ApprovalRequest {
             id,
-            entradas: vec![entry.to_owned()],
-            ambiente: e.environment(),
-            operacao: operation,
-            comando: String::new(),
-            diretorio: String::new(),
-            cadeia: chain.iter().map(|c| (*c).to_owned()).collect(),
-            origem: ward_core::entry::url_origin(&l.url)?,
-            confirmacao: confirmation,
-            entrada_oculta: false,
+            entries: vec![entry.to_owned()],
+            environment: e.environment(),
+            operation,
+            command: String::new(),
+            directory: String::new(),
+            chain: chain.iter().map(|c| (*c).to_owned()).collect(),
+            origin: ward_core::entry::url_origin(&l.url)?,
+            confirmation,
+            hidden_entry: false,
         })
     };
     let psql = |entry: &str| {
@@ -271,8 +271,8 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
         )],
         "aprovacao-expirando" => vec![(normal, Duration::from_secs(104))],
         "aprovacao-entrada" => vec![(
-            PedidoDeAprovacao {
-                entrada_oculta: true,
+            ApprovalRequest {
+                hidden_entry: true,
                 ..request(
                     7,
                     "acme-pg-aprovacao",
@@ -406,7 +406,7 @@ impl FakeDaemon {
     }
 
     /// Phase 48: the USB drives the fake one shows; `None` is udisks2 with no answer.
-    pub fn with_usb_drives(mut self, usb_drives: Option<Vec<Pendrive>>) -> FakeDaemon {
+    pub fn with_usb_drives(mut self, usb_drives: Option<Vec<UsbDrive>>) -> FakeDaemon {
         self.usb_drives = usb_drives;
         self
     }
@@ -505,9 +505,9 @@ impl FakeDaemon {
 
     /// Phase 36: a pending approval request, as if `wardd` had sent it to the app (the
     /// notice goes to the service queue through whoever builds the bridge).
-    pub fn with_approval(mut self, p: &PedidoDeAprovacao) -> FakeDaemon {
+    pub fn with_approval(mut self, p: &ApprovalRequest) -> FakeDaemon {
         self.approvals
-            .push((p.id, p.entradas.clone(), p.entrada_oculta));
+            .push((p.id, p.entries.clone(), p.hidden_entry));
         self
     }
 
@@ -530,24 +530,24 @@ impl FakeDaemon {
         self.entries.iter().find(|e| e.name() == name)
     }
 
-    fn handle(&mut self, request: Request) -> Resposta {
+    fn handle(&mut self, request: Request) -> Response {
         if !self.exists {
             return match request {
-                Request::Status => Resposta::Estado {
-                    travado: true,
-                    cofre_existe: false,
-                    papel: Role::App,
+                Request::Status => Response::Status {
+                    locked: true,
+                    vault_exists: false,
+                    role: Role::App,
                 },
                 // Like `wardd` (its core, create vault): only the PIN hash stays.
                 Request::CreateVault { password: _, pin } => match PinHash::create(pin.expose()) {
                     Ok(h) => {
                         self.pin_hash = Some(h);
                         self.exists = true;
-                        Resposta::Ok
+                        Response::Ok
                     }
-                    Err(_) => Resposta::Erro(ResponseError::InvalidRequest),
+                    Err(_) => Response::Error(ResponseError::InvalidRequest),
                 },
-                _ => Resposta::Erro(ResponseError::VaultNotFound),
+                _ => Response::Error(ResponseError::VaultNotFound),
             };
         }
         if self.locked
@@ -556,32 +556,32 @@ impl FakeDaemon {
                 Request::Status | Request::Unlock { .. } | Request::Lock
             )
         {
-            return Resposta::Erro(ResponseError::Locked);
+            return Response::Error(ResponseError::Locked);
         }
         match request {
-            Request::Status => Resposta::Estado {
-                travado: self.locked,
-                cofre_existe: true,
-                papel: Role::App,
+            Request::Status => Response::Status {
+                locked: self.locked,
+                vault_exists: true,
+                role: Role::App,
             },
             Request::Unlock { password: senha } => match self.unlock(&senha) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
+                Ok(()) => Response::Ok,
+                Err(e) => Response::Error(e),
             },
             Request::Lock => {
                 self.locked = true;
-                Resposta::Ok
+                Response::Ok
             }
-            Request::CreateVault { .. } => Resposta::Erro(ResponseError::VaultAlreadyExists),
-            Request::List => Resposta::Lista(
+            Request::CreateVault { .. } => Response::Error(ResponseError::VaultAlreadyExists),
+            Request::List => Response::List(
                 self.entries
                     .iter()
-                    .map(|e| ItemLista::de_entrada(e, Role::App))
+                    .map(|e| ListItem::from_entry(e, Role::App))
                     .collect(),
             ),
             Request::Detail { entry: entrada } => match self.entry(&entrada) {
-                Some(e) => Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
-                None => Resposta::Erro(ResponseError::EntryNotFound),
+                Some(e) => Response::Detail(EntryDetail::from_entry(e)),
+                None => Response::Error(ResponseError::EntryNotFound),
             },
             Request::Copy {
                 entry: entrada,
@@ -592,39 +592,39 @@ impl FakeDaemon {
                 target: alvo,
             } => match self.entry(&entrada) {
                 Some(e) => match alvo.secret_in(e) {
-                    Some(v) => Resposta::Segredo(CoreSecret::from_bytes(v.expose().to_vec())),
-                    None => Resposta::Erro(ResponseError::FieldNotFound),
+                    Some(v) => Response::Secret(CoreSecret::from_bytes(v.expose().to_vec())),
+                    None => Response::Error(ResponseError::FieldNotFound),
                 },
-                None => Resposta::Erro(ResponseError::EntryNotFound),
+                None => Response::Error(ResponseError::EntryNotFound),
             },
             Request::Totp { entry: entrada } => match self.entry(&entrada) {
                 Some(e) => match Target::Field("totp_semente".to_owned()).secret_in(e) {
                     Some(seed) => match Totp::from_seed(seed).and_then(|t| t.code_now()) {
-                        Ok(c) => Resposta::CodigoTotp {
-                            codigo: Zeroizing::new(c.code().to_owned()),
-                            restante: c.remaining(),
+                        Ok(c) => Response::TotpCode {
+                            code: Zeroizing::new(c.code().to_owned()),
+                            remaining: c.remaining(),
                         },
-                        Err(_) => Resposta::Erro(ResponseError::Internal),
+                        Err(_) => Response::Error(ResponseError::Internal),
                     },
-                    None => Resposta::Erro(ResponseError::FieldNotFound),
+                    None => Response::Error(ResponseError::FieldNotFound),
                 },
-                None => Resposta::Erro(ResponseError::EntryNotFound),
+                None => Response::Error(ResponseError::EntryNotFound),
             },
             Request::SaveEntry {
                 previous: anterior,
                 draft: rascunho,
                 keep_attachments: manter_anexos,
             } => match self.save(anterior.as_deref(), rascunho, &manter_anexos) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
+                Ok(()) => Response::Ok,
+                Err(e) => Response::Error(e),
             },
             Request::SetLevel {
                 entry: entrada,
                 level: nivel,
                 pin,
             } => match self.set_level(&entrada, nivel, &pin) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
+                Ok(()) => Response::Ok,
+                Err(e) => Response::Error(e),
             },
             // Phase 34: the "Connect" token (D3), only for a server. The fake one opens
             // no session; the token is random and not kept.
@@ -635,8 +635,8 @@ impl FakeDaemon {
                 pin,
                 confirmed_entry: entrada_confirmada,
             } => match self.answer_approval(pedido, decisao, pin.as_ref(), entrada_confirmada) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
+                Ok(()) => Response::Ok,
+                Err(e) => Response::Error(e),
             },
             Request::IssueToken { entry: entrada } => match self.entry(&entrada) {
                 Some(e) if e.kind() == EntryType::Server => {
@@ -647,23 +647,23 @@ impl FakeDaemon {
                         digits: true,
                         symbols: false,
                     }) {
-                        Ok(t) => Resposta::Token(t),
-                        Err(_) => Resposta::Erro(ResponseError::Internal),
+                        Ok(t) => Response::Token(t),
+                        Err(_) => Response::Error(ResponseError::Internal),
                     }
                 }
-                Some(_) => Resposta::Erro(ResponseError::InvalidRequest),
-                None => Resposta::Erro(ResponseError::EntryNotFound),
+                Some(_) => Response::Error(ResponseError::InvalidRequest),
+                None => Response::Error(ResponseError::EntryNotFound),
             },
             // Phase 38: the config and the changes (no hash nor UUID in the response).
-            Request::Config => Resposta::Configuracao {
-                minutos_trava: self.lock_minutes,
-                backup_externo: self.backup.enabled(),
-                backup_local: self.local_backup,
+            Request::Config => Response::Config {
+                lock_minutes: self.lock_minutes,
+                external_backup: self.backup.enabled(),
+                local_backup: self.local_backup,
             },
             // Phase 48: the same rule as `wardd` (Phase 46): only the D45 format; "on"
             // requires a UUID. Nothing is copied (there is no real USB drive).
-            Request::ExternalBackup => Resposta::BackupExterno {
-                ligado: self.backup.enabled(),
+            Request::ExternalBackup => Response::ExternalBackup {
+                enabled: self.backup.enabled(),
                 uuid: self.backup.uuid().map(str::to_owned),
             },
             Request::SetExternalBackup {
@@ -672,13 +672,13 @@ impl FakeDaemon {
             } => match wc::config::ExternalBackup::new(ligado, uuid.as_deref()) {
                 Ok(b) => {
                     self.backup = b;
-                    Resposta::Ok
+                    Response::Ok
                 }
-                Err(_) => Resposta::Erro(ResponseError::InvalidRequest),
+                Err(_) => Response::Error(ResponseError::InvalidRequest),
             },
             Request::UsbDrives => match &self.usb_drives {
-                Some(l) => Resposta::Pendrives(l.clone()),
-                None => Resposta::Erro(ResponseError::UsbDrivesUnavailable),
+                Some(l) => Response::UsbDrives(l.clone()),
+                None => Response::Error(ResponseError::UsbDrivesUnavailable),
             },
             // Phase 47: the same rule as `wardd` (Phase 45).
             Request::Backups => match &self.backups {
@@ -692,51 +692,51 @@ impl FakeDaemon {
                         })
                         .collect();
                     let flags = wc::backup::out_of_order(&with);
-                    Resposta::Backups(
+                    Response::Backups(
                         with.iter()
                             .zip(flags)
-                            .map(|((v, g), out)| wc::protocol::VersaoBackup {
-                                nome: v.name(),
-                                conferida: g.is_some(),
-                                fora_de_ordem: out,
+                            .map(|((v, g), out)| wc::protocol::BackupVersion {
+                                name: v.name(),
+                                verified: g.is_some(),
+                                out_of_order: out,
                             })
                             .collect(),
                     )
                 }
-                None => Resposta::Erro(ResponseError::BackupUnavailable),
+                None => Response::Error(ResponseError::BackupUnavailable),
             },
             Request::RestoreBackup {
                 version: versao,
                 password: senha,
                 pin,
             } => match self.restore(&versao, &senha, &pin) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
+                Ok(()) => Response::Ok,
+                Err(e) => Response::Error(e),
             },
             Request::LockTimeout { minutes: minutos } => {
                 if (wc::limits::MIN_LOCK_MINUTES..=wc::limits::MAX_LOCK_MINUTES).contains(&minutos)
                 {
                     self.lock_minutes = minutos;
-                    Resposta::Ok
+                    Response::Ok
                 } else {
-                    Resposta::Erro(ResponseError::InvalidRequest)
+                    Response::Error(ResponseError::InvalidRequest)
                 }
             }
             Request::ChangePin {
                 current: atual,
                 new: novo,
             } => match self.change_pin(&atual, &novo) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
+                Ok(()) => Response::Ok,
+                Err(e) => Response::Error(e),
             },
             Request::ChangePassword {
                 current: atual,
                 new: nova,
             } => match self.change_password(&atual, &nova) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
+                Ok(()) => Response::Ok,
+                Err(e) => Response::Error(e),
             },
-            _ => Resposta::Erro(ResponseError::Internal),
+            _ => Response::Error(ResponseError::Internal),
         }
     }
 
@@ -954,7 +954,7 @@ impl Daemon for FakeDaemon {
     fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
         let response = match protocol::decode_request(Role::App, request) {
             Ok(p) => self.handle(p),
-            Err(e) => Resposta::Erro(e),
+            Err(e) => Response::Error(e),
         };
         protocol::encode_response(Role::App, &response).map_err(|_| AppError::InvalidResponse)
     }
@@ -1027,10 +1027,10 @@ mod tests {
         ] {
             let v = simulated_approvals(mode).unwrap();
             let p = &v[0].0;
-            assert_eq!(p.ambiente, environment, "{mode}");
-            assert_eq!(p.confirmacao, confirmation, "{mode}");
-            assert_eq!(p.origem, "http://localhost:8081", "{mode}");
-            assert!(p.comando.is_empty() && p.diretorio.is_empty(), "{mode}");
+            assert_eq!(p.environment, environment, "{mode}");
+            assert_eq!(p.confirmation, confirmation, "{mode}");
+            assert_eq!(p.origin, "http://localhost:8081", "{mode}");
+            assert!(p.command.is_empty() && p.directory.is_empty(), "{mode}");
         }
     }
 
@@ -1043,7 +1043,7 @@ mod tests {
         for junk in [&b""[..], b"{}", b"{\"v\":1,\"op\":\"revelar\"}", b"\xff"] {
             let r = d.exchange(junk).unwrap();
             let r = protocol::decode_response(Role::App, &r).unwrap();
-            assert!(matches!(r, Resposta::Erro(_)));
+            assert!(matches!(r, Response::Error(_)));
         }
     }
 }

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, login, ok, request, set_level};
-use ward_core::protocol::{self, DetalheEntrada, ResponseError, Resposta, Role, decode_response};
+use ward_core::protocol::{self, EntryDetail, Response, ResponseError, Role, decode_response};
 use wardd::nucleo::{Daemon, Relogio};
 
 /// 2026-11-02 00:00 UTC and following (the footer of the frame approved in M0).
@@ -60,20 +60,20 @@ fn create(dir: &Dir, clock: &WallClock) -> Daemon {
     d
 }
 
-fn detail(d: &Daemon, name: &str) -> DetalheEntrada {
+fn detail(d: &Daemon, name: &str) -> EntryDetail {
     match request(
         d,
         Role::App,
         "detalhe",
         &format!(r#"{{"entrada":"{name}"}}"#),
     ) {
-        Resposta::Detalhe(x) => x,
+        Response::Detail(x) => x,
         other => panic!("{other:?}"),
     }
 }
 
 fn dates(d: &Daemon, name: &str) -> (Option<u64>, Option<u64>) {
-    let x = detail(d, name).datas;
+    let x = detail(d, name).dates;
     (x.created_at(), x.modified_at())
 }
 
@@ -256,7 +256,7 @@ fn restore_keeps_the_dates() {
     let d = create(&dir, &clock);
     save(&d, &login("t-datas", SECRETS[0]));
     let version = match request(&d, Role::App, "backups", "{}") {
-        Resposta::Backups(l) => l[0].nome.clone(),
+        Response::Backups(l) => l[0].name.clone(),
         other => panic!("{other:?}"),
     };
     clock.set(T0 + 3 * DAY);

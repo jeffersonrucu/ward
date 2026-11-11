@@ -27,7 +27,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use ward_core::entry::Entry;
-use ward_core::protocol::{self, Request, Resposta, Role, Target};
+use ward_core::protocol::{self, Request, Response, Role, Target};
 use ward_core::totp::Totp;
 
 // O cofre de teste (só valores falsos) pela API pública, como o daemon falso do app.
@@ -53,8 +53,8 @@ fn pedir(s: &mut UnixStream, p: &Request) -> Option<Vec<u8>> {
 fn descrever(corpo: &[u8]) -> String {
     for papel in [Role::App, Role::Agent] {
         match protocol::decode_response(papel, corpo) {
-            Ok(Resposta::Erro(e)) => return e.code().to_owned(),
-            Ok(r) => return r.tipo().name().to_owned(),
+            Ok(Response::Error(e)) => return e.code().to_owned(),
+            Ok(r) => return r.kind().name().to_owned(),
             Err(_) => {}
         }
     }
@@ -73,8 +73,8 @@ fn comparar(corpo: Option<&[u8]>, esperado: Option<&[u8]>) -> String {
         return String::new();
     };
     match protocol::decode_response(Role::App, corpo) {
-        Ok(Resposta::Segredo(s)) if Some(s.expose()) == esperado => "igual".to_owned(),
-        Ok(Resposta::Segredo(_)) => "diferente".to_owned(),
+        Ok(Response::Secret(s)) if Some(s.expose()) == esperado => "igual".to_owned(),
+        Ok(Response::Secret(_)) => "diferente".to_owned(),
         _ => descrever(corpo),
     }
 }
@@ -134,7 +134,10 @@ fn valores_do_app(s: &mut UnixStream) {
         .as_deref()
         .map(|c| protocol::decode_response(Role::App, c))
     {
-        Some(Ok(Resposta::CodigoTotp { codigo, restante })) => {
+        Some(Ok(Response::TotpCode {
+            code: codigo,
+            remaining: restante,
+        })) => {
             let bate = [&antes, &depois]
                 .iter()
                 .any(|l| l.as_deref() == Some(codigo.as_str()));
@@ -163,12 +166,12 @@ fn valores_do_app(s: &mut UnixStream) {
         .as_deref()
         .map(|c| (c, protocol::decode_response(Role::App, c)))
     {
-        Some((c, Ok(Resposta::Lista(itens)))) => {
+        Some((c, Ok(Response::List(itens)))) => {
             if itens.len() != entradas.len() {
                 "contagem".to_owned()
             } else if !itens
                 .iter()
-                .all(|i| i.resumo.is_some() && i.nivel.is_some())
+                .all(|i| i.summary.is_some() && i.level.is_some())
             {
                 "sem_resumo".to_owned()
             } else if test_vault::SECRETS.iter().any(|v| contem(c, v.as_bytes())) {
@@ -225,7 +228,7 @@ fn main() -> ExitCode {
         Role::ALL
             .into_iter()
             .find_map(|p| match protocol::decode_response(p, &c) {
-                Ok(Resposta::Estado { papel, .. }) => Some(papel),
+                Ok(Response::Status { role: papel, .. }) => Some(papel),
                 _ => None,
             })
     });

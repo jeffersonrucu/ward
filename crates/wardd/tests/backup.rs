@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime};
 use common::*;
 use ward_core::backup::Version;
 use ward_core::entry::Secret;
-use ward_core::protocol::{MSG_ROLLBACK, Request, ResponseError, Resposta, Role, VersaoBackup};
+use ward_core::protocol::{BackupVersion, MSG_ROLLBACK, Request, Response, ResponseError, Role};
 use wardd::arquivos::Geracoes;
 use wardd::nucleo::Daemon;
 
@@ -30,18 +30,18 @@ fn mode(p: &Path) -> u32 {
 
 /// The names of the versions in the folder, from newest to oldest (through the app).
 fn backups(d: &Daemon) -> Vec<String> {
-    versions(d).into_iter().map(|v| v.nome).collect()
+    versions(d).into_iter().map(|v| v.name).collect()
 }
 
 /// The versions with the sealed generation (Phase 49a).
-fn versions(d: &Daemon) -> Vec<VersaoBackup> {
+fn versions(d: &Daemon) -> Vec<BackupVersion> {
     match request(d, Role::App, "backups", "{}") {
-        Resposta::Backups(l) => l,
+        Response::Backups(l) => l,
         other => panic!("{other:?}"),
     }
 }
 
-fn restore(d: &Daemon, version: &str, password: &str, pin: &str) -> Resposta {
+fn restore(d: &Daemon, version: &str, password: &str, pin: &str) -> Response {
     request(
         d,
         Role::App,
@@ -56,7 +56,7 @@ fn restore(d: &Daemon, version: &str, password: &str, pin: &str) -> Resposta {
 
 fn list_names(d: &Daemon) -> Vec<String> {
     match request(d, Role::App, "lista", "{}") {
-        Resposta::Lista(l) => l.into_iter().map(|i| i.nome).collect(),
+        Response::List(l) => l.into_iter().map(|i| i.name).collect(),
         other => panic!("{other:?}"),
     }
 }
@@ -107,8 +107,8 @@ fn v7_1_each_daemon_write_goes_to_the_backup() {
     // The reply to the app has only names and the marks (Phase 49a): all checked and in
     // order; no path nor generation (D39).
     let v = versions(&d);
-    assert!(v.iter().all(|x| x.conferida && !x.fora_de_ordem), "{v:?}");
-    let bytes = encoded(Role::App, &Resposta::Backups(v));
+    assert!(v.iter().all(|x| x.verified && !x.out_of_order), "{v:?}");
+    let bytes = encoded(Role::App, &Response::Backups(v));
     assert!(!contains(&bytes, dir.0.to_string_lossy().as_bytes()));
     assert!(!contains(&bytes, b"geracao"));
 }
@@ -507,11 +507,11 @@ fn attack_future_dated_versions_neither_delete_the_real_ones_nor_restore() {
     // The ones past the margin do not show; the ones within come out marked (generation
     // 1, the old one, lower than that of the real ones with an earlier date); the real
     // ones do not.
-    assert!(v.iter().all(|x| !far.contains(&x.nome)));
+    assert!(v.iter().all(|x| !far.contains(&x.name)));
     assert_eq!(v.len(), real.len() + 1 + near.len());
     for x in &v {
-        assert!(x.conferida, "{}", x.nome);
-        assert_eq!(x.fora_de_ordem, near.contains(&x.nome), "{}", x.nome);
+        assert!(x.verified, "{}", x.name);
+        assert_eq!(x.out_of_order, near.contains(&x.name), "{}", x.name);
     }
     // Restoring one past the margin: nonexistent, nothing changes.
     let before = fs::read(&c.cofre).unwrap();
@@ -562,10 +562,10 @@ fn restore_keeps_the_current_lock_timeout_and_external_backup() {
     assert!(ok(&restore(&d, &version, PASSWORD, PIN)));
     assert_eq!(list_names(&d), entries);
     match request(&d, Role::App, "configuracao", "{}") {
-        Resposta::Configuracao {
-            minutos_trava,
-            backup_externo,
-            backup_local,
+        Response::Config {
+            lock_minutes: minutos_trava,
+            external_backup: backup_externo,
+            local_backup: backup_local,
         } => {
             assert_eq!(minutos_trava, 30);
             assert!(backup_externo);
@@ -574,7 +574,10 @@ fn restore_keeps_the_current_lock_timeout_and_external_backup() {
         r => panic!("{r:?}"),
     }
     match request(&d, Role::App, "backup_externo", "{}") {
-        Resposta::BackupExterno { ligado, uuid } => {
+        Response::ExternalBackup {
+            enabled: ligado,
+            uuid,
+        } => {
             assert!(ligado);
             assert_eq!(uuid.as_deref(), Some("ABCD-1234"));
         }
@@ -596,7 +599,10 @@ fn unsafe_backups_folder_shows_in_the_settings() {
     let dir = Dir::new("bk-aviso");
     let (d, _) = test_vault(&dir);
     let local = |d: &Daemon| match request(d, Role::App, "configuracao", "{}") {
-        Resposta::Configuracao { backup_local, .. } => backup_local,
+        Response::Config {
+            local_backup: backup_local,
+            ..
+        } => backup_local,
         r => panic!("{r:?}"),
     };
     assert!(local(&d));
@@ -724,6 +730,6 @@ fn f54l_attack_fifo_swapped_in_place_of_the_version_does_not_hold_the_daemon() {
     assert!(swaps > 100 && lists > 100, "{swaps} trocas, {lists} listas");
     // The real version checks again; the daemon stays unlocked.
     let l = versions(&d);
-    assert!(l.iter().any(|x| x.nome == v && x.conferida), "{l:?}");
+    assert!(l.iter().any(|x| x.name == v && x.verified), "{l:?}");
     assert!(!d.travado());
 }

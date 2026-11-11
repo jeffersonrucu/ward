@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use ward_core::protocol::{ResponseError, Resposta, Role};
+use ward_core::protocol::{Response, ResponseError, Role};
 use wardd::aprovacao::SemCliente;
 use wardd::nucleo::Daemon;
 
@@ -78,7 +78,7 @@ fn scene(label: &str, mode: &str) -> Scene {
 }
 
 impl Scene {
-    fn playwright(&self, entry: &str) -> Resposta {
+    fn playwright(&self, entry: &str) -> Response {
         let p = req(
             Role::Agent,
             "playwright",
@@ -150,7 +150,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
     let r = c.playwright("t-livre");
     let expected = c.session("t-livre");
     match &r {
-        Resposta::SessaoPlaywright { caminho } => {
+        Response::PlaywrightSession { path: caminho } => {
             assert_eq!(Path::new(caminho), expected);
         }
         other => panic!("{other:?}"),
@@ -666,7 +666,7 @@ fn real_scene(label: &str) -> RealScene {
 }
 
 impl RealScene {
-    fn playwright(&self, entry: &str) -> Resposta {
+    fn playwright(&self, entry: &str) -> Response {
         let p = req(
             Role::Agent,
             "playwright",
@@ -724,15 +724,15 @@ fn real_chrome_login_and_attacks() {
         let (r, seen) = with_window(&c.d, "confirmar", None, || c.playwright(&entry));
         assert!(
             seen.len() == 1
-                && seen[0].confirmacao
-                && seen[0].origem.starts_with("http://127.0.0.1:"),
+                && seen[0].confirmation
+                && seen[0].origin.starts_with("http://127.0.0.1:"),
             "{case}: {seen:?}"
         );
         let path = c.rt.0.join(format!("playwright/{entry}.json"));
         match &expected {
             None => {
                 assert!(
-                    matches!(r, Resposta::SessaoPlaywright { .. }),
+                    matches!(r, Response::PlaywrightSession { .. }),
                     "{case}: {r:?}"
                 );
                 let state = fs::read(&path).unwrap();
@@ -797,10 +797,10 @@ fn attack_playwright_http_free_only_with_confirmation() {
     );
     assert!(!c.session("h-livre").exists());
     let p = &seen[0];
-    assert_eq!(p.operacao, ward_core::protocol::Operation::Playwright);
-    assert_eq!(p.origem, "http://localhost:8081");
-    assert!(p.confirmacao);
-    let enc = encoded(Role::App, &Resposta::PedidoDeAprovacao(p.clone()));
+    assert_eq!(p.operation, ward_core::protocol::Operation::Playwright);
+    assert_eq!(p.origin, "http://localhost:8081");
+    assert!(p.confirmation);
+    let enc = encoded(Role::App, &Response::ApprovalRequest(p.clone()));
     for f in password_forms() {
         assert!(!contains(&enc, &f), "o pedido da janela tem a senha");
     }
@@ -847,8 +847,8 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
         assert!(c.events("inicio").is_empty(), "o Chrome abriu: {url}");
         assert!(!c.session(&name).exists(), "{url}");
         assert_eq!(seen.len(), 1, "{url}");
-        assert_eq!(seen[0].origem, origin, "{url}");
-        assert!(seen[0].confirmacao, "{url}");
+        assert_eq!(seen[0].origin, origin, "{url}");
+        assert!(seen[0].confirmation, "{url}");
     }
 }
 
@@ -857,6 +857,6 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
 fn playwright_https_free_without_window() {
     let c = scene("https-livre", "ok");
     let (r, seen) = with_window(&c.d, "negar", None, || c.playwright("t-livre"));
-    assert!(matches!(r, Resposta::SessaoPlaywright { .. }), "{r:?}");
+    assert!(matches!(r, Response::PlaywrightSession { .. }), "{r:?}");
     assert!(seen.is_empty());
 }

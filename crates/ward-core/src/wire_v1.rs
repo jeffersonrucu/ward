@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 
 use crate::body;
 use crate::format::{self, MasterPassword};
-use crate::protocol::{self, Operation, ResponseError, ResponseType, Resposta, Role, VERSION};
+use crate::protocol::{self, Operation, Response, ResponseError, ResponseType, Role, VERSION};
 
 const PROTOCOL_V1: &[u8] = include_bytes!("../../../dev/fixtures/legacy/protocol-v1.jsonl");
 const VAULT: &[u8] = include_bytes!("../../../dev/fixtures/legacy/vault-0.1.4.ward");
@@ -145,7 +145,7 @@ fn v1_responses_read_and_written_byte_for_byte() {
             l.frame,
             "response written differently from 0.1.4"
         );
-        types.insert(response.tipo().name());
+        types.insert(response.kind().name());
         count += 1;
     }
     let all: BTreeSet<_> = ResponseType::ALL.iter().map(|t| t.name()).collect();
@@ -162,7 +162,7 @@ fn v1_error_codes_read_and_written_byte_for_byte() {
         let again = protocol::encode_response(l.role, &response).expect("error not written");
         assert_eq!(&again[..], l.frame, "error written differently from 0.1.4");
         match response {
-            Resposta::Erro(e) => codes.push(e),
+            Response::Error(e) => codes.push(e),
             _ => panic!("error line is not an error"),
         }
     }

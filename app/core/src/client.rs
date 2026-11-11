@@ -19,8 +19,7 @@
 
 use ward_core::entry::{AccessLevel, Draft, Secret as CoreSecret};
 use ward_core::protocol::{
-    self, DetalheEntrada, ItemLista, Pendrive, Problem, Request, ResponseError, Resposta, Role,
-    Target,
+    self, EntryDetail, ListItem, Problem, Request, Response, ResponseError, Role, Target, UsbDrive,
 };
 use zeroize::Zeroizing;
 
@@ -31,12 +30,12 @@ use crate::terminal::Token;
 
 /// One request and the response already read. A daemon error becomes an [`AppError`]
 /// with a fixed message (the protocol code does not reach the interface).
-fn ask<D: Daemon + ?Sized>(daemon: &mut D, request: &Request) -> Result<Resposta, AppError> {
+fn ask<D: Daemon + ?Sized>(daemon: &mut D, request: &Request) -> Result<Response, AppError> {
     let frame =
         protocol::encode_request(Role::App, request).map_err(|_| AppError::InvalidRequest)?;
     let body = daemon.exchange(&frame)?;
     match protocol::decode_response(Role::App, &body) {
-        Ok(Resposta::Erro(e)) => Err(daemon_error(&e)),
+        Ok(Response::Error(e)) => Err(daemon_error(&e)),
         Ok(r) => Ok(r),
         Err(_) => Err(AppError::InvalidResponse),
     }
@@ -65,12 +64,12 @@ fn daemon_error(e: &ResponseError) -> AppError {
 /// Vault status.
 pub fn status<D: Daemon + ?Sized>(daemon: &mut D) -> Result<VaultStatus, AppError> {
     match ask(daemon, &Request::Status)? {
-        Resposta::Estado {
-            cofre_existe: false,
+        Response::Status {
+            vault_exists: false,
             ..
         } => Ok(VaultStatus::NoVault),
-        Resposta::Estado { travado: true, .. } => Ok(VaultStatus::Locked),
-        Resposta::Estado { travado: false, .. } => Ok(VaultStatus::Unlocked),
+        Response::Status { locked: true, .. } => Ok(VaultStatus::Locked),
+        Response::Status { locked: false, .. } => Ok(VaultStatus::Unlocked),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -89,7 +88,7 @@ pub fn create_vault<D: Daemon + ?Sized>(
         pin: CoreSecret::from_bytes(pin.to_vec()),
     };
     match ask(daemon, &request)? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -99,7 +98,7 @@ pub fn create_vault<D: Daemon + ?Sized>(
 /// connection.
 pub fn role<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Role, AppError> {
     match ask(daemon, &Request::Status)? {
-        Resposta::Estado { papel, .. } => Ok(papel),
+        Response::Status { role: papel, .. } => Ok(papel),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -114,7 +113,7 @@ pub fn has_app_role<D: Daemon + ?Sized>(daemon: &mut D) -> Result<bool, AppError
 /// the request reaches the process the daemon opens.
 pub fn open_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), AppError> {
     match ask(daemon, &Request::OpenApp)? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -127,28 +126,28 @@ pub fn open_app_as_agent<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), AppEr
         .map_err(|_| AppError::InvalidRequest)?;
     let body = daemon.exchange(&frame)?;
     match protocol::decode_response(Role::Agent, &body) {
-        Ok(Resposta::Ok) => Ok(()),
-        Ok(Resposta::Erro(e)) => Err(daemon_error(&e)),
+        Ok(Response::Ok) => Ok(()),
+        Ok(Response::Error(e)) => Err(daemon_error(&e)),
         _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// List: every entry (the app also sees the blocked ones), no secret.
-pub fn list<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<ItemLista>, AppError> {
+pub fn list<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<ListItem>, AppError> {
     match ask(daemon, &Request::List)? {
-        Resposta::Lista(items) => Ok(items),
+        Response::List(items) => Ok(items),
         _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// Detail of an entry: text fields, secret names, extras without the secret value and
 /// attachments without the content. The response must be of the requested entry.
-pub fn detail<D: Daemon + ?Sized>(daemon: &mut D, entry: &str) -> Result<DetalheEntrada, AppError> {
+pub fn detail<D: Daemon + ?Sized>(daemon: &mut D, entry: &str) -> Result<EntryDetail, AppError> {
     let request = Request::Detail {
         entry: entry.to_owned(),
     };
     match ask(daemon, &request)? {
-        Resposta::Detalhe(d) if d.nome == entry => Ok(d),
+        Response::Detail(d) if d.name == entry => Ok(d),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -164,7 +163,7 @@ pub fn copy<D: Daemon + ?Sized>(
         target,
     };
     match ask(daemon, &request)? {
-        Resposta::Segredo(s) => Ok(Secret::new(s.expose().to_vec())),
+        Response::Secret(s) => Ok(Secret::new(s.expose().to_vec())),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -181,7 +180,7 @@ pub fn reveal<D: Daemon + ?Sized>(
         target,
     };
     match ask(daemon, &request)? {
-        Resposta::Segredo(s) => Ok(Secret::new(s.expose().to_vec())),
+        Response::Secret(s) => Ok(Secret::new(s.expose().to_vec())),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -198,14 +197,13 @@ pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entry: &str) -> Result<TotpCode,
         entry: entry.to_owned(),
     };
     match ask(daemon, &request)? {
-        Resposta::CodigoTotp { codigo, restante }
-            if codigo.len() == 6 && (1..=30).contains(&restante) =>
-        {
-            Ok(TotpCode {
-                code: codigo,
-                remaining: restante,
-            })
-        }
+        Response::TotpCode {
+            code: codigo,
+            remaining: restante,
+        } if codigo.len() == 6 && (1..=30).contains(&restante) => Ok(TotpCode {
+            code: codigo,
+            remaining: restante,
+        }),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -217,7 +215,7 @@ pub fn issue_token<D: Daemon + ?Sized>(daemon: &mut D, entry: &str) -> Result<To
         entry: entry.to_owned(),
     };
     match ask(daemon, &request)? {
-        Resposta::Token(t) => Token::from_response(t.expose()).ok_or(AppError::InvalidResponse),
+        Response::Token(t) => Token::from_response(t.expose()).ok_or(AppError::InvalidResponse),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -249,9 +247,9 @@ pub fn save<D: Daemon + ?Sized>(
     let body = daemon.exchange(&frame)?;
     drop(frame);
     match protocol::decode_response(Role::App, &body) {
-        Ok(Resposta::Ok) => Ok(Save::Saved),
-        Ok(Resposta::Erro(ResponseError::Validation(p))) => Ok(Save::Problems(p)),
-        Ok(Resposta::Erro(e)) => Err(daemon_error(&e)),
+        Ok(Response::Ok) => Ok(Save::Saved),
+        Ok(Response::Error(ResponseError::Validation(p))) => Ok(Save::Problems(p)),
+        Ok(Response::Error(e)) => Err(daemon_error(&e)),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -272,7 +270,7 @@ pub fn set_level<D: Daemon + ?Sized>(
         pin: pin.para_o_protocolo(),
     };
     match ask(daemon, &request)? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -312,10 +310,10 @@ pub fn answer_approval<D: Daemon + ?Sized>(
     let body = daemon.exchange(&frame)?;
     drop(frame);
     match protocol::decode_response(Role::App, &body) {
-        Ok(Resposta::Ok) => Ok(Answered::Ok),
-        Ok(Resposta::Erro(ResponseError::WrongPin)) => Ok(Answered::WrongPin),
-        Ok(Resposta::Erro(ResponseError::Expired)) => Ok(Answered::Expired),
-        Ok(Resposta::Erro(e)) => Err(daemon_error(&e)),
+        Ok(Response::Ok) => Ok(Answered::Ok),
+        Ok(Response::Error(ResponseError::WrongPin)) => Ok(Answered::WrongPin),
+        Ok(Response::Error(ResponseError::Expired)) => Ok(Answered::Expired),
+        Ok(Response::Error(e)) => Err(daemon_error(&e)),
         Ok(_) => Err(AppError::InvalidResponse),
         Err(_) => Err(AppError::InvalidResponse),
     }
@@ -333,7 +331,7 @@ pub fn unlock<D: Daemon + ?Sized>(
         password: password.para_o_protocolo(),
     };
     match ask(daemon, &request)? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -342,10 +340,10 @@ pub fn unlock<D: Daemon + ?Sized>(
 /// already refused minutes outside D45 and an extra field.
 pub fn settings<D: Daemon + ?Sized>(daemon: &mut D) -> Result<crate::settings::Settings, AppError> {
     match ask(daemon, &Request::Config)? {
-        Resposta::Configuracao {
-            minutos_trava,
-            backup_externo,
-            backup_local,
+        Response::Config {
+            lock_minutes: minutos_trava,
+            external_backup: backup_externo,
+            local_backup: backup_local,
         } => Ok(crate::settings::Settings {
             lock_minutes: minutos_trava,
             external_backup: backup_externo,
@@ -369,7 +367,7 @@ pub fn change_pin<D: Daemon + ?Sized>(
         new: CoreSecret::from_bytes(new.to_vec()),
     };
     match ask(daemon, &request)? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -387,7 +385,7 @@ pub fn change_password<D: Daemon + ?Sized>(
         new: CoreSecret::from_bytes(new.to_vec()),
     };
     match ask(daemon, &request)? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -395,7 +393,7 @@ pub fn change_password<D: Daemon + ?Sized>(
 /// Lock timeout in minutes (Phase 38, D30): the daemon stores it in the vault config.
 pub fn set_lock_timeout<D: Daemon + ?Sized>(daemon: &mut D, minutes: u32) -> Result<(), AppError> {
     match ask(daemon, &Request::LockTimeout { minutes })? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -404,7 +402,7 @@ pub fn set_lock_timeout<D: Daemon + ?Sized>(daemon: &mut D, minutes: u32) -> Res
 /// zeroes the key and answers `ok` (already locked, also `ok`).
 pub fn lock<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), AppError> {
     match ask(daemon, &Request::Lock)? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -415,7 +413,10 @@ pub fn external_backup<D: Daemon + ?Sized>(
     daemon: &mut D,
 ) -> Result<(bool, Option<String>), AppError> {
     match ask(daemon, &Request::ExternalBackup)? {
-        Resposta::BackupExterno { ligado, uuid } => Ok((ligado, uuid)),
+        Response::ExternalBackup {
+            enabled: ligado,
+            uuid,
+        } => Ok((ligado, uuid)),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -423,9 +424,9 @@ pub fn external_backup<D: Daemon + ?Sized>(
 /// USB drives (Phase 46/48): UUID, label (no control characters, up to the label limit) and
 /// mounted; never the mount path. udisks2 without an answer is
 /// [`AppError::UsbDrivesUnavailable`].
-pub fn usb_drives<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<Pendrive>, AppError> {
+pub fn usb_drives<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<UsbDrive>, AppError> {
     match ask(daemon, &Request::UsbDrives)? {
-        Resposta::Pendrives(l) => Ok(l),
+        Response::UsbDrives(l) => Ok(l),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -438,7 +439,7 @@ pub fn set_external_backup<D: Daemon + ?Sized>(
     uuid: Option<String>,
 ) -> Result<(), AppError> {
     match ask(daemon, &Request::SetExternalBackup { enabled, uuid })? {
-        Resposta::Ok => Ok(()),
+        Response::Ok => Ok(()),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -448,9 +449,9 @@ pub fn set_external_backup<D: Daemon + ?Sized>(
 /// format, generation 0, an extra field and more than `MAX_BACKUPS`.
 pub fn backups<D: Daemon + ?Sized>(
     daemon: &mut D,
-) -> Result<Vec<ward_core::protocol::VersaoBackup>, AppError> {
+) -> Result<Vec<ward_core::protocol::BackupVersion>, AppError> {
     match ask(daemon, &Request::Backups)? {
-        Resposta::Backups(l) => Ok(l),
+        Response::Backups(l) => Ok(l),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -477,8 +478,8 @@ pub fn restore_backup<D: Daemon + ?Sized>(
     let body = daemon.exchange(&frame)?;
     drop(frame);
     match protocol::decode_response(Role::App, &body) {
-        Ok(Resposta::Ok) => Ok(()),
-        Ok(Resposta::Erro(e)) => Err(daemon_error(&e)),
+        Ok(Response::Ok) => Ok(()),
+        Ok(Response::Error(e)) => Err(daemon_error(&e)),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -513,7 +514,7 @@ mod tests {
                 .len()
         );
         let det = detail(&mut d, "acme-pg-dev").unwrap();
-        assert_eq!(det.segredos, vec!["senha".to_owned()]);
+        assert_eq!(det.secrets, vec!["senha".to_owned()]);
         assert_eq!(
             detail(&mut d, "nao-existe").unwrap_err(),
             AppError::EntryNotFound
@@ -580,7 +581,7 @@ mod tests {
         assert!(
             items
                 .iter()
-                .all(|i| i.resumo.is_some() && i.nivel.is_some())
+                .all(|i| i.summary.is_some() && i.level.is_some())
         );
         let frame = protocol::encode_request(Role::App, &Request::List).unwrap();
         let real = String::from_utf8(fake.exchange(&frame).unwrap().to_vec()).unwrap();
@@ -588,15 +589,15 @@ mod tests {
             assert!(!real.contains(s), "segredo na lista do app");
         }
         // The agent list (no level, no summary) does not serve the app.
-        let agent_list: Vec<ItemLista> = items
+        let agent_list: Vec<ListItem> = items
             .iter()
-            .map(|i| ItemLista {
-                nivel: None,
-                resumo: None,
+            .map(|i| ListItem {
+                level: None,
+                summary: None,
                 ..i.clone()
             })
             .collect();
-        let q = protocol::encode_response(Role::Agent, &Resposta::Lista(agent_list))
+        let q = protocol::encode_response(Role::Agent, &Response::List(agent_list))
             .unwrap()
             .to_vec();
         assert_eq!(

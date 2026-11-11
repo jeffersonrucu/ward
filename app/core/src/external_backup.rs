@@ -21,7 +21,7 @@
 use serde::Serialize;
 use ward_core::config::ExternalBackup;
 use ward_core::limits::MAX_BACKUP_UUID;
-use ward_core::protocol::Pendrive;
+use ward_core::protocol::UsbDrive;
 
 use crate::AppError;
 
@@ -36,11 +36,11 @@ pub struct UsbDriveView {
 }
 
 impl UsbDriveView {
-    pub(crate) fn from_drive(p: &Pendrive) -> UsbDriveView {
+    pub(crate) fn from_drive(p: &UsbDrive) -> UsbDriveView {
         UsbDriveView {
             uuid: p.uuid.clone(),
-            label: ward_core::display::neutralize(p.rotulo.trim()),
-            mounted: p.montado,
+            label: ward_core::display::neutralize(p.label.trim()),
+            mounted: p.mounted,
         }
     }
 }
@@ -87,7 +87,7 @@ pub fn valid_uuid(uuid: &str) -> bool {
 
 /// The USB drive with that UUID in the daemon's list (case-insensitive, like the `wardd`
 /// copy). Two with the same UUID: none (the `wardd` does not copy either).
-pub(crate) fn find<'a>(list: &'a [Pendrive], uuid: &str) -> Option<&'a Pendrive> {
+pub(crate) fn find<'a>(list: &'a [UsbDrive], uuid: &str) -> Option<&'a UsbDrive> {
     let mut matches = list.iter().filter(|p| p.uuid.eq_ignore_ascii_case(uuid));
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
@@ -97,11 +97,11 @@ pub(crate) fn find<'a>(list: &'a [Pendrive], uuid: &str) -> Option<&'a Pendrive>
 mod tests {
     use super::*;
 
-    fn p(uuid: &str, label: &str) -> Pendrive {
-        Pendrive {
+    fn p(uuid: &str, label: &str) -> UsbDrive {
+        UsbDrive {
             uuid: uuid.to_owned(),
-            rotulo: label.to_owned(),
-            montado: true,
+            label: label.to_owned(),
+            mounted: true,
         }
     }
 
@@ -176,7 +176,7 @@ mod tests {
     fn find_case_insensitive_and_repeated_does_not_count() {
         let list = [p("7C1E-42A9", "A"), p("3F2A-9B10", "B")];
         assert_eq!(
-            find(&list, "7c1e-42a9").map(|p| p.rotulo.as_str()),
+            find(&list, "7c1e-42a9").map(|p| p.label.as_str()),
             Some("A")
         );
         assert!(find(&list, "0000-0000").is_none());
@@ -221,7 +221,7 @@ mod tests {
         };
         let ok = item(r#"{"uuid":"7C1E-42A9","rotulo":"WARD","montado":true}"#);
         assert_eq!(client::usb_drives(&mut Response1(ok)).unwrap().len(), 1);
-        let many = (0..=ward_core::protocol::MAX_PENDRIVES)
+        let many = (0..=ward_core::protocol::MAX_USB_DRIVES)
             .map(|i| format!(r#"{{"uuid":"{i:04X}","rotulo":"x","montado":true}}"#))
             .collect::<Vec<_>>()
             .join(",");
@@ -234,7 +234,7 @@ mod tests {
             item(r#"{"uuid":"../etc","rotulo":"WARD","montado":true}"#),
             item(&format!(
                 r#"{{"uuid":"7C1E-42A9","rotulo":"{}","montado":true}}"#,
-                "a".repeat(ward_core::protocol::MAX_ROTULO + 1)
+                "a".repeat(ward_core::protocol::MAX_LABEL + 1)
             )),
             item(&many),
         ] {

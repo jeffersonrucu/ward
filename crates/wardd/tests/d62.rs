@@ -16,7 +16,7 @@ use std::time::Duration;
 use common::*;
 use ward_core::config::{PinHash, VaultConfig};
 use ward_core::format::{MasterPassword, OpenVault};
-use ward_core::protocol::{MSG_ROLLBACK, ResponseError, Resposta, Role};
+use ward_core::protocol::{MSG_ROLLBACK, Response, ResponseError, Role};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
 
@@ -51,7 +51,7 @@ fn movable_daemon(c: Caminhos, r: &MovableClock) -> Daemon {
     Daemon::novo(c, Box::new(r.clone()))
 }
 
-fn unlock_as(d: &Daemon, role: Role, password: &str) -> Resposta {
+fn unlock_as(d: &Daemon, role: Role, password: &str) -> Response {
     request(
         d,
         role,

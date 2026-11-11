@@ -31,7 +31,7 @@ use std::io::{self, Read, Write};
 use zeroize::Zeroizing;
 
 use ward_core::limits::KIB;
-use ward_core::protocol::{self, Operation, ResponseError, ResponseType, Resposta, Role};
+use ward_core::protocol::{self, Operation, Response, ResponseError, ResponseType, Role};
 
 /// Largest message accepted from the extension. The largest legitimate request is a
 /// login save with the URL, the username and the password (each up to 2 KiB, D25) in
@@ -175,7 +175,7 @@ pub trait Daemon {
 
 /// Body of the error response for the extension.
 fn error_body(e: ResponseError) -> Zeroizing<Vec<u8>> {
-    protocol::encode_response(Role::Extension, &Resposta::Erro(e)).unwrap_or_else(|_| {
+    protocol::encode_response(Role::Extension, &Response::Error(e)).unwrap_or_else(|_| {
         Zeroizing::new(
             br#"{"v":1,"tipo":"erro","dados":{"codigo":"interno","mensagem":"erro interno"}}"#
                 .to_vec(),
@@ -216,7 +216,7 @@ pub fn handle(
     };
     drop(frame);
     let response = match protocol::decode_response(Role::Extension, &body) {
-        Ok(r) if response_fits(op, r.tipo()) => r,
+        Ok(r) if response_fits(op, r.kind()) => r,
         _ => {
             log("resposta do daemon fora do papel extensão ou da operação");
             return error_body(ResponseError::Internal);
@@ -225,7 +225,7 @@ pub fn handle(
     // D63: the state response carries the role the daemon gave to this connection.
     // Without the extension role (the host was not opened by the installed Chrome, or it
     // is not the setgid binary), the extension gets only the unauthorized error.
-    if let Resposta::Estado { papel, .. } = &response
+    if let Response::Status { role: papel, .. } = &response
         && *papel != Role::Extension
     {
         log("o daemon não deu o papel extensão a este host");

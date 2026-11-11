@@ -34,8 +34,8 @@ use ward_core::display;
 use ward_core::entry::{AccessLevel, Data, Entry, Environment, Secret};
 use ward_core::limits::{MAX_DISPLAYED_TEXT, MAX_TEXT};
 use ward_core::protocol::{
-    Decision, Operation, PedidoDeAprovacao, PedidoDeDestrave, Request, ResponseError, Resposta,
-    StdinKind,
+    ApprovalRequest, Decision, Operation, Request, Response, ResponseError, StdinKind,
+    UnlockRequest,
 };
 
 use crate::aprovacao::{Cliente, UMA_HORA};
@@ -217,11 +217,11 @@ impl Daemon {
             // Fase 39a (D51): a tela de destravar mostra o que o agente pediu, com escape
             // visível. Com o cofre travado não se sabe se a entrada existe, nem o tipo e o
             // ambiente; o nome vai como o agente mandou.
-            let aviso = PedidoDeDestrave {
-                entrada: display::display_text(nome.as_bytes(), MAX_TEXT),
-                operacao: op,
-                comando: comando.clone(),
-                restante: 0,
+            let aviso = UnlockRequest {
+                entry: display::display_text(nome.as_bytes(), MAX_TEXT),
+                operation: op,
+                command: comando.clone(),
+                remaining: 0,
             };
             self.aprovacao
                 .esperar_destrave(aviso, &|| self.travado(), cliente)?;
@@ -252,19 +252,19 @@ impl Daemon {
             }
             (nivel, entradas, ambiente, origem)
         };
-        let pedido_da_janela = |confirmacao: bool, origem: Option<String>| PedidoDeAprovacao {
+        let pedido_da_janela = |confirmacao: bool, origem: Option<String>| ApprovalRequest {
             id: 0,
-            entradas: entradas.clone(),
-            ambiente,
-            operacao: op,
-            comando: comando.clone(),
-            diretorio: diretorio.clone(),
-            cadeia: cadeia_para_exibir(cliente),
-            origem: origem.unwrap_or_default(),
-            confirmacao,
+            entries: entradas.clone(),
+            environment: ambiente,
+            operation: op,
+            command: comando.clone(),
+            directory: diretorio.clone(),
+            chain: cadeia_para_exibir(cliente),
+            origin: origem.unwrap_or_default(),
+            confirmation: confirmacao,
             // Fase 54b: só no pedido com PIN (a confirmação de origem não tem entrada
             // padrão).
-            entrada_oculta: entrada_oculta && !confirmacao,
+            hidden_entry: entrada_oculta && !confirmacao,
         };
         match nivel {
             AccessLevel::Free => match origem {
@@ -305,7 +305,7 @@ impl Daemon {
         decisao: Decision,
         pin: Option<&Secret>,
         entrada_confirmada: bool,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let entradas = self.aprovacao.pendente(id).ok_or(ResponseError::Expired)?;
         let confirmacao = self
             .aprovacao
@@ -317,7 +317,7 @@ impl Daemon {
             .ok_or(ResponseError::Expired)?;
         if decisao == Decision::Deny {
             return if self.aprovacao.decidir(id, Err(ResponseError::Denied)) {
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             } else {
                 Err(ResponseError::Expired)
             };
@@ -331,7 +331,7 @@ impl Daemon {
         if decisao == Decision::Confirm {
             return if self.aprovacao.decidir(id, Ok(())) {
                 aviso!("aprovação {id}: origem confirmada");
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             } else {
                 Err(ResponseError::Expired)
             };
@@ -372,7 +372,7 @@ impl Daemon {
                     a.liberacoes.insert(n, ate);
                 }
                 aviso!("aprovação {id}: permitida por 1 hora");
-                return Ok(Resposta::Ok);
+                return Ok(Response::Ok);
             }
             Decision::AllowAlways => {
                 // As entradas do pedido que estão "com aprovação" viram "livre", no disco.
@@ -400,7 +400,7 @@ impl Daemon {
             }
         }
         if self.aprovacao.decidir(id, Ok(())) {
-            Ok(Resposta::Ok)
+            Ok(Response::Ok)
         } else {
             Err(ResponseError::Expired)
         }

@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 
 use ward_core::entry::{AccessLevel, Data};
 use ward_core::generator;
-use ward_core::protocol::{LoginResult, Request, ResponseError, Resposta, Role};
+use ward_core::protocol::{LoginResult, Request, Response, ResponseError, Role};
 
 use crate::aprovacao::Cliente;
 use crate::aviso;
@@ -149,7 +149,7 @@ impl Daemon {
         &self,
         client: &dyn Cliente,
         request: &Request,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let Request::Login { entry } = request else {
             return Err(ResponseError::InvalidRequest);
         };
@@ -203,7 +203,7 @@ impl Daemon {
             Ok(()) => aviso!("login {name}: formulário enviado"),
             Err(e) => aviso!("login {name}: {}", e.code()),
         }
-        r.map(|()| Resposta::Ok)
+        r.map(|()| Response::Ok)
     }
 
     fn wait_outcome(
@@ -258,7 +258,7 @@ impl Daemon {
     /// The extension's wait for a login request (extension only): the next request not
     /// yet delivered, or `ok`
     /// after [`LoginDeadlines::wait`].
-    pub(crate) fn await_login(&self, role: Role) -> Result<Resposta, ResponseError> {
+    pub(crate) fn await_login(&self, role: Role) -> Result<Response, ResponseError> {
         if role != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -272,14 +272,14 @@ impl Daemon {
             {
                 t.phase = Phase::Delivered;
                 logins.signal.notify_all();
-                return Ok(Resposta::PedidoDeLogin {
+                return Ok(Response::LoginRequest {
                     id: t.id.clone(),
-                    entrada: t.entry.clone(),
+                    entry: t.entry.clone(),
                 });
             }
             let now = Instant::now();
             if now >= end {
-                return Ok(Resposta::Ok);
+                return Ok(Response::Ok);
             }
             g = logins
                 .signal
@@ -296,7 +296,7 @@ impl Daemon {
         role: Role,
         id: &str,
         origin: &str,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if role != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -335,7 +335,7 @@ impl Daemon {
         role: Role,
         id: &str,
         outcome: LoginResult,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if role != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -360,7 +360,7 @@ impl Daemon {
             LoginResult::Failure => Err(ResponseError::BrowserFailed),
         };
         if logins.finish(id, r) {
-            Ok(Resposta::Ok)
+            Ok(Response::Ok)
         } else {
             Err(ResponseError::Expired)
         }

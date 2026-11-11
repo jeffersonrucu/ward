@@ -1,6 +1,6 @@
-//! Testes do protocolo (Fase 20): tabela operação × papel (V3.15), nenhuma credencial
-//! para o agente (V3.3, S1), quadros recusados (V3.4), JSON estrito, anexos de D29 pelo
-//! app, erros de D39 sem geração, e fuzz do decodificador. Só valores falsos (D15).
+//! Protocol tests (Phase 20): operation × role table (V3.15), no credential for the
+//! agent (V3.3, S1), refused frames (V3.4), strict JSON, D29 attachments from the app,
+//! D39 errors without generation, and fuzzing of the decoder. Only fake values (D15).
 
 use std::io::{self, Read};
 
@@ -17,30 +17,30 @@ use crate::limits::{
     MAX_COMMON_FRAME, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE, MIB,
 };
 
-// O mesmo cofre de teste dos testes do corpo (o módulo deles é privado de `corpo`).
+// The same test vault as the body tests (their module is private to `body`).
 #[allow(clippy::duplicate_mod)]
 #[path = "../body/test_vault.rs"]
 mod test_vault;
 use test_vault::test_vault_entries;
 
-// ---- Ajudantes ----
+// ---- Helpers ----
 
 fn b64(b: &[u8]) -> String {
     Base64::encode_string(b)
 }
 
-fn ped(papel: Role, json: &str) -> Result<Request, ResponseError> {
-    decode_request(papel, json.as_bytes())
+fn req(role: Role, json: &str) -> Result<Request, ResponseError> {
+    decode_request(role, json.as_bytes())
 }
 
-fn seg(s: &str) -> Secret {
+fn mk_secret(s: &str) -> Secret {
     Secret::from_text(s.to_owned())
 }
 
-/// Os `dados` mínimos válidos de cada operação (valores falsos).
-fn dados_validos(op: Operation) -> String {
+/// The minimal valid data of each operation (fake values).
+fn valid_data(op: Operation) -> String {
     let pin = b64(b"135790");
-    let senha = b64(b"falso-mestra-ward-01");
+    let password = b64(b"falso-mestra-ward-01");
     match op {
         Operation::Status
         | Operation::Lock
@@ -59,9 +59,11 @@ fn dados_validos(op: Operation) -> String {
         }
         Operation::SetExternalBackup => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
         Operation::RestoreBackup => {
-            format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
+            format!(
+                r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}","pin":"{pin}"}}"#
+            )
         }
-        Operation::Unlock => format!(r#"{{"senha":"{senha}"}}"#),
+        Operation::Unlock => format!(r#"{{"senha":"{password}"}}"#),
         Operation::Run => format!(
             r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
             b64(b"psql"),
@@ -76,7 +78,7 @@ fn dados_validos(op: Operation) -> String {
         Operation::RemoveEntry | Operation::IssueToken => r#"{"entrada":"acme-ssh-dev"}"#.into(),
         Operation::Stdin => format!(r#"{{"dados":"{}"}}"#, b64(b"ls\n")),
         Operation::Resize => r#"{"linhas":24,"colunas":80}"#.into(),
-        Operation::CreateVault => format!(r#"{{"senha":"{senha}","pin":"{pin}"}}"#),
+        Operation::CreateVault => format!(r#"{{"senha":"{password}","pin":"{pin}"}}"#),
         Operation::Reveal | Operation::Copy => {
             r#"{"entrada":"acme-wp-dev","campo":"senha"}"#.into()
         }
@@ -93,7 +95,7 @@ fn dados_validos(op: Operation) -> String {
         Operation::ChangePin => format!(r#"{{"atual":"{pin}","novo":"{}"}}"#, b64(b"2468")),
         Operation::ChangePassword => {
             format!(
-                r#"{{"atual":"{senha}","nova":"{}"}}"#,
+                r#"{{"atual":"{password}","nova":"{}"}}"#,
                 b64(b"falso-nova-02")
             )
         }
@@ -103,178 +105,178 @@ fn dados_validos(op: Operation) -> String {
     }
 }
 
-/// Põe `campo` (`"k":v`) no começo do objeto `dados`.
-fn com_campo(dados: &str, campo: &str) -> String {
-    if dados == "{}" {
-        format!("{{{campo}}}")
+/// Puts `field` (`"k":v`) at the start of the `data` object.
+fn with_field(data: &str, field: &str) -> String {
+    if data == "{}" {
+        format!("{{{field}}}")
     } else {
-        dados.replacen('{', &format!("{{{campo},"), 1)
+        data.replacen('{', &format!("{{{field},"), 1)
     }
 }
 
-fn quadro_de(op: Operation, dados: &str) -> String {
-    format!(r#"{{"v":1,"op":"{}","dados":{dados}}}"#, op.name())
+fn frame_of(op: Operation, data: &str) -> String {
+    format!(r#"{{"v":1,"op":"{}","dados":{data}}}"#, op.name())
 }
 
-/// Um papel que pode pedir a operação.
-fn papel_de(op: Operation) -> Role {
+/// A role that may ask for the operation.
+fn role_of(op: Operation) -> Role {
     Role::ALL
         .into_iter()
         .find(|p| op.allowed(*p))
         .expect("operação sem papel")
 }
 
-/// Um pedido de cada operação, montado em memória.
-fn um_pedido_de_cada() -> Vec<Request> {
+/// One request of each operation, built in memory.
+fn one_request_of_each() -> Vec<Request> {
     Operation::ALL
         .iter()
-        .map(|&op| ped(papel_de(op), &quadro_de(op, &dados_validos(op))).unwrap())
+        .map(|&op| req(role_of(op), &frame_of(op, &valid_data(op))).unwrap())
         .collect()
 }
 
-fn item(nome: &str) -> ItemLista {
-    ItemLista {
-        nome: nome.into(),
-        tipo: EntryType::Login,
-        grupo: "clientex".into(),
-        ambiente: Environment::Stage,
-        projeto: Some("portal \"novo\" \\ ação".into()),
+fn item(name: &str) -> ListItem {
+    ListItem {
+        name: name.into(),
+        kind: EntryType::Login,
+        group: "clientex".into(),
+        environment: Environment::Stage,
+        project: Some("portal \"novo\" \\ ação".into()),
         tags: vec!["web".into()],
-        nivel: None,
-        endereco: Some("https://clientex.invalid/login".into()),
-        resumo: None,
+        level: None,
+        address: Some("https://clientex.invalid/login".into()),
+        summary: None,
     }
 }
 
-/// Uma resposta de cada tipo, com credenciais falsas onde o tipo leva.
-fn uma_resposta_de_cada() -> Vec<Resposta> {
-    let entradas = test_vault_entries();
-    let servidor = entradas
+/// One response of each type, with fake credentials where the type carries them.
+fn one_response_of_each() -> Vec<Response> {
+    let entries = test_vault_entries();
+    let server = entries
         .iter()
         .find(|e| e.kind() == EntryType::Server)
         .unwrap();
     vec![
-        Resposta::Ok,
-        Resposta::Estado {
-            travado: true,
-            cofre_existe: true,
-            papel: Role::Agent,
+        Response::Ok,
+        Response::Status {
+            locked: true,
+            vault_exists: true,
+            role: Role::Agent,
         },
-        Resposta::Erro(ResponseError::Rollback),
-        Resposta::Erro(ResponseError::Validation(vec![Problem {
+        Response::Error(ResponseError::Rollback),
+        Response::Error(ResponseError::Validation(vec![Problem {
             field: "senha".into(),
             position: Some(2),
             reason: "caractere não permitido".into(),
         }])),
-        Resposta::Lista(vec![item("clientex-stage-wp"), item("clientex-stage-api")]),
-        Resposta::Saida {
-            fluxo: Fluxo::Erro,
-            dados: zeroize::Zeroizing::new(b"\x00\xffsaida \xe2\x80\xa2\xe2\x80\xa2".to_vec()),
+        Response::List(vec![item("clientex-stage-wp"), item("clientex-stage-api")]),
+        Response::Output {
+            stream: Stream::Stderr,
+            data: zeroize::Zeroizing::new(b"\x00\xffsaida \xe2\x80\xa2\xe2\x80\xa2".to_vec()),
         },
-        Resposta::Fim { codigo: 130 },
-        Resposta::SessaoPlaywright {
-            caminho: "/run/user/1000/ward-teste/playwright/acme-wp-dev.json".into(),
+        Response::Exit { code: 130 },
+        Response::PlaywrightSession {
+            path: "/run/user/1000/ward-teste/playwright/acme-wp-dev.json".into(),
         },
-        Resposta::Detalhe(DetalheEntrada::de_entrada(servidor)),
-        Resposta::Segredo(seg("falso-revelar-01")),
-        Resposta::Token(seg("falso-token-conectar-01")),
-        Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
+        Response::Detail(EntryDetail::from_entry(server)),
+        Response::Secret(mk_secret("falso-revelar-01")),
+        Response::Token(mk_secret("falso-token-conectar-01")),
+        Response::ApprovalRequest(ApprovalRequest {
             id: 42,
-            entradas: vec!["acme-pg-prod".into(), "acme-ssh-prod".into()],
-            ambiente: Environment::Prod,
-            operacao: Operation::Run,
-            comando: "psql -c 'select 1'".into(),
-            diretorio: "\"/home/usuario/projetos/acme\"".into(),
-            cadeia: vec!["claude".into(), "bash".into(), "ward run".into()],
-            origem: String::new(),
-            confirmacao: false,
-            entrada_oculta: true,
+            entries: vec!["acme-pg-prod".into(), "acme-ssh-prod".into()],
+            environment: Environment::Prod,
+            operation: Operation::Run,
+            command: "psql -c 'select 1'".into(),
+            directory: "\"/home/usuario/projetos/acme\"".into(),
+            chain: vec!["claude".into(), "bash".into(), "ward run".into()],
+            origin: String::new(),
+            confirmation: false,
+            hidden_entry: true,
         }),
-        Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
+        Response::ApprovalRequest(ApprovalRequest {
             id: 43,
-            entradas: vec!["acme-wp-prod".into()],
-            ambiente: Environment::Prod,
-            operacao: Operation::Playwright,
-            comando: String::new(),
-            diretorio: String::new(),
-            cadeia: vec!["claude".into(), "ward playwright".into()],
-            origem: "http://localhost:8081".into(),
-            confirmacao: true,
-            entrada_oculta: false,
+            entries: vec!["acme-wp-prod".into()],
+            environment: Environment::Prod,
+            operation: Operation::Playwright,
+            command: String::new(),
+            directory: String::new(),
+            chain: vec!["claude".into(), "ward playwright".into()],
+            origin: "http://localhost:8081".into(),
+            confirmation: true,
+            hidden_entry: false,
         }),
-        Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
+        Response::ApprovalRequest(ApprovalRequest {
             id: 44,
-            entradas: vec!["acme-wp-dev".into()],
-            ambiente: Environment::Dev,
-            operacao: Operation::Fill,
-            comando: String::new(),
-            diretorio: String::new(),
-            cadeia: vec!["chrome".into(), "ward-nm".into()],
-            origem: "http://localhost:8081".into(),
-            confirmacao: true,
-            entrada_oculta: false,
+            entries: vec!["acme-wp-dev".into()],
+            environment: Environment::Dev,
+            operation: Operation::Fill,
+            command: String::new(),
+            directory: String::new(),
+            chain: vec!["chrome".into(), "ward-nm".into()],
+            origin: "http://localhost:8081".into(),
+            confirmation: true,
+            hidden_entry: false,
         }),
-        Resposta::PedidoDeDestrave(PedidoDeDestrave {
-            entrada: "acme-pg-aprovacao".into(),
-            operacao: Operation::Run,
-            comando: r#""psql" "-c" "select 1""#.into(),
-            restante: 102,
+        Response::UnlockRequest(UnlockRequest {
+            entry: "acme-pg-aprovacao".into(),
+            operation: Operation::Run,
+            command: r#""psql" "-c" "select 1""#.into(),
+            remaining: 102,
         }),
-        Resposta::CodigoTotp {
-            codigo: zeroize::Zeroizing::new("123456".into()),
-            restante: 17,
+        Response::TotpCode {
+            code: zeroize::Zeroizing::new("123456".into()),
+            remaining: 17,
         },
-        Resposta::Sugestoes(vec![Sugestao {
-            nome: "acme-wp-dev".into(),
-            usuario: "wp_admin".into(),
-            ambiente: crate::entry::Environment::Dev,
+        Response::Suggestions(vec![Suggestion {
+            name: "acme-wp-dev".into(),
+            username: "wp_admin".into(),
+            environment: crate::entry::Environment::Dev,
             totp: true,
         }]),
-        Resposta::Preenchimento {
-            usuario: "wp_admin".into(),
-            senha: seg("falso-WP-senha-01"),
+        Response::Fill {
+            username: "wp_admin".into(),
+            password: mk_secret("falso-WP-senha-01"),
             totp: Some(zeroize::Zeroizing::new("654321".into())),
         },
-        Resposta::PedidoDeLogin {
+        Response::LoginRequest {
             id: "AbCdEfGhIjKlMnOpQrStUvWxYz012345".into(),
-            entrada: "acme-wp-prod".into(),
+            entry: "acme-wp-prod".into(),
         },
-        Resposta::Backups(vec![
+        Response::Backups(vec![
             vb("ward-20261109-153000-1.ward", true, true),
             vb("ward-20261109-153000.ward", false, false),
         ]),
-        Resposta::Configuracao {
-            minutos_trava: 240,
-            backup_externo: false,
-            backup_local: true,
+        Response::Config {
+            lock_minutes: 240,
+            external_backup: false,
+            local_backup: true,
         },
-        Resposta::BackupExterno {
-            ligado: true,
+        Response::ExternalBackup {
+            enabled: true,
             uuid: Some("ABCD-1234".into()),
         },
-        Resposta::Pendrives(vec![Pendrive {
+        Response::UsbDrives(vec![UsbDrive {
             uuid: "ABCD-1234".into(),
-            rotulo: "PENDRIVE \"A\"".into(),
-            montado: true,
+            label: "PENDRIVE \"A\"".into(),
+            mounted: true,
         }]),
     ]
 }
 
-/// O papel que pode receber o tipo.
-fn papel_da_resposta(t: ResponseType) -> Role {
+/// The role that may receive the type.
+fn role_of_response(t: ResponseType) -> Role {
     Role::ALL
         .into_iter()
         .find(|p| t.allowed(*p))
         .expect("tipo sem papel")
 }
 
-// ---- V3.15: a tabela ----
+// ---- V3.15: the table ----
 
-/// A tabela inteira, como o auditor a lê: (operação, agente, app, extensão). Uma
-/// operação nova, ou um papel novo numa operação, tem de mudar este teste.
+/// The whole table, as the auditor reads it: (operation, agent, app, extension). A new
+/// operation, or a new role in an operation, has to change this test.
 #[test]
-fn v3_15_tabela_operacao_papel() {
-    let esperada: &[(&str, bool, bool, bool)] = &[
+fn v3_15_operation_role_table() {
+    let expected: &[(&str, bool, bool, bool)] = &[
         ("estado", true, true, true),
         ("destravar", true, true, false),
         ("travar", true, true, false),
@@ -319,8 +321,8 @@ fn v3_15_tabela_operacao_papel() {
             (o.name(), p.agent, p.app, p.extension)
         })
         .collect();
-    assert_eq!(real, esperada);
-    // Nenhuma operação de aprovar, responder aprovação ou mudar nível do agente.
+    assert_eq!(real, expected);
+    // No operation to approve, answer an approval or change a level from the agent.
     for o in Operation::ALL {
         let n = o.name();
         if n.contains("aprov") || n.contains("nivel") || n.contains("token") {
@@ -328,8 +330,8 @@ fn v3_15_tabela_operacao_papel() {
         }
     }
 
-    let respostas: &[(&str, bool, bool, bool, bool)] = &[
-        // (tipo, agente, app, extensão, carrega credencial)
+    let responses: &[(&str, bool, bool, bool, bool)] = &[
+        // (type, agent, app, extension, carries a credential)
         ("ok", true, true, true, false),
         ("estado", true, true, true, false),
         ("erro", true, true, true, false),
@@ -364,7 +366,7 @@ fn v3_15_tabela_operacao_papel() {
             )
         })
         .collect();
-    assert_eq!(real, respostas);
+    assert_eq!(real, responses);
     for t in ResponseType::ALL {
         assert!(
             !(t.carries_credential() && t.allowed(Role::Agent)),
@@ -374,11 +376,11 @@ fn v3_15_tabela_operacao_papel() {
     }
 }
 
-/// V3.15 (D8): o protocolo não tem feature, variável de ambiente nem argumento que
-/// mude a tabela ou ligue um aprovador no socket.
+/// V3.15 (D8): the protocol has no feature, environment variable or argument that
+/// changes the table or turns on an approver on the socket.
 #[test]
-fn v3_15_sem_porta_dos_fundos_no_codigo() {
-    let fontes = [
+fn v3_15_no_backdoor_in_code() {
+    let sources = [
         include_str!("../protocol.rs"),
         include_str!("json.rs"),
         include_str!("frame.rs"),
@@ -387,8 +389,8 @@ fn v3_15_sem_porta_dos_fundos_no_codigo() {
         include_str!("response.rs"),
         include_str!("errors.rs"),
     ];
-    for f in fontes {
-        for proibido in [
+    for f in sources {
+        for forbidden in [
             "cfg(feature",
             "cfg(debug_assertions",
             "std::env",
@@ -400,64 +402,60 @@ fn v3_15_sem_porta_dos_fundos_no_codigo() {
             "modo-teste",
             "modo_teste",
         ] {
-            assert!(!f.contains(proibido), "achou {proibido:?} no protocolo");
+            assert!(!f.contains(forbidden), "achou {forbidden:?} no protocolo");
         }
     }
 }
 
-// ---- V3.3: nada de credencial para o agente ----
+// ---- V3.3: no credential for the agent ----
 
-/// Toda operação de app e de extensão pedida pelo agente responde "não autorizado",
-/// com os dados certos, sem dados, com campos inventados no topo e nos dados, e com
-/// dados malformados.
+/// Every app and extension operation asked by the agent answers "unauthorized", with
+/// the right data, without data, with invented fields at the top and in the data, and
+/// with malformed data.
 #[test]
-fn v3_3_operacoes_de_app_e_extensao_do_agente_sao_nao_autorizadas() {
-    let mut testadas = 0;
+fn v3_3_app_and_extension_operations_from_agent_are_unauthorized() {
+    let mut tested = 0;
     for &op in Operation::ALL {
-        for papel in Role::ALL {
-            if op.allowed(papel) {
+        for role in Role::ALL {
+            if op.allowed(role) {
                 continue;
             }
-            let validos = dados_validos(op);
-            let comextra = com_campo(&validos, r#""revelar":true,"campo":"senha""#);
-            let quadros = [
-                quadro_de(op, &validos),
+            let valid = valid_data(op);
+            let with_extra = with_field(&valid, r#""revelar":true,"campo":"senha""#);
+            let frames = [
+                frame_of(op, &valid),
                 format!(r#"{{"v":1,"op":"{}"}}"#, op.name()),
-                quadro_de(op, &comextra),
+                frame_of(op, &with_extra),
                 format!(
-                    r#"{{"v":1,"op":"{}","revelar":true,"campo":"senha","dados":{validos}}}"#,
+                    r#"{{"v":1,"op":"{}","revelar":true,"campo":"senha","dados":{valid}}}"#,
                     op.name()
                 ),
-                quadro_de(op, "5"),
-                quadro_de(op, r#"{"geracao":1}"#),
+                frame_of(op, "5"),
+                frame_of(op, r#"{"geracao":1}"#),
             ];
-            for q in &quadros {
+            for q in &frames {
                 assert_eq!(
-                    ped(papel, q).unwrap_err(),
+                    req(role, q).unwrap_err(),
                     ResponseError::Unauthorized,
                     "{} pelo {}: {q}",
                     op.name(),
-                    papel.name()
+                    role.name()
                 );
-                testadas += 1;
+                tested += 1;
             }
         }
     }
-    assert!(testadas >= 6 * 16);
+    assert!(tested >= 6 * 16);
 }
 
-/// As operações do agente com campos inventados são recusadas inteiras (leitura
-/// estrita): `"revelar": true` ou `"campo": "senha"` não viram nada.
+/// The agent operations with invented fields are refused whole (strict reading): a
+/// reveal flag or a password field turns into nothing.
 #[test]
-fn v3_3_campos_inventados_recusam_o_pedido() {
+fn v3_3_invented_fields_refuse_the_request() {
     for &op in Operation::ALL {
-        let papel = papel_de(op);
-        let validos = dados_validos(op);
-        assert!(
-            ped(papel, &quadro_de(op, &validos)).is_ok(),
-            "{}",
-            op.name()
-        );
+        let role = role_of(op);
+        let valid = valid_data(op);
+        assert!(req(role, &frame_of(op, &valid)).is_ok(), "{}", op.name());
         for extra in [
             r#""revelar":true"#,
             r#""campo":"senha""#,
@@ -465,99 +463,96 @@ fn v3_3_campos_inventados_recusam_o_pedido() {
             r#""nivel":"livre""#,
             r#""papel":"app""#,
         ] {
-            // Revelar e copiar têm "campo" de verdade: com ele repetido, a chave
-            // duplicada recusa também.
-            let d = com_campo(&validos, extra);
+            // Reveal and copy have a real field key: with it repeated, the duplicated
+            // key refuses too.
+            let d = with_field(&valid, extra);
             assert_eq!(
-                ped(papel, &quadro_de(op, &d)).unwrap_err(),
+                req(role, &frame_of(op, &d)).unwrap_err(),
                 ResponseError::InvalidRequest,
                 "{} com {extra}",
                 op.name()
             );
         }
-        let topo = format!(
-            r#"{{"v":1,"op":"{}","revelar":true,"dados":{validos}}}"#,
+        let top = format!(
+            r#"{{"v":1,"op":"{}","revelar":true,"dados":{valid}}}"#,
             op.name()
         );
-        assert_eq!(
-            ped(papel, &topo).unwrap_err(),
-            ResponseError::InvalidRequest
-        );
+        assert_eq!(req(role, &top).unwrap_err(), ResponseError::InvalidRequest);
     }
 }
 
-/// D39: nenhuma operação aceita geração vinda do cliente, nem no topo nem nos dados,
-/// e nenhuma resposta leva a geração.
+/// D39: no operation accepts a generation coming from the client, neither at the top
+/// nor in the data, and no response carries the generation.
 #[test]
-fn d39_geracao_nunca_vem_do_cliente_nem_vai_para_ele() {
+fn d39_generation_never_comes_from_nor_goes_to_client() {
     for &op in Operation::ALL {
-        let papel = papel_de(op);
-        let validos = dados_validos(op);
-        let nos_dados = com_campo(&validos, r#""geracao":1"#);
+        let role = role_of(op);
+        let valid = valid_data(op);
+        let in_data = with_field(&valid, r#""geracao":1"#);
         assert_eq!(
-            ped(papel, &quadro_de(op, &nos_dados)).unwrap_err(),
+            req(role, &frame_of(op, &in_data)).unwrap_err(),
             ResponseError::InvalidRequest
         );
-        let no_topo = format!(
-            r#"{{"v":1,"op":"{}","geracao":99,"dados":{validos}}}"#,
+        let at_top = format!(
+            r#"{{"v":1,"op":"{}","geracao":99,"dados":{valid}}}"#,
             op.name()
         );
         assert_eq!(
-            ped(papel, &no_topo).unwrap_err(),
+            req(role, &at_top).unwrap_err(),
             ResponseError::InvalidRequest
         );
     }
-    let rascunho =
-        dados_validos(Operation::SaveEntry).replacen(r#""nome":"#, r#""geracao":2,"nome":"#, 1);
+    let draft =
+        valid_data(Operation::SaveEntry).replacen(r#""nome":"#, r#""geracao":2,"nome":"#, 1);
     assert_eq!(
-        ped(Role::App, &quadro_de(Operation::SaveEntry, &rascunho)).unwrap_err(),
+        req(Role::App, &frame_of(Operation::SaveEntry, &draft)).unwrap_err(),
         ResponseError::InvalidRequest
     );
-    for r in uma_resposta_de_cada() {
-        let papel = papel_da_resposta(r.tipo());
-        let q = encode_response(papel, &r).unwrap();
+    for r in one_response_of_each() {
+        let role = role_of_response(r.kind());
+        let q = encode_response(role, &r).unwrap();
         let s = String::from_utf8_lossy(&q);
         assert!(!s.contains("\"geracao\"") && !s.contains("geração"), "{s}");
     }
 }
 
-/// S1: toda resposta que leva credencial é recusada para o agente, na escrita (daemon)
-/// e na leitura (CLI), e o quadro do app não passa pela leitura do agente.
+/// S1: every response that carries a credential is refused for the agent, on writing
+/// (daemon) and on reading (CLI), and the app's frame does not pass the agent's reading.
 #[test]
-fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
-    let mut vistas = 0;
-    for r in uma_resposta_de_cada() {
-        let t = r.tipo();
-        for papel in Role::ALL {
-            // A lista do exemplo é a do agente (sem nível); a do app, com nível, está no
-            // `d50_lista_do_agente_sem_nivel_e_do_app_com_nivel`.
-            if t == ResponseType::List && papel == Role::App {
+fn s1_response_with_credential_never_goes_to_agent() {
+    let mut seen = 0;
+    for r in one_response_of_each() {
+        let t = r.kind();
+        for role in Role::ALL {
+            // The list of the example is the agent's (without level); the app's, with level, is in
+            // `d50_agent_list_without_level_and_app_list_with_level`.
+            if t == ResponseType::List && role == Role::App {
                 continue;
             }
-            // O `estado` leva o papel de quem recebe (D63).
-            let proprio;
+            // The status carries the role of the receiver (D63).
+            let own;
             let r = match &r {
-                Resposta::Estado {
-                    travado,
-                    cofre_existe,
+                Response::Status {
+                    locked,
+                    vault_exists,
                     ..
                 } => {
-                    proprio = Resposta::Estado {
-                        travado: *travado,
-                        cofre_existe: *cofre_existe,
-                        papel,
+                    own = Response::Status {
+                        locked: *locked,
+                        vault_exists: *vault_exists,
+                        role,
                     };
-                    &proprio
+                    &own
                 }
-                outra => outra,
+                other => other,
             };
-            let enc = encode_response(papel, r);
-            if t.allowed(papel) {
+            let enc = encode_response(role, r);
+            if t.allowed(role) {
                 let q = enc.unwrap();
-                assert!(decode_response(papel, &q).is_ok());
-                for outro in Role::ALL {
-                    if !t.allowed(outro) {
-                        assert_eq!(decode_response(outro, &q).unwrap_err(), InvalidResponse);
+                assert!(decode_response(role, &q).is_ok());
+                for other in Role::ALL {
+                    if !t.allowed(other) {
+                        assert_eq!(decode_response(other, &q).unwrap_err(), InvalidResponse);
                     }
                 }
             } else {
@@ -569,79 +564,80 @@ fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
                 encode_response(Role::Agent, &r).unwrap_err(),
                 EncodeError::NotAllowedForRole
             );
-            vistas += 1;
+            seen += 1;
         }
     }
-    assert_eq!(vistas, 4); // segredo, token, código TOTP, preenchimento
+    assert_eq!(seen, 4); // secret, token, TOTP code, fill
 }
 
-/// V3.38 (D63): o `estado` traz o papel da conexão e nada mais de novo; o daemon não
-/// consegue mandar a um papel o `estado` de outro, e o cliente lê o papel que veio.
+/// V3.38 (D63): the status carries the role of the connection and nothing else new; the
+/// daemon cannot send a role the status of another, and the client reads the role that
+/// came.
 #[test]
-fn v3_38_estado_traz_o_papel_e_so_ele() {
-    for papel in Role::ALL {
-        let r = Resposta::Estado {
-            travado: false,
-            cofre_existe: true,
-            papel,
+fn v3_38_status_carries_the_role_and_only_it() {
+    for role in Role::ALL {
+        let r = Response::Status {
+            locked: false,
+            vault_exists: true,
+            role,
         };
-        let q = encode_response(papel, &r).unwrap();
+        let q = encode_response(role, &r).unwrap();
         assert_eq!(
             String::from_utf8(q.to_vec()).unwrap(),
             format!(
                 r#"{{"v":1,"tipo":"estado","dados":{{"travado":false,"cofre_existe":true,"papel":"{}"}}}}"#,
-                papel.name()
+                role.name()
             )
         );
-        match decode_response(papel, &q).unwrap() {
-            Resposta::Estado { papel: lido, .. } => assert_eq!(lido, papel),
-            outra => panic!("{outra:?}"),
+        match decode_response(role, &q).unwrap() {
+            Response::Status { role: got, .. } => assert_eq!(got, role),
+            other => panic!("{other:?}"),
         }
-        for outro in Role::ALL {
-            if outro != papel {
+        for other in Role::ALL {
+            if other != role {
                 assert_eq!(
-                    encode_response(outro, &r).unwrap_err(),
+                    encode_response(other, &r).unwrap_err(),
                     EncodeError::Invalid
                 );
-                // O app que recebe `agente` lê como veio (e sai, Fase 23a).
+                // The app that gets the agent role reads it as it came (and quits, Phase 23a).
                 let q = encode_response(
-                    outro,
-                    &Resposta::Estado {
-                        travado: false,
-                        cofre_existe: true,
-                        papel: outro,
+                    other,
+                    &Response::Status {
+                        locked: false,
+                        vault_exists: true,
+                        role: other,
                     },
                 )
                 .unwrap();
                 assert!(matches!(
-                    decode_response(papel, &q),
-                    Ok(Resposta::Estado { papel: p, .. }) if p == outro
+                    decode_response(role, &q),
+                    Ok(Response::Status { role: p, .. }) if p == other
                 ));
             }
         }
     }
-    // Sem o papel, com outro nome ou com campo a mais, o cliente recusa.
-    for dados in [
+    // Without the role, with another name or with an extra field, the client refuses.
+    for data in [
         r#"{"travado":false,"cofre_existe":true}"#,
         r#"{"travado":false,"cofre_existe":true,"papel":"root"}"#,
         r#"{"travado":false,"cofre_existe":true,"papel":"app","uid":0}"#,
     ] {
-        let q = format!(r#"{{"v":1,"tipo":"estado","dados":{dados}}}"#);
-        assert!(decode_response(Role::App, q.as_bytes()).is_err(), "{dados}");
+        let q = format!(r#"{{"v":1,"tipo":"estado","dados":{data}}}"#);
+        assert!(decode_response(Role::App, q.as_bytes()).is_err(), "{data}");
     }
 }
 
-/// Os valores de um segredo como podem aparecer num quadro: crus, em base64 e com o
-/// escape do JSON.
-fn formas(segredo: &[u8]) -> Vec<Vec<u8>> {
-    let mut v = vec![segredo.to_vec(), b64(segredo).into_bytes()];
-    if let Ok(s) = core::str::from_utf8(segredo) {
+/// The values of a secret as they may show up in a frame: raw, in base64 and with the
+/// JSON escaping.
+fn forms(secret: &[u8]) -> Vec<Vec<u8>> {
+    let mut v = vec![secret.to_vec(), b64(secret).into_bytes()];
+    if let Ok(s) = core::str::from_utf8(secret) {
         let esc = s
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('\n', "\\n");
         v.push(esc.into_bytes());
-        // Cada linha de 6+ caracteres (chave privada).
+        // Each line of 6+ characters (private key).
         for l in s.lines().filter(|l| l.len() >= 6) {
             v.push(l.as_bytes().to_vec());
         }
@@ -649,72 +645,70 @@ fn formas(segredo: &[u8]) -> Vec<Vec<u8>> {
     v
 }
 
-fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
-    agulha.len() <= palheiro.len() && palheiro.windows(agulha.len()).any(|w| w == agulha)
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    needle.len() <= haystack.len() && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// V3.3: a lista de todas as entradas do cofre de teste (as 22, inclusive as
-/// bloqueadas, que o daemon ainda filtraria) para o agente e o detalhe de cada uma
-/// para o app não têm segredo nenhum, em nenhuma forma.
+/// V3.3: the list of all the entries of the test vault (the 22, including the blocked
+/// ones, which the daemon would still filter) for the agent and the detail of each one
+/// for the app have no secret at all, in any form.
 #[test]
-fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
-    let entradas = test_vault_entries();
-    assert_eq!(entradas.len(), 22);
-    let lista = Resposta::Lista(
-        entradas
+fn v3_3_test_vault_list_and_detail_without_secret() {
+    let entries = test_vault_entries();
+    assert_eq!(entries.len(), 22);
+    let list = Response::List(
+        entries
             .iter()
-            .map(|e| ItemLista::de_entrada(e, Role::Agent))
+            .map(|e| ListItem::from_entry(e, Role::Agent))
             .collect(),
     );
-    let q_lista = encode_response(Role::Agent, &lista).unwrap();
-    let detalhes: Vec<_> = entradas
+    let q_list = encode_response(Role::Agent, &list).unwrap();
+    let details: Vec<_> = entries
         .iter()
-        .map(|e| {
-            encode_response(Role::App, &Resposta::Detalhe(DetalheEntrada::de_entrada(e))).unwrap()
-        })
+        .map(|e| encode_response(Role::App, &Response::Detail(EntryDetail::from_entry(e))).unwrap())
         .collect();
-    let mut agulhas = 0;
-    for e in &entradas {
+    let mut needles = 0;
+    for e in &entries {
         for s in e.secrets() {
-            for f in formas(s.value.expose()) {
+            for f in forms(s.value.expose()) {
                 if f.len() < 6 {
                     continue;
                 }
-                agulhas += 1;
-                assert!(!contem(&q_lista, &f), "segredo de {} na lista", e.name());
-                for d in &detalhes {
-                    assert!(!contem(d, &f), "segredo de {} num detalhe", e.name());
+                needles += 1;
+                assert!(!contains(&q_list, &f), "segredo de {} na lista", e.name());
+                for d in &details {
+                    assert!(!contains(d, &f), "segredo de {} num detalhe", e.name());
                 }
             }
         }
     }
-    assert!(agulhas > 40);
-    // E a lista volta inteira pela leitura da CLI.
-    let Resposta::Lista(itens) = decode_response(Role::Agent, &q_lista).unwrap() else {
+    assert!(needles > 40);
+    // And the list comes back whole through the CLI's reading.
+    let Response::List(items) = decode_response(Role::Agent, &q_list).unwrap() else {
         panic!("não é lista")
     };
-    assert_eq!(itens.len(), 22);
-    assert!(itens.iter().any(|i| i.nome == "gama-bloqueada"));
+    assert_eq!(items.len(), 22);
+    assert!(items.iter().any(|i| i.name == "gama-bloqueada"));
 }
 
-/// O `Debug` de pedidos e respostas não mostra segredo.
+/// The `Debug` of requests and responses shows no secret.
 #[test]
-fn debug_sem_segredo() {
-    let senha = "falso-mestra-debug-01";
-    let p = ped(
+fn debug_without_secret() {
+    let password = "falso-mestra-debug-01";
+    let p = req(
         Role::Agent,
-        &quadro_de(
+        &frame_of(
             Operation::Unlock,
-            &format!(r#"{{"senha":"{}"}}"#, b64(senha.as_bytes())),
+            &format!(r#"{{"senha":"{}"}}"#, b64(password.as_bytes())),
         ),
     )
     .unwrap();
     let d = format!("{p:?}");
     assert!(
-        !d.contains(senha) && !d.contains(&b64(senha.as_bytes())),
+        !d.contains(password) && !d.contains(&b64(password.as_bytes())),
         "{d}"
     );
-    for r in uma_resposta_de_cada() {
+    for r in one_response_of_each() {
         let d = format!("{r:?}");
         for s in [
             "falso-revelar-01",
@@ -726,59 +720,59 @@ fn debug_sem_segredo() {
     }
 }
 
-// ---- Ida e volta ----
+// ---- Round trip ----
 
 #[test]
-fn ida_e_volta_de_todo_pedido_e_resposta() {
-    for p in um_pedido_de_cada() {
-        let papel = papel_de(p.operation());
-        let q = encode_request(papel, &p).unwrap();
-        let de_novo = decode_request(papel, &q).unwrap();
-        assert_eq!(*encode_request(papel, &de_novo).unwrap(), *q);
-        // O cliente não codifica pedido de outro papel.
-        for outro in Role::ALL {
-            if !p.operation().allowed(outro) {
+fn round_trip_of_every_request_and_response() {
+    for p in one_request_of_each() {
+        let role = role_of(p.operation());
+        let q = encode_request(role, &p).unwrap();
+        let again = decode_request(role, &q).unwrap();
+        assert_eq!(*encode_request(role, &again).unwrap(), *q);
+        // The client does not encode a request of another role.
+        for other in Role::ALL {
+            if !p.operation().allowed(other) {
                 assert_eq!(
-                    encode_request(outro, &p).unwrap_err(),
+                    encode_request(other, &p).unwrap_err(),
                     EncodeError::NotAllowedForRole
                 );
             }
         }
     }
-    for r in uma_resposta_de_cada() {
-        let papel = papel_da_resposta(r.tipo());
-        let q = encode_response(papel, &r).unwrap();
-        let de_novo = decode_response(papel, &q).unwrap();
-        assert_eq!(*encode_response(papel, &de_novo).unwrap(), *q);
+    for r in one_response_of_each() {
+        let role = role_of_response(r.kind());
+        let q = encode_response(role, &r).unwrap();
+        let again = decode_response(role, &q).unwrap();
+        assert_eq!(*encode_response(role, &again).unwrap(), *q);
     }
 }
 
 #[test]
-fn formato_conhecido_do_quadro() {
+fn known_frame_format() {
     let q = encode_request(Role::Agent, &Request::List).unwrap();
     assert_eq!(&q[..], br#"{"v":1,"op":"lista","dados":{}}"#);
-    let q = encode_response(Role::Agent, &Resposta::Erro(ResponseError::Unauthorized)).unwrap();
+    let q = encode_response(Role::Agent, &Response::Error(ResponseError::Unauthorized)).unwrap();
     assert_eq!(
         &q[..],
         r#"{"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}}"#
             .as_bytes()
     );
-    let mut saida = Vec::new();
-    frame::write_frame(&mut saida, &q, MAX_COMMON_FRAME).unwrap();
-    assert_eq!(&saida[..4], &(q.len() as u32).to_be_bytes());
-    assert_eq!(&saida[4..], &q[..]);
-    // `dados` ausente vale vazio.
+    let mut out = Vec::new();
+    frame::write_frame(&mut out, &q, MAX_COMMON_FRAME).unwrap();
+    assert_eq!(&out[..4], &(q.len() as u32).to_be_bytes());
+    assert_eq!(&out[4..], &q[..]);
+    // Missing data counts as empty.
     assert!(matches!(
-        ped(Role::Agent, r#"{"op":"lista","v":1}"#),
+        req(Role::Agent, r#"{"op":"lista","v":1}"#),
         Ok(Request::List)
     ));
 }
 
-// ---- Erros do envelope ----
+// ---- Envelope errors ----
 
 #[test]
-fn envelope_recusado() {
-    let casos: &[(&str, ResponseError)] = &[
+fn envelope_refused() {
+    let cases: &[(&str, ResponseError)] = &[
         ("", ResponseError::InvalidRequest),
         ("nada", ResponseError::InvalidRequest),
         ("[]", ResponseError::InvalidRequest),
@@ -818,16 +812,16 @@ fn envelope_recusado() {
             ResponseError::InvalidRequest,
         ),
     ];
-    for (q, e) in casos {
-        assert_eq!(ped(Role::Agent, q).unwrap_err(), *e, "{q}");
+    for (q, e) in cases {
+        assert_eq!(req(Role::Agent, q).unwrap_err(), *e, "{q}");
     }
 }
 
-// ---- Formato de cada operação ----
+// ---- Format of each operation ----
 
 #[test]
-fn pin_e_decisao_da_aprovacao() {
-    let q = |d: &str| ped(Role::App, &quadro_de(Operation::AnswerApproval, d));
+fn approval_pin_and_decision() {
+    let q = |d: &str| req(Role::App, &frame_of(Operation::AnswerApproval, d));
     let pin = b64(b"135790");
     assert!(q(r#"{"pedido":1,"decisao":"negar"}"#).is_ok());
     assert!(
@@ -843,20 +837,20 @@ fn pin_e_decisao_da_aprovacao() {
             "{d} sem PIN"
         );
     }
-    for ruim in ["123", "1234567", "12a4", "١٢٣٤", "12 34", ""] {
+    for bad in ["123", "1234567", "12a4", "١٢٣٤", "12 34", ""] {
         let d = format!(
             r#"{{"pedido":1,"decisao":"uma_vez","pin":"{}"}}"#,
-            b64(ruim.as_bytes())
+            b64(bad.as_bytes())
         );
-        assert!(q(&d).is_err(), "PIN {ruim:?}");
+        assert!(q(&d).is_err(), "PIN {bad:?}");
         let m = format!(
             r#"{{"entrada":"acme-pg-dev","nivel":"livre","pin":"{}"}}"#,
-            b64(ruim.as_bytes())
+            b64(bad.as_bytes())
         );
-        assert!(ped(Role::App, &quadro_de(Operation::SetLevel, &m)).is_err());
+        assert!(req(Role::App, &frame_of(Operation::SetLevel, &m)).is_err());
     }
-    // Fase 44c: "confirmar" não leva PIN (quem confere que o pedido é uma confirmação
-    // é o daemon).
+    // Phase 44c: the confirm decision carries no PIN (checking that the request is a
+    // confirmation is the daemon's job).
     assert!(q(r#"{"pedido":1,"decisao":"confirmar"}"#).is_ok());
     assert!(
         q(&format!(
@@ -864,13 +858,13 @@ fn pin_e_decisao_da_aprovacao() {
         ))
         .is_err()
     );
-    // PIN em texto, sem base64, é recusado.
+    // A PIN as text, without base64, is refused.
     assert!(q(r#"{"pedido":1,"decisao":"uma_vez","pin":"135790"}"#).is_err());
     assert!(q(r#"{"pedido":1,"decisao":"admin","pin":"MTM1Nzkw"}"#).is_err());
     assert!(
-        ped(
+        req(
             Role::App,
-            &quadro_de(
+            &frame_of(
                 Operation::SetLevel,
                 &format!(r#"{{"entrada":"acme-pg-dev","nivel":"admin","pin":"{pin}"}}"#)
             )
@@ -880,22 +874,22 @@ fn pin_e_decisao_da_aprovacao() {
 }
 
 #[test]
-fn executar_recusa_nul_igual_e_vazio() {
-    let q = |argv: &[&[u8]], cwd: &[u8], amb: &[(&[u8], &[u8])]| {
+fn run_refuses_nul_equals_and_empty() {
+    let q = |argv: &[&[u8]], cwd: &[u8], env: &[(&[u8], &[u8])]| {
         let argv: Vec<_> = argv.iter().map(|a| format!("\"{}\"", b64(a))).collect();
-        let amb: Vec<_> = amb
+        let env: Vec<_> = env
             .iter()
             .map(|(n, v)| format!(r#"{{"nome":"{}","valor":"{}"}}"#, b64(n), b64(v)))
             .collect();
-        ped(
+        req(
             Role::Agent,
-            &quadro_de(
+            &frame_of(
                 Operation::Run,
                 &format!(
                     r#"{{"entrada":"acme-pg-dev","argv":[{}],"cwd":"{}","tipo_entrada":"pipe","ambiente":[{}]}}"#,
                     argv.join(","),
                     b64(cwd),
-                    amb.join(",")
+                    env.join(",")
                 ),
             ),
         )
@@ -908,13 +902,13 @@ fn executar_recusa_nul_igual_e_vazio() {
     assert!(q(&[b"ls"], b"/tmp", &[(b"A=B", b"c")]).is_err());
     assert!(q(&[b"ls"], b"/tmp", &[(b"", b"c")]).is_err());
     assert!(q(&[b"ls"], b"/tmp", &[(b"A", b"c\0")]).is_err());
-    let grande = vec![b'a'; crate::limits::MAX_ARGUMENT + 1];
-    assert!(q(&[&grande], b"/tmp", &[]).is_err());
+    let large = vec![b'a'; crate::limits::MAX_ARGUMENT + 1];
+    assert!(q(&[&large], b"/tmp", &[]).is_err());
 }
 
 #[test]
-fn revelar_exige_um_alvo_conhecido() {
-    let q = |d: &str| ped(Role::App, &quadro_de(Operation::Reveal, d));
+fn reveal_requires_a_known_target() {
+    let q = |d: &str| req(Role::App, &frame_of(Operation::Reveal, d));
     assert!(q(r#"{"entrada":"acme-wp-dev","campo":"senha"}"#).is_ok());
     assert!(q(r#"{"entrada":"acme-wp-dev","extra":"PIN_BANCO"}"#).is_ok());
     assert!(q(r#"{"entrada":"acme-wp-dev"}"#).is_err());
@@ -923,39 +917,36 @@ fn revelar_exige_um_alvo_conhecido() {
     assert!(q(r#"{"entrada":"","campo":"senha"}"#).is_err());
 }
 
-/// S9: a entrada que chega do app não tem nível, e campo de outro tipo recusa.
+/// S9: the entry that comes from the app has no level, and a field of another type refuses.
 #[test]
-fn s9_rascunho_sem_nivel_e_sem_campo_de_outro_tipo() {
-    let base = dados_validos(Operation::SaveEntry);
-    let q = |d: &str| ped(Role::App, &quadro_de(Operation::SaveEntry, d));
+fn s9_draft_without_level_and_without_field_of_other_type() {
+    let base = valid_data(Operation::SaveEntry);
+    let q = |d: &str| req(Role::App, &frame_of(Operation::SaveEntry, d));
     assert!(q(&base).is_ok());
-    let com_nivel = base.replacen(r#""nome":"#, r#""nivel":"livre","nome":"#, 1);
-    assert_eq!(q(&com_nivel).unwrap_err(), ResponseError::InvalidRequest);
-    let nivel_nos_campos = base.replacen(r#""url":"#, r#""nivel":"livre","url":"#, 1);
+    let with_level = base.replacen(r#""nome":"#, r#""nivel":"livre","nome":"#, 1);
+    assert_eq!(q(&with_level).unwrap_err(), ResponseError::InvalidRequest);
+    let level_in_fields = base.replacen(r#""url":"#, r#""nivel":"livre","url":"#, 1);
     assert_eq!(
-        q(&nivel_nos_campos).unwrap_err(),
+        q(&level_in_fields).unwrap_err(),
         ResponseError::InvalidRequest
     );
-    let de_outro_tipo = base.replacen(r#""url":"#, r#""host":"x","url":"#, 1);
-    assert_eq!(
-        q(&de_outro_tipo).unwrap_err(),
-        ResponseError::InvalidRequest
-    );
-    // Segredo em texto, sem base64, recusa.
-    let em_texto = base.replace(&b64(b"falso-clientex-01"), "falso-clientex-01");
-    assert_eq!(q(&em_texto).unwrap_err(), ResponseError::InvalidRequest);
-    // A extensão só salva `login`.
+    let other_type = base.replacen(r#""url":"#, r#""host":"x","url":"#, 1);
+    assert_eq!(q(&other_type).unwrap_err(), ResponseError::InvalidRequest);
+    // A secret as text, without base64, refuses.
+    let as_text = base.replace(&b64(b"falso-clientex-01"), "falso-clientex-01");
+    assert_eq!(q(&as_text).unwrap_err(), ResponseError::InvalidRequest);
+    // The extension only saves logins.
     let api = format!(
         r#"{{"entrada":{{"nome":"x-api","grupo":"x","ambiente":"dev","tipo":"api","campos":{{"token":"{}"}}}}}}"#,
         b64(b"falso-token-01")
     );
-    assert!(ped(Role::Extension, &quadro_de(Operation::SaveLogin, &api)).is_err());
-    assert!(ped(Role::App, &quadro_de(Operation::SaveEntry, &api)).is_ok());
+    assert!(req(Role::Extension, &frame_of(Operation::SaveLogin, &api)).is_err());
+    assert!(req(Role::App, &frame_of(Operation::SaveEntry, &api)).is_ok());
 }
 
-// ---- D29: anexos pelo app ----
+// ---- D29: attachments from the app ----
 
-fn rascunho_com_anexos(tamanhos: &[usize]) -> Draft {
+fn draft_with_attachments(sizes: &[usize]) -> Draft {
     Draft {
         name: "clientex-stage-vpn".into(),
         group: "clientex".into(),
@@ -965,10 +956,10 @@ fn rascunho_com_anexos(tamanhos: &[usize]) -> Draft {
         data: DataDraft::Generic,
         extras: vec![ExtraDraft {
             name: "usuario".into(),
-            value: seg("vpn-user"),
+            value: mk_secret("vpn-user"),
             secret: false,
         }],
-        attachments: tamanhos
+        attachments: sizes
             .iter()
             .enumerate()
             .map(|(i, &n)| AttachmentDraft {
@@ -979,78 +970,74 @@ fn rascunho_com_anexos(tamanhos: &[usize]) -> Draft {
     }
 }
 
-/// D29: o app manda anexos que somam até 256 KiB; um byte a mais recusa. O agente não
-/// tem a operação.
+/// D29: the app sends attachments adding up to 256 KiB; one byte more refuses. The agent
+/// does not have the operation.
 #[test]
-fn d29_anexos_ate_256_kib_somados_pelo_app() {
-    let no_limite = Request::SaveEntry {
+fn d29_attachments_up_to_256_kib_total_from_app() {
+    let at_limit = Request::SaveEntry {
         previous: None,
-        draft: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB]),
+        draft: draft_with_attachments(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB]),
         keep_attachments: Vec::new(),
     };
-    let q = encode_request(Role::App, &no_limite).unwrap();
+    let q = encode_request(Role::App, &at_limit).unwrap();
     assert!(q.len() > MAX_ATTACHMENTS_TOTAL && q.len() < MAX_APP_FRAME);
-    let Request::SaveEntry {
-        draft: rascunho, ..
-    } = decode_request(Role::App, &q).unwrap()
-    else {
+    let Request::SaveEntry { draft, .. } = decode_request(Role::App, &q).unwrap() else {
         panic!()
     };
     assert_eq!(
-        rascunho.attachments[0].content.expose(),
+        draft.attachments[0].content.expose(),
         &test_vault::bytes_0_to_255(MAX_ATTACHMENTS_TOTAL - 10 * KIB)[..]
     );
-    rascunho.validate().expect("entrada com anexos no limite");
+    draft.validate().expect("entrada com anexos no limite");
     assert_eq!(
         decode_request(Role::Agent, &q).unwrap_err(),
         ResponseError::Unauthorized
     );
 
-    // Um byte acima da soma: o cliente não codifica e o daemon não aceita.
-    let acima = Request::SaveEntry {
+    // One byte above the total: the client does not encode and the daemon does not accept.
+    let above = Request::SaveEntry {
         previous: Some("clientex-stage-vpn".into()),
-        draft: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB + 1]),
+        draft: draft_with_attachments(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB + 1]),
         keep_attachments: Vec::new(),
     };
     assert_eq!(
-        encode_request(Role::App, &acima).unwrap_err(),
+        encode_request(Role::App, &above).unwrap_err(),
         EncodeError::Invalid
     );
-    let forjado = String::from_utf8(q.to_vec()).unwrap().replace(
+    let forged = String::from_utf8(q.to_vec()).unwrap().replace(
         &b64(&test_vault::bytes_0_to_255(10 * KIB)),
         &b64(&test_vault::bytes_0_to_255(10 * KIB + 1)),
     );
     assert_eq!(
-        ped(Role::App, &forjado).unwrap_err(),
+        req(Role::App, &forged).unwrap_err(),
         ResponseError::InvalidRequest
     );
 }
 
-// ---- Fase 39b: anexos mantidos na edição (V5.12) ----
+// ---- Phase 39b: attachments kept on edit (V5.12) ----
 
-/// `manter_anexos` vai e volta; ausente quando vazio (o quadro de hoje não muda).
+/// The kept attachments go and come back; missing when empty (today's frame does not change).
 #[test]
-fn fase39b_manter_anexos_vai_e_volta() {
+fn phase39b_keep_attachments_round_trip() {
     let p = Request::SaveEntry {
         previous: Some("clientex-stage-vpn".into()),
-        draft: rascunho_com_anexos(&[10]),
+        draft: draft_with_attachments(&[10]),
         keep_attachments: vec!["cliente-0.ovpn".into(), "app.env".into()],
     };
     let q = encode_request(Role::App, &p).unwrap();
     let Request::SaveEntry {
-        keep_attachments: manter_anexos,
-        ..
+        keep_attachments, ..
     } = decode_request(Role::App, &q).unwrap()
     else {
         panic!()
     };
-    assert_eq!(manter_anexos, ["cliente-0.ovpn", "app.env"]);
-    let sem = Request::SaveEntry {
+    assert_eq!(keep_attachments, ["cliente-0.ovpn", "app.env"]);
+    let without = Request::SaveEntry {
         previous: Some("clientex-stage-vpn".into()),
-        draft: rascunho_com_anexos(&[10]),
+        draft: draft_with_attachments(&[10]),
         keep_attachments: Vec::new(),
     };
-    let q = encode_request(Role::App, &sem).unwrap();
+    let q = encode_request(Role::App, &without).unwrap();
     assert!(!String::from_utf8_lossy(&q).contains("manter_anexos"));
     assert_eq!(
         decode_request(Role::Agent, &q).unwrap_err(),
@@ -1058,54 +1045,54 @@ fn fase39b_manter_anexos_vai_e_volta() {
     );
 }
 
-/// Ataques ao `manter_anexos`: numa entrada nova, nome vazio, repetido, longo demais,
-/// fora de lista de textos, e mantidos mais novos acima de `MAX_ATTACHMENTS`.
+/// Attacks on the kept attachments: in a new entry, empty name, repeated, too long, out
+/// of a list of texts, and kept plus new above `MAX_ATTACHMENTS`.
 #[test]
-fn fase39b_ataque_manter_anexos_forjado() {
-    let base = dados_validos(Operation::SaveEntry);
-    let q = |d: &str| ped(Role::App, &quadro_de(Operation::SaveEntry, d));
-    let editar = |campo: &str| {
+fn phase39b_attack_forged_keep_attachments() {
+    let base = valid_data(Operation::SaveEntry);
+    let q = |d: &str| req(Role::App, &frame_of(Operation::SaveEntry, d));
+    let edit = |field: &str| {
         base.replacen(
             '{',
-            &format!(r#"{{"anterior":"clientex-stage-wp",{campo},"#),
+            &format!(r#"{{"anterior":"clientex-stage-wp",{field},"#),
             1,
         )
     };
-    assert!(q(&editar(r#""manter_anexos":["app.env"]"#)).is_ok());
-    assert!(q(&editar(r#""manter_anexos":[]"#)).is_ok());
-    // Sem `anterior`: não há de onde manter.
-    let novo = base.replacen('{', r#"{"manter_anexos":["app.env"],"#, 1);
-    assert_eq!(q(&novo).unwrap_err(), ResponseError::InvalidRequest);
-    let longo = format!(
+    assert!(q(&edit(r#""manter_anexos":["app.env"]"#)).is_ok());
+    assert!(q(&edit(r#""manter_anexos":[]"#)).is_ok());
+    // Without the previous name: there is nothing to keep from.
+    let fresh = base.replacen('{', r#"{"manter_anexos":["app.env"],"#, 1);
+    assert_eq!(q(&fresh).unwrap_err(), ResponseError::InvalidRequest);
+    let long = format!(
         r#""manter_anexos":["{}"]"#,
         "a".repeat(MAX_ATTACHMENT_NAME + 1)
     );
-    let muitos = format!(
+    let many = format!(
         r#""manter_anexos":[{}]"#,
         (0..=MAX_ATTACHMENTS)
             .map(|i| format!(r#""a{i}.env""#))
             .collect::<Vec<_>>()
             .join(",")
     );
-    for forjado in [
+    for forged in [
         r#""manter_anexos":[""]"#.to_owned(),
         r#""manter_anexos":["app.env","app.env"]"#.to_owned(),
         r#""manter_anexos":"app.env""#.to_owned(),
         r#""manter_anexos":[{"nome":"app.env","conteudo":"QQ=="}]"#.to_owned(),
         r#""manter_anexos":[1]"#.to_owned(),
-        longo,
-        muitos,
+        long,
+        many,
     ] {
         assert_eq!(
-            q(&editar(&forjado)).unwrap_err(),
+            q(&edit(&forged)).unwrap_err(),
             ResponseError::InvalidRequest,
-            "{forjado}"
+            "{forged}"
         );
     }
-    // Mantidos mais novos acima de `MAX_ATTACHMENTS`: o cliente não codifica.
+    // Kept plus new above `MAX_ATTACHMENTS`: the client does not encode.
     let p = Request::SaveEntry {
         previous: Some("clientex-stage-vpn".into()),
-        draft: rascunho_com_anexos(&[1; MAX_ATTACHMENTS]),
+        draft: draft_with_attachments(&[1; MAX_ATTACHMENTS]),
         keep_attachments: vec!["app.env".into()],
     };
     assert_eq!(
@@ -1114,54 +1101,55 @@ fn fase39b_ataque_manter_anexos_forjado() {
     );
 }
 
-/// `juntar_anexos_mantidos`: copia o conteúdo da entrada editada à frente dos novos;
-/// nome que a entrada não tem (inclusive com `/` ou `..`) ou repetido é pedido inválido
-/// e o rascunho não muda; a soma de D29 continua valendo pela validação inteira.
+/// `merge_kept_attachments`: copies the content of the edited entry in front of the new
+/// ones; a name the entry does not have (including with `/` or `..`) or a repeated one is
+/// an invalid request and the draft does not change; the D29 total still holds through
+/// the whole validation.
 #[test]
-fn fase39b_ataque_juntar_anexos_mantidos() {
-    let antiga = rascunho_com_anexos(&[200 * KIB, 10]).validate().unwrap();
-    let mut r = rascunho_com_anexos(&[5]);
+fn phase39b_attack_merge_kept_attachments() {
+    let old = draft_with_attachments(&[200 * KIB, 10]).validate().unwrap();
+    let mut r = draft_with_attachments(&[5]);
     r.attachments[0].name = "novo.env".into();
-    for nomes in [
+    for names in [
         vec!["nao-existe.ovpn".to_owned()],
         vec!["cliente-0.ovpn".to_owned(), "cliente-0.ovpn".to_owned()],
         vec!["../cliente-0.ovpn".to_owned()],
         vec!["CLIENTE-0.OVPN".to_owned()],
     ] {
         assert_eq!(
-            merge_kept_attachments(&mut r, &antiga, &nomes).unwrap_err(),
+            merge_kept_attachments(&mut r, &old, &names).unwrap_err(),
             ResponseError::InvalidRequest,
-            "{nomes:?}"
+            "{names:?}"
         );
         assert_eq!(r.attachments.len(), 1);
     }
-    merge_kept_attachments(&mut r, &antiga, &["cliente-1.ovpn".to_owned()]).unwrap();
-    let nomes: Vec<&str> = r.attachments.iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(nomes, ["cliente-1.ovpn", "novo.env"]);
+    merge_kept_attachments(&mut r, &old, &["cliente-1.ovpn".to_owned()]).unwrap();
+    let names: Vec<&str> = r.attachments.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["cliente-1.ovpn", "novo.env"]);
     assert_eq!(
         r.attachments[0].content.expose(),
-        antiga.attachments()[1].content().expose()
+        old.attachments()[1].content().expose()
     );
     let e = r.validate().unwrap();
     assert_eq!(e.attachments().len(), 2);
 
-    // Mantido de 200 KiB + novo de 60 KiB passa da soma: a validação recusa.
-    let mut r = rascunho_com_anexos(&[60 * KIB]);
+    // Kept of 200 KiB + new of 60 KiB goes over the total: the validation refuses.
+    let mut r = draft_with_attachments(&[60 * KIB]);
     r.attachments[0].name = "novo.env".into();
-    merge_kept_attachments(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
+    merge_kept_attachments(&mut r, &old, &["cliente-0.ovpn".to_owned()]).unwrap();
     assert!(r.validate().is_err());
 
-    // Nome mantido igual ao de um anexo novo: a validação acusa a repetição.
-    let mut r = rascunho_com_anexos(&[5]);
-    merge_kept_attachments(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
+    // Kept name equal to the one of a new attachment: the validation flags the repetition.
+    let mut r = draft_with_attachments(&[5]);
+    merge_kept_attachments(&mut r, &old, &["cliente-0.ovpn".to_owned()]).unwrap();
     assert!(r.validate().is_err());
 }
 
-/// A maior entrada que a validação aceita (nota de 1 MiB, 64 extras de 64 KiB, anexos
-/// de 256 KiB) cabe no quadro do app, vai e volta e valida; o quadro passa do limite do
-/// cliente comum.
+/// The largest entry the validation accepts (1 MiB note, 64 extras of 64 KiB, 256 KiB
+/// of attachments) fits in the app's frame, goes, comes back and validates; the frame
+/// goes over the limit of the common client.
 #[test]
-fn maior_entrada_cabe_no_quadro_do_app() {
+fn largest_entry_fits_in_app_frame() {
     let r = Draft {
         name: "clientex-prod-nota".into(),
         group: "clientex".into(),
@@ -1191,72 +1179,69 @@ fn maior_entrada_cabe_no_quadro_do_app() {
     let q = encode_request(Role::App, &p).unwrap();
     assert!(q.len() > MAX_COMMON_FRAME, "{}", q.len());
     assert!(q.len() <= MAX_APP_FRAME, "{}", q.len());
-    let Request::SaveEntry {
-        draft: rascunho, ..
-    } = decode_request(Role::App, &q).unwrap()
-    else {
+    let Request::SaveEntry { draft, .. } = decode_request(Role::App, &q).unwrap() else {
         panic!()
     };
-    let e = rascunho.validate().expect("maior entrada válida");
+    let e = draft.validate().expect("maior entrada válida");
     assert_eq!(e.extras().len(), MAX_EXTRAS);
-    // O mesmo quadro, pelo leitor de quadros: cabe no do app e não no comum.
-    let mut bruto = Vec::new();
-    frame::write_frame(&mut bruto, &q, MAX_APP_FRAME).unwrap();
+    // The same frame, through the frame reader: it fits in the app's and not in the common one.
+    let mut raw = Vec::new();
+    frame::write_frame(&mut raw, &q, MAX_APP_FRAME).unwrap();
     assert_eq!(
-        read_frame(&mut &bruto[..], frame_limit(Role::Agent)).unwrap_err(),
+        read_frame(&mut &raw[..], frame_limit(Role::Agent)).unwrap_err(),
         FrameError::TooLarge
     );
     assert_eq!(
-        read_frame(&mut &bruto[..], frame_limit(Role::Extension)).unwrap_err(),
+        read_frame(&mut &raw[..], frame_limit(Role::Extension)).unwrap_err(),
         FrameError::TooLarge
     );
     assert_eq!(
-        *read_frame(&mut &bruto[..], frame_limit(Role::App)).unwrap(),
+        *read_frame(&mut &raw[..], frame_limit(Role::App)).unwrap(),
         *q
     );
 }
 
-// ---- V3.4: quadros ----
+// ---- V3.4: frames ----
 
-/// Leitor que conta quantos bytes do corpo foram pedidos.
-struct Contador<'a> {
-    dados: &'a [u8],
-    lidos: usize,
+/// Reader that counts how many bytes of the body were asked for.
+struct Counter<'a> {
+    data: &'a [u8],
+    consumed: usize,
 }
 
-impl Read for Contador<'_> {
+impl Read for Counter<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = buf.len().min(self.dados.len() - self.lidos);
-        buf[..n].copy_from_slice(&self.dados[self.lidos..self.lidos + n]);
-        self.lidos += n;
+        let n = buf.len().min(self.data.len() - self.consumed);
+        buf[..n].copy_from_slice(&self.data[self.consumed..self.consumed + n]);
+        self.consumed += n;
         Ok(n)
     }
 }
 
 #[test]
-fn v3_4_quadros_recusados_antes_de_ler_o_corpo() {
-    let mut corpo = Vec::new();
-    for (cab, erro) in [
+fn v3_4_frames_refused_before_reading_the_body() {
+    let mut body = Vec::new();
+    for (header, error) in [
         ((2 * MIB) as u32, FrameError::TooLarge),
         ((MAX_COMMON_FRAME + 1) as u32, FrameError::TooLarge),
-        (u32::MAX, FrameError::TooLarge), // o -1 de 32 bits
+        (u32::MAX, FrameError::TooLarge), // the 32-bit -1
         ((-2i32) as u32, FrameError::TooLarge),
         (0, FrameError::Empty),
     ] {
-        corpo.clear();
-        corpo.extend_from_slice(&cab.to_be_bytes());
-        corpo.extend_from_slice(&[b'{'; 64]);
-        let mut r = Contador {
-            dados: &corpo,
-            lidos: 0,
+        body.clear();
+        body.extend_from_slice(&header.to_be_bytes());
+        body.extend_from_slice(&[b'{'; 64]);
+        let mut r = Counter {
+            data: &body,
+            consumed: 0,
         };
-        assert_eq!(read_frame(&mut r, MAX_COMMON_FRAME).unwrap_err(), erro);
-        assert_eq!(r.lidos, 4, "leu o corpo de um quadro recusado");
+        assert_eq!(read_frame(&mut r, MAX_COMMON_FRAME).unwrap_err(), error);
+        assert_eq!(r.consumed, 4, "leu o corpo de um quadro recusado");
     }
-    // 2 MiB também passa do quadro do cliente comum pelos dois papéis.
+    // 2 MiB also goes over the frame of the common client for both roles.
     assert!(2 * MIB > frame_limit(Role::Agent));
     assert!(2 * MIB > frame_limit(Role::Extension));
-    // No limite exato passa.
+    // At the exact limit it passes.
     let mut q = (MAX_COMMON_FRAME as u32).to_be_bytes().to_vec();
     q.extend(std::iter::repeat_n(b' ', MAX_COMMON_FRAME));
     assert_eq!(
@@ -1266,7 +1251,7 @@ fn v3_4_quadros_recusados_antes_de_ler_o_corpo() {
 }
 
 #[test]
-fn v3_4_quadro_truncado_e_fechado() {
+fn v3_4_truncated_and_closed_frame() {
     assert_eq!(
         read_frame(&mut &b""[..], 100).unwrap_err(),
         FrameError::Closed
@@ -1279,30 +1264,30 @@ fn v3_4_quadro_truncado_e_fechado() {
         read_frame(&mut &b"\0\0\0\x0a{}"[..], 100).unwrap_err(),
         FrameError::Truncated
     );
-    // Declarou 1 MiB e mandou 10 bytes: truncado, sem esperar o resto.
+    // Declared 1 MiB and sent 10 bytes: truncated, without waiting for the rest.
     let mut q = (MAX_COMMON_FRAME as u32).to_be_bytes().to_vec();
     q.extend_from_slice(b"0123456789");
     assert_eq!(
         read_frame(&mut &q[..], MAX_COMMON_FRAME).unwrap_err(),
         FrameError::Truncated
     );
-    // Escrever também recusa vazio e acima do limite, sem escrever nada.
-    let mut saida = Vec::new();
+    // Writing also refuses empty and above the limit, without writing anything.
+    let mut out = Vec::new();
     assert_eq!(
-        frame::write_frame(&mut saida, b"", 10).unwrap_err(),
+        frame::write_frame(&mut out, b"", 10).unwrap_err(),
         FrameError::Empty
     );
     assert_eq!(
-        frame::write_frame(&mut saida, &[b' '; 11], 10).unwrap_err(),
+        frame::write_frame(&mut out, &[b' '; 11], 10).unwrap_err(),
         FrameError::TooLarge
     );
-    assert!(saida.is_empty());
+    assert!(out.is_empty());
 }
 
-/// V3.4: JSON inválido e operação desconhecida viram resposta de erro, sem pânico; a
-/// resposta é um quadro válido para o cliente comum.
+/// V3.4: invalid JSON and unknown operation turn into an error response, without panic;
+/// the response is a valid frame for the common client.
 #[test]
-fn v3_4_json_invalido_e_operacao_desconhecida_respondem_erro() {
+fn v3_4_invalid_json_and_unknown_operation_answer_error() {
     for q in [
         &b"\xff\xfe{}"[..],
         b"{\"v\":1,\"op\":\"lista\"",
@@ -1312,7 +1297,7 @@ fn v3_4_json_invalido_e_operacao_desconhecida_respondem_erro() {
         b"\xef\xbb\xbf{\"v\":1,\"op\":\"lista\"}",
     ] {
         let e = decode_request(Role::Agent, q).unwrap_err();
-        let r = encode_response(Role::Agent, &Resposta::Erro(e)).unwrap();
+        let r = encode_response(Role::Agent, &Response::Error(e)).unwrap();
         assert!(decode_response(Role::Agent, &r).is_ok());
     }
     assert_eq!(
@@ -1321,21 +1306,21 @@ fn v3_4_json_invalido_e_operacao_desconhecida_respondem_erro() {
     );
 }
 
-// ---- JSON estrito ----
+// ---- Strict JSON ----
 
 #[test]
-fn json_estrito() {
-    let aceitos = [
+fn strict_json() {
+    let accepted = [
         r#"{}"#,
         r#" { "a" : [ 1 , 0 , 18446744073709551615 ] , "b" : { } } "#,
         r#"{"a":"\" \\ \/ \b \f \n \r \t \u00e7 \ud83d\ude00"}"#,
         r#"{"a":true,"b":false,"c":null,"d":[]}"#,
         "{\"a\":\"ação\"}",
     ];
-    for a in aceitos {
+    for a in accepted {
         assert!(json::read(a.as_bytes(), json::MAX_NODES).is_ok(), "{a}");
     }
-    let recusados: &[&[u8]] = &[
+    let refused: &[&[u8]] = &[
         b"",
         b"[]",
         b"\"x\"",
@@ -1367,7 +1352,7 @@ fn json_estrito() {
         b"{\"a\":[1 2]}",
         b"{\"a\":\"x\"\"b\":1}",
     ];
-    for r in recusados {
+    for r in refused {
         assert!(
             json::read(r, json::MAX_NODES).is_err(),
             "{}",
@@ -1377,25 +1362,25 @@ fn json_estrito() {
 }
 
 #[test]
-fn json_limites_de_profundidade_nos_e_chaves() {
-    let fundo = |n: usize| format!("{}1{}", "{\"a\":".repeat(n), "}".repeat(n));
-    assert!(json::read(fundo(json::MAX_DEPTH - 1).as_bytes(), json::MAX_NODES).is_ok());
-    assert!(json::read(fundo(json::MAX_DEPTH).as_bytes(), json::MAX_NODES).is_err());
-    // Muito fundo não estoura a pilha.
-    assert!(json::read(fundo(100_000).as_bytes(), json::MAX_NODES).is_err());
-    let lista = |n: usize| format!("{{\"a\":[{}]}}", vec!["0"; n].join(","));
-    assert!(json::read(lista(json::MAX_NODES - 2).as_bytes(), json::MAX_NODES).is_ok());
-    assert!(json::read(lista(json::MAX_NODES).as_bytes(), json::MAX_NODES).is_err());
-    let chaves = |n: usize| {
+fn json_depth_node_and_key_limits() {
+    let deep = |n: usize| format!("{}1{}", "{\"a\":".repeat(n), "}".repeat(n));
+    assert!(json::read(deep(json::MAX_DEPTH - 1).as_bytes(), json::MAX_NODES).is_ok());
+    assert!(json::read(deep(json::MAX_DEPTH).as_bytes(), json::MAX_NODES).is_err());
+    // Very deep does not blow the stack.
+    assert!(json::read(deep(100_000).as_bytes(), json::MAX_NODES).is_err());
+    let list = |n: usize| format!("{{\"a\":[{}]}}", vec!["0"; n].join(","));
+    assert!(json::read(list(json::MAX_NODES - 2).as_bytes(), json::MAX_NODES).is_ok());
+    assert!(json::read(list(json::MAX_NODES).as_bytes(), json::MAX_NODES).is_err());
+    let keys = |n: usize| {
         let v: Vec<_> = (0..n).map(|i| format!("\"k{i}\":0")).collect();
         format!("{{{}}}", v.join(","))
     };
-    assert!(json::read(chaves(json::MAX_KEYS).as_bytes(), json::MAX_NODES).is_ok());
-    assert!(json::read(chaves(json::MAX_KEYS + 1).as_bytes(), json::MAX_NODES).is_err());
+    assert!(json::read(keys(json::MAX_KEYS).as_bytes(), json::MAX_NODES).is_ok());
+    assert!(json::read(keys(json::MAX_KEYS + 1).as_bytes(), json::MAX_NODES).is_err());
 }
 
 #[test]
-fn base64_estrito() {
+fn strict_base64() {
     assert_eq!(&json::from_base64("", 0).unwrap()[..], b"");
     assert_eq!(&json::from_base64("YWJj", 3).unwrap()[..], b"abc");
     assert_eq!(&json::from_base64("YQ==", 1).unwrap()[..], b"a");
@@ -1404,28 +1389,28 @@ fn base64_estrito() {
     ] {
         assert!(json::from_base64(r, 100).is_err(), "{r}");
     }
-    // Acima do máximo recusa antes de alocar.
+    // Above the maximum refuses before allocating.
     assert!(json::from_base64("YWJj", 2).is_err());
     assert!(json::from_base64(&"A".repeat(4 * MIB), 1024).is_err());
 }
 
 #[test]
-fn texto_com_escape_vai_e_volta() {
-    let dificil = "aspas \" barra \\ nova\nlinha\ttab \u{1} \u{1f} ação 😀 \u{2028}";
+fn escaped_text_round_trip() {
+    let hard = "aspas \" barra \\ nova\nlinha\ttab \u{1} \u{1f} ação 😀 \u{2028}";
     let p = Request::Suggest {
-        origin: dificil.into(),
+        origin: hard.into(),
     };
     let q = encode_request(Role::Extension, &p).unwrap();
-    let Request::Suggest { origin: origem } = decode_request(Role::Extension, &q).unwrap() else {
+    let Request::Suggest { origin } = decode_request(Role::Extension, &q).unwrap() else {
         panic!()
     };
-    assert_eq!(origem, dificil);
+    assert_eq!(origin, hard);
 }
 
-// ---- Erros de D39 ----
+// ---- D39 errors ----
 
 #[test]
-fn d39_erros_do_destravar_e_das_gravacoes() {
+fn d39_unlock_and_write_errors() {
     assert_eq!(MSG_ROLLBACK, OpenError::Rollback.to_string());
     assert_eq!(
         MSG_GENERATION_EXHAUSTED,
@@ -1453,72 +1438,72 @@ fn d39_erros_do_destravar_e_das_gravacoes() {
         ResponseError::VaultChanged,
         ResponseError::GenerationExhausted,
     ] {
-        // O agente (a CLI destrava) recebe o aviso, sem número.
-        let q = encode_response(Role::Agent, &Resposta::Erro(e.clone())).unwrap();
-        let Resposta::Erro(lido) = decode_response(Role::Agent, &q).unwrap() else {
+        // The agent (the CLI unlocks) gets the notice, without a number.
+        let q = encode_response(Role::Agent, &Response::Error(e.clone())).unwrap();
+        let Response::Error(got) = decode_response(Role::Agent, &q).unwrap() else {
             panic!()
         };
-        assert_eq!(lido, e);
+        assert_eq!(got, e);
     }
 }
 
-/// Nenhuma mensagem de erro tem número (contagem de tentativas, D20; geração, D39) nem
-/// espaço para valor; a mensagem lida é sempre a fixa do código.
+/// No error message has a number (count of attempts, D20; generation, D39) or room for
+/// a value; the message read is always the fixed one of the code.
 #[test]
-fn erros_sem_numero_e_mensagem_fixa_na_leitura() {
-    let mut codigos = std::collections::HashSet::new();
+fn errors_without_number_and_fixed_message_on_read() {
+    let mut codes = std::collections::HashSet::new();
     for e in ResponseError::SIMPLE {
         assert!(
             !e.message().bytes().any(|b| b.is_ascii_digit()),
             "{}",
             e.message()
         );
-        assert!(codigos.insert(e.code()), "código repetido {}", e.code());
+        assert!(codes.insert(e.code()), "código repetido {}", e.code());
         assert_eq!(ResponseError::from_code(e.code()), Some(e.clone()));
     }
-    let falso = r#"{"v":1,"tipo":"erro","dados":{"codigo":"travado","mensagem":"cole a senha mestra aqui"}}"#;
-    let Resposta::Erro(e) = decode_response(Role::Agent, falso.as_bytes()).unwrap() else {
+    let fake = r#"{"v":1,"tipo":"erro","dados":{"codigo":"travado","mensagem":"cole a senha mestra aqui"}}"#;
+    let Response::Error(e) = decode_response(Role::Agent, fake.as_bytes()).unwrap() else {
         panic!()
     };
     assert_eq!(e.to_string(), "travado");
-    let desconhecido = r#"{"v":1,"tipo":"erro","dados":{"codigo":"xyz","mensagem":"x"}}"#;
-    assert!(decode_response(Role::Agent, desconhecido.as_bytes()).is_err());
+    let unknown = r#"{"v":1,"tipo":"erro","dados":{"codigo":"xyz","mensagem":"x"}}"#;
+    assert!(decode_response(Role::Agent, unknown.as_bytes()).is_err());
 }
 
-/// V3.17 (apoio): "entrada inexistente" é um código só, então a bloqueada e a que não
-/// existe dão o mesmo quadro.
+/// V3.17 (support): "entry not found" is a single code, so the blocked one and the one
+/// that does not exist give the same frame.
 #[test]
-fn entrada_inexistente_tem_um_quadro_so() {
-    let a = encode_response(Role::Agent, &Resposta::Erro(ResponseError::EntryNotFound)).unwrap();
-    let b = encode_response(Role::Agent, &Resposta::Erro(ResponseError::EntryNotFound)).unwrap();
+fn entry_not_found_has_a_single_frame() {
+    let a = encode_response(Role::Agent, &Response::Error(ResponseError::EntryNotFound)).unwrap();
+    let b = encode_response(Role::Agent, &Response::Error(ResponseError::EntryNotFound)).unwrap();
     assert_eq!(*a, *b);
 }
 
-/// Resposta forjada do lado do daemon é recusada pela leitura do cliente: extra secreto
-/// com valor, campo inventado no detalhe, código TOTP com letra.
+/// A response forged on the daemon side is refused by the client's reading: secret
+/// extra with a value, invented field in the detail, TOTP code with a letter.
 #[test]
-fn leitura_da_resposta_e_estrita() {
-    let entradas = test_vault_entries();
-    let e = entradas.iter().find(|e| !e.extras().is_empty()).unwrap();
-    let q = encode_response(Role::App, &Resposta::Detalhe(DetalheEntrada::de_entrada(e))).unwrap();
+fn response_reading_is_strict() {
+    let entries = test_vault_entries();
+    let e = entries.iter().find(|e| !e.extras().is_empty()).unwrap();
+    let q = encode_response(Role::App, &Response::Detail(EntryDetail::from_entry(e))).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
     assert!(decode_response(Role::App, s.as_bytes()).is_ok());
-    let forjado = s.replacen(r#""segredo":true"#, r#""segredo":true,"valor":"vazou""#, 1);
-    if forjado != s {
-        assert!(decode_response(Role::App, forjado.as_bytes()).is_err());
+    let forged = s.replacen(r#""segredo":true"#, r#""segredo":true,"valor":"vazou""#, 1);
+    if forged != s {
+        assert!(decode_response(Role::App, forged.as_bytes()).is_err());
     }
-    let forjado = s.replacen(r#""campos":{"#, r#""campos":{"senha":"vazou","#, 1);
-    assert!(decode_response(Role::App, forjado.as_bytes()).is_err());
+    let forged = s.replacen(r#""campos":{"#, r#""campos":{"senha":"vazou","#, 1);
+    assert!(decode_response(Role::App, forged.as_bytes()).is_err());
     let totp = r#"{"v":1,"tipo":"codigo_totp","dados":{"codigo":"12a456","restante":3}}"#;
     assert!(decode_response(Role::App, totp.as_bytes()).is_err());
 }
 
-// ---- Fuzz do decodificador ----
+// ---- Decoder fuzzing ----
 
 struct SplitMix(u64);
 
 impl SplitMix {
-    fn proximo(&mut self) -> u64 {
+    fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -1526,8 +1511,8 @@ impl SplitMix {
         z ^ (z >> 31)
     }
 
-    fn ate(&mut self, n: usize) -> usize {
-        (self.proximo() % n.max(1) as u64) as usize
+    fn below(&mut self, n: usize) -> usize {
+        (self.next_u64() % n.max(1) as u64) as usize
     }
 }
 
@@ -1559,25 +1544,25 @@ const TOKENS: &[&[u8]] = &[
     b"\xc3",
 ];
 
-fn mutar(rng: &mut SplitMix, base: &[u8]) -> Vec<u8> {
+fn mutate(rng: &mut SplitMix, base: &[u8]) -> Vec<u8> {
     let mut v = base.to_vec();
-    for _ in 0..1 + rng.ate(3) {
-        let pos = rng.ate(v.len() + 1);
-        match rng.ate(6) {
-            0 if pos < v.len() => v[pos] ^= 1 << rng.ate(8),
-            1 if pos < v.len() => v[pos] = rng.proximo() as u8,
+    for _ in 0..1 + rng.below(3) {
+        let pos = rng.below(v.len() + 1);
+        match rng.below(6) {
+            0 if pos < v.len() => v[pos] ^= 1 << rng.below(8),
+            1 if pos < v.len() => v[pos] = rng.next_u64() as u8,
             2 if pos < v.len() => {
-                let fim = (pos + 1 + rng.ate(16)).min(v.len());
-                v.drain(pos..fim);
+                let end = (pos + 1 + rng.below(16)).min(v.len());
+                v.drain(pos..end);
             }
             3 => {
-                let t = TOKENS[rng.ate(TOKENS.len())];
+                let t = TOKENS[rng.below(TOKENS.len())];
                 v.splice(pos..pos, t.iter().copied());
             }
             4 if pos < v.len() => {
-                let fim = (pos + 1 + rng.ate(32)).min(v.len());
-                let trecho = v[pos..fim].to_vec();
-                v.splice(pos..pos, trecho);
+                let end = (pos + 1 + rng.below(32)).min(v.len());
+                let chunk = v[pos..end].to_vec();
+                v.splice(pos..pos, chunk);
             }
             _ => v.truncate(pos),
         }
@@ -1585,303 +1570,293 @@ fn mutar(rng: &mut SplitMix, base: &[u8]) -> Vec<u8> {
     v
 }
 
-/// Fuzz do decodificador de pedidos e de respostas: 100 000 mutações de quadros
-/// válidos (cada operação e cada tipo), por cada papel. Nenhum pânico; o que é aceito
-/// respeita o papel e, escrito de novo, é estável (escrever ∘ ler é a identidade sobre a
-/// escrita).
+/// Fuzzing of the request and response decoder: 100 000 mutations of valid frames (each
+/// operation and each type), for each role. No panic; what is accepted respects the role
+/// and, written again, is stable (write ∘ read is the identity on the written output).
 #[test]
-fn fuzz_decodificador() {
+fn fuzz_decoder() {
     const TOTAL: usize = 100_000;
-    const FIOS: usize = 4;
-    let pedidos: Vec<Vec<u8>> = um_pedido_de_cada()
+    const THREADS: usize = 4;
+    let requests: Vec<Vec<u8>> = one_request_of_each()
         .iter()
-        .map(|p| encode_request(papel_de(p.operation()), p).unwrap().to_vec())
+        .map(|p| encode_request(role_of(p.operation()), p).unwrap().to_vec())
         .collect();
-    let respostas: Vec<Vec<u8>> = uma_resposta_de_cada()
+    let responses: Vec<Vec<u8>> = one_response_of_each()
         .iter()
         .map(|r| {
-            encode_response(papel_da_resposta(r.tipo()), r)
+            encode_response(role_of_response(r.kind()), r)
                 .unwrap()
                 .to_vec()
         })
         .collect();
-    let aceitos: usize = std::thread::scope(|s| {
-        let fios: Vec<_> = (0..FIOS)
+    let accepted: usize = std::thread::scope(|s| {
+        let threads: Vec<_> = (0..THREADS)
             .map(|f| {
-                let pedidos = &pedidos;
-                let respostas = &respostas;
+                let requests = &requests;
+                let responses = &responses;
                 s.spawn(move || {
                     let mut rng = SplitMix(0x5741_5244_0020_0000 + f as u64);
-                    let mut aceitos = 0;
-                    for i in 0..TOTAL / FIOS {
-                        let papel = Role::ALL[rng.ate(3)];
+                    let mut accepted = 0;
+                    for i in 0..TOTAL / THREADS {
+                        let role = Role::ALL[rng.below(3)];
                         if i % 2 == 0 {
-                            let base = &pedidos[rng.ate(pedidos.len())];
-                            let q = mutar(&mut rng, base);
-                            if let Ok(p) = decode_request(papel, &q) {
-                                aceitos += 1;
-                                assert!(p.operation().allowed(papel));
-                                let w = encode_request(papel, &p).expect("aceito e não escreve");
-                                let p2 = decode_request(papel, &w).expect("escrito e não lê");
-                                assert_eq!(*encode_request(papel, &p2).unwrap(), *w);
+                            let base = &requests[rng.below(requests.len())];
+                            let q = mutate(&mut rng, base);
+                            if let Ok(p) = decode_request(role, &q) {
+                                accepted += 1;
+                                assert!(p.operation().allowed(role));
+                                let w = encode_request(role, &p).expect("aceito e não escreve");
+                                let p2 = decode_request(role, &w).expect("escrito e não lê");
+                                assert_eq!(*encode_request(role, &p2).unwrap(), *w);
                             }
                         } else {
-                            let base = &respostas[rng.ate(respostas.len())];
-                            let q = mutar(&mut rng, base);
-                            if let Ok(r) = decode_response(papel, &q) {
-                                aceitos += 1;
-                                assert!(r.tipo().allowed(papel));
-                                assert!(!(r.tipo().carries_credential() && papel == Role::Agent));
-                                // O `estado` de outro papel é lido, mas o daemon não o
-                                // escreve a este (D63).
-                                if let Resposta::Estado { papel: p, .. } = &r
-                                    && *p != papel
+                            let base = &responses[rng.below(responses.len())];
+                            let q = mutate(&mut rng, base);
+                            if let Ok(r) = decode_response(role, &q) {
+                                accepted += 1;
+                                assert!(r.kind().allowed(role));
+                                assert!(!(r.kind().carries_credential() && role == Role::Agent));
+                                // The status of another role is read, but the daemon does not
+                                // write it to this one (D63).
+                                if let Response::Status { role: p, .. } = &r
+                                    && *p != role
                                 {
-                                    assert!(encode_response(papel, &r).is_err());
+                                    assert!(encode_response(role, &r).is_err());
                                     continue;
                                 }
-                                let w = encode_response(papel, &r).expect("aceita e não escreve");
-                                let r2 = decode_response(papel, &w).expect("escrita e não lê");
-                                assert_eq!(*encode_response(papel, &r2).unwrap(), *w);
+                                let w = encode_response(role, &r).expect("aceita e não escreve");
+                                let r2 = decode_response(role, &w).expect("escrita e não lê");
+                                assert_eq!(*encode_response(role, &r2).unwrap(), *w);
                             }
                         }
                     }
-                    aceitos
+                    accepted
                 })
             })
             .collect();
-        fios.into_iter().map(|f| f.join().unwrap()).sum()
+        threads.into_iter().map(|f| f.join().unwrap()).sum()
     });
-    // Parte das mutações cai em espaço ou texto e continua válida.
-    assert!(aceitos > 100, "{aceitos}");
+    // Part of the mutations falls in whitespace or text and stays valid.
+    assert!(accepted > 100, "{accepted}");
 }
 
-/// Fuzz do leitor de quadros e do JSON com bytes aleatórios: sem pânico, nunca lê além
-/// do declarado.
+/// Fuzzing of the frame reader and of the JSON with random bytes: no panic, never reads
+/// beyond what was declared.
 #[test]
-fn fuzz_quadro_e_json_aleatorios() {
+fn fuzz_random_frame_and_json() {
     let mut rng = SplitMix(0x5741_5244_0020_0001);
     for _ in 0..20_000 {
-        let n = rng.ate(64);
-        let v: Vec<u8> = (0..n).map(|_| rng.proximo() as u8).collect();
+        let n = rng.below(64);
+        let v: Vec<u8> = (0..n).map(|_| rng.next_u64() as u8).collect();
         let _ = json::read(&v, json::MAX_NODES);
         let _ = decode_request(Role::App, &v);
-        let mut r = Contador {
-            dados: &v,
-            lidos: 0,
+        let mut r = Counter {
+            data: &v,
+            consumed: 0,
         };
         if let Ok(q) = read_frame(&mut r, 32) {
-            assert_eq!(q.len() + 4, r.lidos);
+            assert_eq!(q.len() + 4, r.consumed);
         }
     }
     let _ = wc::limits::MAX_RESPONSE_FRAME;
 }
 
-/// D50 (V3.26): a lista do agente vai sem o nível, a do app com ele. O daemon não
-/// consegue mandar ao agente um item com nível, e um quadro forjado com nível é
-/// recusado pela leitura do agente (e um sem nível, pela do app).
+/// D50 (V3.26): the agent's list goes without the level, the app's with it. The daemon
+/// cannot send the agent an item with a level, and a forged frame with a level is
+/// refused by the agent's reading (and one without a level, by the app's).
 #[test]
-fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
-    let entradas = test_vault_entries();
-    let do_papel = |p: Role| {
-        Resposta::Lista(
-            entradas
-                .iter()
-                .map(|e| ItemLista::de_entrada(e, p))
-                .collect(),
-        )
-    };
-    // Agente: nenhum `"nivel"` no quadro, e a leitura devolve `None`.
-    let q = encode_response(Role::Agent, &do_papel(Role::Agent)).unwrap();
-    assert!(!contem(&q, b"\"nivel\""));
-    let Resposta::Lista(itens) = decode_response(Role::Agent, &q).unwrap() else {
+fn d50_agent_list_without_level_and_app_list_with_level() {
+    let entries = test_vault_entries();
+    let for_role =
+        |p: Role| Response::List(entries.iter().map(|e| ListItem::from_entry(e, p)).collect());
+    // Agent: no level key in the frame, and the reading returns `None`.
+    let q = encode_response(Role::Agent, &for_role(Role::Agent)).unwrap();
+    assert!(!contains(&q, b"\"nivel\""));
+    let Response::List(items) = decode_response(Role::Agent, &q).unwrap() else {
         panic!("não é lista")
     };
-    assert!(itens.iter().all(|i| i.nivel.is_none()));
-    // App: todo item com nível, igual ao da entrada.
-    let q_app = encode_response(Role::App, &do_papel(Role::App)).unwrap();
-    let Resposta::Lista(itens) = decode_response(Role::App, &q_app).unwrap() else {
+    assert!(items.iter().all(|i| i.level.is_none()));
+    // App: every item with a level, equal to the entry's.
+    let q_app = encode_response(Role::App, &for_role(Role::App)).unwrap();
+    let Response::List(items) = decode_response(Role::App, &q_app).unwrap() else {
         panic!("não é lista")
     };
-    for (i, e) in itens.iter().zip(&entradas) {
-        assert_eq!(i.nivel, Some(e.level()));
+    for (i, e) in items.iter().zip(&entries) {
+        assert_eq!(i.level, Some(e.level()));
     }
-    // Ataques: o item do app mandado ao agente é recusado na escrita; o quadro do app
-    // lido como agente é recusado; o do agente lido como app também.
+    // Attacks: the app's item sent to the agent is refused on writing; the app's frame
+    // read as the agent is refused; the agent's read as the app too.
     assert_eq!(
-        encode_response(Role::Agent, &do_papel(Role::App)).unwrap_err(),
+        encode_response(Role::Agent, &for_role(Role::App)).unwrap_err(),
         EncodeError::NotAllowedForRole
     );
     assert_eq!(
-        encode_response(Role::App, &do_papel(Role::Agent)).unwrap_err(),
+        encode_response(Role::App, &for_role(Role::Agent)).unwrap_err(),
         EncodeError::Invalid
     );
     assert!(decode_response(Role::Agent, &q_app).is_err());
     assert!(decode_response(Role::App, &q).is_err());
 }
 
-/// D65 c (V3.40): a lista do app leva o resumo de cada entrada (campos de texto, ids
-/// dos segredos, nº de extras e de anexos) e nenhum segredo; a do agente, nenhum resumo
-/// nem usuário. Os dois sentidos de D50: o daemon não manda ao agente um item com
-/// resumo, a leitura do agente recusa um quadro forjado com resumo, e a do app recusa
-/// item sem resumo ou com resumo que leve segredo.
+/// D65 c (V3.40): the app's list carries the summary of each entry (text fields, ids of
+/// the secrets, number of extras and of attachments) and no secret; the agent's, no
+/// summary or username. Both directions of D50: the daemon does not send the agent an
+/// item with a summary, the agent's reading refuses a forged frame with a summary, and
+/// the app's refuses an item without a summary or with a summary that carries a secret.
 #[test]
-fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
-    let entradas = test_vault_entries();
-    let do_papel = |p: Role| {
-        Resposta::Lista(
-            entradas
-                .iter()
-                .map(|e| ItemLista::de_entrada(e, p))
-                .collect(),
-        )
-    };
-    let q_app = encode_response(Role::App, &do_papel(Role::App)).unwrap();
-    let Resposta::Lista(itens) = decode_response(Role::App, &q_app).unwrap() else {
+fn d65_app_list_with_summary_and_agent_list_without() {
+    let entries = test_vault_entries();
+    let for_role =
+        |p: Role| Response::List(entries.iter().map(|e| ListItem::from_entry(e, p)).collect());
+    let q_app = encode_response(Role::App, &for_role(Role::App)).unwrap();
+    let Response::List(items) = decode_response(Role::App, &q_app).unwrap() else {
         panic!("não é lista")
     };
-    assert_eq!(itens.len(), entradas.len());
-    for (i, e) in itens.iter().zip(&entradas) {
-        let r = i.resumo.as_ref().expect("item do app sem resumo");
-        let d = DetalheEntrada::de_entrada(e);
-        assert_eq!(r.campos, d.campos, "{}", e.name());
-        assert_eq!(r.segredos, d.segredos, "{}", e.name());
+    assert_eq!(items.len(), entries.len());
+    for (i, e) in items.iter().zip(&entries) {
+        let r = i.summary.as_ref().expect("item do app sem resumo");
+        let d = EntryDetail::from_entry(e);
+        assert_eq!(r.fields, d.fields, "{}", e.name());
+        assert_eq!(r.secrets, d.secrets, "{}", e.name());
         assert_eq!(r.extras, e.extras().len() as u64);
-        assert_eq!(r.anexos, e.attachments().len() as u64);
+        assert_eq!(r.attachments, e.attachments().len() as u64);
     }
-    let pg = itens.iter().find(|i| i.nome == "acme-pg-dev").unwrap();
-    let r = pg.resumo.as_ref().unwrap();
-    assert!(r.campos.contains(&("usuario".to_owned(), "app".to_owned())));
-    assert_eq!(r.segredos, vec!["senha".to_owned()]);
-    let generico = itens.iter().find(|i| i.nome == "gama-generico").unwrap();
-    assert_eq!(generico.resumo.as_ref().unwrap().extras, 2);
-    // Nenhum segredo do cofre de teste no quadro do app, nem em base64.
+    let pg = items.iter().find(|i| i.name == "acme-pg-dev").unwrap();
+    let r = pg.summary.as_ref().unwrap();
+    assert!(r.fields.contains(&("usuario".to_owned(), "app".to_owned())));
+    assert_eq!(r.secrets, vec!["senha".to_owned()]);
+    let generic = items.iter().find(|i| i.name == "gama-generico").unwrap();
+    assert_eq!(generic.summary.as_ref().unwrap().extras, 2);
+    // No secret of the test vault in the app's frame, not even in base64.
     for s in test_vault::SECRETS {
-        assert!(!contem(&q_app, s.as_bytes()), "segredo na lista do app");
+        assert!(!contains(&q_app, s.as_bytes()), "segredo na lista do app");
         let b = Base64::encode_string(s.as_bytes());
-        assert!(!contem(&q_app, b.as_bytes()), "segredo em base64 na lista");
+        assert!(
+            !contains(&q_app, b.as_bytes()),
+            "segredo em base64 na lista"
+        );
     }
-    assert!(!contem(&q_app, b"falso-licenca-01"));
+    assert!(!contains(&q_app, b"falso-licenca-01"));
 
-    // Agente: sem resumo e sem usuário.
-    let q = encode_response(Role::Agent, &do_papel(Role::Agent)).unwrap();
-    assert!(!contem(&q, b"\"resumo\""));
-    assert!(!contem(&q, b"\"usuario\""));
-    assert!(!contem(&q, b"wp_admin"));
-    let Resposta::Lista(itens) = decode_response(Role::Agent, &q).unwrap() else {
+    // Agent: without summary and without username.
+    let q = encode_response(Role::Agent, &for_role(Role::Agent)).unwrap();
+    assert!(!contains(&q, b"\"resumo\""));
+    assert!(!contains(&q, b"\"usuario\""));
+    assert!(!contains(&q, b"wp_admin"));
+    let Response::List(items) = decode_response(Role::Agent, &q).unwrap() else {
         panic!("não é lista")
     };
-    assert!(itens.iter().all(|i| i.resumo.is_none()));
+    assert!(items.iter().all(|i| i.summary.is_none()));
 
-    // Ataque: item com resumo (sem nível) mandado ao agente é recusado na escrita.
-    let mut so_resumo: Vec<ItemLista> = entradas
+    // Attack: item with a summary (without level) sent to the agent is refused on writing.
+    let mut summary_only: Vec<ListItem> = entries
         .iter()
-        .map(|e| ItemLista::de_entrada(e, Role::App))
+        .map(|e| ListItem::from_entry(e, Role::App))
         .collect();
-    for i in &mut so_resumo {
-        i.nivel = None;
+    for i in &mut summary_only {
+        i.level = None;
     }
     assert_eq!(
-        encode_response(Role::Agent, &Resposta::Lista(so_resumo)).unwrap_err(),
+        encode_response(Role::Agent, &Response::List(summary_only)).unwrap_err(),
         EncodeError::NotAllowedForRole
     );
-    // Ataque: item do app sem resumo (só o nível) não sai.
-    let mut sem_resumo: Vec<ItemLista> = entradas
+    // Attack: app item without a summary (only the level) does not go out.
+    let mut no_summary: Vec<ListItem> = entries
         .iter()
-        .map(|e| ItemLista::de_entrada(e, Role::App))
+        .map(|e| ListItem::from_entry(e, Role::App))
         .collect();
-    sem_resumo[0].resumo = None;
+    no_summary[0].summary = None;
     assert_eq!(
-        encode_response(Role::App, &Resposta::Lista(sem_resumo)).unwrap_err(),
+        encode_response(Role::App, &Response::List(no_summary)).unwrap_err(),
         EncodeError::Invalid
     );
 
-    // Ataque: quadro do agente forjado com um resumo é recusado pela leitura do agente.
-    let texto = String::from_utf8(q.to_vec()).unwrap();
-    let resumo = r#""resumo":{"campos":{"usuario":"app"},"segredos":["senha"],"extras":0,"anexos":0},"nome":"#;
-    let forjado = texto.replacen(r#""nome":"#, resumo, 1);
-    assert_ne!(forjado, texto);
-    assert!(decode_response(Role::Agent, forjado.as_bytes()).is_err());
-    // E o quadro do app inteiro, lido como agente.
+    // Attack: agent frame forged with a summary is refused by the agent's reading.
+    let text = String::from_utf8(q.to_vec()).unwrap();
+    let summary = r#""resumo":{"campos":{"usuario":"app"},"segredos":["senha"],"extras":0,"anexos":0},"nome":"#;
+    let forged = text.replacen(r#""nome":"#, summary, 1);
+    assert_ne!(forged, text);
+    assert!(decode_response(Role::Agent, forged.as_bytes()).is_err());
+    // And the whole app frame, read as the agent.
     assert!(decode_response(Role::Agent, &q_app).is_err());
 
-    // Ataques do lado do app: item sem resumo, resumo com campo secreto em `campos`,
-    // com id de segredo desconhecido, com chave a mais ou com valor de segredo.
+    // Attacks on the app side: item without a summary, summary with a secret field in the
+    // fields, with an unknown secret id, with an extra key or with a secret value.
     let app = String::from_utf8(q_app.to_vec()).unwrap();
-    let alvo = r#""resumo":{"#;
-    assert!(app.contains(alvo));
-    let sem = {
-        // Tira o primeiro resumo inteiro (até o fim do objeto dele).
-        let i = app.find(alvo).unwrap();
-        let fim = i + app[i..].find(r#""anexos":"#).unwrap();
-        let fim = fim + app[fim..].find('}').unwrap() + 1;
-        // A vírgula antes do resumo sai junto.
-        format!("{}{}", &app[..i - 1], &app[fim..])
+    let target = r#""resumo":{"#;
+    assert!(app.contains(target));
+    let without = {
+        // Takes out the whole first summary (up to the end of its object).
+        let i = app.find(target).unwrap();
+        let end = i + app[i..].find(r#""anexos":"#).unwrap();
+        let end = end + app[end..].find('}').unwrap() + 1;
+        // The comma before the summary goes along.
+        format!("{}{}", &app[..i - 1], &app[end..])
     };
-    // JSON válido: a recusa é pela falta do resumo, não pela sintaxe.
-    assert!(json::read(sem.as_bytes(), json::MAX_RESPONSE_NODES).is_ok());
-    assert!(decode_response(Role::App, sem.as_bytes()).is_err());
-    for troca in [
+    // Valid JSON: the refusal is for the missing summary, not for the syntax.
+    assert!(json::read(without.as_bytes(), json::MAX_RESPONSE_NODES).is_ok());
+    assert!(decode_response(Role::App, without.as_bytes()).is_err());
+    for swap in [
         r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"#,
         r#""resumo":{"x":1,"#,
         r#""resumo":{"valor":"ZmFsc28tUEc=","#,
     ] {
-        let f = app.replacen(alvo, troca, 1);
-        assert!(decode_response(Role::App, f.as_bytes()).is_err(), "{troca}");
+        let f = app.replacen(target, swap, 1);
+        assert!(decode_response(Role::App, f.as_bytes()).is_err(), "{swap}");
     }
     let f = app.replacen(r#""segredos":["#, r#""segredos":["chave_mestra","#, 1);
     assert!(decode_response(Role::App, f.as_bytes()).is_err());
 }
 
-/// D65 b: `Alvo::segredo_em` acha cada segredo preenchido pelo identificador do
-/// protocolo (o mesmo que o detalhe lista) e nada mais: campo de outro tipo, campo
-/// vazio, extra comum e extra inexistente dão `None`.
+/// D65 b: `Target::secret_in` finds each filled secret by the protocol identifier (the
+/// same the detail lists) and nothing else: a field of another type, an empty field, a
+/// plain extra and a missing extra give `None`.
 #[test]
-fn d65_alvo_acha_so_os_segredos_da_entrada() {
-    let entradas = test_vault_entries();
-    for e in &entradas {
-        let d = DetalheEntrada::de_entrada(e);
-        let todos: Vec<&[u8]> = e.secrets().iter().map(|s| s.value.expose()).collect();
-        for id in CAMPOS_SECRETOS_TESTE {
-            let achado = Target::Field((*id).to_owned()).secret_in(e);
+fn d65_target_finds_only_the_entry_secrets() {
+    let entries = test_vault_entries();
+    for e in &entries {
+        let d = EntryDetail::from_entry(e);
+        let all: Vec<&[u8]> = e.secrets().iter().map(|s| s.value.expose()).collect();
+        for id in TEST_SECRET_FIELDS {
+            let found = Target::Field((*id).to_owned()).secret_in(e);
             assert_eq!(
-                achado.is_some(),
-                d.segredos.iter().any(|s| s == id),
+                found.is_some(),
+                d.secrets.iter().any(|s| s == id),
                 "{} {id}",
                 e.name()
             );
-            if let Some(v) = achado {
-                assert!(todos.contains(&v.expose()));
+            if let Some(v) = found {
+                assert!(all.contains(&v.expose()));
             }
         }
         for x in &d.extras {
-            let achado = Target::Extra(x.nome.clone()).secret_in(e);
+            let found = Target::Extra(x.name.clone()).secret_in(e);
             assert_eq!(
-                achado.is_some(),
-                x.valor.is_none(),
+                found.is_some(),
+                x.value.is_none(),
                 "{} {}",
                 e.name(),
-                x.nome
+                x.name
             );
         }
         assert!(Target::Extra("nao-existe".into()).secret_in(e).is_none());
         assert!(Target::Field("usuario".into()).secret_in(e).is_none());
     }
-    let generico = entradas
+    let generic = entries
         .iter()
         .find(|e| e.name() == "gama-generico")
         .unwrap();
     assert_eq!(
         Target::Extra("CHAVE_LICENCA".into())
-            .secret_in(generico)
+            .secret_in(generic)
             .unwrap()
             .expose(),
         b"falso-licenca-01"
     );
-    assert!(Target::Extra("REGIAO".into()).secret_in(generico).is_none());
+    assert!(Target::Extra("REGIAO".into()).secret_in(generic).is_none());
 }
 
-const CAMPOS_SECRETOS_TESTE: &[&str] = &[
+const TEST_SECRET_FIELDS: &[&str] = &[
     "senha",
     "totp_semente",
     "chave_privada",
@@ -1892,62 +1867,62 @@ const CAMPOS_SECRETOS_TESTE: &[&str] = &[
     "texto",
 ];
 
-// ---- Fase 45: backups e restaurar ----
+// ---- Phase 45: backups and restore ----
 
-/// V7.8 (D17): o agente e a extensão pedindo `backups` ou `restaurar_backup` recebem
-/// "não autorizado", com qualquer campo; o app é atendido. A resposta `backups` não vai
-/// a outro papel.
+/// V7.8 (D17): the agent and the extension asking for the backups or the restore get
+/// "unauthorized", with any field; the app is served. The backups response does not go
+/// to another role.
 #[test]
-fn v7_8_restaurar_e_backups_so_pelo_app() {
+fn v7_8_restore_and_backups_only_from_app() {
     for op in [Operation::Backups, Operation::RestoreBackup] {
-        let bom = quadro_de(op, &dados_validos(op));
-        for papel in [Role::Agent, Role::Extension] {
+        let good = frame_of(op, &valid_data(op));
+        for role in [Role::Agent, Role::Extension] {
             for q in [
-                bom.clone(),
-                quadro_de(op, "{}"),
-                quadro_de(op, r#"{"versao":"../cofre.ward"}"#),
-                quadro_de(op, &com_campo(&dados_validos(op), r#""papel":"app""#)),
+                good.clone(),
+                frame_of(op, "{}"),
+                frame_of(op, r#"{"versao":"../cofre.ward"}"#),
+                frame_of(op, &with_field(&valid_data(op), r#""papel":"app""#)),
             ] {
                 assert_eq!(
-                    ped(papel, &q).unwrap_err(),
+                    req(role, &q).unwrap_err(),
                     ResponseError::Unauthorized,
                     "{} pelo {}",
                     op.name(),
-                    papel.name()
+                    role.name()
                 );
             }
-            let p = ped(Role::App, &bom).unwrap();
+            let p = req(Role::App, &good).unwrap();
             assert_eq!(
-                encode_request(papel, &p).unwrap_err(),
+                encode_request(role, &p).unwrap_err(),
                 EncodeError::NotAllowedForRole
             );
         }
-        assert!(ped(Role::App, &bom).is_ok());
+        assert!(req(Role::App, &good).is_ok());
     }
-    let r = Resposta::Backups(vec![vb("ward-20261109-153000.ward", true, false)]);
-    for papel in [Role::Agent, Role::Extension] {
+    let r = Response::Backups(vec![vb("ward-20261109-153000.ward", true, false)]);
+    for role in [Role::Agent, Role::Extension] {
         assert_eq!(
-            encode_response(papel, &r).unwrap_err(),
+            encode_response(role, &r).unwrap_err(),
             EncodeError::NotAllowedForRole
         );
     }
     let bytes = encode_response(Role::App, &r).unwrap();
     assert!(decode_response(Role::Agent, &bytes).is_err());
     match decode_response(Role::App, &bytes).unwrap() {
-        Resposta::Backups(l) => assert_eq!(l, [vb("ward-20261109-153000.ward", true, false)]),
-        outra => panic!("{outra:?}"),
+        Response::Backups(l) => assert_eq!(l, [vb("ward-20261109-153000.ward", true, false)]),
+        other => panic!("{other:?}"),
     }
 }
 
-/// O nome da versão no `restaurar_backup` é só o nome exato do arquivo: caminho, `..`,
-/// barra, sufixo com zero à esquerda e campo a mais são recusados na leitura; senha
-/// vazia e PIN fora do formato também. Uma resposta `backups` com nome fora do formato
-/// é recusada pelo cliente.
+/// The version name in the restore is only the exact file name: path, `..`, slash,
+/// suffix with a leading zero and an extra field are refused on reading; an empty
+/// password and a PIN out of format too. A backups response with a name out of format
+/// is refused by the client.
 #[test]
-fn ataque_restaurar_com_caminho_no_nome_recusado() {
+fn attack_restore_with_path_in_name_refused() {
     let pin = b64(b"135790");
-    let senha = b64(b"falso-mestra-ward-01");
-    for versao in [
+    let password = b64(b"falso-mestra-ward-01");
+    for version in [
         "../cofre.ward",
         "ward-20261109-153000.ward/../../cofre.ward",
         "/home/usuario/.local/share/ward/cofre.ward",
@@ -1956,60 +1931,60 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
         "ward-20261109-153000",
         "",
     ] {
-        let q = quadro_de(
+        let q = frame_of(
             Operation::RestoreBackup,
-            &format!(r#"{{"versao":"{versao}","senha":"{senha}","pin":"{pin}"}}"#),
+            &format!(r#"{{"versao":"{version}","senha":"{password}","pin":"{pin}"}}"#),
         );
         assert_eq!(
-            ped(Role::App, &q).unwrap_err(),
+            req(Role::App, &q).unwrap_err(),
             ResponseError::InvalidRequest,
-            "{versao}"
+            "{version}"
         );
     }
-    for dados in [
+    for data in [
         format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"","pin":"{pin}"}}"#),
         format!(
-            r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{}"}}"#,
+            r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}","pin":"{}"}}"#,
             b64(b"12ab")
         ),
-        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}"}}"#),
+        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}"}}"#),
         format!(
-            r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}","geracao":9}}"#
+            r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}","pin":"{pin}","geracao":9}}"#
         ),
     ] {
-        let q = quadro_de(Operation::RestoreBackup, &dados);
+        let q = frame_of(Operation::RestoreBackup, &data);
         assert_eq!(
-            ped(Role::App, &q).unwrap_err(),
+            req(Role::App, &q).unwrap_err(),
             ResponseError::InvalidRequest,
-            "{dados}"
+            "{data}"
         );
     }
     let p = Request::RestoreBackup {
         version: "../cofre.ward".into(),
-        password: seg("falso-mestra-ward-01"),
-        pin: seg("135790"),
+        password: mk_secret("falso-mestra-ward-01"),
+        pin: mk_secret("135790"),
     };
     assert_eq!(
         encode_request(Role::App, &p).unwrap_err(),
         EncodeError::Invalid
     );
-    // `backups` com nome fora do formato ou além do limite: o daemon não manda e o
-    // cliente não aceita.
-    for ruim in [
-        Resposta::Backups(vec![vb("../cofre.ward", true, false)]),
-        // Fase 49a: fora de ordem só com a versão conferida.
-        Resposta::Backups(vec![vb("ward-20261109-153000.ward", false, true)]),
+    // Backups with a name out of format or beyond the limit: the daemon does not send and
+    // the client does not accept.
+    for bad in [
+        Response::Backups(vec![vb("../cofre.ward", true, false)]),
+        // Phase 49a: out of order only with the verified version.
+        Response::Backups(vec![vb("ward-20261109-153000.ward", false, true)]),
     ] {
         assert_eq!(
-            encode_response(Role::App, &ruim).unwrap_err(),
+            encode_response(Role::App, &bad).unwrap_err(),
             EncodeError::Invalid
         );
     }
-    for quadro in [
+    for frame in [
         r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"../cofre.ward","conferida":true,"fora_de_ordem":false}]}}"#,
-        // O formato antigo (só nomes) não é aceito.
+        // The old format (only names) is not accepted.
         r#"{"v":1,"tipo":"backups","dados":{"versoes":["ward-20261109-153000.ward"]}}"#,
-        // D39: a geração não vem na resposta, nem como campo a mais.
+        // D39: the generation does not come in the response, not even as an extra field.
         r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":true,"fora_de_ordem":false,"geracao":9}]}}"#,
         r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":false,"fora_de_ordem":true}]}}"#,
         r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":"sim","fora_de_ordem":false}]}}"#,
@@ -2017,102 +1992,103 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
         r#"{"v":1,"tipo":"configuracao","dados":{"minutos_trava":240,"backup_externo":false}}"#,
     ] {
         assert!(
-            decode_response(Role::App, quadro.as_bytes()).is_err(),
-            "{quadro}"
+            decode_response(Role::App, frame.as_bytes()).is_err(),
+            "{frame}"
         );
     }
-    let muitos = Resposta::Backups(vec![
+    let many = Response::Backups(vec![
         vb("ward-20261109-153000.ward", true, false);
         MAX_BACKUPS + 1
     ]);
-    assert!(encode_response(Role::App, &muitos).is_err());
+    assert!(encode_response(Role::App, &many).is_err());
 }
 
-fn vb(nome: &str, conferida: bool, fora_de_ordem: bool) -> VersaoBackup {
-    VersaoBackup {
-        nome: nome.into(),
-        conferida,
-        fora_de_ordem,
+fn vb(name: &str, verified: bool, out_of_order: bool) -> BackupVersion {
+    BackupVersion {
+        name: name.into(),
+        verified,
+        out_of_order,
     }
 }
 
-// ---- Fase 22d: D65 d (datas no `detalhe` do app; V3.41) ----
+// ---- Phase 22d: D65 d (dates in the app's detail; V3.41) ----
 
-/// V3.41: as datas vão só no `detalhe` (papel app), voltam iguais e, sem data, a chave
-/// não vai; o agente não recebe `detalhe`, e a lista não leva data para ninguém.
+/// V3.41: the dates go only in the detail (app role), come back equal and, without a
+/// date, the key does not go; the agent does not get the detail, and the list carries
+/// no date for anyone.
 #[test]
-fn d65_datas_so_no_detalhe_do_app() {
+fn d65_dates_only_in_app_detail() {
     use crate::entry::{AccessLevel, Dates};
-    let mut entradas = test_vault_entries();
-    let i = entradas
+    let mut entries = test_vault_entries();
+    let i = entries
         .iter()
         .position(|e| e.name() == "acme-pg-dev")
         .unwrap();
-    entradas[i].set_dates(
+    entries[i].set_dates(
         Dates::new_stamp(1_762_041_600)
             .unwrap()
             .modified(1_762_473_600)
             .unwrap(),
     );
-    let d = DetalheEntrada::de_entrada(&entradas[i]);
-    let q = encode_response(Role::App, &Resposta::Detalhe(d.clone())).unwrap();
+    let d = EntryDetail::from_entry(&entries[i]);
+    let q = encode_response(Role::App, &Response::Detail(d.clone())).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
     assert!(s.contains(r#""criada_em":1762041600"#), "{s}");
     assert!(s.contains(r#""alterada_em":1762473600"#), "{s}");
     match decode_response(Role::App, &q).unwrap() {
-        Resposta::Detalhe(lido) => assert_eq!(lido, d),
-        outra => panic!("{:?}", outra.tipo()),
+        Response::Detail(got) => assert_eq!(got, d),
+        other => panic!("{:?}", other.kind()),
     }
-    // O detalhe nunca vai ao agente nem à extensão (D5), com ou sem data.
-    for papel in [Role::Agent, Role::Extension] {
-        assert!(encode_response(papel, &Resposta::Detalhe(d.clone())).is_err());
-        assert!(decode_response(papel, &q).is_err());
+    // The detail never goes to the agent or to the extension (D5), with or without a date.
+    for role in [Role::Agent, Role::Extension] {
+        assert!(encode_response(role, &Response::Detail(d.clone())).is_err());
+        assert!(decode_response(role, &q).is_err());
     }
-    // A lista não leva data para ninguém.
-    for papel in [Role::App, Role::Agent] {
-        let itens = entradas
+    // The list carries no date for anyone.
+    for role in [Role::App, Role::Agent] {
+        let items = entries
             .iter()
-            .filter(|e| papel == Role::App || e.level() != AccessLevel::Blocked)
-            .map(|e| ItemLista::de_entrada(e, papel))
+            .filter(|e| role == Role::App || e.level() != AccessLevel::Blocked)
+            .map(|e| ListItem::from_entry(e, role))
             .collect();
-        let q = encode_response(papel, &Resposta::Lista(itens)).unwrap();
+        let q = encode_response(role, &Response::List(items)).unwrap();
         let s = String::from_utf8_lossy(&q);
         assert!(!s.contains("criada_em") && !s.contains("alterada_em"));
         assert!(!s.contains("1762041600") && !s.contains("1762473600"));
     }
-    // Sem datas: nenhuma das chaves vai.
-    let sem = entradas
+    // Without dates: none of the keys goes.
+    let without = entries
         .iter()
         .find(|e| e.name() == "gama-bloqueada")
         .unwrap();
     let q = encode_response(
         Role::App,
-        &Resposta::Detalhe(DetalheEntrada::de_entrada(sem)),
+        &Response::Detail(EntryDetail::from_entry(without)),
     )
     .unwrap();
     let s = String::from_utf8_lossy(&q);
     assert!(!s.contains("criada_em") && !s.contains("alterada_em"));
 }
 
-/// V3.41: um `detalhe` forjado com data fora da regra (criação depois da alteração,
-/// criação sem alteração, fora da faixa, texto no lugar de número, negativo, repetida)
-/// é recusado pela leitura do app.
+/// V3.41: a forged detail with a date out of the rule (creation after the modification,
+/// creation without modification, out of range, text instead of a number, negative,
+/// repeated) is refused by the app's reading.
 #[test]
-fn ataque_d65_detalhe_com_data_forjada_recusado() {
-    let entradas = test_vault_entries();
-    let e = entradas.iter().find(|e| e.name() == "acme-pg-dev").unwrap();
-    let q = encode_response(Role::App, &Resposta::Detalhe(DetalheEntrada::de_entrada(e))).unwrap();
+fn attack_d65_detail_with_forged_date_refused() {
+    let entries = test_vault_entries();
+    let e = entries.iter().find(|e| e.name() == "acme-pg-dev").unwrap();
+    let q = encode_response(Role::App, &Response::Detail(EntryDetail::from_entry(e))).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
-    let com = |extra: &str| s.replacen(r#""nome":"#, &format!(r#"{extra},"nome":"#), 1);
-    assert!(decode_response(Role::App, com(r#""alterada_em":5"#).as_bytes()).is_ok());
+    let with = |extra: &str| s.replacen(r#""nome":"#, &format!(r#"{extra},"nome":"#), 1);
+    assert!(decode_response(Role::App, with(r#""alterada_em":5"#).as_bytes()).is_ok());
     assert!(
         decode_response(
             Role::App,
-            com(r#""criada_em":5,"alterada_em":5"#).as_bytes()
+            with(r#""criada_em":5,"alterada_em":5"#).as_bytes()
         )
         .is_ok()
     );
-    for forjado in [
+    for forged in [
         r#""criada_em":6,"alterada_em":5"#,
         r#""criada_em":5"#,
         r#""criada_em":0,"alterada_em":5"#,
@@ -2127,112 +2103,112 @@ fn ataque_d65_detalhe_com_data_forjada_recusado() {
         r#""criado_em":5"#,
     ] {
         assert!(
-            decode_response(Role::App, com(forjado).as_bytes()).is_err(),
-            "aceitou {forjado}"
+            decode_response(Role::App, with(forged).as_bytes()).is_err(),
+            "aceitou {forged}"
         );
     }
 }
 
-/// V3.41: data vinda do cliente é recusada pelo decodificador: no `salvar_entrada` (no
-/// topo do rascunho, nos campos e fora do rascunho), no `salvar_login` da extensão e no
-/// `mudar_nivel`.
+/// V3.41: a date coming from the client is refused by the decoder: in the save entry (at
+/// the top of the draft, in the fields and outside the draft), in the extension's save
+/// login and in the set level.
 #[test]
-fn ataque_d65_data_no_rascunho_recusada() {
-    let base = dados_validos(Operation::SaveEntry);
-    let q = |d: &str| ped(Role::App, &quadro_de(Operation::SaveEntry, d));
+fn attack_d65_date_in_draft_refused() {
+    let base = valid_data(Operation::SaveEntry);
+    let q = |d: &str| req(Role::App, &frame_of(Operation::SaveEntry, d));
     assert!(q(&base).is_ok());
-    for chave in ["criada_em", "alterada_em", "datas"] {
-        for valor in ["1762041600", "\"2026-11-02\"", "{}"] {
-            let par = format!(r#""{chave}":{valor}"#);
-            let no_topo = base.replacen(r#""nome":"#, &format!(r#"{par},"nome":"#), 1);
+    for key in ["criada_em", "alterada_em", "datas"] {
+        for value in ["1762041600", "\"2026-11-02\"", "{}"] {
+            let pair = format!(r#""{key}":{value}"#);
+            let at_top = base.replacen(r#""nome":"#, &format!(r#"{pair},"nome":"#), 1);
             assert_eq!(
-                q(&no_topo).unwrap_err(),
+                q(&at_top).unwrap_err(),
                 ResponseError::InvalidRequest,
-                "{par}"
+                "{pair}"
             );
-            let nos_campos = base.replacen(r#""url":"#, &format!(r#"{par},"url":"#), 1);
+            let in_fields = base.replacen(r#""url":"#, &format!(r#"{pair},"url":"#), 1);
             assert_eq!(
-                q(&nos_campos).unwrap_err(),
+                q(&in_fields).unwrap_err(),
                 ResponseError::InvalidRequest,
-                "{par}"
+                "{pair}"
             );
-            let fora = com_campo(&base, &par);
+            let outside = with_field(&base, &pair);
             assert_eq!(
-                q(&fora).unwrap_err(),
+                q(&outside).unwrap_err(),
                 ResponseError::InvalidRequest,
-                "{par}"
+                "{pair}"
             );
         }
     }
     for op in [Operation::SaveLogin, Operation::SetLevel] {
-        let validos = dados_validos(op);
-        let papel = papel_de(op);
-        assert!(ped(papel, &quadro_de(op, &validos)).is_ok());
-        let com = com_campo(&validos, r#""alterada_em":1762041600"#);
+        let valid = valid_data(op);
+        let role = role_of(op);
+        assert!(req(role, &frame_of(op, &valid)).is_ok());
+        let with = with_field(&valid, r#""alterada_em":1762041600"#);
         assert_eq!(
-            ped(papel, &quadro_de(op, &com)).unwrap_err(),
+            req(role, &frame_of(op, &with)).unwrap_err(),
             ResponseError::InvalidRequest
         );
     }
     let login =
-        dados_validos(Operation::SaveLogin).replacen(r#""nome":"#, r#""criada_em":1,"nome":"#, 1);
+        valid_data(Operation::SaveLogin).replacen(r#""nome":"#, r#""criada_em":1,"nome":"#, 1);
     assert_eq!(
-        ped(Role::Extension, &quadro_de(Operation::SaveLogin, &login)).unwrap_err(),
+        req(Role::Extension, &frame_of(Operation::SaveLogin, &login)).unwrap_err(),
         ResponseError::InvalidRequest
     );
 }
 
-// ---- Fase 46: backup externo ----
+// ---- Phase 46: external backup ----
 
-/// V7.8 (D17, D30): o agente e a extensão pedindo `backup_externo`,
-/// `definir_backup_externo` ou `pendrives` recebem "não autorizado", com qualquer campo;
-/// o app é atendido. As respostas `backup_externo` e `pendrives` não vão a outro papel.
+/// V7.8 (D17, D30): the agent and the extension asking for the external backup, setting
+/// it or the USB drives get "unauthorized", with any field; the app is served. The
+/// external backup and USB drives responses do not go to another role.
 #[test]
-fn v7_8_backup_externo_so_pelo_app() {
+fn v7_8_external_backup_only_from_app() {
     for op in [
         Operation::ExternalBackup,
         Operation::SetExternalBackup,
         Operation::UsbDrives,
     ] {
-        let bom = quadro_de(op, &dados_validos(op));
-        for papel in [Role::Agent, Role::Extension] {
+        let good = frame_of(op, &valid_data(op));
+        for role in [Role::Agent, Role::Extension] {
             for q in [
-                bom.clone(),
-                quadro_de(op, "{}"),
-                quadro_de(op, r#"{"ligado":true,"uuid":"ABCD-1234"}"#),
-                quadro_de(op, r#"{"ligado":false}"#),
-                quadro_de(op, &com_campo(&dados_validos(op), r#""papel":"app""#)),
+                good.clone(),
+                frame_of(op, "{}"),
+                frame_of(op, r#"{"ligado":true,"uuid":"ABCD-1234"}"#),
+                frame_of(op, r#"{"ligado":false}"#),
+                frame_of(op, &with_field(&valid_data(op), r#""papel":"app""#)),
             ] {
                 assert_eq!(
-                    ped(papel, &q).unwrap_err(),
+                    req(role, &q).unwrap_err(),
                     ResponseError::Unauthorized,
                     "{} pelo {}",
                     op.name(),
-                    papel.name()
+                    role.name()
                 );
             }
-            let p = ped(Role::App, &bom).unwrap();
+            let p = req(Role::App, &good).unwrap();
             assert_eq!(
-                encode_request(papel, &p).unwrap_err(),
+                encode_request(role, &p).unwrap_err(),
                 EncodeError::NotAllowedForRole
             );
         }
-        assert!(ped(Role::App, &bom).is_ok());
+        assert!(req(Role::App, &good).is_ok());
     }
     for r in [
-        Resposta::BackupExterno {
-            ligado: true,
+        Response::ExternalBackup {
+            enabled: true,
             uuid: Some("ABCD-1234".into()),
         },
-        Resposta::Pendrives(vec![Pendrive {
+        Response::UsbDrives(vec![UsbDrive {
             uuid: "ABCD-1234".into(),
-            rotulo: "PENDRIVE".into(),
-            montado: true,
+            label: "PENDRIVE".into(),
+            mounted: true,
         }]),
     ] {
-        for papel in [Role::Agent, Role::Extension] {
+        for role in [Role::Agent, Role::Extension] {
             assert_eq!(
-                encode_response(papel, &r).unwrap_err(),
+                encode_response(role, &r).unwrap_err(),
                 EncodeError::NotAllowedForRole
             );
         }
@@ -2243,12 +2219,12 @@ fn v7_8_backup_externo_so_pelo_app() {
     }
 }
 
-/// O UUID do `definir_backup_externo` segue a configuração (D45): caminho, `..`, espaço,
-/// `-` nas pontas, longo, vazio, ligado sem UUID e campo a mais são recusados; uma
-/// resposta `pendrives` com UUID ruim ou rótulo com caractere de controle também.
+/// The UUID of the set external backup follows the config (D45): path, `..`, space, `-`
+/// at the ends, long, empty, enabled without UUID and an extra field are refused; a USB
+/// drives response with a bad UUID or a label with a control character too.
 #[test]
-fn ataque_definir_backup_externo_fora_do_formato() {
-    for dados in [
+fn attack_set_external_backup_out_of_format() {
+    for data in [
         r#"{"ligado":true}"#.to_owned(),
         r#"{"ligado":true,"uuid":""}"#.to_owned(),
         r#"{"ligado":true,"uuid":"../../etc"}"#.to_owned(),
@@ -2262,21 +2238,21 @@ fn ataque_definir_backup_externo_fora_do_formato() {
         r#"{"uuid":"ABCD-1234"}"#.to_owned(),
         r#"{"ligado":true,"uuid":"ABCD-1234","caminho":"/tmp"}"#.to_owned(),
     ] {
-        let q = quadro_de(Operation::SetExternalBackup, &dados);
+        let q = frame_of(Operation::SetExternalBackup, &data);
         assert_eq!(
-            ped(Role::App, &q).unwrap_err(),
+            req(Role::App, &q).unwrap_err(),
             ResponseError::InvalidRequest,
-            "{dados}"
+            "{data}"
         );
     }
-    // Desligado, com ou sem UUID; ligado com o UUID (vfat e ext4).
-    for dados in [
+    // Disabled, with or without UUID; enabled with the UUID (vfat and ext4).
+    for data in [
         r#"{"ligado":false}"#,
         r#"{"ligado":false,"uuid":"ABCD-1234"}"#,
         r#"{"ligado":true,"uuid":"0f3c2b7e-9a51-4c1e-8d2f-5b6a7c8d9e01"}"#,
     ] {
-        let q = quadro_de(Operation::SetExternalBackup, dados);
-        assert!(ped(Role::App, &q).is_ok(), "{dados}");
+        let q = frame_of(Operation::SetExternalBackup, data);
+        assert!(req(Role::App, &q).is_ok(), "{data}");
     }
     let p = Request::SetExternalBackup {
         enabled: true,
@@ -2286,47 +2262,47 @@ fn ataque_definir_backup_externo_fora_do_formato() {
         encode_request(Role::App, &p).unwrap_err(),
         EncodeError::Invalid
     );
-    for ruim in [
-        Resposta::Pendrives(vec![Pendrive {
+    for bad in [
+        Response::UsbDrives(vec![UsbDrive {
             uuid: "../x".into(),
-            rotulo: "PEN".into(),
-            montado: true,
+            label: "PEN".into(),
+            mounted: true,
         }]),
-        Resposta::Pendrives(vec![Pendrive {
+        Response::UsbDrives(vec![UsbDrive {
             uuid: "ABCD-1234".into(),
-            rotulo: "PEN\u{1b}[2J".into(),
-            montado: true,
+            label: "PEN\u{1b}[2J".into(),
+            mounted: true,
         }]),
-        Resposta::Pendrives(vec![
-            Pendrive {
+        Response::UsbDrives(vec![
+            UsbDrive {
                 uuid: "ABCD-1234".into(),
-                rotulo: String::new(),
-                montado: false,
+                label: String::new(),
+                mounted: false,
             };
-            MAX_PENDRIVES + 1
+            MAX_USB_DRIVES + 1
         ]),
-        Resposta::BackupExterno {
-            ligado: true,
+        Response::ExternalBackup {
+            enabled: true,
             uuid: None,
         },
     ] {
         assert_eq!(
-            encode_response(Role::App, &ruim).unwrap_err(),
+            encode_response(Role::App, &bad).unwrap_err(),
             EncodeError::Invalid,
-            "{ruim:?}"
+            "{bad:?}"
         );
     }
-    let quadro = r#"{"v":1,"tipo":"pendrives","dados":{"itens":[{"uuid":"ABCD-1234","rotulo":"a\u0007b","montado":true}]}}"#;
-    assert!(decode_response(Role::App, quadro.as_bytes()).is_err());
+    let frame = r#"{"v":1,"tipo":"pendrives","dados":{"itens":[{"uuid":"ABCD-1234","rotulo":"a\u0007b","montado":true}]}}"#;
+    assert!(decode_response(Role::App, frame.as_bytes()).is_err());
 }
 
-/// Fase 43 (`ward login`): as três operações e o `pedido_de_login` são só da extensão;
-/// id fora do formato, desfecho desconhecido, campo a mais e valor no `pedido_de_login`
-/// são recusados. O pedido de login nunca leva valor da entrada.
+/// Phase 43 (`ward login`): the three operations and the login request are extension
+/// only; an id out of format, an unknown outcome, an extra field and a value in the
+/// login request are refused. The login request never carries a value of the entry.
 #[test]
-fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
+fn attack_phase_43_login_extension_only_and_strict_format() {
     const ID: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
-    for (op, dados) in [
+    for (op, data) in [
         ("aguardar_login", "{}".to_owned()),
         (
             "preencher_login",
@@ -2337,17 +2313,17 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
             format!(r#"{{"id":"{ID}","resultado":"enviado"}}"#),
         ),
     ] {
-        let q = format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#);
-        for papel in [Role::Agent, Role::App] {
+        let q = format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#);
+        for role in [Role::Agent, Role::App] {
             assert_eq!(
-                ped(papel, &q).unwrap_err(),
+                req(role, &q).unwrap_err(),
                 ResponseError::Unauthorized,
                 "{op}"
             );
         }
-        assert!(ped(Role::Extension, &q).is_ok(), "{op}");
+        assert!(req(Role::Extension, &q).is_ok(), "{op}");
     }
-    for ruim in [
+    for bad in [
         r#"{"id":"curto","origem":"http://localhost:8081"}"#.to_owned(),
         format!(r#"{{"id":"{ID}x","origem":"http://localhost:8081"}}"#),
         format!(
@@ -2361,25 +2337,25 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
         format!(r#"{{"id":"{ID}"}}"#),
         format!(r#"{{"id":"{ID}","origem":"http://localhost:8081","entrada":"acme-wp-prod"}}"#),
     ] {
-        let q = format!(r#"{{"v":1,"op":"preencher_login","dados":{ruim}}}"#);
+        let q = format!(r#"{{"v":1,"op":"preencher_login","dados":{bad}}}"#);
         assert_eq!(
-            ped(Role::Extension, &q).unwrap_err(),
+            req(Role::Extension, &q).unwrap_err(),
             ResponseError::InvalidRequest,
-            "{ruim}"
+            "{bad}"
         );
     }
-    for ruim in ["ENVIADO", "ok", "", "enviado "] {
+    for bad in ["ENVIADO", "ok", "", "enviado "] {
         let q = format!(
-            r#"{{"v":1,"op":"resultado_login","dados":{{"id":"{ID}","resultado":"{ruim}"}}}}"#
+            r#"{{"v":1,"op":"resultado_login","dados":{{"id":"{ID}","resultado":"{bad}"}}}}"#
         );
         assert_eq!(
-            ped(Role::Extension, &q).unwrap_err(),
+            req(Role::Extension, &q).unwrap_err(),
             ResponseError::InvalidRequest,
-            "{ruim}"
+            "{bad}"
         );
     }
     assert_eq!(
-        ped(
+        req(
             Role::Extension,
             r#"{"v":1,"op":"aguardar_login","dados":{"entrada":"x"}}"#
         )
@@ -2389,182 +2365,183 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
     for r in LoginResult::ALL {
         assert_eq!(LoginResult::from_name(r.name()), Some(r));
     }
-    // O `pedido_de_login` não vai ao agente nem ao app, e não aceita campo a mais (um
-    // valor da entrada, por exemplo) nem id fora do formato.
-    let p = Resposta::PedidoDeLogin {
+    // The login request does not go to the agent or to the app, and accepts neither an
+    // extra field (a value of the entry, for example) nor an id out of format.
+    let p = Response::LoginRequest {
         id: ID.into(),
-        entrada: "acme-wp-prod".into(),
+        entry: "acme-wp-prod".into(),
     };
-    for papel in [Role::Agent, Role::App] {
+    for role in [Role::Agent, Role::App] {
         assert_eq!(
-            encode_response(papel, &p).unwrap_err(),
+            encode_response(role, &p).unwrap_err(),
             EncodeError::NotAllowedForRole
         );
     }
     let q = encode_response(Role::Extension, &p).unwrap();
     assert!(!String::from_utf8_lossy(&q).contains("falso"));
-    let com_senha = format!(
+    let with_password = format!(
         r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"acme-wp-prod","senha":"{}"}}}}"#,
         b64(b"falso-WP-senha-02")
     );
-    assert!(decode_response(Role::Extension, com_senha.as_bytes()).is_err());
-    let id_ruim = r#"{"v":1,"tipo":"pedido_de_login","dados":{"id":"x","entrada":"acme-wp-prod"}}"#;
-    assert!(decode_response(Role::Extension, id_ruim.as_bytes()).is_err());
-    for papel in [Role::Agent, Role::App] {
-        let bom =
+    assert!(decode_response(Role::Extension, with_password.as_bytes()).is_err());
+    let bad_id = r#"{"v":1,"tipo":"pedido_de_login","dados":{"id":"x","entrada":"acme-wp-prod"}}"#;
+    assert!(decode_response(Role::Extension, bad_id.as_bytes()).is_err());
+    for role in [Role::Agent, Role::App] {
+        let good =
             format!(r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"e"}}}}"#);
-        assert!(decode_response(papel, bom.as_bytes()).is_err());
+        assert!(decode_response(role, good.as_bytes()).is_err());
     }
 }
 
-/// Fase 39a (V5.8, D51, D65 a): o `pedido_de_destrave` leva entrada, operação, comando e
-/// segundos que faltam, só ao app, e a leitura é estrita: sem campo a mais (um valor da
-/// entrada, por exemplo), operação que não pede destrave, `restante` fora de 1..=120,
-/// entrada vazia ou grande demais, ou o aviso antigo sem campo.
+/// Phase 39a (V5.8, D51, D65 a): the unlock request carries entry, operation, command
+/// and seconds left, only to the app, and the reading is strict: no extra field (a value
+/// of the entry, for example), no operation that does not ask for an unlock, no
+/// `remaining` out of 1..=120, no empty or too large entry, and not the old notice
+/// without fields.
 #[test]
-fn ataque_fase_39a_pedido_de_destrave_so_app_e_formato_estrito() {
-    let p = Resposta::PedidoDeDestrave(PedidoDeDestrave {
-        entrada: "acme-pg-aprovacao".into(),
-        operacao: Operation::Ssh,
-        comando: r#""uptime""#.into(),
-        restante: 120,
+fn attack_phase_39a_unlock_request_app_only_and_strict_format() {
+    let p = Response::UnlockRequest(UnlockRequest {
+        entry: "acme-pg-aprovacao".into(),
+        operation: Operation::Ssh,
+        command: r#""uptime""#.into(),
+        remaining: 120,
     });
-    for papel in [Role::Agent, Role::Extension] {
+    for role in [Role::Agent, Role::Extension] {
         assert_eq!(
-            encode_response(papel, &p).unwrap_err(),
+            encode_response(role, &p).unwrap_err(),
             EncodeError::NotAllowedForRole
         );
     }
     let q = encode_response(Role::App, &p).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
     match decode_response(Role::App, s.as_bytes()).unwrap() {
-        Resposta::PedidoDeDestrave(d) => {
-            assert_eq!(d.entrada, "acme-pg-aprovacao");
-            assert_eq!(d.operacao, Operation::Ssh);
-            assert_eq!(d.comando, r#""uptime""#);
-            assert_eq!(d.restante, 120);
+        Response::UnlockRequest(d) => {
+            assert_eq!(d.entry, "acme-pg-aprovacao");
+            assert_eq!(d.operation, Operation::Ssh);
+            assert_eq!(d.command, r#""uptime""#);
+            assert_eq!(d.remaining, 120);
         }
-        r => panic!("{:?}", r.tipo()),
+        r => panic!("{:?}", r.kind()),
     }
-    for papel in [Role::Agent, Role::Extension] {
-        assert!(decode_response(papel, s.as_bytes()).is_err());
+    for role in [Role::Agent, Role::Extension] {
+        assert!(decode_response(role, s.as_bytes()).is_err());
     }
-    let dados = |entrada: &str, op: &str, restante: &str, extra: &str| {
+    let data = |entry: &str, op: &str, remaining: &str, extra: &str| {
         format!(
-            r#"{{"v":1,"tipo":"pedido_de_destrave","dados":{{"entrada":{entrada},"operacao":"{op}","comando":"\"uptime\"","restante":{restante}{extra}}}}}"#
+            r#"{{"v":1,"tipo":"pedido_de_destrave","dados":{{"entrada":{entry},"operacao":"{op}","comando":"\"uptime\"","restante":{remaining}{extra}}}}}"#
         )
     };
-    assert!(decode_response(Role::App, dados(r#""a""#, "executar", "1", "").as_bytes()).is_ok());
-    let grande = format!("\"{}\"", "a".repeat(wc::limits::MAX_TEXT + 1));
-    for ruim in [
-        dados(r#""a""#, "executar", "0", ""),
-        dados(r#""a""#, "executar", "121", ""),
-        dados(r#""a""#, "executar", "-1", ""),
-        dados(r#""a""#, "executar", "\"5\"", ""),
-        dados(r#""a""#, "lista", "5", ""),
-        dados(r#""a""#, "destravar", "5", ""),
-        dados(r#""a""#, "EXECUTAR", "5", ""),
-        dados(r#""""#, "executar", "5", ""),
-        dados(&grande, "executar", "5", ""),
-        dados("5", "executar", "5", ""),
-        dados(r#""a""#, "executar", "5", &format!(r#","senha":"{}""#, b64(b"falso-PG-senha-01"))),
-        dados(r#""a""#, "executar", "5", r#","ambiente":"prod""#),
+    assert!(decode_response(Role::App, data(r#""a""#, "executar", "1", "").as_bytes()).is_ok());
+    let large = format!("\"{}\"", "a".repeat(wc::limits::MAX_TEXT + 1));
+    for bad in [
+        data(r#""a""#, "executar", "0", ""),
+        data(r#""a""#, "executar", "121", ""),
+        data(r#""a""#, "executar", "-1", ""),
+        data(r#""a""#, "executar", "\"5\"", ""),
+        data(r#""a""#, "lista", "5", ""),
+        data(r#""a""#, "destravar", "5", ""),
+        data(r#""a""#, "EXECUTAR", "5", ""),
+        data(r#""""#, "executar", "5", ""),
+        data(&large, "executar", "5", ""),
+        data("5", "executar", "5", ""),
+        data(r#""a""#, "executar", "5", &format!(r#","senha":"{}""#, b64(b"falso-PG-senha-01"))),
+        data(r#""a""#, "executar", "5", r#","ambiente":"prod""#),
         r#"{"v":1,"tipo":"pedido_de_destrave","dados":{}}"#.to_owned(),
         r#"{"v":1,"tipo":"pedido_de_destrave","dados":{"entrada":"a","operacao":"ssh","restante":5}}"#.to_owned(),
     ] {
         assert!(
-            decode_response(Role::App, ruim.as_bytes()).is_err(),
-            "aceitou {ruim}"
+            decode_response(Role::App, bad.as_bytes()).is_err(),
+            "aceitou {bad}"
         );
     }
-    // O daemon não monta um aviso fora do formato.
-    for ruim in [
-        PedidoDeDestrave {
-            entrada: String::new(),
-            operacao: Operation::Run,
-            comando: String::new(),
-            restante: 5,
+    // The daemon does not build a notice out of format.
+    for bad in [
+        UnlockRequest {
+            entry: String::new(),
+            operation: Operation::Run,
+            command: String::new(),
+            remaining: 5,
         },
-        PedidoDeDestrave {
-            entrada: "a".into(),
-            operacao: Operation::List,
-            comando: String::new(),
-            restante: 5,
+        UnlockRequest {
+            entry: "a".into(),
+            operation: Operation::List,
+            command: String::new(),
+            remaining: 5,
         },
-        PedidoDeDestrave {
-            entrada: "a".into(),
-            operacao: Operation::Login,
-            comando: String::new(),
-            restante: 0,
+        UnlockRequest {
+            entry: "a".into(),
+            operation: Operation::Login,
+            command: String::new(),
+            remaining: 0,
         },
     ] {
-        assert!(encode_response(Role::App, &Resposta::PedidoDeDestrave(ruim)).is_err());
+        assert!(encode_response(Role::App, &Response::UnlockRequest(bad)).is_err());
     }
 }
 
-/// Fase 44c (D9): o pedido de aprovação com origem só nas operações que levam senha a
-/// uma página; a confirmação sempre com origem; o preencher do popup só como
-/// confirmação. Um daemon (ou app) que montasse outra forma não escreve o quadro.
+/// Phase 44c (D9): the approval request with an origin only in the operations that take
+/// a password to a page; the confirmation always with an origin; the popup fill only as
+/// a confirmation. A daemon (or app) that built another shape does not write the frame.
 #[test]
-fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
-    let base = PedidoDeAprovacao {
+fn attack_approval_request_with_origin_out_of_shape() {
+    let base = ApprovalRequest {
         id: 1,
-        entradas: vec!["acme-wp-dev".into()],
-        ambiente: Environment::Dev,
-        operacao: Operation::Login,
-        comando: String::new(),
-        diretorio: String::new(),
-        cadeia: vec![],
-        origem: "http://localhost:8081".into(),
-        confirmacao: true,
-        entrada_oculta: false,
+        entries: vec!["acme-wp-dev".into()],
+        environment: Environment::Dev,
+        operation: Operation::Login,
+        command: String::new(),
+        directory: String::new(),
+        chain: vec![],
+        origin: "http://localhost:8081".into(),
+        confirmation: true,
+        hidden_entry: false,
     };
-    let escreve = |p: &PedidoDeAprovacao| {
-        encode_response(Role::App, &Resposta::PedidoDeAprovacao(p.clone())).is_ok()
+    let writes = |p: &ApprovalRequest| {
+        encode_response(Role::App, &Response::ApprovalRequest(p.clone())).is_ok()
     };
-    assert!(escreve(&base));
+    assert!(writes(&base));
     let mut p = base.clone();
-    p.operacao = Operation::Run;
-    assert!(!escreve(&p), "origem no executar");
+    p.operation = Operation::Run;
+    assert!(!writes(&p), "origem no executar");
     let mut p = base.clone();
-    p.origem.clear();
-    assert!(!escreve(&p), "confirmação sem origem");
+    p.origin.clear();
+    assert!(!writes(&p), "confirmação sem origem");
     let mut p = base.clone();
-    p.operacao = Operation::Fill;
-    p.confirmacao = false;
-    assert!(!escreve(&p), "preencher com PIN");
+    p.operation = Operation::Fill;
+    p.confirmation = false;
+    assert!(!writes(&p), "preencher com PIN");
     let mut p = base.clone();
-    p.origem = "x".repeat(crate::limits::MAX_TEXT + 1);
-    assert!(!escreve(&p), "origem grande demais");
-    // Fase 54b: o aviso da entrada padrão só no `executar` e no `ssh`, sem confirmação
-    // de origem.
+    p.origin = "x".repeat(crate::limits::MAX_TEXT + 1);
+    assert!(!writes(&p), "origem grande demais");
+    // Phase 54b: the standard input notice only in `Run` and `Ssh`, without an origin
+    // confirmation.
     let mut p = base.clone();
-    p.entrada_oculta = true;
-    assert!(!escreve(&p), "entrada oculta numa confirmação de login");
+    p.hidden_entry = true;
+    assert!(!writes(&p), "entrada oculta numa confirmação de login");
     let mut p = base.clone();
-    p.operacao = Operation::Run;
-    p.origem.clear();
-    p.confirmacao = false;
-    p.entrada_oculta = true;
-    assert!(escreve(&p), "executar com entrada oculta");
-    p.confirmacao = true;
-    assert!(!escreve(&p), "executar com entrada oculta como confirmação");
+    p.operation = Operation::Run;
+    p.origin.clear();
+    p.confirmation = false;
+    p.hidden_entry = true;
+    assert!(writes(&p), "executar com entrada oculta");
+    p.confirmation = true;
+    assert!(!writes(&p), "executar com entrada oculta como confirmação");
 }
 
-/// Fase 54b (D68): o tipo da entrada padrão é obrigatório no `executar` e no `ssh`, só
-/// pelos cinco nomes; `entrada_confirmada` só como `true` e só com um "Permitir".
+/// Phase 54b (D68): the standard input kind is mandatory in `Run` and `Ssh`, only by the
+/// five names; the confirmed entry flag only as `true` and only with an allow decision.
 #[test]
-fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
-    let exec = |tipo: Option<&str>| {
-        let tipo = tipo
+fn attack_stdin_kind_out_of_format() {
+    let exec = |kind: Option<&str>| {
+        let kind = kind
             .map(|t| format!(r#","tipo_entrada":{t}"#))
             .unwrap_or_default();
-        ped(
+        req(
             Role::Agent,
-            &quadro_de(
+            &frame_of(
                 Operation::Run,
                 &format!(
-                    r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[]{tipo}}}"#,
+                    r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[]{kind}}}"#,
                     b64(b"python3"),
                     b64(b"/tmp")
                 ),
@@ -2574,10 +2551,10 @@ fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
     for t in StdinKind::ALL {
         match exec(Some(&format!("\"{}\"", t.name()))) {
             Ok(Request::Run(x)) => assert_eq!(x.stdin_kind, t),
-            outro => panic!("{t:?}: {outro:?}"),
+            other => panic!("{t:?}: {other:?}"),
         }
     }
-    for ruim in [
+    for bad in [
         None,
         Some(r#""tty""#),
         Some(r#""Terminal""#),
@@ -2585,55 +2562,50 @@ fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
         Some(r#""""#),
         Some("null"),
     ] {
-        assert!(exec(ruim).is_err(), "{ruim:?}");
+        assert!(exec(bad).is_err(), "{bad:?}");
     }
-    let ssh = |dados: &str| ped(Role::Agent, &quadro_de(Operation::Ssh, dados));
+    let ssh = |data: &str| req(Role::Agent, &frame_of(Operation::Ssh, data));
     assert!(
         ssh(r#"{"entrada":"acme-ssh-dev"}"#).is_err(),
         "ssh sem tipo"
     );
     assert!(ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"pts"}"#).is_err());
     match ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"arquivo"}"#) {
-        Ok(Request::Ssh {
-            stdin_kind: tipo_entrada,
-            ..
-        }) => {
-            assert_eq!(tipo_entrada, StdinKind::File)
+        Ok(Request::Ssh { stdin_kind, .. }) => {
+            assert_eq!(stdin_kind, StdinKind::File)
         }
-        outro => panic!("{outro:?}"),
+        other => panic!("{other:?}"),
     }
     let pin = b64(b"135790");
-    let resp = |extra: &str, decisao: &str, com_pin: bool| {
-        let pin = if com_pin {
+    let answer = |extra: &str, decision: &str, with_pin: bool| {
+        let pin = if with_pin {
             format!(r#","pin":"{pin}""#)
         } else {
             String::new()
         };
-        ped(
+        req(
             Role::App,
-            &quadro_de(
+            &frame_of(
                 Operation::AnswerApproval,
-                &format!(r#"{{"pedido":7,"decisao":"{decisao}"{pin}{extra}}}"#),
+                &format!(r#"{{"pedido":7,"decisao":"{decision}"{pin}{extra}}}"#),
             ),
         )
     };
-    match resp(r#","entrada_confirmada":true"#, "uma_vez", true) {
+    match answer(r#","entrada_confirmada":true"#, "uma_vez", true) {
         Ok(Request::AnswerApproval {
-            confirmed_entry: entrada_confirmada,
-            ..
-        }) => assert!(entrada_confirmada),
-        outro => panic!("{outro:?}"),
+            confirmed_entry, ..
+        }) => assert!(confirmed_entry),
+        other => panic!("{other:?}"),
     }
-    match resp("", "uma_hora", true) {
+    match answer("", "uma_hora", true) {
         Ok(Request::AnswerApproval {
-            confirmed_entry: entrada_confirmada,
-            ..
-        }) => assert!(!entrada_confirmada),
-        outro => panic!("{outro:?}"),
+            confirmed_entry, ..
+        }) => assert!(!confirmed_entry),
+        other => panic!("{other:?}"),
     }
-    assert!(resp(r#","entrada_confirmada":false"#, "uma_vez", true).is_err());
-    assert!(resp(r#","entrada_confirmada":1"#, "uma_vez", true).is_err());
-    assert!(resp(r#","entrada_confirmada":"sim""#, "uma_vez", true).is_err());
-    assert!(resp(r#","entrada_confirmada":true"#, "negar", false).is_err());
-    assert!(resp(r#","entrada_confirmada":true"#, "confirmar", false).is_err());
+    assert!(answer(r#","entrada_confirmada":false"#, "uma_vez", true).is_err());
+    assert!(answer(r#","entrada_confirmada":1"#, "uma_vez", true).is_err());
+    assert!(answer(r#","entrada_confirmada":"sim""#, "uma_vez", true).is_err());
+    assert!(answer(r#","entrada_confirmada":true"#, "negar", false).is_err());
+    assert!(answer(r#","entrada_confirmada":true"#, "confirmar", false).is_err());
 }

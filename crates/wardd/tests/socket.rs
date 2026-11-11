@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocol::{self, ResponseError, Resposta, Role};
+use ward_core::protocol::{self, Response, ResponseError, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 
@@ -104,7 +104,7 @@ fn receive(s: &mut UnixStream) -> Option<Vec<u8>> {
     Some(b)
 }
 
-fn request_on(s: &mut UnixStream, op: &str, data: &str) -> (Vec<u8>, Resposta) {
+fn request_on(s: &mut UnixStream, op: &str, data: &str) -> (Vec<u8>, Response) {
     send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
     let b = receive(s).expect("sem resposta");
     let r = protocol::decode_response(Role::Agent, &b).unwrap();
@@ -162,10 +162,10 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
     assert!(
         matches!(
             r,
-            Resposta::Estado {
-                travado: true,
-                cofre_existe: true,
-                papel: Role::Agent,
+            Response::Status {
+                locked: true,
+                vault_exists: true,
+                role: Role::Agent,
             }
         ),
         "{r:?}"
@@ -178,7 +178,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
 
     // The agent's list: without the blocked one and without level.
     let (q, r) = request_on(&mut s, "lista", "{}");
-    let Resposta::Lista(l) = r else {
+    let Response::List(l) = r else {
         panic!("{r:?}")
     };
     assert_eq!(l.len(), 4);
@@ -238,10 +238,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
     std::thread::sleep(Duration::from_millis(200));
     let mut fresh = connect(&w);
     let (_, r) = request_on(&mut fresh, "estado", "{}");
-    assert!(
-        matches!(r, Resposta::Estado { travado: false, .. }),
-        "{r:?}"
-    );
+    assert!(matches!(r, Response::Status { locked: false, .. }), "{r:?}");
     drop(stalled);
 
     // Frame larger than the limit: refused, connection closed, the daemon goes on.
@@ -289,7 +286,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
     assert!(!contains(&q1, b"falso"));
 }
 
-fn protocol_error(r: &Resposta) -> Option<ResponseError> {
+fn protocol_error(r: &Response) -> Option<ResponseError> {
     error(r)
 }
 
@@ -478,10 +475,7 @@ fn v3_6_running_wardd_denies_proc_ptrace_and_core() {
     assert_eq!(&fields[4..6], &["0", "0"], "{core}");
     // The daemon keeps serving after the attempts.
     let (_, r) = request_on(&mut s, "estado", "{}");
-    assert!(
-        matches!(r, Resposta::Estado { travado: false, .. }),
-        "{r:?}"
-    );
+    assert!(matches!(r, Response::Status { locked: false, .. }), "{r:?}");
 
     // `kill -SEGV` with the vault unlocked: dies by the signal, without a core. The first
     // SIGSEGV sent by `kill` lands in Rust's std handler (the stack overflow one), which

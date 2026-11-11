@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ward_core::protocol::{
-    self, Request, ResponseError, Resposta, Role,
+    self, Request, Response, ResponseError, Role,
     frame::{self, FrameError},
 };
 use ward_platform::{AcceptError, Install, KernelPolicy, Listener, PeerClass, PeerProcess};
@@ -205,12 +205,12 @@ impl Roles {
 
 /// Writes a response for the role. A response that the role cannot receive turns into
 /// an internal error (no credential ever goes out to the agent, S1).
-fn answer(stream: &mut UnixStream, role: Role, r: &Resposta) -> Result<(), FrameError> {
+fn answer(stream: &mut UnixStream, role: Role, r: &Response) -> Result<(), FrameError> {
     let q = match protocol::encode_response(role, r) {
         Ok(q) => q,
         Err(_) => {
             aviso!("resposta recusada para o papel {}", role.name());
-            protocol::encode_response(role, &Resposta::Erro(ResponseError::Internal))
+            protocol::encode_response(role, &Response::Error(ResponseError::Internal))
                 .map_err(|_| FrameError::Io(io::ErrorKind::InvalidData))?
         }
     };
@@ -225,7 +225,7 @@ struct SocketSubscriber {
 }
 
 impl Assinante for SocketSubscriber {
-    fn entregar(&mut self, r: &Resposta) -> bool {
+    fn entregar(&mut self, r: &Response) -> bool {
         let _g = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         let ok = answer(&mut self.stream, Role::App, r).is_ok();
         if !ok {
@@ -290,7 +290,11 @@ fn serve_connection(
             }
             Err(e) => {
                 depurar!("quadro recusado ({}): {e}", role.name());
-                let _ = answer(&mut stream, role, &Resposta::Erro(protocol::frame_error(e)));
+                let _ = answer(
+                    &mut stream,
+                    role,
+                    &Response::Error(protocol::frame_error(e)),
+                );
                 break;
             }
         };
@@ -328,7 +332,7 @@ fn serve_connection(
             }
             Err(e) => {
                 depurar!("pedido recusado ({}): {}", role.name(), e.code());
-                Resposta::Erro(e)
+                Response::Error(e)
             }
         };
         let _g = write_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -378,7 +382,7 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
         let Some((id, _)) = slots.reserve(&stream, role) else {
             let mut s = stream;
             let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
-            let _ = answer(&mut s, role, &Resposta::Erro(ResponseError::Busy));
+            let _ = answer(&mut s, role, &Response::Error(ResponseError::Busy));
             continue;
         };
         let daemon = daemon.clone();
@@ -401,7 +405,7 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
 mod tests {
     use super::*;
     use ward_core::entry::Environment;
-    use ward_core::protocol::{Operation, PedidoDeAprovacao, PedidoDeDestrave};
+    use ward_core::protocol::{ApprovalRequest, Operation, UnlockRequest};
 
     /// D63: without the group, the launcher's pid is not enough; with the group, only the
     /// launcher's pid. Holds in both builds (`make test-no-test-mode` runs without the
@@ -556,34 +560,34 @@ mod tests {
             stream: a,
             write_lock: Arc::new(Mutex::new(())),
         };
-        let p = PedidoDeAprovacao {
+        let p = ApprovalRequest {
             id: 3,
-            entradas: vec!["t-aprov".into()],
-            ambiente: Environment::Prod,
-            operacao: Operation::Run,
-            comando: "\"true\"".into(),
-            diretorio: "\"/\"".into(),
-            cadeia: vec!["claude".into()],
-            origem: String::new(),
-            confirmacao: false,
-            entrada_oculta: true,
+            entries: vec!["t-aprov".into()],
+            environment: Environment::Prod,
+            operation: Operation::Run,
+            command: "\"true\"".into(),
+            directory: "\"/\"".into(),
+            chain: vec!["claude".into()],
+            origin: String::new(),
+            confirmation: false,
+            hidden_entry: true,
         };
-        assert!(s.entregar(&Resposta::PedidoDeAprovacao(p.clone())));
-        let d = PedidoDeDestrave {
-            entrada: "t-aprov".into(),
-            operacao: Operation::Run,
-            comando: "\"true\"".into(),
-            restante: 120,
+        assert!(s.entregar(&Response::ApprovalRequest(p.clone())));
+        let d = UnlockRequest {
+            entry: "t-aprov".into(),
+            operation: Operation::Run,
+            command: "\"true\"".into(),
+            remaining: 120,
         };
-        assert!(s.entregar(&Resposta::PedidoDeDestrave(d.clone())));
+        assert!(s.entregar(&Response::UnlockRequest(d.clone())));
         let q = frame::read_frame(&mut b, frame::RESPONSE_LIMIT).unwrap();
         match protocol::decode_response(Role::App, &q).unwrap() {
-            Resposta::PedidoDeAprovacao(read) => assert_eq!(read, p),
+            Response::ApprovalRequest(read) => assert_eq!(read, p),
             r => panic!("{r:?}"),
         }
         let q = frame::read_frame(&mut b, frame::RESPONSE_LIMIT).unwrap();
         match protocol::decode_response(Role::App, &q).unwrap() {
-            Resposta::PedidoDeDestrave(read) => assert_eq!(read, d),
+            Response::UnlockRequest(read) => assert_eq!(read, d),
             r => panic!("{r:?}"),
         }
         // The agent does not read that frame.
@@ -592,7 +596,7 @@ mod tests {
         // Another test running in parallel that does `fork` holds a copy of the fd until
         // the `exec` (CLOEXEC): the failure comes right after.
         let failed = (0..200).any(|_| {
-            let f = !s.entregar(&Resposta::PedidoDeDestrave(d.clone()));
+            let f = !s.entregar(&Response::UnlockRequest(d.clone()));
             if !f {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }

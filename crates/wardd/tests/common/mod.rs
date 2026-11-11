@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_core::protocol::{self, Request, ResponseError, Resposta, Role};
+use ward_core::protocol::{self, Request, Response, ResponseError, Role};
 use wardd::nucleo::{Caminhos, Daemon, Relogio};
 
 pub const PASSWORD: &str = "falso-mestra-ward-01";
@@ -98,25 +98,25 @@ pub fn req(role: Role, op: &str, data: &str) -> Result<Request, ResponseError> {
 }
 
 /// Requests and returns the response (the request has to go through the reading).
-pub fn request(d: &Daemon, role: Role, op: &str, data: &str) -> Resposta {
+pub fn request(d: &Daemon, role: Role, op: &str, data: &str) -> Response {
     match req(role, op, data) {
         Ok(p) => d.atender(role, p),
-        Err(e) => Resposta::Erro(e),
+        Err(e) => Response::Error(e),
     }
 }
 
-pub fn error(r: &Resposta) -> Option<ResponseError> {
+pub fn error(r: &Response) -> Option<ResponseError> {
     match r {
-        Resposta::Erro(e) => Some(e.clone()),
+        Response::Error(e) => Some(e.clone()),
         _ => None,
     }
 }
 
-pub fn ok(r: &Resposta) -> bool {
-    matches!(r, Resposta::Ok)
+pub fn ok(r: &Response) -> bool {
+    matches!(r, Response::Ok)
 }
 
-pub fn unlock(d: &Daemon, password: &str) -> Resposta {
+pub fn unlock(d: &Daemon, password: &str) -> Response {
     request(
         d,
         Role::Agent,
@@ -146,7 +146,7 @@ pub fn database(name: &str, tunnel: &str) -> String {
     )
 }
 
-pub fn set_level(d: &Daemon, role: Role, name: &str, level: &str, pin: &str) -> Resposta {
+pub fn set_level(d: &Daemon, role: Role, name: &str, level: &str, pin: &str) -> Response {
     request(
         d,
         role,
@@ -188,7 +188,7 @@ pub fn test_vault(dir: &Dir) -> (Daemon, FakeClock) {
     (d, r)
 }
 
-pub fn encoded(role: Role, r: &Resposta) -> Vec<u8> {
+pub fn encoded(role: Role, r: &Response) -> Vec<u8> {
     protocol::encode_response(role, r).unwrap().to_vec()
 }
 
@@ -222,15 +222,15 @@ pub fn with_window<R>(
     decision: &str,
     pin: Option<&str>,
     f: impl FnOnce() -> R,
-) -> (R, Vec<protocol::PedidoDeAprovacao>) {
+) -> (R, Vec<protocol::ApprovalRequest>) {
     use std::sync::atomic::AtomicBool;
     use std::sync::mpsc;
     use wardd::aprovacao::Assinante;
 
-    struct FakeWindow(mpsc::Sender<protocol::PedidoDeAprovacao>);
+    struct FakeWindow(mpsc::Sender<protocol::ApprovalRequest>);
     impl Assinante for FakeWindow {
-        fn entregar(&mut self, r: &Resposta) -> bool {
-            if let Resposta::PedidoDeAprovacao(p) = r {
+        fn entregar(&mut self, r: &Response) -> bool {
+            if let Response::ApprovalRequest(p) = r {
                 return self.0.send(p.clone()).is_ok();
             }
             true

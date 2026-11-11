@@ -19,7 +19,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use ward_core::entry::Secret;
-use ward_core::protocol::{self, Request, Resposta, Role};
+use ward_core::protocol::{self, Request, Response, Role};
 
 /// Largest password read from stdin.
 const MAX_PASSWORD: u64 = 1024;
@@ -76,9 +76,11 @@ fn main() -> ExitCode {
         .ok()
         .and_then(|()| protocol::decode_response(Role::Agent, &body).ok());
     match r {
-        Some(Resposta::Erro(e)) => println!("resposta: erro {}", e.code()),
-        Some(Resposta::Estado { papel, .. }) => println!("resposta: estado papel={}", papel.name()),
-        Some(r) => println!("resposta: {}", r.tipo().name()),
+        Some(Response::Error(e)) => println!("resposta: erro {}", e.code()),
+        Some(Response::Status { role: papel, .. }) => {
+            println!("resposta: estado papel={}", papel.name())
+        }
+        Some(r) => println!("resposta: {}", r.kind().name()),
         None => println!("resposta: invalida"),
     }
     ExitCode::SUCCESS

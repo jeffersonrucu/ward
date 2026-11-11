@@ -7,7 +7,7 @@ mod common;
 
 use common::*;
 use ward_core::entry::Entry;
-use ward_core::protocol::{ResponseError, Resposta, Role};
+use ward_core::protocol::{Response, ResponseError, Role};
 
 const ATTACHMENT_A: &[u8] = b"FALSO_A=falso-anexo-39b-a\n";
 const ATTACHMENT_B: &[u8] = b"FALSO_B=falso-anexo-39b-b\n";
@@ -87,10 +87,10 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
         ]
     );
     let det = request(&d, Role::App, "detalhe", r#"{"entrada":"g1"}"#);
-    let Resposta::Detalhe(x) = &det else {
+    let Response::Detail(x) = &det else {
         panic!("{det:?}")
     };
-    assert_eq!(x.anexos.len(), 2);
+    assert_eq!(x.attachments.len(), 2);
     let bytes = encoded(Role::App, &det);
     for c in [ATTACHMENT_A, ATTACHMENT_B] {
         assert!(!contains(&bytes, c) && !contains(&bytes, b64(c).as_bytes()));

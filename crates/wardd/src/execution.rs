@@ -45,7 +45,7 @@ use ward_core::entry::{AccessLevel, Data, Entry, Secret};
 use ward_core::limits::{MAX_COMMON_FRAME, MAX_DISPLAYED_TEXT};
 use ward_core::mask::{Mask, MaskBuilder};
 use ward_core::protocol::{
-    self, Fluxo, Request, ResponseError, Resposta, Role, StdinKind, Variable, WindowSize, frame,
+    self, Request, Response, ResponseError, Role, StdinKind, Stream, Variable, WindowSize, frame,
 };
 use ward_core::totp::Totp;
 use ward_platform::child::{self, Command, Group, Pty};
@@ -643,7 +643,7 @@ pub(crate) struct Cli(Arc<Mutex<UnixStream>>);
 
 impl Cli {
     /// Writes the response; `false` if the CLI is no longer there.
-    fn send(&self, r: &Resposta) -> bool {
+    fn send(&self, r: &Response) -> bool {
         let Ok(q) = protocol::encode_response(Role::Agent, r) else {
             aviso!("executar: resposta recusada para o agente");
             return false;
@@ -654,15 +654,12 @@ impl Cli {
 
     /// Sends the already masked output in frames of up to `MAX_DISPLAYED_TEXT` and empties
     /// `out`.
-    fn send_output(&self, stream: Fluxo, out: &mut Zeroizing<Vec<u8>>) -> bool {
+    fn send_output(&self, stream: Stream, out: &mut Zeroizing<Vec<u8>>) -> bool {
         let mut ok = true;
         for piece in out.chunks(MAX_DISPLAYED_TEXT) {
             let mut data = Zeroizing::new(Vec::with_capacity(piece.len()));
             data.extend_from_slice(piece);
-            if !self.send(&Resposta::Saida {
-                fluxo: stream,
-                dados: data,
-            }) {
+            if !self.send(&Response::Output { stream, data }) {
                 ok = false;
                 break;
             }
@@ -680,7 +677,7 @@ impl Cli {
 /// does not become a prefix oracle.
 fn read_output(
     mut f: File,
-    stream: Fluxo,
+    stream: Stream,
     mask: Arc<Mask>,
     cli: Cli,
     stop: Arc<AtomicBool>,
@@ -906,7 +903,7 @@ pub(crate) fn session_with(
     let cli = Cli(Arc::new(Mutex::new(writer)));
     let preparation = match prepare(client) {
         Ok(p) => p,
-        Err(e) => return cli.send(&Resposta::Erro(e)),
+        Err(e) => return cli.send(&Response::Error(e)),
     };
     // The session lasts as long as the command; the CLI may stall (full pipe).
     let _ = stream.set_read_timeout(None);
@@ -940,12 +937,12 @@ pub(crate) fn session_with(
             msg.extend_from_slice(b"ward: ");
             msg.extend_from_slice(e.message().as_bytes());
             msg.extend_from_slice(b"\n");
-            cli.send(&Resposta::Saida {
-                fluxo: Fluxo::Erro,
-                dados: msg,
+            cli.send(&Response::Output {
+                stream: Stream::Stderr,
+                data: msg,
             });
-            cli.send(&Resposta::Fim {
-                codigo: e.exit_code(),
+            cli.send(&Response::Exit {
+                code: e.exit_code(),
             });
             let _ = stream.shutdown(std::net::Shutdown::Both);
             return false;
@@ -972,7 +969,7 @@ pub(crate) fn session_with(
         p.start(
             pid,
             Arc::new(move |out: &mut Zeroizing<Vec<u8>>| {
-                c.send_output(Fluxo::Erro, out);
+                c.send_output(Stream::Stderr, out);
             }),
         )
     });
@@ -997,8 +994,8 @@ pub(crate) fn session_with(
         }) => (
             stdin,
             vec![
-                (stdout, Fluxo::Saida, "wardd-run-saida"),
-                (stderr, Fluxo::Erro, "wardd-run-erro"),
+                (stdout, Stream::Stdout, "wardd-run-saida"),
+                (stderr, Stream::Stderr, "wardd-run-erro"),
             ],
             None,
         ),
@@ -1010,7 +1007,7 @@ pub(crate) fn session_with(
             }
             (
                 writer,
-                vec![(reader, Fluxo::Saida, "wardd-ssh-pty")],
+                vec![(reader, Stream::Stdout, "wardd-ssh-pty")],
                 Some(p),
             )
         }
@@ -1070,9 +1067,9 @@ pub(crate) fn session_with(
     drop(pty);
     let locked = lock.as_ref().is_some_and(DiesOnLock::locked);
     if let Some(data) = end_notice(locked, group.remaining()) {
-        cli.send(&Resposta::Saida {
-            fluxo: Fluxo::Erro,
-            dados: data,
+        cli.send(&Response::Output {
+            stream: Stream::Stderr,
+            data,
         });
     }
     let code = match result {
@@ -1089,7 +1086,7 @@ pub(crate) fn session_with(
         }
     };
     end.store(true, Ordering::Release);
-    cli.send(&Resposta::Fim { codigo: code });
+    cli.send(&Response::Exit { code });
     let _ = stream.shutdown(std::net::Shutdown::Both);
     false
 }

@@ -64,8 +64,8 @@ use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::origin::Origin;
 use ward_core::protocol::{
-    DetalheEntrada, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operation, PedidoDeAprovacao, Pendrive,
-    Problem, Request, ResponseError, Resposta, Role, Sugestao, Target, VersaoBackup,
+    ApprovalRequest, BackupVersion, EntryDetail, ListItem, MAX_BACKUPS, MAX_USB_DRIVES, Operation,
+    Problem, Request, Response, ResponseError, Role, Suggestion, Target, UsbDrive,
 };
 use ward_core::totp::Totp;
 
@@ -775,23 +775,23 @@ impl Daemon {
     }
 
     /// Atende um pedido já decodificado para o papel da conexão.
-    pub fn atender(&self, papel: Role, pedido: Request) -> Resposta {
+    pub fn atender(&self, papel: Role, pedido: Request) -> Response {
         self.atender_de(&SemCliente, papel, pedido)
     }
 
     /// Como [`Daemon::atender`], com o cliente da conexão (cadeia de processos para a
     /// janela de aprovação e se ele ainda está lá).
-    pub fn atender_de(&self, cliente: &dyn Cliente, papel: Role, pedido: Request) -> Resposta {
+    pub fn atender_de(&self, cliente: &dyn Cliente, papel: Role, pedido: Request) -> Response {
         let op = pedido.operation();
         // O protocolo já recusou; aqui é a segunda camada.
         if !op.allowed(papel) {
-            return Resposta::Erro(ResponseError::Unauthorized);
+            return Response::Error(ResponseError::Unauthorized);
         }
         let r = self.atender_permitido(cliente, papel, pedido);
         if crate::trava::conta_como_uso(papel, op, &r) {
             self.registrar_uso();
         }
-        if muda_o_externo(op) && !matches!(r, Resposta::Erro(_)) {
+        if muda_o_externo(op) && !matches!(r, Response::Error(_)) {
             self.cutucar_externo();
         }
         depurar!(
@@ -799,28 +799,28 @@ impl Daemon {
             op.name(),
             papel.name(),
             match &r {
-                Resposta::Erro(e) => e.code(),
-                outra => outra.tipo().name(),
+                Response::Error(e) => e.code(),
+                outra => outra.kind().name(),
             }
         );
         r
     }
 
-    fn atender_permitido(&self, cliente: &dyn Cliente, papel: Role, pedido: Request) -> Resposta {
+    fn atender_permitido(&self, cliente: &dyn Cliente, papel: Role, pedido: Request) -> Response {
         let r = match pedido {
             Request::Status => {
                 let travado = self.travado();
-                Ok(Resposta::Estado {
-                    travado,
-                    cofre_existe: !travado || arquivos::cofre_existe(&self.caminhos.cofre),
+                Ok(Response::Status {
+                    locked: travado,
+                    vault_exists: !travado || arquivos::cofre_existe(&self.caminhos.cofre),
                     // D63: o papel desta conexão, sem nenhum outro dado.
-                    papel,
+                    role: papel,
                 })
             }
             Request::Unlock { password: senha } => self.destravar(papel, &senha),
             Request::Lock => {
                 self.travar();
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             }
             Request::List => self.lista(papel),
             // D6 (Fase 44): só o caminho do storage state volta.
@@ -845,7 +845,7 @@ impl Daemon {
                 pin,
                 confirmed_entry: entrada_confirmada,
             } => self.responder_aprovacao(pedido, decisao, pin.as_ref(), entrada_confirmada),
-            Request::OpenApp => self.aprovacao.abrir_app().map(|()| Resposta::Ok),
+            Request::OpenApp => self.aprovacao.abrir_app().map(|()| Response::Ok),
             // Não há sessão aberta nesta fase (Fases 26/27).
             Request::Stdin { .. } | Request::Resize(_) => Err(ResponseError::InvalidRequest),
             Request::CreateVault {
@@ -908,7 +908,7 @@ impl Daemon {
             // Fase 42: login novo visto pela extensão, sempre "com aprovação" (D50, S9).
             Request::SaveLogin { draft: rascunho } => self.salvar_login(papel, rascunho),
         };
-        r.unwrap_or_else(Resposta::Erro)
+        r.unwrap_or_else(Response::Error)
     }
 
     /// Espera da próxima tentativa do papel (D20, D62). A primeira do agente depois da
@@ -928,9 +928,9 @@ impl Daemon {
         }
     }
 
-    fn destravar(&self, papel: Role, senha: &Secret) -> Result<Resposta, ResponseError> {
+    fn destravar(&self, papel: Role, senha: &Secret) -> Result<Response, ResponseError> {
         if !self.travado() {
-            return Ok(Resposta::Ok);
+            return Ok(Response::Ok);
         }
         // D62: o papel extensão não destrava (o protocolo recusa); qualquer outro que
         // não seja o app conta como agente.
@@ -949,7 +949,7 @@ impl Daemon {
         self.relogio.dormir(espera);
         let mut est = self.estado();
         if est.aberto.is_some() {
-            return Ok(Resposta::Ok);
+            return Ok(Response::Ok);
         }
         let (bytes, id) = match arquivos::ler_cofre(&self.caminhos.cofre) {
             Ok(Some(x)) => x,
@@ -1016,7 +1016,7 @@ impl Daemon {
             identidade: Some(id),
             geracoes: novo,
         });
-        Ok(Resposta::Ok)
+        Ok(Response::Ok)
     }
 
     /// Uma senha errada (D20, D62). A do agente vai para o arquivo de estado, com fsync,
@@ -1037,16 +1037,16 @@ impl Daemon {
         }
     }
 
-    fn lista(&self, papel: Role) -> Result<Resposta, ResponseError> {
+    fn lista(&self, papel: Role) -> Result<Response, ResponseError> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
         let itens = a
             .entradas
             .iter()
             .filter(|e| papel == Role::App || e.level() != AccessLevel::Blocked)
-            .map(|e| ItemLista::de_entrada(e, papel))
+            .map(|e| ListItem::from_entry(e, papel))
             .collect();
-        Ok(Resposta::Lista(itens))
+        Ok(Response::List(itens))
     }
 
     /// `revelar` e `copiar` (D4, D65 b): o valor de um segredo da entrada para o app.
@@ -1060,7 +1060,7 @@ impl Daemon {
         op: Operation,
         nome: &str,
         alvo: &Target,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if papel != Role::App {
             return Err(ResponseError::Unauthorized);
         }
@@ -1078,7 +1078,7 @@ impl Daemon {
             Target::Field(c) => aviso!("{} {} {c}", op.name(), e.name()),
             Target::Extra(x) => aviso!("{} {} extra {x:?}", op.name(), e.name()),
         }
-        Ok(Resposta::Segredo(Secret::from_bytes(
+        Ok(Response::Secret(Secret::from_bytes(
             valor.expose().to_vec(),
         )))
     }
@@ -1086,7 +1086,7 @@ impl Daemon {
     /// `totp` do app (D65 b): o código atual da semente da entrada `login`, pelo
     /// relógio do daemon, com as mesmas regras do `revelar`. Sem semente: "campo
     /// inexistente". O código não é segredo do cofre (R8), mas vai num `Zeroizing`.
-    fn totp_do_app(&self, papel: Role, nome: &str) -> Result<Resposta, ResponseError> {
+    fn totp_do_app(&self, papel: Role, nome: &str) -> Result<Response, ResponseError> {
         if papel != Role::App {
             return Err(ResponseError::Unauthorized);
         }
@@ -1108,9 +1108,9 @@ impl Daemon {
             .map_err(|_| ResponseError::Internal)?
             .code_at(agora);
         aviso!("totp {}", e.name());
-        Ok(Resposta::CodigoTotp {
-            codigo: Zeroizing::new(c.code().to_owned()),
-            restante: c.remaining(),
+        Ok(Response::TotpCode {
+            code: Zeroizing::new(c.code().to_owned()),
+            remaining: c.remaining(),
         })
     }
 
@@ -1120,33 +1120,33 @@ impl Daemon {
     /// (ele regula o agente; quem usa a extensão é o usuário), então a bloqueada também
     /// aparece. Origem que o parser estrito recusa não casa com nada: lista vazia. A
     /// origem vem da extensão (não confiável) e nunca vai para o log.
-    fn sugerir(&self, papel: Role, origem: &str) -> Result<Resposta, ResponseError> {
+    fn sugerir(&self, papel: Role, origem: &str) -> Result<Response, ResponseError> {
         if papel != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
         let Some(aba) = Origin::from_url(origem) else {
-            return Ok(Resposta::Sugestoes(Vec::new()));
+            return Ok(Response::Suggestions(Vec::new()));
         };
-        let mut itens: Vec<Sugestao> = a
+        let mut itens: Vec<Suggestion> = a
             .entradas
             .iter()
             .filter_map(|e| match e.data() {
                 Data::Login(l) if Origin::from_url(&l.url).as_ref() == Some(&aba) => {
-                    Some(Sugestao {
-                        nome: e.name().to_owned(),
-                        usuario: l.username.clone(),
-                        ambiente: e.environment(),
+                    Some(Suggestion {
+                        name: e.name().to_owned(),
+                        username: l.username.clone(),
+                        environment: e.environment(),
                         totp: l.totp_seed.is_some(),
                     })
                 }
                 _ => None,
             })
             .collect();
-        itens.sort_by(|x, y| x.nome.cmp(&y.nome));
+        itens.sort_by(|x, y| x.name.cmp(&y.name));
         depurar!("sugerir: {} entrada(s)", itens.len());
-        Ok(Resposta::Sugestoes(itens))
+        Ok(Response::Suggestions(itens))
     }
 
     /// `preencher` do popup da extensão (Fase 44c, D9): numa entrada cuja URL é local
@@ -1162,7 +1162,7 @@ impl Daemon {
         papel: Role,
         nome: &str,
         origem: &str,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if papel != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -1185,17 +1185,17 @@ impl Daemon {
                 aviso!("preencher {} recusado: origem diferente (D9)", e.name());
                 return Err(ResponseError::OriginMismatch);
             }
-            crate::uso::origem_a_confirmar(e, Operation::Fill).map(|o| PedidoDeAprovacao {
+            crate::uso::origem_a_confirmar(e, Operation::Fill).map(|o| ApprovalRequest {
                 id: 0,
-                entradas: vec![e.name().to_owned()],
-                ambiente: e.environment(),
-                operacao: Operation::Fill,
-                comando: String::new(),
-                diretorio: String::new(),
-                cadeia: crate::uso::cadeia_para_exibir(cliente),
-                origem: o,
-                confirmacao: true,
-                entrada_oculta: false,
+                entries: vec![e.name().to_owned()],
+                environment: e.environment(),
+                operation: Operation::Fill,
+                command: String::new(),
+                directory: String::new(),
+                chain: crate::uso::cadeia_para_exibir(cliente),
+                origin: o,
+                confirmation: true,
+                hidden_entry: false,
             })
         };
         if let Some(p) = pedido {
@@ -1216,7 +1216,7 @@ impl Daemon {
         papel: Role,
         nome: &str,
         origem: &str,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if papel != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -1252,14 +1252,14 @@ impl Daemon {
             None => None,
         };
         aviso!("preencher {}", e.name());
-        Ok(Resposta::Preenchimento {
-            usuario: l.username.clone(),
-            senha: Secret::from_bytes(l.password.expose().to_vec()),
+        Ok(Response::Fill {
+            username: l.username.clone(),
+            password: Secret::from_bytes(l.password.expose().to_vec()),
             totp,
         })
     }
 
-    fn criar_cofre(&self, senha: &Secret, pin: &Secret) -> Result<Resposta, ResponseError> {
+    fn criar_cofre(&self, senha: &Secret, pin: &Secret) -> Result<Response, ResponseError> {
         let senha = senha_nova(senha, "senha")?;
         let mut est = self.estado();
         if est.aberto.is_some() || arquivos::cofre_existe(&self.caminhos.cofre) {
@@ -1327,10 +1327,10 @@ impl Daemon {
         est.erros_pin = 0;
         est.ultimo_uso = self.relogio.agora();
         est.aberto = Some(a);
-        Ok(Resposta::Ok)
+        Ok(Response::Ok)
     }
 
-    fn detalhe(&self, nome: &str) -> Result<Resposta, ResponseError> {
+    fn detalhe(&self, nome: &str) -> Result<Response, ResponseError> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
         let e = a
@@ -1338,7 +1338,7 @@ impl Daemon {
             .iter()
             .find(|e| e.name() == nome)
             .ok_or(ResponseError::EntryNotFound)?;
-        Ok(Resposta::Detalhe(DetalheEntrada::de_entrada(e)))
+        Ok(Response::Detail(EntryDetail::from_entry(e)))
     }
 
     /// Grava; em erro desfaz a mudança em memória com `desfazer`. Arquivo trocado: trava.
@@ -1346,12 +1346,12 @@ impl Daemon {
         &self,
         est: &mut Estado,
         desfazer: impl FnOnce(&mut Aberto),
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let Some(a) = est.aberto.as_mut() else {
             return Err(ResponseError::Locked);
         };
         match gravar(&self.caminhos, a, self.gancho_gravado.as_ref()) {
-            Ok(()) => Ok(Resposta::Ok),
+            Ok(()) => Ok(Response::Ok),
             Err(FalhaGravar::Resposta(r)) => {
                 desfazer(a);
                 Err(r)
@@ -1385,7 +1385,7 @@ impl Daemon {
         anterior: Option<&str>,
         mut rascunho: Draft,
         manter_anexos: &[String],
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let agora = self.agora_para_datas();
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ResponseError::Locked)?;
@@ -1459,7 +1459,7 @@ impl Daemon {
     /// são recusados sem gravar nada (o app é o lugar de completar a entrada). O nível é
     /// sempre "com aprovação" (D50, S9), como no `salvar_entrada` do app. O log não leva
     /// o nome nem a URL (vieram da página).
-    fn salvar_login(&self, papel: Role, rascunho: Draft) -> Result<Resposta, ResponseError> {
+    fn salvar_login(&self, papel: Role, rascunho: Draft) -> Result<Response, ResponseError> {
         if papel != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -1485,7 +1485,7 @@ impl Daemon {
         r
     }
 
-    fn remover_entrada(&self, nome: &str) -> Result<Resposta, ResponseError> {
+    fn remover_entrada(&self, nome: &str) -> Result<Response, ResponseError> {
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ResponseError::Locked)?;
         let i = a
@@ -1518,7 +1518,7 @@ impl Daemon {
         nome: &str,
         nivel: AccessLevel,
         pin: &Secret,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let agora = self.agora_para_datas();
         let mut est = self.estado();
         Self::conferir_pin(&mut est, pin)?;
@@ -1545,7 +1545,7 @@ impl Daemon {
         })
     }
 
-    fn trocar_pin(&self, atual: &Secret, novo: &Secret) -> Result<Resposta, ResponseError> {
+    fn trocar_pin(&self, atual: &Secret, novo: &Secret) -> Result<Response, ResponseError> {
         let mut est = self.estado();
         Self::conferir_pin(&mut est, atual)?;
         let hash = PinHash::create(novo.expose()).map_err(|_| ResponseError::InvalidRequest)?;
@@ -1562,7 +1562,7 @@ impl Daemon {
         }
     }
 
-    fn tempo_trava(&self, minutos: u32) -> Result<Resposta, ResponseError> {
+    fn tempo_trava(&self, minutos: u32) -> Result<Response, ResponseError> {
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ResponseError::Locked)?;
         let antes = a.cofre.config().lock_minutes();
@@ -1577,7 +1577,7 @@ impl Daemon {
 
     /// Troca a senha mestra (D53): `queimada` antes, `trocar_senha` do núcleo com
     /// (`vista`, geração atual), e um erro depois da senha conferida trava o cofre.
-    fn trocar_senha(&self, atual: &Secret, nova: &Secret) -> Result<Resposta, ResponseError> {
+    fn trocar_senha(&self, atual: &Secret, nova: &Secret) -> Result<Response, ResponseError> {
         // Antes de tudo: senha nova curta não queima geração nem toca no disco.
         let nova = senha_nova(nova, "nova")?;
         let mut est = self.estado();
@@ -1640,7 +1640,7 @@ impl Daemon {
                 // O cofre antigo (chave antiga) zera aqui.
                 a.cofre = novo;
                 confirmar(&self.caminhos, a, id);
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             }
             // D52: na troca de senha, `Formato` é a senha atual errada; nada foi selado.
             Err(WriteError::Format(_)) => Err(ResponseError::WrongPassword),
@@ -1660,17 +1660,17 @@ impl Daemon {
     /// Tempo de trava e backup externo ligado ou não (Fase 38), para a tela
     /// Configurações. Só com o cofre destravado e só pelo app; nunca o hash do PIN nem o
     /// UUID do pendrive.
-    fn configuracao(&self) -> Result<Resposta, ResponseError> {
+    fn configuracao(&self) -> Result<Response, ResponseError> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
         let c = a.cofre.config();
         // Fase 49a: a tela avisa quando a pasta do backup local não abre ou não é segura
         // (o cofre é gravado sem backup). Só um sim/não: nenhum caminho.
         let backup_local = abrir_pasta(&self.caminhos).is_some_and(|p| p.pasta().list().is_ok());
-        Ok(Resposta::Configuracao {
-            minutos_trava: c.lock_minutes(),
-            backup_externo: c.backup().enabled(),
-            backup_local,
+        Ok(Response::Config {
+            lock_minutes: c.lock_minutes(),
+            external_backup: c.backup().enabled(),
+            local_backup: backup_local,
         })
     }
 
@@ -1682,7 +1682,7 @@ impl Daemon {
     /// aberto ([`backup::sealed_generation`], autenticada), que vira as marcas `conferida`
     /// e `fora_de_ordem` ([`backup::out_of_order`]): uma cópia antiga com nome novo sai
     /// marcada. A geração não vai na resposta (D39).
-    fn backups(&self) -> Result<Resposta, ResponseError> {
+    fn backups(&self) -> Result<Response, ResponseError> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
         let pasta = abrir_pasta(&self.caminhos).ok_or(ResponseError::BackupUnavailable)?;
@@ -1705,22 +1705,22 @@ impl Daemon {
         let lista = com_geracao
             .iter()
             .zip(marcas)
-            .map(|((v, g), fora)| VersaoBackup {
-                nome: v.name(),
-                conferida: g.is_some(),
-                fora_de_ordem: fora,
+            .map(|((v, g), fora)| BackupVersion {
+                name: v.name(),
+                verified: g.is_some(),
+                out_of_order: fora,
             })
             .collect();
-        Ok(Resposta::Backups(lista))
+        Ok(Response::Backups(lista))
     }
 
     /// Configuração do backup externo (Fase 46): só com o cofre destravado.
-    fn backup_externo(&self) -> Result<Resposta, ResponseError> {
+    fn backup_externo(&self) -> Result<Response, ResponseError> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
         let b = a.cofre.config().backup();
-        Ok(Resposta::BackupExterno {
-            ligado: b.enabled(),
+        Ok(Response::ExternalBackup {
+            enabled: b.enabled(),
             uuid: b.uuid().map(str::to_owned),
         })
     }
@@ -1731,7 +1731,7 @@ impl Daemon {
         &self,
         ligado: bool,
         uuid: Option<&str>,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let novo = ExternalBackup::new(ligado, uuid).map_err(|_| ResponseError::InvalidRequest)?;
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ResponseError::Locked)?;
@@ -1751,7 +1751,7 @@ impl Daemon {
 
     /// Pendrives que o udisks2 vê (Fase 46): só com o cofre destravado. O estado não
     /// fica preso durante a consulta.
-    fn pendrives(&self) -> Result<Resposta, ResponseError> {
+    fn pendrives(&self) -> Result<Response, ResponseError> {
         if self.travado() {
             return Err(ResponseError::Locked);
         }
@@ -1762,14 +1762,14 @@ impl Daemon {
         let vistos = fonte
             .usb_drives()
             .ok_or(ResponseError::UsbDrivesUnavailable)?;
-        Ok(Resposta::Pendrives(
+        Ok(Response::UsbDrives(
             vistos
                 .into_iter()
-                .take(MAX_PENDRIVES)
-                .map(|v| Pendrive {
-                    montado: v.mount.is_some(),
+                .take(MAX_USB_DRIVES)
+                .map(|v| UsbDrive {
+                    mounted: v.mount.is_some(),
                     uuid: v.uuid,
-                    rotulo: v.label,
+                    label: v.label,
                 })
                 .collect(),
         ))
@@ -1794,7 +1794,7 @@ impl Daemon {
         versao: &str,
         senha: &Secret,
         pin: &Secret,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let versao = Version::from_name(versao).ok_or(ResponseError::InvalidRequest)?;
         let mut est = self.estado();
         Self::conferir_pin(&mut est, pin)?;
@@ -1900,7 +1900,7 @@ impl Daemon {
                     aviso!("{n} pedido(s) de aprovação cancelado(s) pelo restaurar");
                 }
                 aviso!("backup restaurado; o cofre anterior ficou na pasta de backups");
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             }
             Err(e) => {
                 if let WriteError::Io {

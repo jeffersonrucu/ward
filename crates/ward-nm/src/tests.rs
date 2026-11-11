@@ -2,7 +2,7 @@
 
 use super::*;
 use ward_core::entry::Secret;
-use ward_core::protocol::Sugestao;
+use ward_core::protocol::Suggestion;
 
 const FAKE_PASSWORD: &str = "falso-WP-senha-01";
 
@@ -36,7 +36,7 @@ struct FakeDaemon {
 }
 
 impl FakeDaemon {
-    fn replying(r: Resposta) -> FakeDaemon {
+    fn replying(r: Response) -> FakeDaemon {
         let body = protocol::encode_response(Role::App, &r)
             .or_else(|_| protocol::encode_response(Role::Extension, &r))
             .or_else(|_| protocol::encode_response(Role::Agent, &r))
@@ -69,10 +69,10 @@ fn handle_with(m: &str, d: &mut FakeDaemon) -> String {
     String::from_utf8(r.to_vec()).unwrap()
 }
 
-fn fill_response() -> Resposta {
-    Resposta::Preenchimento {
-        usuario: "wp_admin".into(),
-        senha: Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec()),
+fn fill_response() -> Response {
+    Response::Fill {
+        username: "wp_admin".into(),
+        password: Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec()),
         totp: None,
     }
 }
@@ -196,14 +196,14 @@ fn attack_malformed_json_and_extra_fields() {
 fn attack_daemon_response_outside_the_role_or_the_operation_does_not_go_out() {
     // A daemon (or a corrupted frame) that sent an app secret, a token or a fill for
     // another operation: none of it reaches the extension.
-    let cases: Vec<(&str, Resposta)> = vec![
+    let cases: Vec<(&str, Response)> = vec![
         (
             FILL,
-            Resposta::Segredo(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
+            Response::Secret(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
         ),
         (
             FILL,
-            Resposta::Token(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
+            Response::Token(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
         ),
         (
             r#"{"v":1,"op":"sugerir","dados":{"origem":"http://localhost:8081"}}"#,
@@ -211,7 +211,7 @@ fn attack_daemon_response_outside_the_role_or_the_operation_does_not_go_out() {
         ),
         (r#"{"v":1,"op":"estado"}"#, fill_response()),
         (r#"{"v":1,"op":"abrir_app"}"#, fill_response()),
-        (FILL, Resposta::Lista(Vec::new())),
+        (FILL, Response::List(Vec::new())),
         // Phase 43: the login wait and the login result never carry a value; only the
         // login fill gets the fill.
         (r#"{"v":1,"op":"aguardar_login"}"#, fill_response()),
@@ -221,14 +221,14 @@ fn attack_daemon_response_outside_the_role_or_the_operation_does_not_go_out() {
         ),
         (
             r#"{"v":1,"op":"preencher_login","dados":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origem":"http://localhost:8081"}}"#,
-            Resposta::Segredo(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
+            Response::Secret(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
         ),
         (
             FILL,
-            Resposta::Sugestoes(vec![Sugestao {
-                nome: "x".into(),
-                usuario: "y".into(),
-                ambiente: ward_core::entry::Environment::Dev,
+            Response::Suggestions(vec![Suggestion {
+                name: "x".into(),
+                username: "y".into(),
+                environment: ward_core::entry::Environment::Dev,
                 totp: false,
             }]),
         ),
@@ -289,10 +289,10 @@ fn state_without_the_extension_role_becomes_unauthorized() {
 fn loop_many_messages_and_normal_end() {
     let mut input = frame(br#"{"v":1,"op":"estado"}"#);
     input.extend(frame(FILL.as_bytes()));
-    let mut d = FakeDaemon::replying(Resposta::Estado {
-        travado: false,
-        cofre_existe: true,
-        papel: Role::Extension,
+    let mut d = FakeDaemon::replying(Response::Status {
+        locked: false,
+        vault_exists: true,
+        role: Role::Extension,
     });
     let mut output = Vec::new();
     serve(&mut &input[..], &mut output, &mut d, &mut |_| {}).unwrap();

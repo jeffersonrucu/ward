@@ -18,7 +18,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocol::{self, Fluxo, ResponseError, Resposta, Role};
+use ward_core::protocol::{self, Response, ResponseError, Role, Stream};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 /// Password of the free test entry (fake).
@@ -99,7 +99,7 @@ fn send(s: &mut UnixStream, json: &str) {
     s.write_all(json.as_bytes()).unwrap();
 }
 
-fn receive(s: &mut UnixStream) -> Option<Resposta> {
+fn receive(s: &mut UnixStream) -> Option<Response> {
     let mut n = [0u8; 4];
     s.read_exact(&mut n).ok()?;
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
@@ -122,7 +122,7 @@ fn unlock_through(w: &Wardd) {
             b64(PASSWORD.as_bytes())
         ),
     );
-    assert!(matches!(receive(&mut s), Some(Resposta::Ok)));
+    assert!(matches!(receive(&mut s), Some(Response::Ok)));
 }
 
 fn run_request(entry: &str, argv: &[&str], env_vars: &[(&str, &str)]) -> String {
@@ -176,15 +176,18 @@ fn read_session(s: &mut UnixStream) -> Session {
     let mut r = Session::default();
     loop {
         match receive(s) {
-            Some(Resposta::Saida { fluxo, dados }) => match fluxo {
-                Fluxo::Saida => r.stdout.extend_from_slice(&dados),
-                Fluxo::Erro => r.stderr.extend_from_slice(&dados),
+            Some(Response::Output {
+                stream: fluxo,
+                data: dados,
+            }) => match fluxo {
+                Stream::Stdout => r.stdout.extend_from_slice(&dados),
+                Stream::Stderr => r.stderr.extend_from_slice(&dados),
             },
-            Some(Resposta::Fim { codigo }) => {
+            Some(Response::Exit { code: codigo }) => {
                 r.end = Some(codigo);
                 break;
             }
-            Some(Resposta::Erro(e)) => {
+            Some(Response::Error(e)) => {
                 r.failure = Some(e);
                 break;
             }
@@ -467,7 +470,7 @@ fn v4_delivery_mask_code_and_refusals() {
     send(&mut s, &run_request("t-nota", &["/bin/true"], &[]));
     assert!(matches!(
         receive(&mut s),
-        Some(Resposta::Erro(ResponseError::TypeWithoutDelivery))
+        Some(Response::Error(ResponseError::TypeWithoutDelivery))
     ));
     send(&mut s, &run_request("t-livre", &sh("exit 4"), &[]));
     send_stdin(&mut s, b"");
@@ -677,7 +680,7 @@ fn v4_15_cli_that_drops_and_killed_daemon() {
     let mut read = Vec::new();
     while read.iter().filter(|b| **b == b'\n').count() < 2 {
         match receive(&mut s) {
-            Some(Resposta::Saida { dados, .. }) => read.extend_from_slice(&dados),
+            Some(Response::Output { data: dados, .. }) => read.extend_from_slice(&dados),
             r => panic!("{r:?}"),
         }
     }
@@ -715,7 +718,7 @@ fn v4_15_cli_that_drops_and_killed_daemon() {
     let mut read = Vec::new();
     while !read.contains(&b'\n') {
         match receive(&mut s) {
-            Some(Resposta::Saida { dados, .. }) => read.extend_from_slice(&dados),
+            Some(Response::Output { data: dados, .. }) => read.extend_from_slice(&dados),
             r => panic!("{r:?}"),
         }
     }
@@ -768,7 +771,7 @@ fn ra1_record_child_environ_readable_by_same_uid() {
     let mut s = connect(&w);
     send(&mut s, &run_request("t-gen", &sh("echo $$; sleep 30"), &[]));
     let pid: u32 = match receive(&mut s) {
-        Some(Resposta::Saida { dados, .. }) => text(&dados).trim().parse().unwrap(),
+        Some(Response::Output { data: dados, .. }) => text(&dados).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
     let environ = fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
@@ -904,14 +907,14 @@ fn f54_attack_ward_run_dies_on_lock() {
     send(&mut s, &run_request("t-livre", &sh(&script), &[]));
     send_stdin(&mut s, b"");
     let pid: u32 = match receive(&mut s) {
-        Some(Resposta::Saida { dados, .. }) => text(&dados).trim().parse().unwrap(),
+        Some(Response::Output { data: dados, .. }) => text(&dados).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
     assert!(alive(pid));
     let before = Instant::now();
     let mut t = connect(&w);
     send(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
-    assert!(matches!(receive(&mut t), Some(Resposta::Ok)));
+    assert!(matches!(receive(&mut t), Some(Response::Ok)));
     let r = read_session(&mut s);
     assert!(
         before.elapsed() < Duration::from_secs(3),
@@ -1000,13 +1003,13 @@ fn f55_attack_descendant_outside_group_dies_at_end_and_on_lock() {
     );
     send_stdin(&mut s, b"");
     let child: u32 = match receive(&mut s) {
-        Some(Resposta::Saida { dados, .. }) => text(&dados).trim().parse().unwrap(),
+        Some(Response::Output { data: dados, .. }) => text(&dados).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
     assert!(alive(child));
     let mut t = connect(&w);
     send(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
-    assert!(matches!(receive(&mut t), Some(Resposta::Ok)));
+    assert!(matches!(receive(&mut t), Some(Response::Ok)));
     let r = read_session(&mut s);
     assert_eq!(r.end, Some(137), "{r:?}");
     assert!(

@@ -23,7 +23,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::Dir;
-use ward_core::protocol::{self, ResponseError, Resposta, Role};
+use ward_core::protocol::{self, Response, ResponseError, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
@@ -63,7 +63,7 @@ fn send(s: &mut UnixStream, json: &str) {
         .unwrap();
 }
 
-fn request(s: &mut UnixStream, op: &str, data: &str) -> Resposta {
+fn request(s: &mut UnixStream, op: &str, data: &str) -> Response {
     send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
     let mut n = [0u8; 4];
     s.read_exact(&mut n).unwrap();
@@ -155,8 +155,8 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     // Any client (this test): agent.
     assert!(matches!(
         request(&mut c, "estado", "{}"),
-        Resposta::Estado {
-            papel: Role::Agent,
+        Response::Status {
+            role: Role::Agent,
             ..
         }
     ));
@@ -169,13 +169,13 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
         r#"{"ambiente":{"LD_PRELOAD":"/tmp/x.so"}}"#,
     ] {
         let r = request(&mut c, "abrir_app", data);
-        assert!(matches!(r, Resposta::Erro(_)), "{data}: {r:?}");
+        assert!(matches!(r, Response::Error(_)), "{data}: {r:?}");
     }
     std::thread::sleep(Duration::from_millis(300));
     assert!(!app_output.exists(), "abrir_app com campo abriu o app");
 
     // Without a field: opens `WARD_DEV_APP`, which gets the app role.
-    assert!(matches!(request(&mut c, "abrir_app", "{}"), Resposta::Ok));
+    assert!(matches!(request(&mut c, "abrir_app", "{}"), Response::Ok));
     wait_for(|| read(&app_output).contains("revelar="), "a saída do app");
     let text = read(&app_output);
     assert!(text.contains("papel=app\n"), "{text}");
@@ -217,12 +217,12 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
         r#"{"entrada":"acme-pg-dev","alvo":{"campo":"senha"}}"#,
     );
     assert!(
-        matches!(r, Resposta::Erro(ResponseError::Unauthorized)),
+        matches!(r, Response::Error(ResponseError::Unauthorized)),
         "{r:?}"
     );
 
     // The app exited: opened again, it is app again (the new pid is the launcher's).
-    assert!(matches!(request(&mut c, "abrir_app", "{}"), Resposta::Ok));
+    assert!(matches!(request(&mut c, "abrir_app", "{}"), Response::Ok));
     wait_for(
         || read(&app_output).matches("papel=app\n").count() == 2,
         "a segunda abertura",

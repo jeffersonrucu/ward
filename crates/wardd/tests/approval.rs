@@ -16,7 +16,7 @@ use std::time::Duration;
 use common::*;
 use ward_core::entry::{AccessLevel, Environment};
 use ward_core::protocol::{
-    Operation, PedidoDeAprovacao, PedidoDeDestrave, ResponseError, Resposta, Role,
+    ApprovalRequest, Operation, Response, ResponseError, Role, UnlockRequest,
 };
 use ward_platform::{PeerClass, Refusal};
 use wardd::aprovacao::{
@@ -49,17 +49,17 @@ impl RelogioMotor for ManualClock {
 /// What the fake app received.
 #[derive(Debug)]
 enum Received {
-    Approval(PedidoDeAprovacao),
-    Unlock(PedidoDeDestrave),
+    Approval(ApprovalRequest),
+    Unlock(UnlockRequest),
 }
 
 struct FakeApp(Sender<Received>);
 
 impl Assinante for FakeApp {
-    fn entregar(&mut self, r: &Resposta) -> bool {
+    fn entregar(&mut self, r: &Response) -> bool {
         let x = match r {
-            Resposta::PedidoDeAprovacao(p) => Received::Approval(p.clone()),
-            Resposta::PedidoDeDestrave(p) => Received::Unlock(p.clone()),
+            Response::ApprovalRequest(p) => Received::Approval(p.clone()),
+            Response::UnlockRequest(p) => Received::Unlock(p.clone()),
             other => panic!("o motor mandou ao app {other:?}"),
         };
         self.0.send(x).is_ok()
@@ -154,7 +154,7 @@ fn use_entry(d: &Daemon, client: &dyn Cliente, name: &str) -> Result<Autorizacao
     d.autorizar_uso(client, &p)
 }
 
-fn approval_request(rx: &Receiver<Received>) -> PedidoDeAprovacao {
+fn approval_request(rx: &Receiver<Received>) -> ApprovalRequest {
     match rx
         .recv_timeout(DEADLINE)
         .expect("o app não recebeu o pedido")
@@ -164,7 +164,7 @@ fn approval_request(rx: &Receiver<Received>) -> PedidoDeAprovacao {
     }
 }
 
-fn answer(d: &Daemon, role: Role, id: u64, decision: &str, pin: Option<&str>) -> Resposta {
+fn answer(d: &Daemon, role: Role, id: u64, decision: &str, pin: Option<&str>) -> Response {
     let pin = pin
         .map(|p| format!(r#","pin":"{}""#, b64(p.as_bytes())))
         .unwrap_or_default();
@@ -178,7 +178,7 @@ fn answer(d: &Daemon, role: Role, id: u64, decision: &str, pin: Option<&str>) ->
 
 fn level(d: &Daemon, name: &str) -> Option<AccessLevel> {
     match request(d, Role::App, "lista", "{}") {
-        Resposta::Lista(l) => l.into_iter().find(|i| i.nome == name).and_then(|i| i.nivel),
+        Response::List(l) => l.into_iter().find(|i| i.name == name).and_then(|i| i.level),
         r => panic!("{r:?}"),
     }
 }
@@ -200,7 +200,7 @@ fn with_approval_window(
     c: &Scene,
     rx: &Receiver<Received>,
     name: &str,
-    answer: impl FnOnce(&PedidoDeAprovacao),
+    answer: impl FnOnce(&ApprovalRequest),
 ) -> Result<Autorizacao, ResponseError> {
     std::thread::scope(|s| {
         let t = s.spawn(|| use_entry(&c.d, &SemCliente, name));
@@ -346,7 +346,7 @@ fn attack_49a_restore_cancels_pending_request() {
     let c = scene("restaurar-pendente");
     let rx = subscribe(&c.d, 1);
     let version = match request(&c.d, Role::App, "backups", "{}") {
-        Resposta::Backups(l) => l[0].nome.clone(),
+        Response::Backups(l) => l[0].name.clone(),
         r => panic!("{r:?}"),
     };
     let r = std::thread::scope(|s| {
@@ -602,8 +602,8 @@ fn v3_16_prod_has_the_same_levels_and_buttons() {
     assert!(rx.try_recv().is_err());
     for decision in ["negar", "uma_vez", "uma_hora", "sempre"] {
         let r = with_approval_window(&c, &rx, "p-aprov", |p| {
-            assert_eq!(p.ambiente, Environment::Prod);
-            assert_eq!(p.entradas, ["p-aprov"]);
+            assert_eq!(p.environment, Environment::Prod);
+            assert_eq!(p.entries, ["p-aprov"]);
             let pin = (decision != "negar").then_some(PIN);
             assert!(
                 ok(&answer(&c.d, Role::App, p.id, decision, pin)),
@@ -633,8 +633,8 @@ fn d19_combined_level() {
     let rx = subscribe(&c.d, 1);
     // b1 (prod, with approval) + s1 (stage, with approval).
     let r = with_approval_window(&c, &rx, "b1", |p| {
-        assert_eq!(p.entradas, ["b1", "s1"]);
-        assert_eq!(p.ambiente, Environment::Prod);
+        assert_eq!(p.entries, ["b1", "s1"]);
+        assert_eq!(p.environment, Environment::Prod);
         assert!(ok(&answer(&c.d, Role::App, p.id, "uma_hora", Some(PIN))));
     });
     assert_eq!(r, Ok(Autorizacao::Aprovado));
@@ -648,7 +648,7 @@ fn d19_combined_level() {
     // b1 free, s1 with approval: asks.
     assert!(ok(&set_level(&c.d, Role::App, "b1", "livre", PIN)));
     let r = with_approval_window(&c, &rx, "b1", |p| {
-        assert_eq!(p.entradas, ["b1", "s1"]);
+        assert_eq!(p.entries, ["b1", "s1"]);
         assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
@@ -761,9 +761,9 @@ fn d51_command_and_chain_with_visible_escape() {
         });
         let _g = ExpireOnPanic(&c.clock);
         let p = approval_request(&rx);
-        assert_eq!(p.operacao, Operation::Run);
-        assert_eq!(p.comando, r#""rm" "-rf /\x1b[2K\rls \u{202E}" "\xff""#);
-        assert_eq!(p.cadeia, ["claude", r"ba\u{202E}hs", r"ward\x1b[2K"]);
+        assert_eq!(p.operation, Operation::Run);
+        assert_eq!(p.command, r#""rm" "-rf /\x1b[2K\rls \u{202E}" "\xff""#);
+        assert_eq!(p.chain, ["claude", r"ba\u{202E}hs", r"ward\x1b[2K"]);
         assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
         t.join().unwrap()
     });
@@ -790,9 +790,9 @@ fn f26a_working_directory_goes_to_the_window_with_visible_escape() {
         });
         let _g = ExpireOnPanic(&c.clock);
         let p = approval_request(&rx);
-        assert_eq!(p.comando, r#""./deploy.sh""#);
+        assert_eq!(p.command, r#""./deploy.sh""#);
         assert_eq!(
-            p.diretorio,
+            p.directory,
             r#""/tmp/atacante/\u{202E}hs.yolped\x1b[2K /home/dev""#
         );
         assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
@@ -893,7 +893,7 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
     );
 }
 
-fn unlock_request(rx: &Receiver<Received>) -> PedidoDeDestrave {
+fn unlock_request(rx: &Receiver<Received>) -> UnlockRequest {
     match rx
         .recv_timeout(DEADLINE)
         .expect("o app não recebeu o pedido de destrave")
@@ -927,13 +927,13 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
             c.d.autorizar_uso(&SemCliente, &p)
         });
         let p = unlock_request(&rx);
-        assert_eq!(p.operacao, Operation::Run);
-        assert_eq!(p.restante, 120);
-        assert!(!invisible(&p.entrada), "{:?}", p.entrada);
-        assert!(!invisible(&p.comando), "{:?}", p.comando);
-        assert_eq!(p.entrada, r"t-livre\u{202E}\x1b[2K\u{200B}\u{E0041}");
+        assert_eq!(p.operation, Operation::Run);
+        assert_eq!(p.remaining, 120);
+        assert!(!invisible(&p.entry), "{:?}", p.entry);
+        assert!(!invisible(&p.command), "{:?}", p.command);
+        assert_eq!(p.entry, r"t-livre\u{202E}\x1b[2K\u{200B}\u{E0041}");
         assert_eq!(
-            p.comando,
+            p.command,
             r#""psql" "-c" "select 1\" \"; rm -rf /\x1b[2K\u{202E}""#
         );
         // The app that subscribes later (window reopened) receives the same request, with
@@ -941,10 +941,10 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
         c.clock.set(Duration::from_millis(50_400));
         let rx2 = subscribe(&c.d, 2);
         let q = unlock_request(&rx2);
-        assert_eq!(q.restante, 70);
+        assert_eq!(q.remaining, 70);
         assert_eq!(
-            (q.entrada.as_str(), q.comando.as_str()),
-            (p.entrada.as_str(), p.comando.as_str())
+            (q.entry.as_str(), q.command.as_str()),
+            (p.entry.as_str(), p.command.as_str())
         );
         // A second use waiting: the app receives the newest (ssh, no argv: empty command).
         let t2 = s.spawn(|| {
@@ -958,12 +958,12 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
         });
         let n = unlock_request(&rx2);
         assert_eq!(
-            (n.entrada.as_str(), n.operacao, n.restante),
+            (n.entry.as_str(), n.operation, n.remaining),
             ("t-aprov", Operation::Ssh, 120)
         );
         // Subscribing again delivers only the newest.
         let rx3 = subscribe(&c.d, 3);
-        assert_eq!(unlock_request(&rx3).entrada, "t-aprov");
+        assert_eq!(unlock_request(&rx3).entry, "t-aprov");
         assert!(rx3.recv_timeout(Duration::from_millis(200)).is_err());
         c.clock.advance(Duration::from_secs(120));
         (t.join().unwrap(), t2.join().unwrap())
@@ -1012,7 +1012,7 @@ fn attack_phase_39a_empty_entry_does_not_bring_down_the_app() {
     // The app keeps receiving the next request, with a name.
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-livre"));
-        assert_eq!(unlock_request(&rx).entrada, "t-livre");
+        assert_eq!(unlock_request(&rx).entry, "t-livre");
         assert!(ok(&unlock(&c.d, PASSWORD)));
         t.join().unwrap()
     });
@@ -1084,7 +1084,7 @@ fn v3_38_status_carries_the_role() {
     let c = scene("estado-papel");
     for role in Role::ALL {
         match request(&c.d, role, "estado", "{}") {
-            Resposta::Estado { papel: p, .. } => assert_eq!(p, role),
+            Response::Status { role: p, .. } => assert_eq!(p, role),
             r => panic!("{r:?}"),
         }
     }
@@ -1108,7 +1108,7 @@ fn with_window_and_stdin(
     rx: &Receiver<Received>,
     name: &str,
     kind: &str,
-    answer: impl FnOnce(&PedidoDeAprovacao),
+    answer: impl FnOnce(&ApprovalRequest),
 ) -> Result<Autorizacao, ResponseError> {
     std::thread::scope(|s| {
         let t = s.spawn(|| use_with_stdin(&c.d, name, kind));
@@ -1119,7 +1119,7 @@ fn with_window_and_stdin(
     })
 }
 
-fn answer_confirmed(d: &Daemon, id: u64, decision: &str, pin: &str) -> Resposta {
+fn answer_confirmed(d: &Daemon, id: u64, decision: &str, pin: &str) -> Response {
     request(
         d,
         Role::App,
@@ -1142,8 +1142,8 @@ fn f54b_attack_pipe_on_approval_without_the_box_does_not_pass() {
     let rx = subscribe(&c.d, 1);
     for kind in ["pipe", "arquivo", "outra"] {
         let r = with_window_and_stdin(&c, &rx, "t-aprov", kind, |p| {
-            assert!(p.entrada_oculta, "{kind}: a janela não recebeu o aviso");
-            assert_eq!(p.comando, "\"python3\"");
+            assert!(p.hidden_entry, "{kind}: a janela não recebeu o aviso");
+            assert_eq!(p.command, "\"python3\"");
             for _ in 0..2 {
                 for decision in ["uma_vez", "uma_hora", "sempre"] {
                     assert_eq!(
@@ -1187,7 +1187,7 @@ fn f54b_terminal_and_null_pass_as_before() {
     let rx = subscribe(&c.d, 1);
     for kind in ["terminal", "nula"] {
         let r = with_window_and_stdin(&c, &rx, "t-aprov", kind, |p| {
-            assert!(!p.entrada_oculta, "{kind}");
+            assert!(!p.hidden_entry, "{kind}");
             assert_eq!(
                 error(&answer_confirmed(&c.d, p.id, "uma_vez", PIN)),
                 Some(ResponseError::InvalidRequest),
@@ -1219,7 +1219,7 @@ fn f54b_1_hour_grant_does_not_cover_pipe() {
         Ok(Autorizacao::SemPerguntar)
     );
     let r = with_window_and_stdin(&c, &rx, "t-aprov", "pipe", |p| {
-        assert!(p.entrada_oculta);
+        assert!(p.hidden_entry);
         assert_eq!(
             error(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))),
             Some(ResponseError::InvalidRequest)
@@ -1235,14 +1235,14 @@ fn f54b_1_hour_grant_does_not_cover_pipe() {
     assert!(rx.try_recv().is_err());
     // Combined: b1 + s1, both with approval.
     let r = with_window_and_stdin(&c, &rx, "b1", "arquivo", |p| {
-        assert_eq!(p.entradas, ["b1", "s1"]);
-        assert!(p.entrada_oculta);
+        assert_eq!(p.entries, ["b1", "s1"]);
+        assert!(p.hidden_entry);
         assert!(ok(&answer_confirmed(&c.d, p.id, "uma_hora", PIN)));
     });
     assert_eq!(r, Ok(Autorizacao::Aprovado));
     // The grant given with the box checked does not cover the next pipe either.
     let r = with_window_and_stdin(&c, &rx, "b1", "pipe", |p| {
-        assert!(p.entrada_oculta);
+        assert!(p.hidden_entry);
         assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
@@ -1269,8 +1269,8 @@ fn f54b_ssh_with_pipe_warns() {
         });
         let _g = ExpireOnPanic(&c.clock);
         let p = approval_request(&rx);
-        assert_eq!(p.operacao, Operation::Ssh);
-        assert!(p.entrada_oculta);
+        assert_eq!(p.operation, Operation::Ssh);
+        assert!(p.hidden_entry);
         assert_eq!(
             error(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))),
             Some(ResponseError::InvalidRequest)

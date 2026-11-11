@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 
-use ward_core::protocol::ItemLista;
+use ward_core::protocol::ListItem;
 
 /// Character that cannot go out raw: control or invisible formatting.
 pub fn invisible(c: char) -> bool {
@@ -86,24 +86,24 @@ fn json_optional(out: &mut String, s: Option<&str>) {
 /// List as JSON (`--json`): an array with only the name, type, group, environment,
 /// project and address (URL or host) of each entry (V4.1). No level (D50), no tags and
 /// no field the list does not have.
-pub fn list_json(items: &[ItemLista]) -> String {
+pub fn list_json(items: &[ListItem]) -> String {
     let mut out = String::from("[");
     for (i, item) in items.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
         out.push_str("{\"nome\":");
-        json_text(&mut out, &item.nome);
+        json_text(&mut out, &item.name);
         out.push_str(",\"tipo\":");
-        json_text(&mut out, item.tipo.name());
+        json_text(&mut out, item.kind.name());
         out.push_str(",\"grupo\":");
-        json_text(&mut out, &item.grupo);
+        json_text(&mut out, &item.group);
         out.push_str(",\"ambiente\":");
-        json_text(&mut out, item.ambiente.name());
+        json_text(&mut out, item.environment.name());
         out.push_str(",\"projeto\":");
-        json_optional(&mut out, item.projeto.as_deref());
+        json_optional(&mut out, item.project.as_deref());
         out.push_str(",\"endereco\":");
-        json_optional(&mut out, item.endereco.as_deref());
+        json_optional(&mut out, item.address.as_deref());
         out.push('}');
     }
     out.push_str("]\n");
@@ -111,7 +111,7 @@ pub fn list_json(items: &[ItemLista]) -> String {
 }
 
 /// List as text: aligned table, with `-` in the empty field.
-pub fn list_table(items: &[ItemLista]) -> String {
+pub fn list_table(items: &[ListItem]) -> String {
     if items.is_empty() {
         return "nenhuma entrada visível\n".to_owned();
     }
@@ -120,14 +120,14 @@ pub fn list_table(items: &[ItemLista]) -> String {
         .iter()
         .map(|i| {
             [
-                neutralize(&i.nome),
-                i.tipo.name().to_owned(),
-                neutralize(&i.grupo),
-                i.ambiente.name().to_owned(),
-                i.projeto
+                neutralize(&i.name),
+                i.kind.name().to_owned(),
+                neutralize(&i.group),
+                i.environment.name().to_owned(),
+                i.project
                     .as_deref()
                     .map_or_else(|| "-".to_owned(), neutralize),
-                i.endereco
+                i.address
                     .as_deref()
                     .map_or_else(|| "-".to_owned(), neutralize),
             ]
@@ -166,17 +166,17 @@ mod tests {
     use super::*;
     use ward_core::entry::{EntryType, Environment};
 
-    fn item(name: &str, address: Option<&str>) -> ItemLista {
-        ItemLista {
-            nome: name.to_owned(),
-            tipo: EntryType::Database,
-            grupo: "clientex".to_owned(),
-            ambiente: Environment::Stage,
-            projeto: None,
+    fn item(name: &str, address: Option<&str>) -> ListItem {
+        ListItem {
+            name: name.to_owned(),
+            kind: EntryType::Database,
+            group: "clientex".to_owned(),
+            environment: Environment::Stage,
+            project: None,
             tags: vec!["etiqueta-x".to_owned()],
-            nivel: None,
-            endereco: address.map(str::to_owned),
-            resumo: None,
+            level: None,
+            address: address.map(str::to_owned),
+            summary: None,
         }
     }
 

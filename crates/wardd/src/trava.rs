@@ -41,7 +41,7 @@ use std::time::Duration;
 use std::future::poll_fn;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use ward_core::protocol::{Operation, Resposta, Role};
+use ward_core::protocol::{Operation, Response, Role};
 
 use futures_core::Stream;
 use zbus::connection::Builder;
@@ -82,8 +82,8 @@ const MAX_CAMINHO: usize = 107;
 ///
 /// `destravar` não entra: o destravar que abre o cofre já marca o início da contagem, e
 /// o que chega com o cofre aberto responde `ok` sem olhar a senha. Erro nunca conta.
-pub fn conta_como_uso(papel: Role, op: Operation, r: &Resposta) -> bool {
-    if matches!(r, Resposta::Erro(_)) {
+pub fn conta_como_uso(papel: Role, op: Operation, r: &Response) -> bool {
+    if matches!(r, Response::Error(_)) {
         return false;
     }
     match papel {
@@ -399,67 +399,67 @@ mod testes {
 
     #[test]
     fn estado_travar_e_erro_nao_contam_como_uso() {
-        let lista = Resposta::Lista(vec![]);
+        let lista = Response::List(vec![]);
         for p in [Role::Agent, Role::App, Role::Extension] {
-            assert!(!conta_como_uso(p, Operation::Status, &Resposta::Ok));
-            assert!(!conta_como_uso(p, Operation::Lock, &Resposta::Ok));
-            assert!(!conta_como_uso(p, Operation::Unlock, &Resposta::Ok));
-            assert!(!conta_como_uso(p, Operation::OpenApp, &Resposta::Ok));
+            assert!(!conta_como_uso(p, Operation::Status, &Response::Ok));
+            assert!(!conta_como_uso(p, Operation::Lock, &Response::Ok));
+            assert!(!conta_como_uso(p, Operation::Unlock, &Response::Ok));
+            assert!(!conta_como_uso(p, Operation::OpenApp, &Response::Ok));
         }
         assert!(!conta_como_uso(
             Role::App,
             Operation::List,
-            &Resposta::Erro(ResponseError::Locked)
+            &Response::Error(ResponseError::Locked)
         ));
         assert!(!conta_como_uso(
             Role::App,
             Operation::SetLevel,
-            &Resposta::Erro(ResponseError::WrongPin)
+            &Response::Error(ResponseError::WrongPin)
         ));
         assert!(conta_como_uso(Role::App, Operation::List, &lista));
-        assert!(conta_como_uso(Role::App, Operation::Reveal, &Resposta::Ok));
+        assert!(conta_como_uso(Role::App, Operation::Reveal, &Response::Ok));
     }
 
     /// Fase 54: consulta do agente e da extensão não adia a trava; entrega, sim.
     #[test]
     fn ataque_lista_e_sugerir_nao_contam_como_uso() {
-        let lista = Resposta::Lista(vec![]);
+        let lista = Response::List(vec![]);
         assert!(!conta_como_uso(Role::Agent, Operation::List, &lista));
         assert!(!conta_como_uso(
             Role::Agent,
             Operation::Stdin,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(!conta_como_uso(
             Role::Agent,
             Operation::Resize,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(!conta_como_uso(
             Role::Extension,
             Operation::Suggest,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(!conta_como_uso(
             Role::Extension,
             Operation::AwaitLogin,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(!conta_como_uso(
             Role::Extension,
             Operation::LoginResult,
-            &Resposta::Ok
+            &Response::Ok
         ));
-        assert!(conta_como_uso(Role::Agent, Operation::Run, &Resposta::Ok));
+        assert!(conta_como_uso(Role::Agent, Operation::Run, &Response::Ok));
         assert!(conta_como_uso(
             Role::Extension,
             Operation::Fill,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(conta_como_uso(
             Role::Extension,
             Operation::FillLogin,
-            &Resposta::Ok
+            &Response::Ok
         ));
     }
 
@@ -471,13 +471,13 @@ mod testes {
             Operation::Totp,
             Operation::AnswerApproval,
         ] {
-            assert!(!conta_como_uso(Role::App, op, &Resposta::Ok), "{op:?}");
+            assert!(!conta_como_uso(Role::App, op, &Response::Ok), "{op:?}");
         }
-        assert!(conta_como_uso(Role::App, Operation::Copy, &Resposta::Ok));
+        assert!(conta_como_uso(Role::App, Operation::Copy, &Response::Ok));
         assert!(conta_como_uso(
             Role::App,
             Operation::SaveEntry,
-            &Resposta::Ok
+            &Response::Ok
         ));
     }
 

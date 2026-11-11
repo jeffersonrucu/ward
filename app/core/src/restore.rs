@@ -24,7 +24,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use ward_core::protocol::VersaoBackup;
+use ward_core::protocol::BackupVersion;
 
 use crate::AppError;
 use crate::destrave::SenhaMestra;
@@ -99,15 +99,15 @@ fn name_ok(_name: &str) -> bool {
 /// The backups response becomes versions, with the daemon's marks; a name outside the
 /// format (or "out of order" without "verified") makes the whole response be refused
 /// (the daemon does not send that).
-pub fn versions_from(list: &[VersaoBackup]) -> Result<Vec<VersionView>, AppError> {
+pub fn versions_from(list: &[BackupVersion]) -> Result<Vec<VersionView>, AppError> {
     list.iter()
         .map(|b| {
-            if b.fora_de_ordem && !b.conferida {
+            if b.out_of_order && !b.verified {
                 return Err(AppError::InvalidResponse);
             }
-            let mut v = VersionView::from_name(&b.nome).ok_or(AppError::InvalidResponse)?;
-            v.verified = b.conferida;
-            v.out_of_order = b.fora_de_ordem;
+            let mut v = VersionView::from_name(&b.name).ok_or(AppError::InvalidResponse)?;
+            v.verified = b.verified;
+            v.out_of_order = b.out_of_order;
             Ok(v)
         })
         .collect()
@@ -218,11 +218,11 @@ mod tests {
         );
     }
 
-    fn vb(name: &str, verified: bool, out_of_order: bool) -> VersaoBackup {
-        VersaoBackup {
-            nome: name.into(),
-            conferida: verified,
-            fora_de_ordem: out_of_order,
+    fn vb(name: &str, verified: bool, out_of_order: bool) -> BackupVersion {
+        BackupVersion {
+            name: name.into(),
+            verified,
+            out_of_order,
         }
     }
 
@@ -288,7 +288,7 @@ mod tests {
     mod through_the_service {
         use std::sync::{Arc, Mutex};
 
-        use ward_core::protocol::{self, ResponseError, Resposta, Role};
+        use ward_core::protocol::{self, Response, ResponseError, Role};
         use zeroize::Zeroizing;
 
         use super::super::*;
@@ -525,8 +525,8 @@ mod tests {
             fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.0.lock().unwrap().push(request.to_vec());
                 let r = match protocol::decode_request(Role::Agent, request) {
-                    Ok(_) => Resposta::Erro(ResponseError::Internal),
-                    Err(e) => Resposta::Erro(e),
+                    Ok(_) => Response::Error(ResponseError::Internal),
+                    Err(e) => Response::Error(e),
                 };
                 protocol::encode_response(Role::Agent, &r).map_err(|_| AppError::InvalidResponse)
             }

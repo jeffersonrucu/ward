@@ -200,9 +200,9 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             let mut d = self.daemon()?;
             let kinds: Vec<Option<&'static str>> = current
                 .request
-                .entradas
+                .entries
                 .iter()
-                .map(|n| client::detail(&mut *d, n).ok().map(|x| x.tipo.name()))
+                .map(|n| client::detail(&mut *d, n).ok().map(|x| x.kind.name()))
                 .collect();
             drop(d);
             self.approvals
@@ -361,10 +361,10 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         let det = client::detail(&mut *self.daemon()?, &ed.entry)?;
         let mut base = Base::default();
         for (i, n) in ed.kept.iter().enumerate() {
-            let stored = det.anexos.iter().find(|a| &a.nome == n);
+            let stored = det.attachments.iter().find(|a| &a.name == n);
             match stored {
                 Some(a) if !ed.kept[..i].contains(n) => {
-                    let t = usize::try_from(a.tamanho).map_err(|_| AppError::InvalidResponse)?;
+                    let t = usize::try_from(a.size).map_err(|_| AppError::InvalidResponse)?;
                     base.total = base.total.saturating_add(t);
                     base.count += 1;
                 }
@@ -422,7 +422,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         }
         let token = {
             let mut d = self.daemon()?;
-            if client::detail(&mut *d, entry)?.tipo != EntryType::Server {
+            if client::detail(&mut *d, entry)?.kind != EntryType::Server {
                 return Err(AppError::NotAServer);
             }
             client::issue_token(&mut *d, entry)?
@@ -494,12 +494,12 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             let mut d = self.daemon()?;
             let detail = client::detail(&mut *d, reference.entry())?;
             let field = reference.field();
-            if detail.segredos.iter().any(|s| s == field) {
+            if detail.secrets.iter().any(|s| s == field) {
                 client::copy(&mut *d, reference.entry(), Target::Field(field.to_owned()))?
-            } else if let Some((_, v)) = detail.campos.iter().find(|(k, _)| k == field) {
+            } else if let Some((_, v)) = detail.fields.iter().find(|(k, _)| k == field) {
                 Secret::new(v.as_bytes().to_vec())
-            } else if let Some(x) = detail.extras.iter().find(|x| x.nome == field) {
-                match &x.valor {
+            } else if let Some(x) = detail.extras.iter().find(|x| x.name == field) {
+                match &x.value {
                     Some(v) => Secret::new(v.as_bytes().to_vec()),
                     None => {
                         client::copy(&mut *d, reference.entry(), Target::Extra(field.to_owned()))?
@@ -545,12 +545,12 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         let mut d = self.daemon()?;
         let detail = client::detail(&mut *d, reference.entry())?;
         let field = reference.field();
-        let target = if detail.segredos.iter().any(|s| s == field) {
+        let target = if detail.secrets.iter().any(|s| s == field) {
             Target::Field(field.to_owned())
         } else if detail
             .extras
             .iter()
-            .any(|x| x.nome == field && x.valor.is_none())
+            .any(|x| x.name == field && x.value.is_none())
         {
             Target::Extra(field.to_owned())
         } else {
@@ -617,7 +617,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         let edited = match previous {
             Some(a) => {
                 let det = client::detail(&mut *d, a)?;
-                if det.tipo != kind {
+                if det.kind != kind {
                     return Err(AppError::InvalidRequest);
                 }
                 Some(det)
@@ -628,10 +628,10 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         // has and each one once (the interface is not trusted). The content stays in the
         // daemon.
         let kept = std::mem::take(&mut f.kept_attachments);
-        let stored: &[ward_core::protocol::AnexoDetalhe] =
-            edited.as_ref().map_or(&[], |d| d.anexos.as_slice());
+        let stored: &[ward_core::protocol::AttachmentDetail] =
+            edited.as_ref().map_or(&[], |d| d.attachments.as_slice());
         for (i, n) in kept.iter().enumerate() {
-            if kept[..i].contains(n) || !stored.iter().any(|a| &a.nome == n) {
+            if kept[..i].contains(n) || !stored.iter().any(|a| &a.name == n) {
                 return Err(AppError::InvalidRequest);
             }
         }
@@ -640,14 +640,14 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             .map(|det| {
                 det.extras
                     .iter()
-                    .filter(|x| x.valor.is_none())
-                    .map(|x| x.nome.clone())
+                    .filter(|x| x.value.is_none())
+                    .map(|x| x.name.clone())
                     .collect()
             })
             .unwrap_or_default();
         let editing = edited
             .as_ref()
-            .map(|det| (det.segredos.as_slice(), stored_extras.as_slice()));
+            .map(|det| (det.secrets.as_slice(), stored_extras.as_slice()));
         let used = self.lock_used();
         let loaded = self.lock_loaded();
         let mut sources = ServiceSources {
@@ -832,7 +832,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         } = request;
         restore::requested_version(&version)?;
         let mut d = self.daemon()?;
-        if !client::backups(&mut *d)?.iter().any(|b| b.nome == version) {
+        if !client::backups(&mut *d)?.iter().any(|b| b.name == version) {
             return Err(AppError::BackupNotFound);
         }
         let r = client::restore_backup(&mut *d, &version, &password, &pin);

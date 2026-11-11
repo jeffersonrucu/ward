@@ -26,7 +26,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use ward_core::protocol::{
-    MAX_RESTANTE_DESTRAVE, PedidoDeAprovacao, PedidoDeDestrave, ResponseError, Resposta,
+    ApprovalRequest, MAX_UNLOCK_REMAINING, Response, ResponseError, UnlockRequest,
 };
 
 use crate::{aviso, depurar};
@@ -96,7 +96,7 @@ impl AbridorApp for SemApp {
 pub trait Assinante: Send {
     /// Entrega `pedido_de_aprovacao` ou `pedido_de_destrave`. `false`: não deu (a
     /// conexão caiu); o motor trata como app fechado.
-    fn entregar(&mut self, r: &Resposta) -> bool;
+    fn entregar(&mut self, r: &Response) -> bool;
 }
 
 /// O cliente que fez o pedido do agente (a conexão da CLI).
@@ -121,7 +121,7 @@ impl Cliente for SemCliente {
 }
 
 struct Pendente {
-    pedido: PedidoDeAprovacao,
+    pedido: ApprovalRequest,
     /// Id do assinante que recebeu.
     entregue_a: Option<u64>,
     resultado: Option<Result<(), ResponseError>>,
@@ -132,18 +132,18 @@ struct Pendente {
 struct EsperaDestrave {
     id: u64,
     prazo: Duration,
-    aviso: PedidoDeDestrave,
+    aviso: UnlockRequest,
 }
 
 impl EsperaDestrave {
     /// O aviso com os segundos que faltam em `agora`, arredondados para cima, em
-    /// 1..=[`MAX_RESTANTE_DESTRAVE`] (o formato do protocolo).
-    fn aviso_em(&self, agora: Duration) -> Resposta {
+    /// 1..=[`MAX_UNLOCK_REMAINING`] (o formato do protocolo).
+    fn aviso_em(&self, agora: Duration) -> Response {
         let falta = self.prazo.saturating_sub(agora);
         let s = falta.as_secs() + u64::from(falta.subsec_nanos() > 0);
         let mut a = self.aviso.clone();
-        a.restante = s.clamp(1, MAX_RESTANTE_DESTRAVE);
-        Resposta::PedidoDeDestrave(a)
+        a.remaining = s.clamp(1, MAX_UNLOCK_REMAINING);
+        Response::UnlockRequest(a)
     }
 }
 
@@ -182,7 +182,7 @@ impl Estado {
                 break;
             }
             if p.entregue_a.is_none() && p.resultado.is_none() {
-                ok = a.entregar(&Resposta::PedidoDeAprovacao(p.pedido.clone()));
+                ok = a.entregar(&Response::ApprovalRequest(p.pedido.clone()));
                 if ok {
                     p.entregue_a = Some(aid);
                 }
@@ -332,7 +332,7 @@ impl Motor {
     /// PIN conferido pelo núcleo). O `id` do pedido é do motor.
     pub fn pedir_aprovacao(
         &self,
-        mut pedido: PedidoDeAprovacao,
+        mut pedido: ApprovalRequest,
         cliente: &dyn Cliente,
     ) -> Result<(), ResponseError> {
         let mut g = self.interno.estado();
@@ -408,7 +408,7 @@ impl Motor {
         let mut g = self.interno.estado();
         g.pendente(id)
             .filter(|p| p.resultado.is_none())
-            .map(|p| p.pedido.entradas.clone())
+            .map(|p| p.pedido.entries.clone())
     }
 
     /// O pedido `id`, pendente e sem decisão, é só uma confirmação de origem (Fase 44c)?
@@ -416,7 +416,7 @@ impl Motor {
         let mut g = self.interno.estado();
         g.pendente(id)
             .filter(|p| p.resultado.is_none())
-            .map(|p| p.pedido.confirmacao)
+            .map(|p| p.pedido.confirmation)
     }
 
     /// O pedido `id`, pendente e sem decisão, tem entrada padrão que a janela não mostra
@@ -425,7 +425,7 @@ impl Motor {
         let mut g = self.interno.estado();
         g.pendente(id)
             .filter(|p| p.resultado.is_none())
-            .map(|p| p.pedido.entrada_oculta)
+            .map(|p| p.pedido.hidden_entry)
     }
 
     /// Decide o pedido `id`. `false`: não está mais pendente (expirou, foi cancelado ou
@@ -447,7 +447,7 @@ impl Motor {
     /// trava do motor.
     pub fn esperar_destrave(
         &self,
-        aviso: PedidoDeDestrave,
+        aviso: UnlockRequest,
         travado: &dyn Fn() -> bool,
         cliente: &dyn Cliente,
     ) -> Result<(), ResponseError> {
