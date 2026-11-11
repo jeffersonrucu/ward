@@ -153,7 +153,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   `arquivos.rs`, `uso.rs`, `trava.rs` (formato do estado congelado). — V2.1, V2.7
 - [ ] Fase 20 — `nucleo.rs`, `aprovacao.rs`. — V2.1
 - [x] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
-- [ ] Fase 22 — `playwright.rs`, `cdp.rs`, `login.rs`, `ponte.rs` (`serde` do CDP: campos
+- [x] Fase 22 — `playwright.rs`, `cdp.rs`, `login.rs`, `ponte.rs` (`serde` do CDP: campos
   do Chrome não mudam). — V2.1
 - [ ] Fase 23 — `servidor.rs`, `externo.rs`, `udisks.rs`; testes `comum/`, `units.rs`,
   `memoria.rs`, `socket.rs`, `datas.rs`. — V2.1, V2.4
@@ -172,7 +172,7 @@ Clientes Rust:
 - [x] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
   `tests/ataques.rs`). — V2.1
 - [x] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
-- [ ] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
+- [x] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
 - [ ] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
   `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1
 - [ ] Fase 33 — `app/core`: `comandos.rs`, `configuracoes.rs`, `backup_externo.rs`,
