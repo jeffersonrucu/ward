@@ -22,7 +22,7 @@ pub mod format;
 // Limits in a single source (D32, Phase 19a).
 pub mod limits;
 // Streaming output mask (D11, Phase 17).
-pub mod mascara;
+pub mod mask;
 pub mod origin;
 // Socket protocol: frames, messages, roles and the operation × role table (Phase 20).
 pub mod protocolo;

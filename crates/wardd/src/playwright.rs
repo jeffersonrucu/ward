@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use ward_core::entry::{AccessLevel, Data, url_origin};
-use ward_core::mascara::Mascara;
+use ward_core::mask::Mask;
 use ward_core::protocolo::{ErroResposta, Pedido, Resposta};
 use ward_core::totp::Totp;
 use ward_platform::child::{Command, Group};
@@ -741,8 +741,8 @@ fn montar_estado(
 
 /// S1/V6.13: o storage state não pode ter a senha nem variação dela (pela máscara da
 /// entrada: literal, URL, base64, formas de texto).
-pub fn tem_segredo(mascara: &Mascara, estado: &[u8]) -> bool {
-    let mascarado = Zeroizing::new(mascara.mascarar_tudo(estado));
+pub fn tem_segredo(mascara: &Mask, estado: &[u8]) -> bool {
+    let mascarado = Zeroizing::new(mascara.mask_all(estado));
     mascarado.as_slice() != estado
 }
 
@@ -837,7 +837,7 @@ impl Daemon {
                 }
                 None => None,
             };
-            let mascara = Mascara::da_entrada(e, None).map_err(|_| ErroResposta::EntregaFalhou)?;
+            let mascara = Mask::from_entry(e, None).map_err(|_| ErroResposta::EntregaFalhou)?;
             let (travas, inicial) = self.travas_agora(&est);
             (
                 l.url.clone(),

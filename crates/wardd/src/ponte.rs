@@ -39,7 +39,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use ward_core::mascara::Mascara;
+use ward_core::mask::Mask;
 use ward_platform::child::{self, Command, Group};
 use zeroize::Zeroizing;
 
@@ -98,7 +98,7 @@ pub(crate) struct Ponte {
     ouvinte: TcpListener,
     porta: u16,
     plano: Plano,
-    mascara: Arc<Mascara>,
+    mascara: Arc<Mask>,
     limites: Limites,
     travas: Arc<AtomicU64>,
     inicial: u64,
@@ -121,7 +121,7 @@ pub(crate) struct Abertura<'a> {
     pub(crate) programas: &'a SshPrograms,
     pub(crate) known_hosts: &'a Path,
     pub(crate) rt: Option<&'a Path>,
-    pub(crate) mascara: Mascara,
+    pub(crate) mascara: Mask,
     pub(crate) limites: Limites,
     pub(crate) travas: (Arc<AtomicU64>, u64),
 }
@@ -456,15 +456,15 @@ impl FimDeEscrita for TcpStream {
 impl FimDeEscrita for fs::File {}
 
 /// O `stderr` do `ssh` da ponte: mascarado (as duas entradas, D19) e entregue.
-fn ler_erro(mut f: fs::File, mascara: &Mascara, saida: &SaidaDeErro) {
-    let mut m = mascara.fluxo();
+fn ler_erro(mut f: fs::File, mascara: &Mask, saida: &SaidaDeErro) {
+    let mut m = mascara.stream();
     // Fase 28g: o que já está no pipe vai num lote só (como a saída do `ward run`).
     let mut buf = Zeroizing::new(vec![0u8; execution::BATCH]);
     let mut out = Zeroizing::new(Vec::with_capacity(2 * PEDACO));
     loop {
         let (n, fim) = execution::read_batch(&mut f, &mut buf);
         if n > 0 {
-            m.mascarar(&buf[..n], &mut out);
+            m.mask(&buf[..n], &mut out);
             zeroize::Zeroize::zeroize(&mut buf[..n]);
             saida(&mut out);
         }
@@ -472,7 +472,7 @@ fn ler_erro(mut f: fs::File, mascara: &Mascara, saida: &SaidaDeErro) {
             break;
         }
     }
-    m.terminar(&mut out);
+    m.finish(&mut out);
     saida(&mut out);
 }
 

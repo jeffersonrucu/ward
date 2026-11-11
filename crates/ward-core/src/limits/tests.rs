@@ -15,7 +15,7 @@ use crate::entry::{
     AttachmentDraft, DataDraft, Draft, Entry, EntryType, ExtraDraft, Secret, TOO_LARGE_FOR_MASK,
     ValidationErrors,
 };
-use crate::mascara::{self, ConstrutorMascara, ErroMascara};
+use crate::mask::{self, MaskBuilder, MaskError};
 
 // ---- Helpers ----
 
@@ -274,14 +274,14 @@ fn delivery_of(e: &Entry) -> Delivery {
 
 /// Real sum of the patterns of the `ward run` mask (entries and deliveries).
 fn real_cost(entries: &[&Entry], deliveries: &[&Delivery]) -> usize {
-    let mut c = ConstrutorMascara::new();
+    let mut c = MaskBuilder::new();
     for e in entries {
-        c = c.entrada(e);
+        c = c.entry(e);
     }
     for g in deliveries {
-        c = c.entrega(g);
+        c = c.delivery(g);
     }
-    mascara::somar(&c, usize::MAX).unwrap()
+    mask::sum_patterns(&c, usize::MAX).unwrap()
 }
 
 // ---- V2.35: a single source ----
@@ -329,7 +329,7 @@ fn v2_35_budget_is_the_same_in_validation_and_in_the_mask() {
     // Validation refuses exactly when the cost by the mask pattern generator goes over the
     // budget: near the boundary, on both sides.
     let (n, e) = largest_accepted(EntryType::Api, None);
-    let cost = mascara::custo_da_entrada(&e).unwrap();
+    let cost = mask::entry_cost(&e).unwrap();
     assert!(cost <= MASK_BUDGET);
     let r = full(EntryType::Api, n + 1, None);
     assert!(r.validate().is_err_and(|e| too_large(&e)));
@@ -364,13 +364,12 @@ fn v2_36_largest_entry_of_each_type_builds_the_mask() {
             assert!(key >= MAX_SECRET - 64, "{kind}: chave de {key} bytes");
         }
         let g = delivery_of(&e);
-        let cost = mascara::custo_da_entrada(&e).unwrap();
+        let cost = mask::entry_cost(&e).unwrap();
         assert!(cost <= MASK_BUDGET, "{kind}");
         let real = real_cost(&[&e], &[&g]);
         assert!(real <= cost, "{kind}: {real} > {cost}");
         assert!(real <= PATTERN_LIMIT, "{kind}");
-        mascara::Mascara::da_entrada(&e, Some(&g))
-            .unwrap_or_else(|error| panic!("{kind}: {error}"));
+        mask::Mask::from_entry(&e, Some(&g)).unwrap_or_else(|error| panic!("{kind}: {error}"));
     }
 }
 
@@ -384,12 +383,12 @@ fn v2_36_database_and_tunnel_server_pair_builds_the_mask() {
     let g_server = delivery_of(&server);
     let real = real_cost(&[&database, &server], &[&g_database, &g_server]);
     assert!(real <= PATTERN_LIMIT, "{real}");
-    ConstrutorMascara::new()
-        .entrada(&database)
-        .entrada(&server)
-        .entrega(&g_database)
-        .entrega(&g_server)
-        .construir()
+    MaskBuilder::new()
+        .entry(&database)
+        .entry(&server)
+        .delivery(&g_database)
+        .delivery(&g_server)
+        .build()
         .expect("o par cabe na máscara");
     // And the same holds for the jump (server + jump server).
     let (_, jump) = largest_accepted(EntryType::Server, None);
@@ -415,8 +414,8 @@ fn v2_36_cost_refuses_above_the_budget_and_note_stays_out() {
     let note = full(EntryType::SecureNote, MAX_EXTRAS * MAX_EXTRA_VALUE, None)
         .validate()
         .unwrap();
-    assert_eq!(mascara::custo_da_entrada(&note), Ok(0));
-    assert!(!format!("{}", ErroMascara::GrandeDemais).contains("falso"));
+    assert_eq!(mask::entry_cost(&note), Ok(0));
+    assert!(!format!("{}", MaskError::TooLarge).contains("falso"));
 }
 
 /// Text of numbered fake lines separated by `sep`, of `n` bytes.
@@ -473,7 +472,7 @@ fn v2_43_entry_that_only_goes_over_the_budget_by_d36_is_refused() {
         }
     }
     let tab = with_lines(b'\t', lo).validate().unwrap();
-    let tab_cost = mascara::custo_da_entrada(&tab).unwrap();
+    let tab_cost = mask::entry_cost(&tab).unwrap();
     assert!(tab_cost <= MASK_BUDGET);
     let errors = with_lines(b'\n', lo).validate().unwrap_err();
     assert!(too_large(&errors), "{errors}");
@@ -492,6 +491,6 @@ fn v2_43_entry_that_only_goes_over_the_budget_by_d36_is_refused() {
         r.validate().unwrap()
     };
     let g = delivery_of(&small);
-    let cost = mascara::custo_da_entrada(&small).unwrap();
+    let cost = mask::entry_cost(&small).unwrap();
     assert!(real_cost(&[&small], &[&g]) <= cost);
 }
