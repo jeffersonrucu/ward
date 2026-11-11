@@ -297,9 +297,9 @@ mod testes {
     use crate::daemon::Daemon;
     use crate::fake_daemon::{FakeDaemon, SECRETS};
     use ward_core::entry::{AccessLevel, DataDraft, Draft, Secret};
-    use ward_core::protocol::{self, Request, Resposta, Role};
+    use ward_core::protocol::{self, Role, Request, Resposta};
 
-    fn trocar(d: &mut FakeDaemon, pedido: &Request) -> Resposta {
+    fn exchange(d: &mut FakeDaemon, pedido: &Request) -> Resposta {
         let q = protocol::encode_request(Role::App, pedido).unwrap();
         let r = d.exchange(&q).unwrap();
         protocol::decode_response(Role::App, &r).unwrap()
@@ -307,9 +307,9 @@ mod testes {
 
     fn detalhe(d: &mut FakeDaemon, nome: &str) -> DetalheCredencial {
         let p = Request::Detail {
-            entry: nome.to_owned(),
+            entrada: nome.to_owned(),
         };
-        match trocar(d, &p) {
+        match exchange(d, &p) {
             Resposta::Detalhe(x) => DetalheCredencial::novo(&x),
             outra => panic!("{:?}", outra.tipo()),
         }
@@ -338,9 +338,9 @@ mod testes {
 
         let antes = agora();
         let novo = Request::SaveEntry {
-            previous: None,
-            keep_attachments: Vec::new(),
-            draft: Draft {
+            anterior: None,
+            manter_anexos: Vec::new(),
+            rascunho: Draft {
                 name: "clientex-stage-wp".to_owned(),
                 group: "clientex".to_owned(),
                 environment: "stage".to_owned(),
@@ -356,7 +356,7 @@ mod testes {
                 attachments: Vec::new(),
             },
         };
-        assert!(matches!(trocar(&mut d, &novo), Resposta::Ok));
+        assert!(matches!(exchange(&mut d, &novo), Resposta::Ok));
         let x = detalhe(&mut d, "clientex-stage-wp");
         let criada = x.criada_em.unwrap();
         assert!(criada >= antes && criada <= agora());
@@ -368,11 +368,11 @@ mod testes {
         }
         // Mudar o nível (com o PIN de teste) só mexe na alteração.
         let mudar = Request::SetLevel {
-            entry: "clientex-stage-wp".to_owned(),
-            level: AccessLevel::Free,
+            entrada: "clientex-stage-wp".to_owned(),
+            nivel: AccessLevel::Free,
             pin: Secret::from_text("135790".to_owned()),
         };
-        assert!(matches!(trocar(&mut d, &mudar), Resposta::Ok));
+        assert!(matches!(exchange(&mut d, &mudar), Resposta::Ok));
         let y = detalhe(&mut d, "clientex-stage-wp");
         assert_eq!(y.criada_em, Some(criada));
         assert!(y.alterada_em.unwrap() >= criada);

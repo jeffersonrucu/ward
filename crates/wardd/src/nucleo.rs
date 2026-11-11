@@ -20,7 +20,7 @@
 //! - **Identidade** (D39, D62): `dev`/inode/`mtime`/tamanho do cofre por `fstat` do fd
 //!   lido e, depois de gravar, do fd do temporário (devolvida pelo `ward_core`), nunca
 //!   por um `stat` do caminho depois do rename; antes de gravar (e ao reabrir) confere.
-//!   Mudou: não grava, trava e responde [`ResponseError::VaultChanged`].
+//!   Mudou: não grava, trava e responde [`ErroResposta::CofreMudou`].
 //! - **Criar com estado velho** (D62): sem cofre e com um estado de `queimada` q, o
 //!   cofre novo nasce na geração q+1, e uma cópia de um cofre anterior fica abaixo da
 //!   `vista`.
@@ -64,14 +64,14 @@ use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::origin::Origin;
 use ward_core::protocol::{
-    DetalheEntrada, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operation, PedidoDeAprovacao, Pendrive,
-    Problem, Request, ResponseError, Resposta, Role, Sugestao, Target, VersaoBackup,
+    Target, DetalheEntrada, ResponseError, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operation, Role,
+    Request, PedidoDeAprovacao, Pendrive, Problem, Resposta, Sugestao, VersaoBackup,
 };
 use ward_core::totp::Totp;
 
 use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
-use crate::externo::{self, Copia, ErroExterno, FontePendrives};
+use crate::external::{self, BackupCopy, ExternalError, UsbDriveSource};
 use crate::{aviso, depurar};
 use ward_platform::child::Group;
 
@@ -279,7 +279,7 @@ pub struct Daemon {
     temporarios: Option<PathBuf>,
     /// Os pendrives (udisks2) para a operação `pendrives` (Fase 46). `None`: sem
     /// barramento, responde `pendrives_indisponiveis`.
-    pendrives: Option<Arc<dyn FontePendrives>>,
+    pendrives: Option<Arc<dyn UsbDriveSource>>,
     /// Cutuca a thread da cópia externa (Fase 46), se ligada.
     cutucao: OnceLock<SyncSender<()>>,
     /// Uma cópia externa por vez.
@@ -304,9 +304,9 @@ enum FalhaGravar {
 
 fn problema(campo: &str, motivo: &str) -> ResponseError {
     ResponseError::Validation(vec![Problem {
-        field: campo.to_owned(),
-        position: None,
-        reason: motivo.to_owned(),
+        campo: campo.to_owned(),
+        posicao: None,
+        motivo: motivo.to_owned(),
     }])
 }
 
@@ -555,13 +555,13 @@ impl Daemon {
 
     /// Liga a fonte dos pendrives (o udisks2; uma lista nos testes) da operação
     /// `pendrives` (Fase 46).
-    pub fn com_pendrives(mut self, fonte: Arc<dyn FontePendrives>) -> Self {
+    pub fn com_pendrives(mut self, fonte: Arc<dyn UsbDriveSource>) -> Self {
         self.pendrives = Some(fonte);
         self
     }
 
     /// Cria o canal dos cutucões da cópia externa e devolve a ponta de leitura (para a
-    /// thread de [`crate::udisks::vigiar_copia`]). Só a primeira chamada liga.
+    /// thread de [`crate::udisks::watch_copy`]). Só a primeira chamada liga.
     pub fn ligar_copia_externa(&self) -> Option<Receiver<()>> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         self.cutucao.set(tx).ok().map(|()| rx)
@@ -595,22 +595,22 @@ impl Daemon {
     /// não fica preso durante a cópia: só o UUID é lido dele.
     pub fn sincronizar_externo(
         &self,
-        fonte: &dyn FontePendrives,
-    ) -> Result<Option<Copia>, ErroExterno> {
+        fonte: &dyn UsbDriveSource,
+    ) -> Result<Option<BackupCopy>, ExternalError> {
         let _vez = self.vez_externo.lock().unwrap_or_else(|e| e.into_inner());
         let Some(uuid) = self.uuid_externo() else {
             return Ok(None);
         };
-        let vistos = fonte.pendrives().ok_or(ErroExterno::SemUdisks)?;
-        let visto = externo::escolher(&vistos, &uuid)?.clone();
-        let local = abrir_pasta(&self.caminhos).ok_or(ErroExterno::SemBackupLocal)?;
+        let vistos = fonte.usb_drives().ok_or(ExternalError::NoUdisks)?;
+        let visto = external::choose(&vistos, &uuid)?.clone();
+        let local = abrir_pasta(&self.caminhos).ok_or(ExternalError::NoLocalBackup)?;
         // Fase 54: só versões seladas pela chave do cofre aberto vão (travado no meio:
         // nenhuma). O estado fica preso só durante a conferência de cada versão.
         let geracao = |b: &[u8]| {
             let est = self.estado();
             backup::sealed_generation(&est.aberto.as_ref()?.cofre, b)
         };
-        externo::copiar(&local, &visto, &uuid, fonte, &geracao).map(Some)
+        external::copy(&local, &visto, &uuid, fonte, &geracao).map(Some)
     }
 
     /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
@@ -782,9 +782,9 @@ impl Daemon {
     /// Como [`Daemon::atender`], com o cliente da conexão (cadeia de processos para a
     /// janela de aprovação e se ele ainda está lá).
     pub fn atender_de(&self, cliente: &dyn Cliente, papel: Role, pedido: Request) -> Resposta {
-        let op = pedido.operation();
+        let op = pedido.operacao();
         // O protocolo já recusou; aqui é a segunda camada.
-        if !op.allowed(papel) {
+        if !op.permitida(papel) {
             return Resposta::Erro(ResponseError::Unauthorized);
         }
         let r = self.atender_permitido(cliente, papel, pedido);
@@ -796,11 +796,11 @@ impl Daemon {
         }
         depurar!(
             "{} ({}): {}",
-            op.name(),
-            papel.name(),
+            op.nome(),
+            papel.nome(),
             match &r {
-                Resposta::Erro(e) => e.code(),
-                outra => outra.tipo().name(),
+                Resposta::Erro(e) => e.codigo(),
+                outra => outra.tipo().nome(),
             }
         );
         r
@@ -817,7 +817,7 @@ impl Daemon {
                     papel,
                 })
             }
-            Request::Unlock { password: senha } => self.destravar(papel, &senha),
+            Request::Unlock { senha } => self.destravar(papel, &senha),
             Request::Lock => {
                 self.travar();
                 Ok(Resposta::Ok)
@@ -828,11 +828,8 @@ impl Daemon {
             // Fase 43: o daemon leva o pedido à extensão; só `ok` ou erro voltam.
             Request::Login { .. } => self.login(cliente, &pedido),
             Request::AwaitLogin => self.await_login(papel),
-            Request::FillLogin { id, origin: origem } => self.fill_login(papel, &id, &origem),
-            Request::LoginResult {
-                id,
-                result: resultado,
-            } => self.login_result(papel, &id, resultado),
+            Request::FillLogin { id, origem } => self.fill_login(papel, &id, &origem),
+            Request::LoginResult { id, resultado } => self.login_result(papel, &id, resultado),
             // Fase 23: nível, destrave e aprovação. O `executar` e o `ssh` são atendidos
             // pela sessão do servidor (Fases 26/27); aqui o uso autorizado responde erro
             // interno.
@@ -840,73 +837,58 @@ impl Daemon {
                 .autorizar_uso(cliente, &pedido)
                 .and(Err(ResponseError::Internal)),
             Request::AnswerApproval {
-                request: pedido,
-                decision: decisao,
+                pedido,
+                decisao,
                 pin,
-                confirmed_entry: entrada_confirmada,
+                entrada_confirmada,
             } => self.responder_aprovacao(pedido, decisao, pin.as_ref(), entrada_confirmada),
             Request::OpenApp => self.aprovacao.abrir_app().map(|()| Resposta::Ok),
             // Não há sessão aberta nesta fase (Fases 26/27).
             Request::Stdin { .. } | Request::Resize(_) => Err(ResponseError::InvalidRequest),
-            Request::CreateVault {
-                password: senha,
-                pin,
-            } => self.criar_cofre(&senha, &pin),
-            Request::Detail { entry: entrada } => self.detalhe(&entrada),
+            Request::CreateVault { senha, pin } => self.criar_cofre(&senha, &pin),
+            Request::Detail { entrada } => self.detalhe(&entrada),
             Request::SaveEntry {
-                previous: anterior,
-                draft: rascunho,
-                keep_attachments: manter_anexos,
+                anterior,
+                rascunho,
+                manter_anexos,
             } => self.salvar_entrada(anterior.as_deref(), rascunho, &manter_anexos),
-            Request::RemoveEntry { entry: entrada } => self.remover_entrada(&entrada),
+            Request::RemoveEntry { entrada } => self.remover_entrada(&entrada),
             Request::SetLevel {
-                entry: entrada,
-                level: nivel,
+                entrada,
+                nivel,
                 pin,
             } => self.mudar_nivel(&entrada, nivel, &pin),
-            Request::ChangePin {
-                current: atual,
-                new: novo,
-            } => self.trocar_pin(&atual, &novo),
-            Request::ChangePassword {
-                current: atual,
-                new: nova,
-            } => self.trocar_senha(&atual, &nova),
-            Request::LockTimeout { minutes: minutos } => self.tempo_trava(minutos),
+            Request::ChangePin { atual, novo } => self.trocar_pin(&atual, &novo),
+            Request::ChangePassword { atual, nova } => self.trocar_senha(&atual, &nova),
+            Request::LockTimeout { minutos } => self.tempo_trava(minutos),
             // D4, D65 b: só o app, sem PIN, aprovação nem nível.
-            Request::Reveal {
-                entry: entrada,
-                target: alvo,
-            } => self.valor_do_app(papel, Operation::Reveal, &entrada, &alvo),
-            Request::Copy {
-                entry: entrada,
-                target: alvo,
-            } => self.valor_do_app(papel, Operation::Copy, &entrada, &alvo),
-            Request::Totp { entry: entrada } => self.totp_do_app(papel, &entrada),
+            Request::Reveal { entrada, alvo } => {
+                self.valor_do_app(papel, Operation::Reveal, &entrada, &alvo)
+            }
+            Request::Copy { entrada, alvo } => {
+                self.valor_do_app(papel, Operation::Copy, &entrada, &alvo)
+            }
+            Request::Totp { entrada } => self.totp_do_app(papel, &entrada),
             Request::Backups => self.backups(),
             Request::Config => self.configuracao(),
             Request::ExternalBackup => self.backup_externo(),
-            Request::SetExternalBackup {
-                enabled: ligado,
-                uuid,
-            } => self.definir_backup_externo(ligado, uuid.as_deref()),
+            Request::SetExternalBackup { ligado, uuid } => {
+                self.definir_backup_externo(ligado, uuid.as_deref())
+            }
             Request::UsbDrives => self.pendrives(),
-            Request::RestoreBackup {
-                version: versao,
-                password: senha,
-                pin,
-            } => self.restaurar_backup(&versao, &senha, &pin),
+            Request::RestoreBackup { versao, senha, pin } => {
+                self.restaurar_backup(&versao, &senha, &pin)
+            }
             // D3 (Fase 27): token de uso único do "Conectar", só para o app.
-            Request::IssueToken { entry: entrada } => self.issue_token(papel, &entrada),
+            Request::IssueToken { entrada } => self.issue_token(papel, &entrada),
             // Fase 40 (D9): sugerir e preencher pela origem da aba, só para a extensão.
-            Request::Suggest { origin: origem } => self.sugerir(papel, &origem),
+            Request::Suggest { origem } => self.sugerir(papel, &origem),
             // Fase 44c: numa origem `http`, só depois da confirmação na janela.
-            Request::Fill {
-                entry: entrada,
-                origin: origem,
-            } => self.preencher_do_popup(cliente, papel, &entrada, &origem),
+            Request::Fill { entrada, origem } => {
+                self.preencher_do_popup(cliente, papel, &entrada, &origem)
+            }
             // Fase 42: login novo visto pela extensão, sempre "com aprovação" (D50, S9).
-            Request::SaveLogin { draft: rascunho } => self.salvar_login(papel, rascunho),
+            Request::SaveLogin { rascunho } => self.salvar_login(papel, rascunho),
         };
         r.unwrap_or_else(Resposta::Erro)
     }
@@ -1071,12 +1053,12 @@ impl Daemon {
             .iter()
             .find(|e| e.name() == nome)
             .ok_or(ResponseError::EntryNotFound)?;
-        let valor = alvo.secret_in(e).ok_or(ResponseError::FieldNotFound)?;
+        let valor = alvo.segredo_em(e).ok_or(ResponseError::FieldNotFound)?;
         // O campo do tipo já passou pela lista fixa do protocolo; o nome do extra vem
         // da entrada e sai com escape (sem quebra de linha nem controle no log).
         match alvo {
-            Target::Field(c) => aviso!("{} {} {c}", op.name(), e.name()),
-            Target::Extra(x) => aviso!("{} {} extra {x:?}", op.name(), e.name()),
+            Target::Field(c) => aviso!("{} {} {c}", op.nome(), e.name()),
+            Target::Extra(x) => aviso!("{} {} extra {x:?}", op.nome(), e.name()),
         }
         Ok(Resposta::Segredo(Secret::from_bytes(
             valor.expose().to_vec(),
@@ -1098,12 +1080,9 @@ impl Daemon {
             .find(|e| e.name() == nome)
             .ok_or(ResponseError::EntryNotFound)?;
         let semente = Target::Field("totp_semente".to_owned())
-            .secret_in(e)
+            .segredo_em(e)
             .ok_or(ResponseError::FieldNotFound)?;
-        let agora = self
-            .relogio
-            .segundos_unix()
-            .ok_or(ResponseError::Internal)?;
+        let agora = self.relogio.segundos_unix().ok_or(ResponseError::Internal)?;
         let c = Totp::from_seed(semente)
             .map_err(|_| ResponseError::Internal)?
             .code_at(agora);
@@ -1240,10 +1219,7 @@ impl Daemon {
         }
         let totp = match &l.totp_seed {
             Some(semente) => {
-                let agora = self
-                    .relogio
-                    .segundos_unix()
-                    .ok_or(ResponseError::Internal)?;
+                let agora = self.relogio.segundos_unix().ok_or(ResponseError::Internal)?;
                 let c = Totp::from_seed(semente)
                     .map_err(|_| ResponseError::Internal)?
                     .code_at(agora);
@@ -1760,16 +1736,16 @@ impl Daemon {
             .as_ref()
             .ok_or(ResponseError::UsbDrivesUnavailable)?;
         let vistos = fonte
-            .pendrives()
+            .usb_drives()
             .ok_or(ResponseError::UsbDrivesUnavailable)?;
         Ok(Resposta::Pendrives(
             vistos
                 .into_iter()
                 .take(MAX_PENDRIVES)
                 .map(|v| Pendrive {
-                    montado: v.montagem.is_some(),
+                    montado: v.mount.is_some(),
                     uuid: v.uuid,
-                    rotulo: v.rotulo,
+                    rotulo: v.label,
                 })
                 .collect(),
         ))

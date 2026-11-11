@@ -43,13 +43,11 @@ fn limites_do_gerador_na_interface_sao_os_do_rust() {
 /// nunca põe o texto do pedido como HTML.
 #[test]
 fn janela_de_aprovacao_segue_o_rust_e_nao_usa_html() {
-    use ward_app_core::aprovacao::SEGUNDOS_URGENTE;
+    use ward_app_core::approval::URGENT_SECONDS;
     let js = fs::read_to_string(app().join("src/screens/approval.js")).unwrap();
     assert!(
-        js.contains(&format!(
-            "export const URGENT_SECONDS = {SEGUNDOS_URGENTE};"
-        )),
-        "SEGUNDOS_URGENTE diverge do Rust"
+        js.contains(&format!("export const URGENT_SECONDS = {URGENT_SECONDS};")),
+        "URGENT_SECONDS diverge do Rust"
     );
     let tela = fs::read_to_string(app().join("src/screens/ApprovalWindow.svelte")).unwrap();
     assert!(tela.contains("{request.comando}"), "comando como texto");

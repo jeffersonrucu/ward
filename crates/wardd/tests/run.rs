@@ -7,7 +7,7 @@
 //! fake values; the socket (and the `<rt>`) lives in a directory of this test only in
 //! `/run/user/<uid>/`.
 
-mod comum;
+mod common;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -17,12 +17,12 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use comum::*;
-use ward_core::protocol::{self, Fluxo, ResponseError, Resposta, Role};
+use common::*;
+use ward_core::protocol::{self, ResponseError, Fluxo, Role, Resposta};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 /// Password of the free test entry (fake).
-const FREE_PASSWORD: &str = SEGREDOS[3];
+const FREE_PASSWORD: &str = SECRETS[3];
 const LICENSE: &str = "falso-licenca-run-26";
 const ATTACHMENT: &str = "FALSO_ENV=falso-anexo-run-26";
 
@@ -119,7 +119,7 @@ fn unlock_through(w: &Wardd) {
         &mut s,
         &format!(
             r#"{{"v":1,"op":"destravar","dados":{{"senha":"{}"}}}}"#,
-            b64(SENHA.as_bytes())
+            b64(PASSWORD.as_bytes())
         ),
     );
     assert!(matches!(receive(&mut s), Some(Resposta::Ok)));
@@ -226,7 +226,7 @@ fn sha256(data: &[u8]) -> String {
 /// entry (with a secret extra and an attachment), both free. Locked at the end (the
 /// binary opens it).
 fn vault(dev: &Dir) {
-    let (d, _) = cofre_de_teste(dev);
+    let (d, _) = test_vault(dev);
     for q in [
         format!(
             r#"{{"entrada":{{"nome":"t-nota","grupo":"clientex","ambiente":"dev","tipo":"nota-segura","campos":{{"texto":"{}"}}}}}}"#,
@@ -239,11 +239,11 @@ fn vault(dev: &Dir) {
             b64(ATTACHMENT.as_bytes())
         ),
     ] {
-        let r = pedir(&d, Role::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-nota", "t-gen"] {
-        assert!(ok(&mudar_nivel(&d, Role::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Role::App, n, "livre", PIN)));
     }
     d.travar();
 }
@@ -275,7 +275,7 @@ fn alive(pid: u32) -> bool {
 /// locale (handoff 22a).
 #[test]
 fn v4_delivery_mask_code_and_refusals() {
-    let dev = Dir::novo("run");
+    let dev = Dir::new("run");
     vault(&dev);
     let sock = SocketDir::new("run");
     let w = start(&dev, &sock);
@@ -314,9 +314,13 @@ fn v4_delivery_mask_code_and_refusals() {
         let r = run(&w, "t-livre", &sh(script), &[]);
         assert_eq!(r.end, Some(0), "{script}: {r:?}");
         let all = [r.stdout.as_slice(), r.stderr.as_slice()].concat();
-        assert!(!contem(&all, b"falso-livre"), "{script}: {}", text(&all));
-        assert!(!contem(&all, b"ZmFsc28tbGl2cmU"), "{script}");
-        assert!(contem(&all, "••••".as_bytes()), "{script}: {}", text(&all));
+        assert!(!contains(&all, b"falso-livre"), "{script}: {}", text(&all));
+        assert!(!contains(&all, b"ZmFsc28tbGl2cmU"), "{script}");
+        assert!(
+            contains(&all, "••••".as_bytes()),
+            "{script}: {}",
+            text(&all)
+        );
     }
 
     // V4.19: the command code; killed by SIGTERM, 143.
@@ -380,7 +384,7 @@ fn v4_delivery_mask_code_and_refusals() {
         &[("LANG", "C")],
     );
     assert!(text(&r.stdout).contains("UTF-8"), "{r:?}");
-    assert!(!contem(&r.stdout, b"falso-livre"), "{r:?}");
+    assert!(!contains(&r.stdout, b"falso-livre"), "{r:?}");
 
     // Stdin (D13).
     let mut s = connect(&w);
@@ -435,10 +439,7 @@ fn v4_delivery_mask_code_and_refusals() {
         &[],
     );
     assert_eq!(r.failure, Some(ResponseError::TypeWithoutDelivery), "{r:?}");
-    assert_eq!(
-        ResponseError::TypeWithoutDelivery.message(),
-        "tipo sem entrega"
-    );
+    assert_eq!(ResponseError::TypeWithoutDelivery.mensagem(), "tipo sem entrega");
     assert!(!mark.exists());
     // V4.20: needs approval and no app → approval unavailable, nothing run.
     let r = run(
@@ -447,7 +448,11 @@ fn v4_delivery_mask_code_and_refusals() {
         &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(r.failure, Some(ResponseError::ApprovalUnavailable), "{r:?}");
+    assert_eq!(
+        r.failure,
+        Some(ResponseError::ApprovalUnavailable),
+        "{r:?}"
+    );
     assert!(!mark.exists());
     // Blocked = nonexistent (V3.17); the database tunnel is Phase 28 (nothing run).
     let r = run(
@@ -482,15 +487,15 @@ fn v4_delivery_mask_code_and_refusals() {
     // S13: no secret in the log (`RUST_LOG=trace`).
     let log = fs::read(&w.log).unwrap();
     for secret in [
-        SENHA,
+        PASSWORD,
         FREE_PASSWORD,
         LICENSE,
         ATTACHMENT,
         "falso-nota-run-26",
     ] {
-        assert!(!contem(&log, secret.as_bytes()), "{secret} no log");
+        assert!(!contains(&log, secret.as_bytes()), "{secret} no log");
         assert!(
-            !contem(&log, b64(secret.as_bytes()).as_bytes()),
+            !contains(&log, b64(secret.as_bytes()).as_bytes()),
             "{secret} (b64) no log"
         );
     }
@@ -504,7 +509,7 @@ fn v4_delivery_mask_code_and_refusals() {
 /// The working directory is still the CLI's.
 #[test]
 fn f26a_attack_cli_environment_does_not_change_the_command() {
-    let dev = Dir::novo("f26a");
+    let dev = Dir::new("f26a");
     vault(&dev);
     let sock = SocketDir::new("f26a");
     let w = start(&dev, &sock);
@@ -659,7 +664,7 @@ fn f26a_attack_cli_environment_does_not_change_the_command() {
 /// (`PR_SET_PDEATHSIG`) and, when it starts again, empties `<rt>tmp/`.
 #[test]
 fn v4_15_cli_that_drops_and_killed_daemon() {
-    let dev = Dir::novo("cai");
+    let dev = Dir::new("cai");
     vault(&dev);
     let sock = SocketDir::new("cai");
     let mut w = start(&dev, &sock);
@@ -756,7 +761,7 @@ fn v4_15_cli_that_drops_and_killed_daemon() {
 /// record changes.
 #[test]
 fn ra1_record_child_environ_readable_by_same_uid() {
-    let dev = Dir::novo("ra1");
+    let dev = Dir::new("ra1");
     vault(&dev);
     let sock = SocketDir::new("ra1");
     let w = start(&dev, &sock);
@@ -769,7 +774,7 @@ fn ra1_record_child_environ_readable_by_same_uid() {
     };
     let environ = fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
     assert!(
-        contem(&environ, LICENSE.as_bytes()),
+        contains(&environ, LICENSE.as_bytes()),
         "RA1 mudou: o environ do filho deixou de ser legível pelo mesmo uid"
     );
     // The daemon, not dumpable (S8), is not readable.
@@ -785,7 +790,7 @@ fn ra1_record_child_environ_readable_by_same_uid() {
 /// error and runs nothing (the CLI measures first; this is the second layer).
 #[test]
 fn d52_oversized_request_refused_by_daemon() {
-    let dev = Dir::novo("d52");
+    let dev = Dir::new("d52");
     vault(&dev);
     let sock = SocketDir::new("d52");
     let w = start(&dev, &sock);
@@ -824,7 +829,7 @@ fn d52_oversized_request_refused_by_daemon() {
 /// delivery.
 #[test]
 fn v4_21_locked_waits_for_cli_unlock() {
-    let dev = Dir::novo("v421");
+    let dev = Dir::new("v421");
     vault(&dev);
     let sock = SocketDir::new("v421");
     let w = start(&dev, &sock);
@@ -848,7 +853,7 @@ fn v4_21_locked_waits_for_cli_unlock() {
 /// password comes out only `••••`, on stdout and on stderr.
 #[test]
 fn f28g_attack_single_large_write_does_not_show_password_start() {
-    let dev = Dir::novo("run-28g");
+    let dev = Dir::new("run-28g");
     vault(&dev);
     let sock = SocketDir::new("28g");
     let w = start(&dev, &sock);
@@ -865,7 +870,7 @@ fn f28g_attack_single_large_write_does_not_show_password_start() {
             assert_eq!(r.end, Some(0), "fd={fd} n={n}: {:?}", r.failure);
             let all = if fd == 1 { &r.stdout } else { &r.stderr };
             assert!(
-                !contem(all, b"falso-"),
+                !contains(all, b"falso-"),
                 "fd={fd} n={n}: o começo da senha saiu em claro"
             );
             let mut expected = vec![b'b'; n];
@@ -874,7 +879,7 @@ fn f28g_attack_single_large_write_does_not_show_password_start() {
         }
     }
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, FREE_PASSWORD.as_bytes()));
+    assert!(!contains(&log, FREE_PASSWORD.as_bytes()));
 }
 
 /// Phase 54 (S8), attack of the final audit: the `ward run` command got the password in
@@ -884,7 +889,7 @@ fn f28g_attack_single_large_write_does_not_show_password_start() {
 /// attachment goes away. A `ward run` after the lock waits for the unlock, like V4.21.
 #[test]
 fn f54_attack_ward_run_dies_on_lock() {
-    let dev = Dir::novo("run-54");
+    let dev = Dir::new("run-54");
     vault(&dev);
     let sock = SocketDir::new("54");
     let w = start(&dev, &sock);
@@ -945,8 +950,8 @@ fn f54_attack_ward_run_dies_on_lock() {
     assert_eq!(r.end, Some(3), "{r:?}");
     assert!(r.stderr.is_empty(), "{r:?}");
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, FREE_PASSWORD.as_bytes()));
-    assert!(contem(&log, "encerrado(s) ao travar".as_bytes()));
+    assert!(!contains(&log, FREE_PASSWORD.as_bytes()));
+    assert!(contains(&log, "encerrado(s) ao travar".as_bytes()));
 }
 
 /// Phase 55 (S8), the two steps of the final re-audit against the real `wardd`:
@@ -960,7 +965,7 @@ fn f54_attack_ward_run_dies_on_lock() {
 /// (the runaway survives) is in `ward-platform/tests/subreaper.rs`.
 #[test]
 fn f55_attack_descendant_outside_group_dies_at_end_and_on_lock() {
-    let dev = Dir::novo("run-55");
+    let dev = Dir::new("run-55");
     vault(&dev);
     let sock = SocketDir::new("55");
     let w = start(&dev, &sock);
@@ -1022,7 +1027,7 @@ fn f55_attack_descendant_outside_group_dies_at_end_and_on_lock() {
         "o filho com setpgid usou a senha depois da trava"
     );
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, FREE_PASSWORD.as_bytes()));
+    assert!(!contains(&log, FREE_PASSWORD.as_bytes()));
 }
 
 /// Phase 54b (D68): whoever declares a null stdin sends nothing afterwards. The child's
@@ -1031,7 +1036,7 @@ fn f55_attack_descendant_outside_group_dies_at_end_and_on_lock() {
 /// command.
 #[test]
 fn f54b_attack_null_stdin_with_data_kills_the_command() {
-    let dev = Dir::novo("run-54b-nula");
+    let dev = Dir::new("run-54b-nula");
     vault(&dev);
     let sock = SocketDir::new("54b-nula");
     let w = start(&dev, &sock);
@@ -1060,11 +1065,11 @@ fn f54b_attack_null_stdin_with_data_kills_the_command() {
     );
     assert_eq!(r.end, Some(137), "{r:?}");
     let all = [r.stdout.as_slice(), r.stderr.as_slice()].concat();
-    assert!(!contem(&all, b"falso-script-do-agente"), "{r:?}");
-    assert!(!contem(&all, b"fim"), "{r:?}");
+    assert!(!contains(&all, b"falso-script-do-agente"), "{r:?}");
+    assert!(!contains(&all, b"fim"), "{r:?}");
     let log = fs::read(&w.log).unwrap();
-    assert!(contem(&log, "entrada padrão declarada nula".as_bytes()));
-    assert!(!contem(&log, b"falso-script-do-agente"));
+    assert!(contains(&log, "entrada padrão declarada nula".as_bytes()));
+    assert!(!contains(&log, b"falso-script-do-agente"));
 }
 
 const APPROVER: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
@@ -1077,7 +1082,7 @@ const APPROVER: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
 /// as before.
 #[test]
 fn f54b_attack_piped_script_on_approval() {
-    let dev = Dir::novo("run-54b-aprov");
+    let dev = Dir::new("run-54b-aprov");
     vault(&dev);
     let app = dev.0.join("wardd-aprovador-teste");
     fs::hard_link(APPROVER, &app).unwrap();
@@ -1157,7 +1162,7 @@ fn f54b_attack_piped_script_on_approval() {
     send_stdin(&mut s, b"");
     let r = read_session(&mut s);
     assert_eq!(r.end, Some(0), "{r:?}");
-    assert_eq!(text(&r.stdout), format!("ENTREGUE:{}", SEGREDOS[0].len()));
+    assert_eq!(text(&r.stdout), format!("ENTREGUE:{}", SECRETS[0].len()));
 
     // 3. Terminal: "allow once" without the box, as before.
     fs::write(&mode_file, format!("uma_vez {PIN}\n")).unwrap();
@@ -1174,14 +1179,14 @@ fn f54b_attack_piped_script_on_approval() {
     send_stdin(&mut s, b"");
     let r = read_session(&mut s);
     assert_eq!(r.end, Some(0), "{r:?}");
-    assert_eq!(text(&r.stdout).trim(), SEGREDOS[0].len().to_string());
+    assert_eq!(text(&r.stdout).trim(), SECRETS[0].len().to_string());
 
     let log = fs::read(&w.log).unwrap();
-    for secret in SEGREDOS {
-        assert!(!contem(&log, secret.as_bytes()));
-        assert!(!contem(&fs::read(&app_log).unwrap(), secret.as_bytes()));
+    for secret in SECRETS {
+        assert!(!contains(&log, secret.as_bytes()));
+        assert!(!contains(&fs::read(&app_log).unwrap(), secret.as_bytes()));
     }
-    assert!(contem(
+    assert!(contains(
         &log,
         b"confirma\xc3\xa7\xc3\xa3o da entrada padr\xc3\xa3o"
     ));

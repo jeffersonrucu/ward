@@ -1,13 +1,13 @@
-//! O binário `wardd` (modo de teste) de ponta a ponta pelo socket: sobe com o ambiente
-//! limpo, recusa `TMPDIR`/`LD_*` (V3.30, V3.25), atende o agente, aguenta conexões
-//! paradas e quadro grande demais (V3.4), e o log com `RUST_LOG=trace` não tem senha,
-//! PIN nem segredo (V3.20, S8).
+//! The `wardd` binary (test mode) end to end through the socket: starts with a clean
+//! environment, refuses `TMPDIR`/`LD_*` (V3.30, V3.25), serves the agent, withstands
+//! stalled connections and a frame that is too big (V3.4), and the log with
+//! `RUST_LOG=trace` has no password, PIN nor secret (V3.20, S8).
 //!
-//! O cofre é de teste, criado neste diretório pelo próprio núcleo; o socket fica num
-//! diretório só deste teste em `$XDG_RUNTIME_DIR` (o caminho do socket não cabe em
-//! `target/tmp`), apagado no fim.
+//! The vault is a test one, created in this directory by the core itself; the socket
+//! lives in a directory of this test only in `$XDG_RUNTIME_DIR` (the socket path does
+//! not fit in `target/tmp`), deleted at the end.
 
-mod comum;
+mod common;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -16,47 +16,47 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use comum::*;
-use ward_core::protocol::{self, ResponseError, Resposta, Role};
+use common::*;
+use ward_core::protocol::{self, ResponseError, Role, Resposta};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 
-struct DirSocket(PathBuf);
+struct SocketDir(PathBuf);
 
-impl DirSocket {
-    fn novo(rotulo: &str) -> DirSocket {
+impl SocketDir {
+    fn new(label: &str) -> SocketDir {
         let base = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
             .unwrap_or_else(|| {
                 PathBuf::from(format!("/run/user/{}", ward_platform::effective_uid()))
             });
-        let p = base.join(format!("wardd-t-{}-{rotulo}", std::process::id()));
+        let p = base.join(format!("wardd-t-{}-{label}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
-        DirSocket(p)
+        SocketDir(p)
     }
 }
 
-impl Drop for DirSocket {
+impl Drop for SocketDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
 
 struct Wardd {
-    filho: Child,
+    child: Child,
     log: PathBuf,
     socket: PathBuf,
 }
 
 impl Drop for Wardd {
     fn drop(&mut self) {
-        let _ = self.filho.kill();
-        let _ = self.filho.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
-fn comando(dev: &Path, sock: &Path, log: &Path) -> Command {
+fn command(dev: &Path, sock: &Path, log: &Path) -> Command {
     let mut c = Command::new(WARDD);
     c.env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -69,25 +69,25 @@ fn comando(dev: &Path, sock: &Path, log: &Path) -> Command {
     c
 }
 
-fn subir(dev: &Dir, sock: &DirSocket) -> Wardd {
+fn start(dev: &Dir, sock: &SocketDir) -> Wardd {
     let log = dev.0.join("wardd.log");
-    let filho = comando(&dev.0, &sock.0, &log).spawn().unwrap();
+    let child = command(&dev.0, &sock.0, &log).spawn().unwrap();
     let socket = sock.0.join(ward_platform::socket::SOCKET_NAME);
-    let fim = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(20);
     while !socket.exists() {
-        assert!(Instant::now() < fim, "o wardd não criou o socket");
+        assert!(Instant::now() < deadline, "o wardd não criou o socket");
         std::thread::sleep(Duration::from_millis(20));
     }
-    Wardd { filho, log, socket }
+    Wardd { child, log, socket }
 }
 
-fn conectar(w: &Wardd) -> UnixStream {
+fn connect(w: &Wardd) -> UnixStream {
     let s = UnixStream::connect(&w.socket).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
     s
 }
 
-fn mandar(s: &mut UnixStream, json: &str) {
+fn send(s: &mut UnixStream, json: &str) {
     if let Err(e) = s
         .write_all(&(json.len() as u32).to_be_bytes())
         .and_then(|()| s.write_all(json.as_bytes()))
@@ -96,7 +96,7 @@ fn mandar(s: &mut UnixStream, json: &str) {
     }
 }
 
-fn receber(s: &mut UnixStream) -> Option<Vec<u8>> {
+fn receive(s: &mut UnixStream) -> Option<Vec<u8>> {
     let mut n = [0u8; 4];
     s.read_exact(&mut n).ok()?;
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
@@ -104,59 +104,61 @@ fn receber(s: &mut UnixStream) -> Option<Vec<u8>> {
     Some(b)
 }
 
-fn pedir_por(s: &mut UnixStream, op: &str, dados: &str) -> (Vec<u8>, Resposta) {
-    mandar(s, &format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#));
-    let b = receber(s).expect("sem resposta");
+fn request_on(s: &mut UnixStream, op: &str, data: &str) -> (Vec<u8>, Resposta) {
+    send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
+    let b = receive(s).expect("sem resposta");
     let r = protocol::decode_response(Role::Agent, &b).unwrap();
     (b, r)
 }
 
-fn senha_json(s: &str) -> String {
+fn password_json(s: &str) -> String {
     format!(r#"{{"senha":"{}"}}"#, b64(s.as_bytes()))
 }
 
 #[test]
-fn v3_30_ambiente_com_tmpdir_ou_ld_recusa_subir() {
-    let dev = Dir::novo("amb");
+fn v3_30_env_with_tmpdir_or_ld_refuses_to_start() {
+    let dev = Dir::new("env");
     for (k, v) in [
         ("TMPDIR", "/tmp"),
         ("LD_LIBRARY_PATH", "/nao-existe"),
         ("LD_PRELOAD", "/nao-existe.so"),
     ] {
-        let sock = DirSocket::novo("amb");
-        let log = dev.0.join("amb.log");
-        let st = comando(&dev.0, &sock.0, &log).env(k, v).status().unwrap();
+        let sock = SocketDir::new("env");
+        let log = dev.0.join("env.log");
+        let st = command(&dev.0, &sock.0, &log).env(k, v).status().unwrap();
         assert!(!st.success(), "{k}");
         assert!(
             !sock.0.join(ward_platform::socket::SOCKET_NAME).exists(),
             "{k}"
         );
-        let texto = fs::read_to_string(&log).unwrap();
-        assert!(texto.contains(k), "{k}: {texto}");
+        let text = fs::read_to_string(&log).unwrap();
+        assert!(text.contains(k), "{k}: {text}");
     }
-    // Sem WARD_DEV_DIR o daemon de teste não sobe (nunca cai no cofre real).
-    let sock = DirSocket::novo("amb2");
-    let log = dev.0.join("amb2.log");
-    let st = comando(&dev.0, &sock.0, &log)
+    // Without WARD_DEV_DIR the test daemon does not start (it never falls back to the
+    // real vault).
+    let sock = SocketDir::new("env2");
+    let log = dev.0.join("env2.log");
+    let st = command(&dev.0, &sock.0, &log)
         .env_remove("WARD_DEV_DIR")
         .status()
         .unwrap();
     assert!(!st.success());
 }
 
-/// V3.20, V3.17, V3.26, V3.9, V3.4: um ciclo inteiro pelo socket, com o log em `trace`.
+/// V3.20, V3.17, V3.26, V3.9, V3.4: a whole cycle through the socket, with the log at
+/// `trace`.
 #[test]
-fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
-    let dev = Dir::novo("sock");
+fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
+    let dev = Dir::new("sock");
     {
-        let (d, _) = cofre_de_teste(&dev);
+        let (d, _) = test_vault(&dev);
         d.travar();
     }
-    let sock = DirSocket::novo("ciclo");
-    let w = subir(&dev, &sock);
-    let mut s = conectar(&w);
+    let sock = SocketDir::new("cycle");
+    let w = start(&dev, &sock);
+    let mut s = connect(&w);
 
-    let (_, r) = pedir_por(&mut s, "estado", "{}");
+    let (_, r) = request_on(&mut s, "estado", "{}");
     assert!(
         matches!(
             r,
@@ -168,32 +170,32 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
         ),
         "{r:?}"
     );
-    // Senha errada: mesma resposta, sem contagem; a certa (que espera 1 s) destrava.
-    let (q1, r) = pedir_por(&mut s, "destravar", &senha_json("falso-errada-01"));
-    assert_eq!(protocolo_erro(&r), Some(ResponseError::WrongPassword));
-    let (_, r) = pedir_por(&mut s, "destravar", &senha_json(SENHA));
+    // Wrong password: same response, no count; the right one (which waits 1 s) unlocks.
+    let (q1, r) = request_on(&mut s, "destravar", &password_json("falso-errada-01"));
+    assert_eq!(protocol_error(&r), Some(ResponseError::WrongPassword));
+    let (_, r) = request_on(&mut s, "destravar", &password_json(PASSWORD));
     assert!(ok(&r), "{r:?}");
 
-    // Lista do agente: sem a bloqueada e sem nível.
-    let (q, r) = pedir_por(&mut s, "lista", "{}");
+    // The agent's list: without the blocked one and without level.
+    let (q, r) = request_on(&mut s, "lista", "{}");
     let Resposta::Lista(l) = r else {
         panic!("{r:?}")
     };
     assert_eq!(l.len(), 4);
-    assert!(!contem(&q, b"t-bloq") && !contem(&q, b"\"nivel\""));
-    // Bloqueada = inexistente, byte a byte.
-    let exec = |nome: &str| {
+    assert!(!contains(&q, b"t-bloq") && !contains(&q, b"\"nivel\""));
+    // Blocked = nonexistent, byte for byte.
+    let exec = |name: &str| {
         format!(
-            r#"{{"entrada":"{nome}","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
+            r#"{{"entrada":"{name}","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
             b64(b"env"),
             b64(b"/")
         )
     };
-    let (a, _) = pedir_por(&mut s, "executar", &exec("t-bloq"));
-    let (b, _) = pedir_por(&mut s, "executar", &exec("nao-existe"));
+    let (a, _) = request_on(&mut s, "executar", &exec("t-bloq"));
+    let (b, _) = request_on(&mut s, "executar", &exec("nao-existe"));
     assert_eq!(a, b);
-    // O agente não muda nível nem com o PIN certo.
-    let (_, r) = pedir_por(
+    // The agent does not change the level even with the right PIN.
+    let (_, r) = request_on(
         &mut s,
         "mudar_nivel",
         &format!(
@@ -201,14 +203,14 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
             b64(PIN.as_bytes())
         ),
     );
-    assert_eq!(protocolo_erro(&r), Some(ResponseError::Unauthorized));
-    // Fase 23: o agente não responde aprovação (e não há operação para receber os
-    // avisos: só a conexão do papel app os recebe, D65); o
-    // `abrir_app` sem instalação (daemon de teste, D63 sem a 23a) é "aprovação
-    // indisponível", e o uso com aprovação também (D21).
-    let (_, r) = pedir_por(&mut s, "receber_pedidos", "{}");
-    assert_eq!(protocolo_erro(&r), Some(ResponseError::UnknownOperation));
-    let (_, r) = pedir_por(
+    assert_eq!(protocol_error(&r), Some(ResponseError::Unauthorized));
+    // Phase 23: the agent does not answer approvals (and there is no operation to
+    // receive the notices: only the app role's connection receives them, D65); the
+    // request to open the app without an install (test daemon, D63 without 23a) is "approval
+    // unavailable", and so is the use with approval (D21).
+    let (_, r) = request_on(&mut s, "receber_pedidos", "{}");
+    assert_eq!(protocol_error(&r), Some(ResponseError::UnknownOperation));
+    let (_, r) = request_on(
         &mut s,
         "responder_aprovacao",
         &format!(
@@ -216,145 +218,152 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
             b64(PIN.as_bytes())
         ),
     );
-    assert_eq!(protocolo_erro(&r), Some(ResponseError::Unauthorized));
-    let (_, r) = pedir_por(&mut s, "abrir_app", "{}");
-    // Sem `WARD_DEV_APP`, o daemon de teste usa o lançador do `ward-app` instalado: numa
-    // máquina sem o Ward é "aprovação indisponível"; com ele instalado, abre (Ok).
-    let instalado = std::path::Path::new("/usr/local/bin/ward-app").exists();
-    let e = protocolo_erro(&r);
+    assert_eq!(protocol_error(&r), Some(ResponseError::Unauthorized));
+    let (_, r) = request_on(&mut s, "abrir_app", "{}");
+    // Without `WARD_DEV_APP`, the test daemon uses the launcher of the installed
+    // `ward-app`: on a machine without Ward it is "approval unavailable"; with it
+    // installed, it opens (Ok).
+    let installed = std::path::Path::new("/usr/local/bin/ward-app").exists();
+    let e = protocol_error(&r);
     assert!(
-        e == Some(ResponseError::ApprovalUnavailable) || (instalado && e.is_none()),
+        e == Some(ResponseError::ApprovalUnavailable) || (installed && e.is_none()),
         "abrir_app: {e:?}"
     );
-    let (_, r) = pedir_por(&mut s, "executar", &exec("t-aprov"));
-    assert_eq!(protocolo_erro(&r), Some(ResponseError::ApprovalUnavailable));
+    let (_, r) = request_on(&mut s, "executar", &exec("t-aprov"));
+    assert_eq!(
+        protocol_error(&r),
+        Some(ResponseError::ApprovalUnavailable)
+    );
 
-    // V3.4: 70 conexões paradas não tiram o atendimento (a mais antiga parada sai).
-    let paradas: Vec<UnixStream> = (0..70).map(|_| conectar(&w)).collect();
+    // V3.4: 70 stalled connections do not take the service away (the oldest stalled
+    // one leaves).
+    let stalled: Vec<UnixStream> = (0..70).map(|_| connect(&w)).collect();
     std::thread::sleep(Duration::from_millis(200));
-    let mut nova = conectar(&w);
-    let (_, r) = pedir_por(&mut nova, "estado", "{}");
+    let mut fresh = connect(&w);
+    let (_, r) = request_on(&mut fresh, "estado", "{}");
     assert!(
         matches!(r, Resposta::Estado { travado: false, .. }),
         "{r:?}"
     );
-    drop(paradas);
+    drop(stalled);
 
-    // Quadro maior que o limite: recusado, conexão fechada, daemon segue.
-    let mut grande = conectar(&w);
-    grande.write_all(&u32::MAX.to_be_bytes()).unwrap();
-    let _ = receber(&mut grande);
+    // Frame larger than the limit: refused, connection closed, the daemon goes on.
+    let mut big = connect(&w);
+    big.write_all(&u32::MAX.to_be_bytes()).unwrap();
+    let _ = receive(&mut big);
     let mut b = [0u8; 1];
-    assert_eq!(grande.read(&mut b).unwrap_or(0), 0);
-    // JSON inválido, sem fechar o daemon.
-    let mut lixo = conectar(&w);
-    mandar(&mut lixo, "{nao e json");
-    let _ = receber(&mut lixo);
+    assert_eq!(big.read(&mut b).unwrap_or(0), 0);
+    // Invalid JSON, without closing the daemon.
+    let mut junk = connect(&w);
+    send(&mut junk, "{nao e json");
+    let _ = receive(&mut junk);
 
-    // A primeira conexão estava parada durante a enxurrada: foi a que saiu.
+    // The first connection was stalled during the flood: it was the one that left.
     let mut b = [0u8; 1];
     assert_eq!(
         s.read(&mut b).unwrap_or(0),
         0,
         "a conexão parada mais antiga saiu"
     );
-    let mut s = conectar(&w);
-    let (_, r) = pedir_por(&mut s, "travar", "{}");
+    let mut s = connect(&w);
+    let (_, r) = request_on(&mut s, "travar", "{}");
     assert!(ok(&r));
-    let (_, r) = pedir_por(&mut s, "lista", "{}");
-    assert_eq!(protocolo_erro(&r), Some(ResponseError::Locked));
+    let (_, r) = request_on(&mut s, "lista", "{}");
+    assert_eq!(protocol_error(&r), Some(ResponseError::Locked));
     drop(s);
-    drop(nova);
+    drop(fresh);
 
-    // V3.20: o log em `trace` não tem senha, PIN nem segredo (nem em base64).
+    // V3.20: the log at `trace` has no password, PIN nor secret (not even in base64).
     let log = w.log.clone();
     drop(w);
-    let texto = fs::read(&log).unwrap();
+    let text = fs::read(&log).unwrap();
     assert!(
-        contem(&texto, b"pronto"),
+        contains(&text, b"pronto"),
         "{}",
-        String::from_utf8_lossy(&texto)
+        String::from_utf8_lossy(&text)
     );
-    for s in SEGREDOS.iter().chain([&SENHA, &PIN, &"falso-errada-01"]) {
-        assert!(!contem(&texto, s.as_bytes()), "{s} no log");
+    for s in SECRETS.iter().chain([&PASSWORD, &PIN, &"falso-errada-01"]) {
+        assert!(!contains(&text, s.as_bytes()), "{s} no log");
         assert!(
-            !contem(&texto, b64(s.as_bytes()).as_bytes()),
+            !contains(&text, b64(s.as_bytes()).as_bytes()),
             "{s} (b64) no log"
         );
     }
-    assert!(!contem(&q1, b"falso"));
+    assert!(!contains(&q1, b"falso"));
 }
 
-fn protocolo_erro(r: &Resposta) -> Option<ResponseError> {
-    erro(r)
+fn protocol_error(r: &Resposta) -> Option<ResponseError> {
+    error(r)
 }
 
-/// V3.33 (D62, S9) pelo binário: `kill -9` entre as senhas erradas do agente não zera
-/// a espera. A falha já está no arquivo de estado quando a resposta chega, e o daemon
-/// que sobe de novo espera pelo contador do disco (contado da partida).
+/// V3.33 (D62, S9) through the binary: `kill -9` between the agent's wrong passwords
+/// does not reset the wait. The failure is already in the state file when the response
+/// arrives, and the daemon that starts again waits by the counter on disk (counted from
+/// the start).
 #[test]
-fn v3_33_kill_9_entre_as_senhas_erradas() {
-    let dev = Dir::novo("kill9");
+fn v3_33_kill_9_between_the_wrong_passwords() {
+    let dev = Dir::new("kill9");
     {
-        let (d, _) = cofre_de_teste(&dev);
+        let (d, _) = test_vault(&dev);
         d.travar();
     }
-    let estado = dev.caminhos().estado;
-    let falhas = || {
-        wardd::arquivos::ler_estado_completo(&estado)
+    let state = dev.paths().estado;
+    let failures = || {
+        wardd::arquivos::ler_estado_completo(&state)
             .unwrap()
             .falhas_agente
     };
-    let sock = DirSocket::novo("kill9");
-    let mut esperas = Vec::new();
+    let sock = SocketDir::new("kill9");
+    let mut waits = Vec::new();
     for i in 0..3u32 {
-        let mut w = subir(&dev, &sock);
-        let mut s = conectar(&w);
+        let mut w = start(&dev, &sock);
+        let mut s = connect(&w);
         let t = Instant::now();
-        let (_, r) = pedir_por(&mut s, "destravar", &senha_json("falso-errada-k9"));
-        esperas.push(t.elapsed());
-        assert_eq!(protocolo_erro(&r), Some(ResponseError::WrongPassword));
-        // Gravado (com fsync) antes da resposta: o `kill -9` logo depois não perde.
-        w.filho.kill().unwrap();
-        let _ = w.filho.wait();
-        assert_eq!(falhas(), i + 1);
+        let (_, r) = request_on(&mut s, "destravar", &password_json("falso-errada-k9"));
+        waits.push(t.elapsed());
+        assert_eq!(protocol_error(&r), Some(ResponseError::WrongPassword));
+        // Written (with fsync) before the response: the `kill -9` right after loses
+        // nothing.
+        w.child.kill().unwrap();
+        let _ = w.child.wait();
+        assert_eq!(failures(), i + 1);
         let _ = fs::remove_dir_all(&sock.0);
     }
-    // 0 s, 1 s e 2 s, menos o tempo de subida (contado da partida). A primeira só tem
-    // o Argon2 (com margem para máquina carregada); que ela não esperou 1 s se vê pela
-    // distância até a terceira, que espera 2 s menos a subida.
-    assert!(esperas[0] < Duration::from_millis(1500), "{esperas:?}");
+    // 0 s, 1 s and 2 s, minus the start-up time (counted from the start). The first one
+    // has only Argon2 (with a margin for a loaded machine); that it did not wait 1 s
+    // shows in the distance to the third, which waits 2 s minus the start-up.
+    assert!(waits[0] < Duration::from_millis(1500), "{waits:?}");
     assert!(
-        esperas[2] >= esperas[0] + Duration::from_millis(1200),
-        "{esperas:?}"
+        waits[2] >= waits[0] + Duration::from_millis(1200),
+        "{waits:?}"
     );
-    assert!(esperas[1] >= Duration::from_millis(500), "{esperas:?}");
-    assert!(esperas[2] >= Duration::from_millis(1500), "{esperas:?}");
-    // O log não tem a senha.
+    assert!(waits[1] >= Duration::from_millis(500), "{waits:?}");
+    assert!(waits[2] >= Duration::from_millis(1500), "{waits:?}");
+    // The log does not have the password.
     let log = fs::read(dev.0.join("wardd.log")).unwrap();
-    // V3.34 (D62): com o limite comum do usuário, o daemon de teste sobe com aviso.
-    let infinito = fs::read_to_string("/proc/self/limits")
+    // V3.34 (D62): with the user's usual limit, the test daemon starts with a warning.
+    let unlimited = fs::read_to_string("/proc/self/limits")
         .unwrap()
         .lines()
         .any(|l| l.starts_with("Max locked memory") && l.contains("unlimited"));
-    if !infinito {
+    if !unlimited {
         assert!(
-            contem(&log, "memória sem travar".as_bytes()),
+            contains(&log, "memória sem travar".as_bytes()),
             "{}",
             String::from_utf8_lossy(&log)
         );
     }
-    for s in [SENHA, "falso-errada-k9"] {
-        assert!(!contem(&log, s.as_bytes()));
-        assert!(!contem(&log, b64(s.as_bytes()).as_bytes()));
+    for s in [PASSWORD, "falso-errada-k9"] {
+        assert!(!contains(&log, s.as_bytes()));
+        assert!(!contains(&log, b64(s.as_bytes()).as_bytes()));
     }
 }
 
-/// Lê `/proc/<pid>/<arquivo>` por outro processo do mesmo uid (`/usr/bin/cat`): só
-/// diz se conseguiu ler algum byte, nunca o conteúdo.
-fn outro_processo_le(pid: u32, arquivo: &str) -> bool {
+/// Reads `/proc/<pid>/<file>` through another process of the same uid (`/usr/bin/cat`):
+/// only tells whether it managed to read some byte, never the content.
+fn other_process_reads(pid: u32, file: &str) -> bool {
     let o = Command::new("/usr/bin/cat")
-        .arg(format!("/proc/{pid}/{arquivo}"))
+        .arg(format!("/proc/{pid}/{file}"))
         .env_clear()
         .stdin(Stdio::null())
         .output()
@@ -362,70 +371,71 @@ fn outro_processo_le(pid: u32, arquivo: &str) -> bool {
     o.status.success() || !o.stdout.is_empty()
 }
 
-/// V3.6 (S8) no binário (scrutiny do M3): o `wardd` de teste no ar e destravado (com
-/// segredos em memória). Outro processo do mesmo uid não lê `/proc/<pid>/mem`,
-/// `environ` nem `maps`, e este teste (o pai, que o Yama deixaria) também não;
-/// `strace -p` e `gdb -p` (se houver) não se prendem; `/proc/<pid>/limits` mostra core
-/// 0 (atual e máximo); e `kill -SEGV` não gera core (o kernel não marca core no status
-/// e não sobra arquivo). Controle: o mesmo `cat` lê o `environ` de um processo comum.
+/// V3.6 (S8) on the binary (M3 scrutiny): the test `wardd` running and unlocked (with
+/// secrets in memory). Another process of the same uid does not read `/proc/<pid>/mem`,
+/// `environ` nor `maps`, and neither does this test (the parent, which Yama would
+/// allow); `strace -p` and `gdb -p` (if present) do not attach; `/proc/<pid>/limits`
+/// shows core 0 (current and maximum); and `kill -SEGV` produces no core (the kernel
+/// does not mark a core in the status and no file is left). Control: the same `cat`
+/// reads the `environ` of a regular process.
 #[test]
-fn v3_6_wardd_no_ar_nega_proc_ptrace_e_core() {
+fn v3_6_running_wardd_denies_proc_ptrace_and_core() {
     use std::os::unix::process::ExitStatusExt;
 
-    let mut controle = Command::new("/usr/bin/sleep")
+    let mut control = Command::new("/usr/bin/sleep")
         .arg("30")
         .env_clear()
         .env("WARD_CONTROLE", "1")
         .spawn()
         .unwrap();
-    // O `environ` só fica certo depois do exec: tenta por um instante.
-    let fim = Instant::now() + Duration::from_secs(5);
-    while !outro_processo_le(controle.id(), "environ") {
+    // The `environ` is only right after the exec: try for a moment.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !other_process_reads(control.id(), "environ") {
         assert!(
-            Instant::now() < fim,
+            Instant::now() < deadline,
             "controle: cat não leu o environ de um processo comum"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    let _ = controle.kill();
-    let _ = controle.wait();
+    let _ = control.kill();
+    let _ = control.wait();
 
-    let dev = Dir::novo("v36");
+    let dev = Dir::new("v36");
     {
-        let (d, _) = cofre_de_teste(&dev);
+        let (d, _) = test_vault(&dev);
         d.travar();
     }
-    let sock = DirSocket::novo("v36");
+    let sock = SocketDir::new("v36");
     let log = dev.0.join("wardd.log");
-    let mut c = comando(&dev.0, &sock.0, &log);
-    // Diretório de trabalho do daemon: onde um core em arquivo cairia.
+    let mut c = command(&dev.0, &sock.0, &log);
+    // The daemon's working directory: where a core file would land.
     c.current_dir(&dev.0);
-    let filho = c.spawn().unwrap();
+    let child = c.spawn().unwrap();
     let socket = sock.0.join(ward_platform::socket::SOCKET_NAME);
-    let fim = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(20);
     while !socket.exists() {
-        assert!(Instant::now() < fim, "o wardd não criou o socket");
+        assert!(Instant::now() < deadline, "o wardd não criou o socket");
         std::thread::sleep(Duration::from_millis(20));
     }
-    let mut w = Wardd { filho, log, socket };
-    let mut s = conectar(&w);
-    let (_, r) = pedir_por(&mut s, "destravar", &senha_json(SENHA));
+    let mut w = Wardd { child, log, socket };
+    let mut s = connect(&w);
+    let (_, r) = request_on(&mut s, "destravar", &password_json(PASSWORD));
     assert!(ok(&r), "{r:?}");
-    let pid = w.filho.id();
+    let pid = w.child.id();
 
-    for arquivo in ["mem", "environ", "maps"] {
+    for file in ["mem", "environ", "maps"] {
         assert!(
-            !outro_processo_le(pid, arquivo),
-            "/proc/<pid>/{arquivo} legível por outro processo"
+            !other_process_reads(pid, file),
+            "/proc/<pid>/{file} legível por outro processo"
         );
-        let r = fs::read(format!("/proc/{pid}/{arquivo}"));
+        let r = fs::read(format!("/proc/{pid}/{file}"));
         assert_eq!(
             r.as_ref().map_err(|e| e.kind()).err(),
             Some(std::io::ErrorKind::PermissionDenied),
-            "/proc/<pid>/{arquivo} legível pelo pai"
+            "/proc/<pid>/{file} legível pelo pai"
         );
     }
-    // `strace -p`: não se prende (sai ≠ 0 com EPERM).
+    // `strace -p`: does not attach (exits ≠ 0 with EPERM).
     let st = Command::new("/usr/bin/strace")
         .args(["-o", "/dev/null", "-p", &pid.to_string()])
         .env_clear()
@@ -435,7 +445,7 @@ fn v3_6_wardd_no_ar_nega_proc_ptrace_e_core() {
         .status()
         .unwrap();
     assert!(!st.success(), "strace -p conseguiu");
-    // `gdb -p`, se houver gdb: o attach falha por permissão.
+    // `gdb -p`, if there is gdb: the attach fails for lack of permission.
     if Path::new("/usr/bin/gdb").exists() {
         let o = Command::new("/usr/bin/gdb")
             .args([
@@ -452,53 +462,53 @@ fn v3_6_wardd_no_ar_nega_proc_ptrace_e_core() {
             .stdin(Stdio::null())
             .output()
             .unwrap();
-        let texto =
+        let text =
             String::from_utf8_lossy(&o.stderr).into_owned() + &String::from_utf8_lossy(&o.stdout);
         assert!(
-            texto.contains("Operation not permitted"),
-            "gdb -p não recusou: {texto}"
+            text.contains("Operation not permitted"),
+            "gdb -p não recusou: {text}"
         );
     } else {
         eprintln!("v3_6: sem /usr/bin/gdb; o strace -p cobre o mesmo ptrace");
     }
-    // Core desligado: `Max core file size 0 0`.
+    // Core turned off: `Max core file size 0 0`.
     let limits = fs::read_to_string(format!("/proc/{pid}/limits")).unwrap();
     let core = limits
         .lines()
         .find(|l| l.starts_with("Max core file size"))
         .unwrap();
-    let campos: Vec<&str> = core.split_whitespace().collect();
-    assert_eq!(&campos[4..6], &["0", "0"], "{core}");
-    // O daemon segue atendendo depois das tentativas.
-    let (_, r) = pedir_por(&mut s, "estado", "{}");
+    let fields: Vec<&str> = core.split_whitespace().collect();
+    assert_eq!(&fields[4..6], &["0", "0"], "{core}");
+    // The daemon keeps serving after the attempts.
+    let (_, r) = request_on(&mut s, "estado", "{}");
     assert!(
         matches!(r, Resposta::Estado { travado: false, .. }),
         "{r:?}"
     );
 
-    // `kill -SEGV` com o cofre destravado: morre pelo sinal, sem core. O primeiro
-    // SIGSEGV mandado por `kill` cai no tratador do std do Rust (o de estouro de
-    // pilha), que volta o tratador ao padrão e retorna; o seguinte mata. Manda de novo
-    // a cada 200 ms até morrer.
-    let fim = Instant::now() + Duration::from_secs(10);
-    let saida = loop {
-        if let Some(st) = w.filho.try_wait().unwrap() {
+    // `kill -SEGV` with the vault unlocked: dies by the signal, without a core. The first
+    // SIGSEGV sent by `kill` lands in Rust's std handler (the stack overflow one), which
+    // resets the handler to the default and returns; the next one kills. Send it again
+    // every 200 ms until it dies.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let exit_status = loop {
+        if let Some(st) = w.child.try_wait().unwrap() {
             break st;
         }
-        assert!(Instant::now() < fim, "o wardd não morreu com SIGSEGV");
+        assert!(Instant::now() < deadline, "o wardd não morreu com SIGSEGV");
         let st = Command::new("/usr/bin/kill")
             .args(["-SEGV", &pid.to_string()])
             .stderr(Stdio::null())
             .status()
             .unwrap();
-        assert!(st.success() || w.filho.try_wait().unwrap().is_some());
+        assert!(st.success() || w.child.try_wait().unwrap().is_some());
         std::thread::sleep(Duration::from_millis(200));
     };
-    assert_eq!(saida.signal(), Some(11), "{saida:?}");
-    assert!(!saida.core_dumped(), "o kernel gerou core do wardd");
+    assert_eq!(exit_status.signal(), Some(11), "{exit_status:?}");
+    assert!(!exit_status.core_dumped(), "o kernel gerou core do wardd");
     for e in fs::read_dir(&dev.0).unwrap() {
-        let nome = e.unwrap().file_name().to_string_lossy().into_owned();
-        assert!(!nome.starts_with("core"), "core no disco: {nome}");
+        let name = e.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(!name.starts_with("core"), "core no disco: {name}");
     }
     drop(s);
 }

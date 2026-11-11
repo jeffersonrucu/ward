@@ -3,7 +3,7 @@
 //! A chave privada vai do arquivo escolhido para o daemon sem passar pela área de
 //! transferência (o `wl-copy` grava a entrada em `/tmp`, S2) nem pela webview (S11). A
 //! interface só pede `carregar_chave { campo }`; quem escolhe o arquivo é o mesmo
-//! [`Seletor`](crate::anexos::Seletor) dos anexos (no app, o diálogo do GTK; na ponte de
+//! [`Picker`](crate::attachments::Picker) dos anexos (no app, o diálogo do GTK; na ponte de
 //! teste, a pasta fixa da linha de comando). O arquivo é lido aqui, conferido e guardado
 //! num [`Secret`] (zera ao sair) até salvar, cancelar ou sair do formulário; o salvar o
 //! põe no rascunho (`"carregada"`). A resposta traz só o tamanho, ou um aviso fixo.

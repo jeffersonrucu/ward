@@ -59,7 +59,7 @@ pub enum ErroPartida {
     /// `setresgid` não deixou os três gids no real.
     Grupo,
     /// O daemon não deu o papel app a esta conexão (D63).
-    Papel(Role),
+    Role(Role),
     /// Aberto fora do daemon: pediu a instância verdadeira (`abrir_app`) e sai.
     Delegado,
 }

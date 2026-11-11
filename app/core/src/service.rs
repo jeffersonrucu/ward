@@ -10,9 +10,9 @@ use ward_core::entry::{AttachmentDraft, Draft, EntryType, Secret as CoreSecret};
 use ward_core::protocol::Target;
 
 use crate::AppError;
-use crate::anexos::{Anexos, Base, EdicaoDosAnexos, Escolha, Seletor, SemSeletor};
-use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
+use crate::approval::{self, ApprovalResult, Approvals, DisplayedRequest};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
+use crate::attachments::{AttachmentEdit, Attachments, Base, Choice, NoPicker, Picker};
 use crate::backup_externo::{self, BackupExternoVisto, EscolhaDoPendrive, PendriveVisto};
 use crate::chave::{self, CAMPOS_CARREGAVEIS, Carregamento};
 use crate::client;
@@ -21,11 +21,11 @@ use crate::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha, 
 use crate::credenciais::{DetalheCredencial, ItemCredencial};
 use crate::daemon::{Daemon, VaultStatus};
 use crate::destrave::{InfoPedido, PedidoPendente, SenhaMestra};
-use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
+use crate::form::{self, FieldError, Form, Missing, Sources};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
 use crate::nivel::{NivelMudado, Pin, nivel_de_nome};
 use crate::primeiro_uso::NovoCofre;
-use crate::restaurar::{self, Restauracao, Restaurado, VersaoVista};
+use crate::restore::{self, Restore, Restored, VersionView};
 use crate::secret::Secret;
 use crate::terminal::{SemTerminal, Terminal, entrada_para_argv};
 
@@ -39,7 +39,7 @@ pub struct SaveResult {
     #[serde(rename = "salvo")]
     pub saved: Option<String>,
     #[serde(rename = "erros")]
-    pub errors: Vec<ErroCampo>,
+    pub errors: Vec<FieldError>,
 }
 
 /// Response of the vault creation: created, or the errors per field. No value.
@@ -48,7 +48,7 @@ pub struct CreateResult {
     #[serde(rename = "criado")]
     pub created: bool,
     #[serde(rename = "erros")]
-    pub errors: Vec<ErroCampo>,
+    pub errors: Vec<FieldError>,
 }
 
 /// TOTP code for the interface (the code is shown, the seed never).
@@ -73,13 +73,13 @@ pub struct Service<D: Daemon, A: AreaTransferencia> {
     loaded: Mutex<BTreeMap<String, Secret>>,
     /// Attachments chosen in the open form (Phase 34), in memory only, until save, cancel
     /// or exit. The content never goes to the interface.
-    attachments: Mutex<Anexos>,
+    attachments: Mutex<Attachments>,
     /// Who chooses the attachment file (GTK dialog in the app; folder in the bridge).
-    picker: Box<dyn Seletor>,
+    picker: Box<dyn Picker>,
     /// Who opens the "Connect" terminal (D3).
     terminal: Box<dyn Terminal>,
     /// The approval requests waiting for the window (Phase 36, D65 a).
-    approvals: Arc<Aprovacoes>,
+    approvals: Arc<Approvals>,
     /// The agent's unlock request that is waiting (Phase 31, D65 a).
     pending_unlock: Arc<PedidoPendente>,
 }
@@ -113,21 +113,21 @@ struct ServiceSources<'a, D: Daemon> {
     loaded: &'a BTreeMap<String, Secret>,
 }
 
-impl<D: Daemon> Fontes for ServiceSources<'_, D> {
-    fn guardado(&mut self, target: Target) -> Result<CoreSecret, AppError> {
+impl<D: Daemon> Sources for ServiceSources<'_, D> {
+    fn stored(&mut self, target: Target) -> Result<CoreSecret, AppError> {
         let entry = self.entry.ok_or(AppError::InvalidRequest)?;
         let s = client::reveal(self.daemon, entry, target)?;
         Ok(CoreSecret::from_bytes(s.expose().to_vec()))
     }
 
-    fn gerada(&mut self, field: &str) -> Result<CoreSecret, AppError> {
+    fn generated(&mut self, field: &str) -> Result<CoreSecret, AppError> {
         self.used
             .get(field)
             .map(|s| CoreSecret::from_bytes(s.expose().to_vec()))
             .ok_or(AppError::NoGeneratedPassword)
     }
 
-    fn carregada(&mut self, field: &str) -> Result<CoreSecret, AppError> {
+    fn loaded(&mut self, field: &str) -> Result<CoreSecret, AppError> {
         self.loaded
             .get(field)
             .map(|s| CoreSecret::from_bytes(s.expose().to_vec()))
@@ -143,10 +143,10 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             generator: Mutex::new(Gerador::default()),
             used: Mutex::new(BTreeMap::new()),
             loaded: Mutex::new(BTreeMap::new()),
-            attachments: Mutex::new(Anexos::default()),
-            picker: Box::new(SemSeletor),
+            attachments: Mutex::new(Attachments::default()),
+            picker: Box::new(NoPicker),
             terminal: Box::new(SemTerminal),
-            approvals: Arc::new(Aprovacoes::default()),
+            approvals: Arc::new(Approvals::default()),
             pending_unlock: Arc::new(PedidoPendente::default()),
         }
     }
@@ -181,32 +181,32 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     }
 
     /// The approval requests the notice queue watcher fills
-    /// ([`crate::aprovacao::vigiar`]).
-    pub fn approvals(&self) -> Arc<Aprovacoes> {
+    /// ([`crate::approval::watch`]).
+    pub fn approvals(&self) -> Arc<Approvals> {
         Arc::clone(&self.approvals)
     }
 
     /// Approval request (Phase 36): the current request as the window shows it, with all
     /// agent text neutralized (D51), or `None`. The entry types come from the detail (once
     /// per request; without it, the screen shows the generic icon).
-    pub fn approval_request(&self) -> Result<Option<PedidoExibido>, AppError> {
-        let Some(mut current) = self.approvals.atual() else {
+    pub fn approval_request(&self) -> Result<Option<DisplayedRequest>, AppError> {
+        let Some(mut current) = self.approvals.current() else {
             return Ok(None);
         };
-        if current.tipos.is_none() && !current.bloqueado {
+        if current.kinds.is_none() && !current.blocked {
             let mut d = self.daemon()?;
             let kinds: Vec<Option<&'static str>> = current
-                .pedido
+                .request
                 .entradas
                 .iter()
                 .map(|n| client::detail(&mut *d, n).ok().map(|x| x.tipo.name()))
                 .collect();
             drop(d);
             self.approvals
-                .guardar_tipos(current.pedido.id, kinds.clone());
-            current.tipos = Some(kinds);
+                .store_kinds(current.request.id, kinds.clone());
+            current.kinds = Some(kinds);
         }
-        Ok(Some(aprovacao::exibir(&current)))
+        Ok(Some(approval::display(&current)))
     }
 
     /// Answer an approval (Phase 36, S9, S10). Only a request the daemon sent to this app
@@ -225,25 +225,25 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         decision: &str,
         pin: Option<Pin>,
         acknowledged: bool,
-    ) -> Result<ResultadoAprovacao, AppError> {
-        let decision = aprovacao::decisao_de_nome(decision)?;
-        if decision.requires_pin() != pin.is_some() || (acknowledged && !decision.requires_pin()) {
+    ) -> Result<ApprovalResult, AppError> {
+        let decision = approval::decision_from_name(decision)?;
+        if decision.pede_pin() != pin.is_some() || (acknowledged && !decision.pede_pin()) {
             return Err(AppError::InvalidRequest);
         }
-        let result = match self.approvals.situacao(id) {
+        let result = match self.approvals.state_of(id) {
             None => return Err(AppError::InvalidRequest),
             Some(true) => {
-                if decision.requires_pin() {
+                if decision.pede_pin() {
                     return Err(AppError::Locked);
                 }
-                self.approvals.remover(id);
+                self.approvals.remove(id);
                 "respondido"
             }
             Some(false) => {
                 // Phase 44c: the origin confirmation is only decided by "Deny" or
                 // "Confirm"; the other requests never by "Confirm" (the daemon checks
                 // again).
-                let confirmation = self.approvals.confirmacao(id).unwrap_or(false);
+                let confirmation = self.approvals.confirmation(id).unwrap_or(false);
                 if decision != ward_core::protocol::Decision::Deny
                     && confirmation != (decision == ward_core::protocol::Decision::Confirm)
                 {
@@ -251,8 +251,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 }
                 // Phase 54b: the default entry box only on the request that has the
                 // notice, and mandatory on an "Allow" of it.
-                let hidden = self.approvals.entrada_oculta(id).unwrap_or(false);
-                if decision.requires_pin() && hidden != acknowledged {
+                let hidden = self.approvals.hidden_entry(id).unwrap_or(false);
+                if decision.pede_pin() && hidden != acknowledged {
                     return Err(AppError::InvalidRequest);
                 }
                 let r = client::answer_approval(
@@ -265,11 +265,11 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 drop(pin);
                 match r? {
                     client::Answered::Ok => {
-                        self.approvals.remover(id);
+                        self.approvals.remove(id);
                         "respondido"
                     }
                     client::Answered::Expired => {
-                        self.approvals.remover(id);
+                        self.approvals.remove(id);
                         "expirado"
                     }
                     client::Answered::WrongPin => {
@@ -277,16 +277,16 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                             "pin-incorreto"
                         } else {
                             // The 5th error locked the vault: the daemon denied the request (S9).
-                            self.approvals.marcar_bloqueado(id);
+                            self.approvals.mark_blocked(id);
                             "bloqueado"
                         }
                     }
                 }
             }
         };
-        Ok(ResultadoAprovacao {
-            resultado: result,
-            ha_outro: self.approvals.ha_pedido(),
+        Ok(ApprovalResult {
+            result,
+            has_other: self.approvals.has_request(),
         })
     }
 
@@ -295,7 +295,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// daemon opens nothing: without an answer, the request expires and is denied in the
     /// daemon.
     pub fn deny_pending_approvals(&self) {
-        for id in self.approvals.pendentes() {
+        for id in self.approvals.pending() {
             if let Ok(mut d) = self.daemon() {
                 let _ = client::answer_approval(
                     &mut *d,
@@ -305,13 +305,13 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                     false,
                 );
             }
-            self.approvals.remover(id);
+            self.approvals.remove(id);
         }
-        self.approvals.esvaziar();
+        self.approvals.clear();
     }
 
     /// Swaps the file picker (without it, [`Self::choose_attachment`] answers the error).
-    pub fn with_picker(mut self, picker: impl Seletor + 'static) -> Self {
+    pub fn with_picker(mut self, picker: impl Picker + 'static) -> Self {
         self.picker = Box::new(picker);
         self
     }
@@ -322,11 +322,11 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         self
     }
 
-    fn lock_attachments(&self) -> MutexGuard<'_, Anexos> {
+    fn lock_attachments(&self) -> MutexGuard<'_, Attachments> {
         // Panic with the lock held: the chosen attachments are discarded.
         self.attachments.lock().unwrap_or_else(|e| {
             let mut a = e.into_inner();
-            a.limpar();
+            a.clear();
             a
         })
     }
@@ -338,32 +338,32 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// Phase 39b: when editing (`edit`), the stored attachments the screen keeps count in
     /// the limits; the names are checked in the entry detail before opening the picker
     /// (unknown or repeated name is an invalid request).
-    pub fn choose_attachment(&self, edit: Option<&EdicaoDosAnexos>) -> Result<Escolha, AppError> {
+    pub fn choose_attachment(&self, edit: Option<&AttachmentEdit>) -> Result<Choice, AppError> {
         let base = match edit {
             None => Base::default(),
             Some(ed) => self.edit_base(ed)?,
         };
-        match self.picker.escolher()? {
-            None => Ok(Escolha::Cancelado),
-            Some(path) => Ok(self.lock_attachments().anexar_sobre(&path, base)),
+        match self.picker.choose()? {
+            None => Ok(Choice::Canceled),
+            Some(path) => Ok(self.lock_attachments().attach_over(&path, base)),
         }
     }
 
     /// Sum and count of the stored attachments of the edited entry that the screen keeps.
-    fn edit_base(&self, ed: &EdicaoDosAnexos) -> Result<Base, AppError> {
-        validar_nome_entrada(&ed.entrada)?;
-        if ed.mantidos.len() > ward_core::limits::MAX_ATTACHMENTS {
+    fn edit_base(&self, ed: &AttachmentEdit) -> Result<Base, AppError> {
+        validar_nome_entrada(&ed.entry)?;
+        if ed.kept.len() > ward_core::limits::MAX_ATTACHMENTS {
             return Err(AppError::InvalidRequest);
         }
-        let det = client::detail(&mut *self.daemon()?, &ed.entrada)?;
+        let det = client::detail(&mut *self.daemon()?, &ed.entry)?;
         let mut base = Base::default();
-        for (i, n) in ed.mantidos.iter().enumerate() {
+        for (i, n) in ed.kept.iter().enumerate() {
             let stored = det.anexos.iter().find(|a| &a.nome == n);
             match stored {
-                Some(a) if !ed.mantidos[..i].contains(n) => {
+                Some(a) if !ed.kept[..i].contains(n) => {
                     let t = usize::try_from(a.tamanho).map_err(|_| AppError::InvalidResponse)?;
-                    base.soma = base.soma.saturating_add(t);
-                    base.quantidade += 1;
+                    base.total = base.total.saturating_add(t);
+                    base.count += 1;
                 }
                 _ => return Err(AppError::InvalidRequest),
             }
@@ -382,7 +382,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             .iter()
             .find(|c| **c == field)
             .ok_or(AppError::InvalidRequest)?;
-        let Some(path) = self.picker.escolher_chave()? else {
+        let Some(path) = self.picker.choose_key()? else {
             return Ok(Carregamento::Cancelado);
         };
         match chave::ler_chave(&path) {
@@ -406,7 +406,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// Remove attachment: removes a chosen attachment not saved yet.
     pub fn remove_attachment(&self, id: u64) -> Result<(), AppError> {
-        self.lock_attachments().remover(id)
+        self.lock_attachments().remove(id)
     }
 
     /// Connect (D3): server entries only. The daemon issues the single-use token, the
@@ -492,21 +492,15 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             let detail = client::detail(&mut *d, reference.entrada())?;
             let field = reference.campo();
             if detail.segredos.iter().any(|s| s == field) {
-                client::copy(
-                    &mut *d,
-                    reference.entrada(),
-                    Target::Field(field.to_owned()),
-                )?
+                client::copy(&mut *d, reference.entrada(), Target::Field(field.to_owned()))?
             } else if let Some((_, v)) = detail.campos.iter().find(|(k, _)| k == field) {
                 Secret::new(v.as_bytes().to_vec())
             } else if let Some(x) = detail.extras.iter().find(|x| x.nome == field) {
                 match &x.valor {
                     Some(v) => Secret::new(v.as_bytes().to_vec()),
-                    None => client::copy(
-                        &mut *d,
-                        reference.entrada(),
-                        Target::Extra(field.to_owned()),
-                    )?,
+                    None => {
+                        client::copy(&mut *d, reference.entrada(), Target::Extra(field.to_owned()))?
+                    }
                 }
             } else {
                 return Err(AppError::FieldNotFound);
@@ -598,7 +592,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     pub fn discard_form(&self) {
         self.lock_used().clear();
         self.lock_loaded().clear();
-        self.lock_attachments().limpar();
+        self.lock_attachments().clear();
         if let Ok(mut g) = self.lock_generator() {
             g.descartar();
         }
@@ -610,9 +604,9 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     pub fn save_credential(
         &self,
         previous: Option<&str>,
-        mut f: Formulario,
+        mut f: Form,
     ) -> Result<SaveResult, AppError> {
-        let kind = formulario::tipo_do_formulario(&f.tipo).ok_or(AppError::InvalidRequest)?;
+        let kind = form::form_kind(&f.kind).ok_or(AppError::InvalidRequest)?;
         if let Some(a) = previous {
             validar_nome_entrada(a)?;
         }
@@ -630,7 +624,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         // Phase 39b (V5.12): kept attachments only when editing, only the ones the entry
         // has and each one once (the interface is not trusted). The content stays in the
         // daemon.
-        let kept = std::mem::take(&mut f.anexos_mantidos);
+        let kept = std::mem::take(&mut f.kept_attachments);
         let stored: &[ward_core::protocol::AnexoDetalhe] =
             edited.as_ref().map_or(&[], |d| d.anexos.as_slice());
         for (i, n) in kept.iter().enumerate() {
@@ -659,10 +653,10 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             used: &used,
             loaded: &loaded,
         };
-        let built = match formulario::montar(&mut f, kind, editing, &mut sources) {
+        let built = match form::build(&mut f, kind, editing, &mut sources) {
             Ok(m) => m,
-            Err(Falta::App(e)) => return Err(e),
-            Err(Falta::Campos(errors)) => {
+            Err(Missing::App(e)) => return Err(e),
+            Err(Missing::Fields(errors)) => {
                 return Ok(SaveResult {
                     saved: None,
                     errors,
@@ -675,25 +669,25 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         // the next save.
         let attachments: Vec<AttachmentDraft> = self
             .lock_attachments()
-            .escolhidos(&f.anexos)?
+            .chosen(&f.attachments)?
             .into_iter()
             .map(|p| AttachmentDraft {
-                name: p.nome.clone(),
-                content: CoreSecret::from_bytes(p.conteudo.expose().to_vec()),
+                name: p.name.clone(),
+                content: CoreSecret::from_bytes(p.content.expose().to_vec()),
             })
             .collect();
-        let name = f.nome.clone();
+        let name = f.name.clone();
         let draft = Draft {
-            name: f.nome,
-            group: f.grupo,
-            environment: f.ambiente,
-            project: f.projeto,
+            name: f.name,
+            group: f.group,
+            environment: f.environment,
+            project: f.project,
             tags: f.tags,
-            data: built.dados,
+            data: built.data,
             extras: built.extras,
             attachments,
         };
-        if let Err(errors) = formulario::validar_local(&draft) {
+        if let Err(errors) = form::validate_local(&draft) {
             return Ok(SaveResult {
                 saved: None,
                 errors,
@@ -710,7 +704,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             }
             client::Save::Problems(p) => Ok(SaveResult {
                 saved: None,
-                errors: formulario::erros_do_daemon(&p),
+                errors: form::daemon_errors(&p),
             }),
         }
     }
@@ -816,9 +810,9 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// List backups (Phase 47, V7.7): the versions of the local backup, from newest to
     /// oldest, only with the name and the instant (from the name). No content, size nor
     /// path: the protocol does not carry them.
-    pub fn list_backups(&self) -> Result<Vec<VersaoVista>, AppError> {
+    pub fn list_backups(&self) -> Result<Vec<VersionView>, AppError> {
         let list = client::backups(&mut *self.daemon()?)?;
-        restaurar::versoes_de(&list)
+        restore::versions_from(&list)
     }
 
     /// Restore backup (Phase 47, V7.7; D17, D39, S9). The version must be in the format
@@ -827,13 +821,13 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// in the request and are zeroed on drop. After the swap, the open form (of the vault
     /// from before) is discarded and the response carries only how many entries the
     /// version has.
-    pub fn restore_backup(&self, request: Restauracao) -> Result<Restaurado, AppError> {
-        let Restauracao {
-            versao: version,
-            senha: password,
+    pub fn restore_backup(&self, request: Restore) -> Result<Restored, AppError> {
+        let Restore {
+            version,
+            password,
             pin,
         } = request;
-        restaurar::versao_pedida(&version)?;
+        restore::requested_version(&version)?;
         let mut d = self.daemon()?;
         if !client::backups(&mut *d)?.iter().any(|b| b.nome == version) {
             return Err(AppError::BackupNotFound);
@@ -845,9 +839,9 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         let entries = client::list(&mut *d)?.len();
         drop(d);
         self.discard_form();
-        Ok(Restaurado {
-            restaurado: true,
-            entradas: entries,
+        Ok(Restored {
+            restored: true,
+            entries,
         })
     }
 
@@ -883,8 +877,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// Status for the tray (Phase 39): only the status request, which the daemon does not
     /// count as use.
-    pub fn tray_state(&self) -> crate::bandeja::EstadoBandeja {
-        crate::bandeja::EstadoBandeja::de(self.vault_status())
+    pub fn tray_state(&self) -> crate::tray::TrayState {
+        crate::tray::TrayState::from_status(self.vault_status())
     }
 
     /// The tray saw the status change (Phase 53d): if the vault stopped being unlocked
@@ -893,10 +887,10 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// now".
     pub fn on_tray_transition(
         &self,
-        before: crate::bandeja::EstadoBandeja,
-        after: crate::bandeja::EstadoBandeja,
+        before: crate::tray::TrayState,
+        after: crate::tray::TrayState,
     ) {
-        if crate::bandeja::descartar_na_passagem(before, after) {
+        if crate::tray::discard_on_transition(before, after) {
             self.on_exit();
         }
     }
@@ -907,8 +901,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// belongs to the app, not to the menu. Returns `(before, now)`.
     pub fn check_transition(
         &self,
-        seen: &Mutex<crate::bandeja::EstadoBandeja>,
-    ) -> (crate::bandeja::EstadoBandeja, crate::bandeja::EstadoBandeja) {
+        seen: &Mutex<crate::tray::TrayState>,
+    ) -> (crate::tray::TrayState, crate::tray::TrayState) {
         let now = self.tray_state();
         let before = {
             let mut v = seen.lock().unwrap_or_else(|e| e.into_inner());
@@ -1126,19 +1120,19 @@ mod tests {
     /// stays; the periodic poll with the vault unlocked does not clear.
     #[test]
     fn attack_outside_lock_clears_the_clipboard_at_once() {
-        use crate::bandeja::EstadoBandeja::*;
-        for after in [Travado, SemDaemon, SemCofre] {
+        use crate::tray::TrayState::*;
+        for after in [Locked, NoDaemon, NoVault] {
             let (s, area) = service();
             s.copy_field("acme-pg-dev", "senha").unwrap();
-            s.on_tray_transition(Destravado, Destravado);
-            s.on_tray_transition(Travado, Destravado);
+            s.on_tray_transition(Unlocked, Unlocked);
+            s.on_tray_transition(Locked, Unlocked);
             assert!(area.0.lock().unwrap().is_some(), "{after:?}");
-            s.on_tray_transition(Destravado, after);
+            s.on_tray_transition(Unlocked, after);
             assert_eq!(*area.0.lock().unwrap(), None, "{after:?}");
 
             s.copy_field("acme-pg-dev", "senha").unwrap();
             *area.0.lock().unwrap() = Some(b"texto do usuario".to_vec());
-            s.on_tray_transition(Destravado, after);
+            s.on_tray_transition(Unlocked, after);
             assert_eq!(
                 area.0.lock().unwrap().as_deref(),
                 Some(&b"texto do usuario"[..]),
@@ -1153,21 +1147,21 @@ mod tests {
     /// nothing cleared until the 30 s deadline.
     #[test]
     fn attack_outside_lock_without_tray_clears_the_clipboard_at_once() {
-        use crate::bandeja::EstadoBandeja::*;
+        use crate::tray::TrayState::*;
         let (s, area) = service();
-        let seen = Mutex::new(SemDaemon);
-        assert_eq!(s.check_transition(&seen), (SemDaemon, Destravado));
+        let seen = Mutex::new(NoDaemon);
+        assert_eq!(s.check_transition(&seen), (NoDaemon, Unlocked));
         s.copy_field("acme-pg-dev", "senha").unwrap();
         // A poll without change does not clear.
-        assert_eq!(s.check_transition(&seen), (Destravado, Destravado));
+        assert_eq!(s.check_transition(&seen), (Unlocked, Unlocked));
         assert!(area.0.lock().unwrap().is_some());
         // The lock comes from outside the app: straight in the daemon, without going
         // through its `lock`.
         client::lock(&mut *s.daemon().unwrap()).unwrap();
         assert!(area.0.lock().unwrap().is_some());
-        assert_eq!(s.check_transition(&seen), (Destravado, Travado));
+        assert_eq!(s.check_transition(&seen), (Unlocked, Locked));
         assert_eq!(*area.0.lock().unwrap(), None);
-        assert_eq!(*seen.lock().unwrap(), Travado);
+        assert_eq!(*seen.lock().unwrap(), Locked);
     }
 
     #[test]
@@ -1207,7 +1201,7 @@ mod tests {
         );
     }
 
-    fn form(json: serde_json::Value) -> Formulario {
+    fn form(json: serde_json::Value) -> Form {
         serde_json::from_value(json).unwrap()
     }
 
@@ -1278,7 +1272,7 @@ mod tests {
         });
         let r = s.save_credential(None, form(vazio)).unwrap();
         assert_eq!(r.saved, None);
-        let campos: Vec<_> = r.errors.iter().map(|e| e.campo).collect();
+        let campos: Vec<_> = r.errors.iter().map(|e| e.field).collect();
         for c in ["nome", "grupo", "ambiente", "url", "usuario"] {
             assert!(campos.contains(&c), "{c}: {r:?}");
         }
@@ -1287,7 +1281,7 @@ mod tests {
         let r = s
             .save_credential(None, form(new_login("acme-wp-dev")))
             .unwrap();
-        assert!(r.errors.iter().any(|e| e.campo == "nome"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "nome"), "{r:?}");
     }
 
     /// D35/V5.13: `otpauth://` with SHA256, 8 digits or 60 s is refused on save, with the
@@ -1304,8 +1298,8 @@ mod tests {
             j["segredos"]["totp_semente"] = serde_json::json!({ "novo": uri });
             let r = s.save_credential(None, form(j)).unwrap();
             assert_eq!(r.saved, None);
-            assert_eq!(r.errors[0].campo, "totp_semente");
-            assert_eq!(r.errors[0].motivo, "parâmetros de TOTP não suportados");
+            assert_eq!(r.errors[0].field, "totp_semente");
+            assert_eq!(r.errors[0].reason, "parâmetros de TOTP não suportados");
             assert_eq!(
                 s.credential_detail("acme-otp-novo").unwrap_err(),
                 AppError::EntryNotFound
@@ -1647,7 +1641,7 @@ mod tests {
 
     // ---- Phase 34: database, server, ftp/sftp, attachments and "Connect" ----
 
-    use crate::anexos::Escolha;
+    use crate::attachments::Choice;
     use crate::terminal::Token;
     use std::path::PathBuf;
 
@@ -1655,8 +1649,8 @@ mod tests {
     #[derive(Clone, Default)]
     struct FixedPicker(Arc<Mutex<Option<PathBuf>>>);
 
-    impl crate::anexos::Seletor for FixedPicker {
-        fn escolher(&self) -> Result<Option<PathBuf>, AppError> {
+    impl crate::attachments::Picker for FixedPicker {
+        fn choose(&self) -> Result<Option<PathBuf>, AppError> {
             Ok(self.0.lock().unwrap().clone())
         }
     }
@@ -1803,7 +1797,7 @@ mod tests {
             "extras": [], "anexos": []
         });
         let r = s.save_credential(None, form(database)).unwrap();
-        let campos: Vec<_> = r.errors.iter().map(|e| e.campo).collect();
+        let campos: Vec<_> = r.errors.iter().map(|e| e.field).collect();
         assert!(
             campos.contains(&"base") && campos.contains(&"porta"),
             "{r:?}"
@@ -1819,17 +1813,17 @@ mod tests {
             "extras": [], "anexos": []
         });
         let r = s.save_credential(None, form(b.clone())).unwrap();
-        assert_eq!(r.errors.first().map(|e| e.campo), Some("tunel"), "{r:?}");
+        assert_eq!(r.errors.first().map(|e| e.field), Some("tunel"), "{r:?}");
         b["campos"]["motor"] = serde_json::json!("oracle");
         b["campos"]["tunel"] = serde_json::json!("");
         let r = s.save_credential(None, form(b)).unwrap();
-        assert!(r.errors.iter().any(|e| e.campo == "motor"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "motor"), "{r:?}");
         // No password nor key on the server: error on the auth field.
         let mut v = new_server("clientex-ssh");
         v["segredos"] =
             serde_json::json!({"senha": "vazio", "chave_privada": "vazio", "passphrase": "vazio"});
         let r = s.save_credential(None, form(v)).unwrap();
-        assert!(r.errors.iter().any(|e| e.campo == "autenticacao"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "autenticacao"), "{r:?}");
     }
 
     /// S1: the interface forging both methods, or a key on ftp, is refused by the
@@ -1841,12 +1835,12 @@ mod tests {
         let mut v = new_server("clientex-ssh");
         v["segredos"]["senha"] = serde_json::json!({"novo": "falso-as-duas-34"});
         let r = s.save_credential(None, form(v)).unwrap();
-        assert!(r.errors.iter().any(|e| e.campo == "autenticacao"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "autenticacao"), "{r:?}");
         let mut f = new_server("clientex-ftp");
         f["tipo"] = serde_json::json!("ftp-sftp");
         f["campos"] = serde_json::json!({"protocolo": "ftp", "host": "127.0.0.1", "porta": "", "usuario": "u"});
         let r = s.save_credential(None, form(f)).unwrap();
-        assert!(r.errors.iter().any(|e| e.campo == "autenticacao"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "autenticacao"), "{r:?}");
         let ed = serde_json::json!({
             "tipo": "servidor", "nome": "acme-ssh-senha-stage", "grupo": "acme", "ambiente": "stage",
             "projeto": "", "tags": [],
@@ -1876,10 +1870,7 @@ mod tests {
             !json.contains("falso-conteudo") && !json.contains("falso-valor"),
             "{json}"
         );
-        let Escolha::Anexado {
-            id, tamanho: size, ..
-        } = e
-        else {
+        let Choice::Attached { id, size, .. } = e else {
             panic!("{e:?}")
         };
         assert_eq!(size, content.len() as u64);
@@ -1959,17 +1950,17 @@ mod tests {
     /// periodic poll with the vault unlocked does not discard.
     #[test]
     fn attack_outside_lock_discards_the_loaded_key() {
-        use crate::bandeja::EstadoBandeja::*;
+        use crate::tray::TrayState::*;
         let (s, sel, _) = service_34();
         let d = dir_34("chave53d");
         std::fs::write(d.join("chave"), key_53a("ZmFsc28tNTNk")).unwrap();
         *sel.0.lock().unwrap() = Some(d.join("chave"));
-        for after in [Travado, SemDaemon, SemCofre] {
+        for after in [Locked, NoDaemon, NoVault] {
             assert!(matches!(
                 s.load_key("chave_privada").unwrap(),
                 Carregamento::Carregada { .. }
             ));
-            s.on_tray_transition(Destravado, after);
+            s.on_tray_transition(Unlocked, after);
             assert_eq!(
                 s.save_credential(None, form(loaded_server("clientex-ssh-53d"))),
                 Err(AppError::InvalidRequest),
@@ -1980,8 +1971,8 @@ mod tests {
             s.load_key("chave_privada").unwrap(),
             Carregamento::Carregada { .. }
         ));
-        s.on_tray_transition(Destravado, Destravado);
-        s.on_tray_transition(Travado, Destravado);
+        s.on_tray_transition(Unlocked, Unlocked);
+        s.on_tray_transition(Locked, Unlocked);
         let r = s
             .save_credential(None, form(loaded_server("clientex-ssh-53d")))
             .unwrap();
@@ -2081,25 +2072,22 @@ mod tests {
     fn attack_large_empty_attachment_and_forged_id() {
         let (s, sel, _) = service_34();
         let d = dir_34("limites");
-        let escolher = |name: &str, size: usize| {
+        let choose = |name: &str, size: usize| {
             std::fs::write(d.join(name), vec![b'a'; size]).unwrap();
             *sel.0.lock().unwrap() = Some(d.join(name));
             s.choose_attachment(None).unwrap()
         };
         assert!(matches!(
-            escolher("grande.bin", 300 * 1024),
-            Escolha::Aviso { .. }
+            choose("grande.bin", 300 * 1024),
+            Choice::Notice { .. }
         ));
-        assert!(matches!(escolher("vazio.txt", 0), Escolha::Aviso { .. }));
-        let Escolha::Anexado { id, .. } = escolher("a.pem", 200 * 1024) else {
+        assert!(matches!(choose("vazio.txt", 0), Choice::Notice { .. }));
+        let Choice::Attached { id, .. } = choose("a.pem", 200 * 1024) else {
             panic!()
         };
-        assert!(matches!(
-            escolher("b.pem", 100 * 1024),
-            Escolha::Aviso { .. }
-        ));
+        assert!(matches!(choose("b.pem", 100 * 1024), Choice::Notice { .. }));
         *sel.0.lock().unwrap() = None;
-        assert_eq!(s.choose_attachment(None).unwrap(), Escolha::Cancelado);
+        assert_eq!(s.choose_attachment(None).unwrap(), Choice::Canceled);
         for ids in [serde_json::json!([id, id]), serde_json::json!([id + 99])] {
             let mut v = new_server("clientex-ssh-x");
             v["anexos"] = ids;
@@ -2110,13 +2098,13 @@ mod tests {
         }
         s.remove_attachment(id).unwrap();
         assert_eq!(s.remove_attachment(id), Err(AppError::InvalidRequest));
-        let Escolha::Anexado { id, .. } = escolher("chave", 10) else {
+        let Choice::Attached { id, .. } = choose("chave", 10) else {
             panic!()
         };
         let mut v = new_server("clientex-ssh-x");
         v["anexos"] = serde_json::json!([id]);
         let r = s.save_credential(None, form(v)).unwrap();
-        assert!(r.errors.iter().any(|e| e.campo == "anexos"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "anexos"), "{r:?}");
         // Canceling the form discards the chosen ones.
         s.discard_form();
         assert_eq!(s.remove_attachment(id), Err(AppError::InvalidRequest));
@@ -2185,12 +2173,11 @@ mod tests {
         let d = dir_34("edicao");
         std::fs::write(d.join(".env"), "OUTRO=falso-outro-39b\n").unwrap();
         *sel.0.lock().unwrap() = Some(d.join(".env"));
-        let ed = EdicaoDosAnexos {
-            entrada: "gama-generico".into(),
-            mantidos: vec!["app.env".into()],
+        let ed = AttachmentEdit {
+            entry: "gama-generico".into(),
+            kept: vec!["app.env".into()],
         };
-        let Escolha::Anexado { id, nome: name, .. } = s.choose_attachment(Some(&ed)).unwrap()
-        else {
+        let Choice::Attached { id, name, .. } = s.choose_attachment(Some(&ed)).unwrap() else {
             panic!()
         };
         assert_eq!(name, "env");
@@ -2218,9 +2205,9 @@ mod tests {
         assert_eq!(det.anexos.len(), 1);
         assert_eq!(det.anexos[0].nome, "env");
         // An unknown kept name in [`Service::choose_attachment`] is an invalid request.
-        let forged = EdicaoDosAnexos {
-            entrada: "gama-generico".into(),
-            mantidos: vec!["app.env".into()],
+        let forged = AttachmentEdit {
+            entry: "gama-generico".into(),
+            kept: vec!["app.env".into()],
         };
         assert_eq!(
             s.choose_attachment(Some(&forged)),
@@ -2276,11 +2263,11 @@ mod tests {
         let (s, area) = service();
         s.copy_field("acme-pg-dev", "senha").unwrap();
         assert!(area.0.lock().unwrap().is_some());
-        assert_eq!(s.tray_state(), crate::bandeja::EstadoBandeja::Destravado);
+        assert_eq!(s.tray_state(), crate::tray::TrayState::Unlocked);
         s.lock().unwrap();
         assert!(area.0.lock().unwrap().is_none(), "área não foi limpa");
         assert_eq!(s.vault_status(), Ok(VaultStatus::Locked));
-        assert_eq!(s.tray_state(), crate::bandeja::EstadoBandeja::Travado);
+        assert_eq!(s.tray_state(), crate::tray::TrayState::Locked);
         assert_eq!(
             s.reveal_field("acme-pg-dev", "senha").map(|_| ()),
             Err(AppError::Locked)
@@ -2333,7 +2320,7 @@ mod tests {
         let s = Service::new(Down, Copiador::novo(Arc::clone(&area)));
         *area.0.lock().unwrap() = Some(b"qualquer".to_vec());
         assert!(s.lock().is_err());
-        assert_eq!(s.tray_state(), crate::bandeja::EstadoBandeja::SemDaemon);
+        assert_eq!(s.tray_state(), crate::tray::TrayState::NoDaemon);
     }
 }
 

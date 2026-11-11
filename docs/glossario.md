@@ -2036,7 +2036,7 @@ a seção 2 (`ErroResposta::NaoAutorizado` → `ResponseError::Unauthorized`).
 | `LerVersao` | `ReadVersion` | `Limites` | `Limits` |
 | `Logins` | `Logins` | `Mascara` | `Mask` |
 | `Memoria` | `Memory` | `ModoCru` | `RawMode` |
-| `Montado` | `Mounted` | `MorreNaTrava` | `DiesOnLock` |
+| `Montado` (`app/core/form.rs`: as partes montadas do rascunho) | `Built` | `MorreNaTrava` | `DiesOnLock` |
 | `Motor` | `Engine` | `NivelAcesso` | `AccessLevel` |
 | `NivelMudado` | `LevelChanged` | `NotaSegura` | `SecureNote` |
 | `NovoCofre` | `NewVault` | `Objetos` | `Objects` |
@@ -2362,6 +2362,60 @@ PinIncorreto, Expirado }` → `Answered { Ok, WrongPin, Expired }`. Daemon falso
 `MAX_ERROS_PIN` → `MAX_PIN_ERRORS`, `VERSOES_FALSAS` → `FAKE_VERSIONS`; o re-export
 `daemon_falso::SEGREDOS` (achado da Fase 14) vira `fake_daemon::SECRETS`. Os modos da ponte
 (`aprovacao`, `aprovacao-prod`…, `--daemon-falso`) ficam (fio da ponte; Fase 56).
+Fase 32 (`app/core`: `form`, `approval`, `attachments`, `restore`, `tray`): módulos
+`formulario` → `form`, `aprovacao` → `approval`, `anexos` → `attachments`, `restaurar` →
+`restore`, `bandeja` → `tray`. Formulário: `TextoSecreto` → `SecretText` (`Debug`
+`"SecretText(••••)"`), `ValorSecreto { Vazio, Manter, Gerada, Carregada, Novo }` →
+`SecretValue { Empty, Keep, Generated, Loaded, New }`, `ValorExtra { Novo, Manter }` (o do
+`app/core`) → `ExtraValue { New, Keep }`, `ExtraFormulario { nome, segredo, valor }` →
+`FormExtra { name, secret, value }`, `Formulario { tipo, nome, grupo, ambiente, projeto,
+campos, segredos, anexos, anexos_mantidos }` → `Form { kind, name, group, environment,
+project, fields, secrets, attachments, kept_attachments }`, `ErroCampo { campo, posicao,
+motivo }` → `FieldError { field, position, reason }`, todos com `#[serde(rename =
+"<antigo>")]` até a Fase 54; `Fontes` → `Sources` (`guardado`/`gerada`/`carregada` →
+`stored`/`generated`/`loaded`), `Falta { App, Campos }` → `Missing { App, Fields }`,
+`Montado { dados }` → `Built { data }`, `SegredoMontado` → `BuiltSecret`;
+`TOTP_NAO_SUPORTADO`/`TOTP_URI_INVALIDA` → `TOTP_UNSUPPORTED`/`TOTP_INVALID_URI`,
+`tipo_do_formulario` → `form_kind`, `campos_do_tipo` → `fields_of_kind`,
+`campo_do_problema` → `problem_field`, `erros_do_daemon` → `daemon_errors`,
+`normalizar_semente` → `normalize_seed`, `montar` → `build`, `copiar_rascunho` →
+`copy_draft`, `validar_local` → `validate_local`. Aprovação: `PRAZO_APROVACAO` →
+`APPROVAL_TIMEOUT`, `SEGUNDOS_URGENTE` → `URGENT_SECONDS` (o mesmo nome do `approval.js`),
+`MAX_PENDENTES` → `MAX_PENDING`, `SEPARADOR_CADEIA` → `CHAIN_SEPARATOR`,
+`decisao_de_nome` → `decision_from_name`, `EntradaExibida { nome, tipo }` →
+`DisplayedEntry { name, kind }`, `PedidoExibido` → `DisplayedRequest` (campos pela seção
+13: `entries`, `environment`, `operation`, `command`, `directory`, `chain`, `origin`,
+`confirmation`, `hidden_entry`, `remaining`, `status`), `ResultadoAprovacao { resultado,
+ha_outro }` → `ApprovalResult { result, has_other }` (com `rename`), `Atual` → `Current`,
+`Aprovacoes` → `Approvals` (`chegou`/`chegou_ha`/`atual`/`guardar_tipos`/`confirmacao`/
+`entrada_oculta`/`situacao`/`remover`/`marcar_bloqueado`/`pendentes`/`ha_pedido`/
+`esvaziar` → `arrived`/`arrived_ago`/`current`/`store_kinds`/`confirmation`/
+`hidden_entry`/`state_of`/`remove`/`mark_blocked`/`pending`/`has_request`/`clear`),
+`exibir` → `display`, `vigiar` → `watch` (o `partida.vigiar` da Fase 34 é outro). Anexos:
+`Seletor` → `Picker` (`escolher`/`escolher_chave` → `choose`/`choose_key`), `SemSeletor` →
+`NoPicker`, `Pendente { nome, conteudo }` → `Pending { name, content }`, `Escolha {
+Anexado { nome, tamanho }, Cancelado, Aviso { motivo } }` → `Choice { Attached { name,
+size }, Canceled, Notice { reason } }` (tag `resultado` e valores com `rename`),
+`EdicaoDosAnexos { entrada, mantidos }` → `AttachmentEdit { entry, kept }` (com `rename`),
+`Base { soma, quantidade }` → `Base { total, count }`, `Anexos` → `Attachments`
+(`anexar`/`anexar_sobre`/`escolhidos`/`remover`/`limpar`/`soma` → `attach`/`attach_over`/
+`chosen`/`remove`/`clear`/`total`), `AVISO_*` → `*_NOTICE`, `nome_do_anexo` →
+`attachment_name`. Restaurar: `VersaoVista` → `VersionView` (`de_nome` → `from_name`),
+`Restauracao { versao, senha, pin }` → `Restore { version, password, pin }`, `Restaurado {
+restaurado, entradas }` → `Restored { restored, entries }` (todos com `rename`),
+`versoes_de` → `versions_from`, `versao_pedida` → `requested_version`. Bandeja:
+`EstadoBandeja { Destravado, Travado, SemCofre, SemDaemon }` → `TrayState { Unlocked,
+Locked, NoVault, NoDaemon }` (`de` → `from_status`), `Icone` → `Icon`, `Aparencia` →
+`Appearance`, `Acao { Abrir, Travar, Destravar, Sair }` → `Action { Open, Lock, Unlock,
+Quit }`, `ID_TITULO`/`ID_SUBTITULO`/`ID_ABRIR`/`ID_ACAO`/`ID_SAIR` → `ID_TITLE`/
+`ID_SUBTITLE`/`ID_OPEN`/`ID_ACTION`/`ID_QUIT` (os valores `bandeja-*` ficam até a Fase 54),
+`TEXTO_ABRIR`/`TEXTO_SAIR` → `OPEN_TEXT`/`QUIT_TEXT`, `BIBLIOTECAS` → `LIBRARIES`,
+`PASTAS_DO_SISTEMA` → `SYSTEM_DIRS`, `PASTA_DOS_ICONES` → `ICONS_DIR` (valor
+`ward-bandeja` fica), `ler_configuracao_na_passagem` → `read_settings_on_transition`,
+`descartar_na_passagem` → `discard_on_transition`, `subtitulo_destravado` →
+`unlocked_subtitle`, `pasta_dos_icones(_da_sessao)` → `(session_)icons_dir`,
+`biblioteca_disponivel`/`biblioteca_do_sistema` → `library_available`/`system_library`.
+O auxiliar de teste `trocar` do `credenciais.rs` → `exchange` (como o `Daemon::exchange`).
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;
@@ -2430,6 +2484,45 @@ simultaneas, total }` → `Limits { concurrent, total }`, `LIMITES_SALTO`/`LIMIT
 `processo_do_grupo_com_socket` → `peer_in_group`/`peer_socket`/`group_process_has_socket`,
 `pai_do_stat`/`grupo_do_stat`/`sessao_do_stat` → `stat_parent`/`stat_group`/
 `stat_session`. Os nomes das threads (`wardd-ponte*`) são literais e ficam.
+
+Fase 23 (`wardd`: `server`, `external`, `udisks` e os testes `common`, `units`, `memory`,
+`socket`, `dates`; nomes próprios desses arquivos): módulos `servidor` → `server`,
+`externo` → `external`, `tests/comum` → `tests/common`, `tests/memoria` → `tests/memory`,
+`tests/datas` → `tests/dates` (`mod testes` → `tests`). `server`: `MAX_CONEXOES`/
+`MAX_CONEXOES_APP` → `MAX_CONNECTIONS`/`MAX_APP_CONNECTIONS`, `PRAZO_LEITURA`/
+`PRAZO_ESCRITA` → `READ_DEADLINE`/`WRITE_DEADLINE`; `Vaga { ociosa, desde }` → `Slot {
+idle, since }`, `Vagas { lista, proximo }` → `Slots { list, next_id }` (`reservar`/
+`marcar`/`soltar` → `reserve`/`mark`/`release`), `Soltar` → `ReleaseOnDrop`; `Papeis {
+instalacao, app, app_de_teste, extensao_de_teste }` → `Roles { install, app, test_app,
+test_extension }` (`papel` → `role`); `papel_da_classe` → `role_from_class`; `responder`
+→ `answer`; `AssinanteSocket { escrita }` → `SocketSubscriber { write_lock }`;
+`ClienteSocket { par }` → `SocketClient { peer }`; `atender_conexao` → `serve_connection`;
+`servir` → `serve`. `external`: `PASTA` → `BACKUP_DIR`, `PREFIXO_TEMPORARIO` →
+`TEMP_PREFIX`; `Visto { rotulo, montagem, dispositivo }` → `Seen { label, mount, device }`;
+`FontePendrives::pendrives` → `UsbDriveSource::usb_drives`; `ErroExterno` →
+`ExternalError` com `SemUdisks`/`NaoConectado`/`Ambiguo`/`NaoMontado`/`Trocado`/
+`PastaInsegura`/`SemBackupLocal` → `NoUdisks`/`NotConnected`/`Ambiguous`/`NotMounted`/
+`Swapped`/`UnsafeDir`/`NoLocalBackup` (`codigo` → `code`); `Copia { copiadas, apagadas }`
+→ `BackupCopy { copied, deleted }`; `escolher`/`copiar`/`rodar` → `choose`/`copy`/
+`rotate`; privados `pelo_fd` → `via_fd`, `abrir_montagem`/`abrir_destino` → `open_mount`/
+`open_destination`, `versoes_em`/`geracoes_em` → `versions_in`/`generations_in`,
+`ler_versao`/`gravar_versao` → `read_version`/`write_version`, `limpar_temporarios` →
+`clean_temp_files`, `teto` → `cap`. `udisks`: `CAMINHO_UDISKS` → `UDISKS_PATH`,
+`MAX_OBJETOS`/`MAX_MONTAGEM` → `MAX_OBJECTS`/`MAX_MOUNT`, `ESPERA_RAJADA` → `BURST_WAIT`,
+`INTERVALO_COPIA` → `COPY_INTERVAL`, `FILA` → `QUEUE`, `Objetos` → `Objects`;
+`montagem_valida`/`rotulo_limpo`/`ler_objetos`/`consultar`/`registrar` → `valid_mount`/
+`clean_label`/`read_objects`/`query`/`record`; `Udisks::novo` → `new`; `vigiar_copia`/
+`vigiar_udisks` → `watch_copy`/`watch_udisks` (`cutucoes` → `pokes`). Testes (`common`):
+`SENHA`/`PIN_ERRADO`/`SEGREDOS` → `PASSWORD`/`WRONG_PIN`/`SECRETS`, `RelogioFalso` →
+`FakeClock`, `Dir::novo`/`caminhos` → `new`/`paths`, `daemon_em` → `daemon_at`, `ped`/
+`pedir` → `req`/`request`, `erro` → `error`, `destravar` → `unlock`, `servidor`/`banco`
+→ `server`/`database`, `mudar_nivel` → `set_level`, `cofre_de_teste` → `test_vault`,
+`codificado` → `encoded`, `contem` → `contains`, `geracoes`/`geracao_no_disco` →
+`generations`/`generation_on_disk`, `com_janela` → `with_window` (`JanelaFalsa` →
+`FakeWindow`); `socket.rs`: `DirSocket` → `SocketDir`, `subir`/`conectar`/`mandar`/
+`receber`/`pedir_por` → `start`/`connect`/`send`/`receive`/`request_on`; `dates.rs`:
+`RelogioDeParede` → `WallClock`. Os nomes das threads (`wardd-conexao`, `wardd-externo`,
+`wardd-udisks`) e os textos de log (`UidRecusado`, `SemIdentidade`) são literais e ficam.
 
 Fase 21 (`wardd`: `execution`, `ssh_agent`, `ssh`, `ssh_tests`): módulos `execucao`/
 `agente_ssh`/`ssh_testes` → `execution`/`ssh_agent`/`ssh_tests` (`mod testes` → `tests`).
@@ -2540,6 +2633,100 @@ stdout, stderr, chunks, end, failure }` (`texto` → `text`), `salvar` → `save
 `esperar`, `continuar`, `pty-pronto`…) e as chaves do registro (`agente.lista`, `neto`,
 `depois`…) são literais e ficam. Os nomes do `comum` (Fase 23), do `nucleo`/`aprovacao`
 (Fase 20) e do `ward-core` (`protocolo`, Fases 17–18) ficam como estão até as fases deles.
+Fase 27 (testes do `wardd`: `playwright.rs`, `login.rs` ficam; `extensao.rs` →
+`extension.rs`, `app_teste.rs` → `test_app.rs`, `app_valor.rs` → `app_value_binary.rs`,
+`valor_app.rs` → `app_value_core.rs`, `anexos_edicao.rs` → `attachment_edit.rs`,
+`chrome_falso.py` → `fake_chrome.py`; `[[test]]` `app_teste`/`app_valor` →
+`test_app`/`app_value_binary`): em `playwright.rs`, `SENHA_LOGIN` → `LOGIN_PASSWORD`,
+`Rt::novo` → `Rt::new`, `Cena`/`cena` → `Scene`/`scene` (`registro`/`eventos`/`sessao`/
+`sem_perfil` → `records`/`events`/`session`/`no_profile`), `formas_da_senha` →
+`password_forms`, `site::{Pedido { metodo, caminho, corpo }, porta, pedidos, Rota, subir,
+atender}` → `site::{Request { method, path, body }, port, requests, Route, start,
+serve}`, `formulario` → `form`, `com_clobber` → `with_clobber`, `login_em` → `login_at`,
+`CenaReal`/`cena_real` → `RealScene`/`real_scene` (`phish_limpo`/`senha_fora_da_url` →
+`phish_clean`/`password_out_of_url`), `CASOS` → `CASES`, `pagina` → `page`. Em
+`extension.rs`, `SEMENTE`/`AGORA` → `SEED`/`NOW`, `RelogioFixo` → `FixedClock`, `cofre`
+→ `vault`, `sugerir` → `suggest`, `preencher_cru`/`preencher` → `fill_raw`/`fill`,
+`nomes` → `names`, `sem_segredo` → `no_secret`, `salvar_login` → `save_login`,
+`nivel_na_lista` → `level_in_list`, `SENHA_NOVA` → `NEW_PASSWORD`, `SaiLogo` →
+`LeavesSoon`. Em `login.rs`, `ORIGEM` → `ORIGIN`, `prazos` → `deadlines` (`retirada_ms` →
+`pickup_ms`), `cofre` → `vault`, `login_do_agente` → `agent_login`, `aguardar` →
+`await_login`, `pegar` → `take`, `preencher` → `fill`, `resultado` → `outcome`,
+`sem_valor` → `no_value`, `ClienteQueSai` → `LeavingClient`, `RelogioParado` →
+`StoppedClock`, `AppFalso` → `FakeApp`, `SemAbrir` → `NoOpen`, `responder` → `answer`,
+`login_http`/`login_na_url`/`login_http_completo` → `http_login`/`login_at_url`/
+`full_http_login`, `CaiDepois` → `DropsLater`. Em `app_value_binary.rs` e
+`test_app.rs`, `APP_TESTE` → `TEST_APP`, `CLIENTE` → `CLIENT`, `DirSocket::novo` →
+`SocketDir::new`, `esperar` → `wait_for`, `ler` → `read`, `agulhas` → `needles`,
+`sem_segredo` → `no_secret`, `cliente_python` → `python_client`, `mandar` → `send`,
+`pedir` (local) → `request`, `a_mao` → `by_hand`. Em `app_value_core.rs`, `RelogioFixo`
+→ `FixedClock`, `com_totp` → `with_totp`, `alvo_campo` → `field_target`, `valor` →
+`value`, `pedido_valor` → `value_request`. Em `attachment_edit.rs`, `ANEXO_A`/`ANEXO_B`
+→ `ATTACHMENT_A`/`ATTACHMENT_B`, `generico` → `generic`, `editar` → `edit`, `no_disco`/
+`anexos_no_disco` → `on_disk`/`attachments_on_disk`. Em `fake_chrome.py`, `PASTA`/`MODO`
+→ `FOLDER`/`MODE`, `registrar` → `record` (recebe um dict; as chaves ficam), `origem` →
+`origin`, `ler`/`escrever` → `read_message`/`write_message`, `responder` → `reply`,
+`evento` → `event`, `pendentes`/`contador` → `pending`/`counter`, `pausar` → `pause`,
+`url_atual` → `current_url`, `usuario_senha` → `credentials`, `proximo` →
+`next_command`. Os arquivos `modo`/`registro`, os modos (`mente`, `morre`…) e as chaves
+do registro (`evento`, `inicio`, `preencher`, `decisao`, `seguiu`, `ambiente`, `alvos`…)
+são literais e ficam, como o código `"usuario, senha"` que o falso procura no script do
+daemon. O código Python embutido no `CLIENT` de `app_value_binary.rs` é literal e fica.
+Fase 25 (testes do `wardd`: `aprovacao.rs` → `approval.rs`, `trava.rs` → `lock.rs`,
+`nucleo.rs` → `core.rs`; `[[test]]` `trava` → `lock`): em `lock.rs`, a macro `emitir` →
+`emit`, `SESSAO`/`IFACE_SESSAO` → `SESSION`/`SESSION_IFACE`, `RelogioManual` →
+`ManualClock` (`novo`/`esperas`/`por`/`ilegivel` → `new`/`waits`/`set`/`unreadable`),
+`cofre_com_relogio` → `vault_with_clock`, `lista_ok` → `list_ok`, `executar` (local) →
+`run_request`, `BarramentoFalso` → `FakeBus` (`filho`/`subir`/`endereco`/`cliente`/
+`matar` → `child`/`start`/`address`/`client`/`kill`), `Inibidores` → `Inhibitors`,
+`LogindFalso` → `FakeLogind` (`inibidor` → `inhibitor`), `daemon_vigiado` →
+`watched_daemon`, `espera_travar` → `wait_locked`, `mandar` → `send`, `pedir_por` →
+`request_over`, `Filho` → `KillOnDrop`, `esperar_no_log` → `wait_in_log`, `forjador` →
+`forger`. Em `core.rs`, `lista` → `list`, `nivel_de` → `level_of`, `sou_root` →
+`is_root`, `cofre_n2` → `vault_n2`, `geracoes_em` → `generations_at`. Em `approval.rs`,
+`PRAZO` → `DEADLINE`, `RelogioManual` → `ManualClock` (`ir`/`avancar` → `set`/`advance`),
+`Recebido { Aprovacao, Destrave }` → `Received { Approval, Unlock }`, `AppFalso` →
+`FakeApp`, `AoSair` → `OnExit`, `AbridorFalso { resultado, aberturas, ao_sair }` →
+`FakeOpener { result, opens, on_exit }` (`novo`/`sair` → `new`/`exit`), `Cena { relogio,
+abridor }` → `Scene { clock, opener }`, `cena`/`cena_com` → `scene`/`scene_with`,
+`assinar` → `subscribe`, `executar_json(_em)` → `run_json(_in)`, `usar` → `use_entry`,
+`pedido` → `approval_request`, `responder` → `answer`, `nivel` → `level`,
+`ExpirarSeCair` → `ExpireOnPanic`, `com_janela` (local) → `with_approval_window` (o
+`with_window` do `common` é outro), `fontes_rs` → `rs_sources`, `GANCHOS_DE_TESTE`/
+`CFG_GANCHOS` → `TEST_HOOKS`/`CFG_HOOKS`, `conferir_v3_15` → `check_v3_15` (aqui
+`assinatura` é a assinatura da função, `signature`, não o `subscription` do D-Bus),
+`destrave` → `unlock_request`, `usar_com_entrada` → `use_with_stdin`,
+`com_janela_e_entrada` → `with_window_and_stdin`, `responder_ciente` →
+`answer_confirmed`, `ClienteForjado` → `ForgedClient`, `Caiu` → `Dropped`. Os nomes de
+arquivo de `src/` que o V3.15 procura (`trava.rs`, `nucleo.rs`, `aprovacao.rs`,
+`uso.rs`…) e os ganchos (`com_chrome`, `com_programas_ssh`…) são literais e mudam com as
+Fases 19–20; os métodos dos traits de fora (`Relogio::agora`/`dormir`,
+`RelogioMotor::agora`, `Assinante::entregar`, `AbridorApp::abrir`, `Cliente::cadeia`/
+`saiu`) ficam até as fases deles.
+Fase 26 (testes do `wardd`: `tests/externo.rs` → `tests/external.rs`,
+`tests/configuracoes.rs` → `tests/settings.rs`; `backup.rs` e `d62.rs` ficam): em
+`external.rs`, `Fonte { vistos, proximas, consultas }` → `Source { seen, next, queries }`
+(`com`/`por` → `with`/`set`), `pendrive` → `usb_drive`, `montagem` → `mount_point`,
+`ligar` → `turn_on`, `locais` → `local_versions`, `arvore` → `tree`, `pasta_externa` →
+`external_dir`, `no_pendrive` → `on_drive`, `BarramentoFalso { filho }` → `FakeBus {
+child }` (`subir`/`endereco` → `start`/`address`), `Objeto { caminho, rotulo,
+dispositivo, montagem, sistema, de_loop }` → `Object { path, label, device, mount,
+system, is_loop }`, `Objetos`/`objetos`/`objeto` → `Objects`/`objects`/`object`,
+`Gerente { lista }` → `Manager { list }`, `UdisksFalso { lista }` → `FakeUdisks { list }`
+(`novo`/`montou` → `new`/`mounted`), `cutucoes` → `nudges`. Em `backup.rs`, `pasta` →
+`backup_dir`, `modo` → `mode`, `versoes` → `versions`, `restaurar` → `restore`,
+`nomes_da_lista` → `list_names`, `tempo_trava` → `lock_timeout`, `versao_em` →
+`version_at`, `plantar` → `plant`. Em `settings.rs`, `configuracao` → `settings`,
+`tempo_trava` → `lock_timeout`, `trocar_pin` → `change_pin`, `trocar_senha` →
+`change_password`. Em `d62.rs`, `RelogioMovel { agora, esperas }` → `MovableClock { now,
+waits }` (`andar` → `advance`), `Preso { entrou, soltar }` → `Stuck { entered, release
+}`, `daemon_movel` → `movable_daemon`, `destravar_como` → `unlock_as`, `texto_estado` →
+`state_text`, `falhas_no_disco` → `failures_on_disk`, `cofre_travado` → `locked_vault`,
+`trocar_por_copia` → `swap_for_copy`. Os métodos `dormir`/`agora` do trait `Relogio`, os
+nomes do `nucleo` (`com_pendrives`, `sincronizar_externo`, `ligar_copia_externa`,
+`com_gancho_depois_de_gravar`, `Caminhos`, `ESPERA_MAXIMA`, `espera_destrave`), do
+`arquivos` (`Geracoes`, `ler_estado_completo`, `gravar_estado`) e do `ward-core`
+(`protocolo`) ficam até as fases deles (17–20).
 
 Fase 16 (`ward-core`: `mask`): módulo `mascara` → `mask` (`automato` → `automaton`,
 `testes` → `tests`). `MARCA` → `MARK`; `ErroMascara` → `MaskError` com `GrandeDemais` →

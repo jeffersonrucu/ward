@@ -1,7 +1,7 @@
 //! Daemon do Ward (`wardd`): único processo que toca em segredo (R1, Fase 22).
 //!
 //! - [`nucleo`]: estado travado/destravado e a regra de cada operação.
-//! - [`servidor`]: o laço do socket (uid do par, papel, quadros, limites).
+//! - [`server`]: o laço do socket (uid do par, papel, quadros, limites).
 //! - [`arquivos`]: leitura do cofre com identidade por `fstat` e o arquivo de estado
 //!   (D39, D53).
 //! - [`config`]: caminhos de release e do daemon de teste (D7).
@@ -14,7 +14,7 @@
 //! - [`login`]: o `ward login` (Fase 43), levado à extensão do Chrome.
 //! - [`playwright`]: o `ward playwright` (Fase 44) pelo Chrome com o pipe de
 //!   depuração ([`cdp`]).
-//! - [`externo`]: backup externo em pendrive (Fase 46); [`udisks`]: os pendrives pelo
+//! - [`external`]: backup externo em pendrive (Fase 46); [`udisks`]: os pendrives pelo
 //!   udisks2 no barramento do sistema.
 //!
 //! Sem `unsafe`: o que depende do sistema está no `ward-platform`.
@@ -29,12 +29,12 @@ pub mod bridge;
 pub mod cdp;
 pub mod config;
 pub mod execution;
-pub mod externo;
+pub mod external;
 pub mod lancamento;
 pub mod login;
 pub mod nucleo;
 pub mod playwright;
-pub mod servidor;
+pub mod server;
 pub mod ssh;
 pub mod ssh_agent;
 pub mod trava;
