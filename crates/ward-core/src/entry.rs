@@ -47,7 +47,7 @@ impl Environment {
     /// All of them, in the order of the interface.
     pub const ALL: [Environment; 3] = [Environment::Dev, Environment::Stage, Environment::Prod];
 
-    /// Name used in the interface, in the CLI and in `WARD_AMBIENTE`.
+    /// Name used in the interface, in the CLI and in `WARD_ENVIRONMENT`.
     pub fn name(self) -> &'static str {
         match self {
             Environment::Dev => "dev",
@@ -305,7 +305,7 @@ pub enum Protocol {
 }
 
 impl Protocol {
-    /// Identifier (the value of `WARD_PROTOCOLO`).
+    /// Identifier (the value of `WARD_PROTOCOL`).
     pub fn name(self) -> &'static str {
         match self {
             Protocol::Ftp => "ftp",
@@ -481,7 +481,7 @@ impl ExtraField {
 }
 
 /// Attachment encrypted in the vault. The whole content is secret (V2.13). Becomes
-/// `WARD_ARQUIVO_<NAME>` (D10).
+/// `WARD_FILE_<NAME>` (D10, m2:DT11).
 #[derive(Debug)]
 pub struct Attachment {
     name: String,

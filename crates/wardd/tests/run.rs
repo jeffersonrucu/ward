@@ -295,7 +295,7 @@ fn v4_delivery_mask_code_and_refusals() {
         &w,
         "t-livre",
         &sh(
-            "printf '%s|%s|%s|%s' \"$WARD_ENTRADA\" \"$WARD_GRUPO\" \"$WARD_AMBIENTE\" \"$WARD_USER\"",
+            "printf '%s|%s|%s|%s' \"$WARD_ENTRY\" \"$WARD_GROUP\" \"$WARD_ENVIRONMENT\" \"$WARD_USER\"",
         ),
         &[],
     );
@@ -356,6 +356,12 @@ fn v4_delivery_mask_code_and_refusals() {
         "LISTEN_",
         "valor-da-cli",
         "DA_CLI",
+        // m2:V4.19: none of the 0.1.x delivery names.
+        "WARD_ENTRADA",
+        "WARD_GRUPO",
+        "WARD_AMBIENTE",
+        "WARD_PROTOCOLO",
+        "WARD_ARQUIVO_",
     ] {
         assert!(
             !env.contains(forbidden),
@@ -366,7 +372,7 @@ fn v4_delivery_mask_code_and_refusals() {
         "LANG=C\n",
         "LC_CTYPE=C.UTF-8",
         "WARD_PASS=••••",
-        "WARD_ENTRADA=t-livre",
+        "WARD_ENTRY=t-livre",
         "PATH=/usr/local/bin:/usr/bin:/bin\n",
     ] {
         assert!(env.contains(expected), "{expected} faltando:\n{env}");
@@ -404,7 +410,7 @@ fn v4_delivery_mask_code_and_refusals() {
         &w,
         "t-gen",
         &sh(
-            "f=\"$WARD_ARQUIVO_APP_ENV\"; stat -c '%a %U' \"$f\"; stat -c '%a' \"$(dirname \"$f\")\"; \
+            "f=\"$WARD_FILE_APP_ENV\"; stat -c '%a %U' \"$f\"; stat -c '%a' \"$(dirname \"$f\")\"; \
              printf '%s\\n' \"$f\"; cat \"$f\"; echo; printf '%s|%s\\n' \"$WARD_REGIAO\" \"$WARD_CHAVE_LICENCA\"; \
              sha256sum < \"$f\"",
         ),
@@ -583,7 +589,7 @@ fn f26a_attack_cli_environment_does_not_change_the_command() {
         "COLORTERM=truecolor\n".to_owned(),
         "NO_COLOR=1\n".to_owned(),
         "LC_CTYPE=C.UTF-8\n".to_owned(),
-        "WARD_ENTRADA=t-livre\n".to_owned(),
+        "WARD_ENTRY=t-livre\n".to_owned(),
     ] {
         assert!(env.contains(&expected), "{expected:?} faltando:\n{env}");
     }
@@ -668,7 +674,7 @@ fn v4_15_cli_that_drops_and_killed_daemon() {
     let sock = SocketDir::new("cai");
     let mut w = start(&dev, &sock);
     unlock_through(&w);
-    let script = "echo \"$$ $WARD_ARQUIVO_APP_ENV\"; sleep 60 & echo $!; wait";
+    let script = "echo \"$$ $WARD_FILE_APP_ENV\"; sleep 60 & echo $!; wait";
 
     // 1. The CLI drops (closes the connection) with the command and a grandchild
     //    running.
@@ -702,7 +708,7 @@ fn v4_15_cli_that_drops_and_killed_daemon() {
     let r = run(
         &w,
         "t-gen",
-        &sh("test -f \"$WARD_ARQUIVO_APP_ENV\" && kill -9 $$"),
+        &sh("test -f \"$WARD_FILE_APP_ENV\" && kill -9 $$"),
         &[],
     );
     assert_eq!(r.end, Some(137), "{r:?}");

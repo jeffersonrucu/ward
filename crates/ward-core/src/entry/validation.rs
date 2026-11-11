@@ -95,7 +95,7 @@ pub(crate) fn type_variables(kind: EntryType) -> &'static [&'static str] {
         EntryType::Login => &["URL", "USER", "PASS", "TOTP"],
         EntryType::Server => &["HOST", "PORT", "USER", "PASS", "PASSPHRASE"],
         EntryType::Api => &["URL", "TOKEN"],
-        EntryType::FtpSftp => &["PROTOCOLO", "HOST", "PORT", "USER", "PASS", "PASSPHRASE"],
+        EntryType::FtpSftp => &["PROTOCOL", "HOST", "PORT", "USER", "PASS", "PASSPHRASE"],
         EntryType::Database
         | EntryType::Aws
         | EntryType::Smtp
@@ -104,14 +104,14 @@ pub(crate) fn type_variables(kind: EntryType) -> &'static [&'static str] {
     }
 }
 
-/// Variables of every type (`WARD_ENTRADA`, `WARD_GRUPO`, `WARD_AMBIENTE`).
-pub(crate) const COMMON_VARIABLES: [&str; 3] = ["ENTRADA", "GRUPO", "AMBIENTE"];
+/// Variables of every type (`WARD_ENTRY`, `WARD_GROUP`, `WARD_ENVIRONMENT`; m2:DT11).
+pub(crate) const COMMON_VARIABLES: [&str; 3] = ["ENTRY", "GROUP", "ENVIRONMENT"];
 
-/// Attachments that the type already delivers (suffix after `WARD_ARQUIVO_`): the key of
-/// server and of `ftp/sftp` becomes `WARD_ARQUIVO_CHAVE`.
+/// Attachments that the type already delivers (suffix after `WARD_FILE_`): the key of
+/// server and of `ftp/sftp` becomes `WARD_FILE_KEY`.
 pub(crate) fn type_attachments(kind: EntryType) -> &'static [&'static str] {
     match kind {
-        EntryType::Server | EntryType::FtpSftp => &["CHAVE"],
+        EntryType::Server | EntryType::FtpSftp => &["KEY"],
         _ => &[],
     }
 }
@@ -946,8 +946,8 @@ fn validate_extras(
         }
         if COMMON_VARIABLES.contains(&var.as_str())
             || type_variables(kind).contains(&var.as_str())
-            || var == "ARQUIVO"
-            || var.starts_with("ARQUIVO_")
+            || var == "FILE"
+            || var.starts_with("FILE_")
         {
             c.error_at(FIELD, i, RESERVED_EXTRA);
             continue;

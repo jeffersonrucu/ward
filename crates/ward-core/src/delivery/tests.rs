@@ -365,9 +365,9 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "acme-wp-prod"),
-            ("WARD_GRUPO", "acme"),
-            ("WARD_AMBIENTE", "prod"),
+            ("WARD_ENTRY", "acme-wp-prod"),
+            ("WARD_GROUP", "acme"),
+            ("WARD_ENVIRONMENT", "prod"),
             ("WARD_URL", "http://localhost:8081/wp-login.php"),
             ("WARD_USER", "wp_editor"),
             ("WARD_PASS", "falso-WP-senha-02"),
@@ -388,9 +388,9 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "acme-pg-dev"),
-            ("WARD_GRUPO", "acme"),
-            ("WARD_AMBIENTE", "dev"),
+            ("WARD_ENTRY", "acme-pg-dev"),
+            ("WARD_GROUP", "acme"),
+            ("WARD_ENVIRONMENT", "dev"),
             ("PGHOST", "127.0.0.1"),
             ("PGPORT", "55432"),
             ("PGDATABASE", "app_teste"),
@@ -412,9 +412,9 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "acme-pg-tunel"),
-            ("WARD_GRUPO", "acme"),
-            ("WARD_AMBIENTE", "stage"),
+            ("WARD_ENTRY", "acme-pg-tunel"),
+            ("WARD_GROUP", "acme"),
+            ("WARD_ENVIRONMENT", "stage"),
             ("PGHOST", "127.0.0.1"),
             ("PGPORT", &port),
             ("PGDATABASE", "app_teste"),
@@ -435,9 +435,9 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "acme-ssh-senha-stage"),
-            ("WARD_GRUPO", "acme"),
-            ("WARD_AMBIENTE", "stage"),
+            ("WARD_ENTRY", "acme-ssh-senha-stage"),
+            ("WARD_GROUP", "acme"),
+            ("WARD_ENVIRONMENT", "stage"),
             ("WARD_HOST", "127.0.0.1"),
             ("WARD_PORT", "2222"),
             ("WARD_USER", "deploy"),
@@ -451,13 +451,13 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "acme-ssh-chave-prod"),
-            ("WARD_GRUPO", "acme"),
-            ("WARD_AMBIENTE", "prod"),
+            ("WARD_ENTRY", "acme-ssh-chave-prod"),
+            ("WARD_GROUP", "acme"),
+            ("WARD_ENVIRONMENT", "prod"),
             ("WARD_HOST", "127.0.0.1"),
             ("WARD_PORT", "2223"),
             ("WARD_USER", "deploy"),
-            ("WARD_ARQUIVO_CHAVE", "/run/user/1000/ward/tmp/1-chave"),
+            ("WARD_FILE_KEY", "/run/user/1000/ward/tmp/1-chave"),
             ("WARD_PASSPHRASE", "falso-passphrase-01"),
         ],
         "acme-ssh-chave-prod",
@@ -474,9 +474,9 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "beta-github-api"),
-            ("WARD_GRUPO", "beta"),
-            ("WARD_AMBIENTE", "dev"),
+            ("WARD_ENTRY", "beta-github-api"),
+            ("WARD_GROUP", "beta"),
+            ("WARD_ENVIRONMENT", "dev"),
             ("WARD_URL", "https://api.github.com"),
             ("WARD_TOKEN", "falso_token_github_01"),
             ("GITHUB_TOKEN", "falso_token_github_01"),
@@ -488,9 +488,9 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "beta-aws-dev"),
-            ("WARD_GRUPO", "beta"),
-            ("WARD_AMBIENTE", "dev"),
+            ("WARD_ENTRY", "beta-aws-dev"),
+            ("WARD_GROUP", "beta"),
+            ("WARD_ENVIRONMENT", "dev"),
             ("AWS_ACCESS_KEY_ID", "FALSOACCESSKEY01"),
             ("AWS_SECRET_ACCESS_KEY", "falso-aws-secret-01"),
             ("AWS_SESSION_TOKEN", "falso-aws-session-01"),
@@ -505,9 +505,9 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "beta-smtp-stage"),
-            ("WARD_GRUPO", "beta"),
-            ("WARD_AMBIENTE", "stage"),
+            ("WARD_ENTRY", "beta-smtp-stage"),
+            ("WARD_GROUP", "beta"),
+            ("WARD_ENVIRONMENT", "stage"),
             ("SMTP_HOST", "smtp.teste.invalid"),
             ("SMTP_PORT", "587"),
             ("SMTP_USER", "mailer"),
@@ -521,10 +521,10 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "beta-sftp-dev"),
-            ("WARD_GRUPO", "beta"),
-            ("WARD_AMBIENTE", "dev"),
-            ("WARD_PROTOCOLO", "sftp"),
+            ("WARD_ENTRY", "beta-sftp-dev"),
+            ("WARD_GROUP", "beta"),
+            ("WARD_ENVIRONMENT", "dev"),
+            ("WARD_PROTOCOL", "sftp"),
             ("WARD_HOST", "127.0.0.1"),
             ("WARD_PORT", "2222"),
             ("WARD_USER", "sftpuser"),
@@ -538,12 +538,12 @@ fn v2_14_expected_delivery_of_the_contract() {
     check(
         &e,
         &[
-            ("WARD_ENTRADA", "gama-generico"),
-            ("WARD_GRUPO", "gama"),
-            ("WARD_AMBIENTE", "stage"),
+            ("WARD_ENTRY", "gama-generico"),
+            ("WARD_GROUP", "gama"),
+            ("WARD_ENVIRONMENT", "stage"),
             ("WARD_REGIAO", "r-01"),
             ("WARD_CHAVE_LICENCA", "falso-licenca-01"),
-            ("WARD_ARQUIVO_APP_ENV", "/run/user/1000/ward/tmp/1-app.env"),
+            ("WARD_FILE_APP_ENV", "/run/user/1000/ward/tmp/1-app.env"),
         ],
         "gama-generico",
     );
@@ -566,14 +566,64 @@ fn v2_14_common_ones_come_first_and_in_order() {
         let names: Vec<&str> = delivery.names().take(3).collect();
         assert_eq!(
             names,
-            ["WARD_ENTRADA", "WARD_GRUPO", "WARD_AMBIENTE"],
+            ["WARD_ENTRY", "WARD_GROUP", "WARD_ENVIRONMENT"],
             "{e}"
         );
-        assert_eq!(delivery.value("WARD_ENTRADA"), Some(e.name()));
-        assert_eq!(delivery.value("WARD_GRUPO"), Some(e.group()));
+        assert_eq!(delivery.value("WARD_ENTRY"), Some(e.name()));
+        assert_eq!(delivery.value("WARD_GROUP"), Some(e.group()));
         assert_eq!(
-            delivery.value("WARD_AMBIENTE"),
+            delivery.value("WARD_ENVIRONMENT"),
             Some(e.environment().name())
+        );
+    }
+}
+
+/// m2:V4.19 (m2:DT11): no delivery of the test vault carries a 0.1.x variable name (the
+/// last row of the contract's expected delivery table).
+#[test]
+fn m2_v4_19_no_old_variable_name() {
+    let old = [
+        "WARD_ENTRADA",
+        "WARD_GRUPO",
+        "WARD_AMBIENTE",
+        "WARD_PROTOCOLO",
+    ];
+    for e in all_with_delivery() {
+        let delivery = build_ok(&e, &mut Fakes::default());
+        for name in delivery.names() {
+            assert!(!old.contains(&name), "{name} em {e}");
+            assert!(!name.starts_with("WARD_ARQUIVO_"), "{name} em {e}");
+        }
+    }
+    // The key and the attachments go in `WARD_FILE_*`.
+    let delivery = build_ok(&ssh_key(), &mut Fakes::default());
+    assert!(delivery.value("WARD_FILE_KEY").is_some());
+    let delivery = build_ok(&sftp(), &mut Fakes::default());
+    assert_eq!(delivery.value("WARD_PROTOCOL"), Some("sftp"));
+}
+
+/// m2:DT4/DT11 (finding of Phase 48): `SMTP_SECURITY` carries the v5 name of the
+/// security (`none`, `starttls`, `tls`); 0.1.x delivered the pt-BR name of `none`.
+#[test]
+fn m2_smtp_security_with_the_v5_name() {
+    for (security, expected) in [("none", "none"), ("starttls", "starttls"), ("tls", "tls")] {
+        let e = valid(draft(
+            "beta-smtp-stage",
+            "beta",
+            "stage",
+            DataDraft::Smtp {
+                host: t("smtp.teste.invalid"),
+                port: t("587"),
+                username: t("mailer"),
+                password: s("falso-SMTP-01"),
+                security: t(security),
+            },
+        ));
+        let delivery = build_ok(&e, &mut Fakes::default());
+        assert_eq!(
+            delivery.value("SMTP_SECURITY"),
+            Some(expected),
+            "{security}"
         );
     }
 }
@@ -669,9 +719,9 @@ fn database_v2_15(engine: &str) -> Entry {
 #[test]
 fn v2_15_all_engines() {
     let common = [
-        ("WARD_ENTRADA", "motor-teste"),
-        ("WARD_GRUPO", "acme"),
-        ("WARD_AMBIENTE", "dev"),
+        ("WARD_ENTRY", "motor-teste"),
+        ("WARD_GROUP", "acme"),
+        ("WARD_ENVIRONMENT", "dev"),
     ];
     let cases: [(&str, Vec<(&str, &str)>); 5] = [
         (
@@ -805,7 +855,7 @@ fn v2_16_extra_and_attachment_normalized() {
     let e = build_ok(&valid(r), &mut f);
     assert_eq!(e.value("WARD_API_KEY"), Some("falso-licenca-01"));
     assert_eq!(
-        e.value("WARD_ARQUIVO_CHAVE_ACESSO_PEM"),
+        e.value("WARD_FILE_CHAVE_ACESSO_PEM"),
         Some("/run/user/1000/ward/tmp/1-chave acesso.pem")
     );
     assert_eq!(
@@ -823,10 +873,7 @@ fn v2_16_extra_and_attachment_normalized() {
     let mut r = draft("g", "gama", "dev", DataDraft::Generic);
     r.extras = vec![extra("x", "a", false)];
     r.attachments = vec![attachment("a.pem", b"1"), attachment("a-pem", b"2")];
-    assert!(
-        r.validate().is_err(),
-        "a.pem e a-pem viram WARD_ARQUIVO_A_PEM"
-    );
+    assert!(r.validate().is_err(), "a.pem e a-pem viram WARD_FILE_A_PEM");
 }
 
 #[test]
@@ -842,7 +889,7 @@ fn extras_go_in_every_type_with_a_delivery() {
     let e = build_ok(&valid(r), &mut Fakes::default());
     let names: Vec<&str> = e.names().collect();
     // Common ones, then the type, then extras and attachments.
-    assert_eq!(names.last(), Some(&"WARD_ARQUIVO_CA_PEM"));
+    assert_eq!(names.last(), Some(&"WARD_FILE_CA_PEM"));
     assert_eq!(names[names.len() - 2], "WARD_SSLMODE");
 }
 
@@ -864,7 +911,7 @@ fn type_variables_match_the_reserved_ones() {
             .chain(
                 e.attachments()
                     .iter()
-                    .map(|a| format!("WARD_ARQUIVO_{}", variable_name(a.name()))),
+                    .map(|a| format!("WARD_FILE_{}", variable_name(a.name()))),
             )
             .collect();
         for name in delivery.names() {
@@ -874,7 +921,7 @@ fn type_variables_match_the_reserved_ones() {
             let Some(suffix) = name.strip_prefix("WARD_") else {
                 continue;
             };
-            if let Some(file) = suffix.strip_prefix("ARQUIVO_") {
+            if let Some(file) = suffix.strip_prefix("FILE_") {
                 assert!(
                     type_attachments(kind).contains(&file),
                     "{name} de {kind} não está em anexos_do_tipo"
@@ -998,7 +1045,7 @@ fn attack_extra_becomes_system_variable() {
         Some("postgresql://u:falso%3ADB%2F01@127.0.0.1:5432/b")
     );
     assert_eq!(e.value("WARD_LD_PRELOAD"), Some("/tmp/evil.so"));
-    assert!(e.value("WARD_ARQUIVO_LD_AUDIT").is_some());
+    assert!(e.value("WARD_FILE_LD_AUDIT").is_some());
 }
 
 #[test]

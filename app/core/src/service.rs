@@ -2067,7 +2067,7 @@ mod tests {
 
     /// V5.12 (D29): 300 KiB and a sum above 256 KiB give a notice and are not kept; empty
     /// is refused; a forged or repeated id is an invalid request; cancel keeps nothing;
-    /// the reserved name (`CHAVE` on the server) gives the error on the attachments
+    /// the reserved name (`KEY` on the server, m2:DT11) gives the error on the attachments
     /// field.
     #[test]
     fn attack_large_empty_attachment_and_forged_id() {
@@ -2099,7 +2099,7 @@ mod tests {
         }
         s.remove_attachment(id).unwrap();
         assert_eq!(s.remove_attachment(id), Err(AppError::InvalidRequest));
-        let Choice::Attached { id, .. } = choose("chave", 10) else {
+        let Choice::Attached { id, .. } = choose("key", 10) else {
             panic!()
         };
         let mut v = new_server("clientex-ssh-x");
