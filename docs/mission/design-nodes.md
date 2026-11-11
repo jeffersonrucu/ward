@@ -1355,3 +1355,20 @@ sessão):
 Conferido no `document.json` do arquivo salvo e reaberto: nenhum `ward lista`,
 `WARD_ARQUIVO` nem `WARD_PROTOCOLO`. PNG (export da CLI) em
 `docs/mission/evidence/fase-59/` (`19011`, `920`, `19359`, `13459`).
+
+## Fase 65b — código TOTP no detalhe (pedido do usuário, 2026-11-11)
+
+No detalhe de uma entrada com TOTP, o campo da semente (revelar/copiar) virou o **código
+TOTP atual** (componente `Código TOTP`, rótulo "Código TOTP"); a semente só aparece no
+formulário de edição (`Formulário / login / Edição` `6926`, sem mudança). Feito pelo
+FigCraft headless no `Ward.figcraft` (salvo e reaberto; a tela nova está no arquivo
+reaberto).
+
+| O quê | Id | Detalhe | Código |
+| --- | --- | --- | --- |
+| `Código TOTP` (set) — propriedade nova | `6909` | propriedade de texto `Rótulo` (padrão "Código atual") ligada aos textos `rótulo` `6895` (`Estado=ativo` `6894`) e `6911` (`Estado=vazio` `6910`); as instâncias existentes (`7421` e outras) ficam com o padrão | `app/src/lib/components/TotpCode.svelte` (prop `label`; o código aparece em dois grupos de 3, "482 913", como no componente) |
+| `Credenciais / Detalhe com TOTP` | `23159` | x 6800, y 2000, 1280×800 (cópia de `Credenciais / Bloqueada` `19359`); busca "totp" `23211`, resumo `23204` "1 de 22 entradas · filtros ativos", linha `23225` "Busca totp"; grupo `23231` "acme · 1 de 13 entradas"; `acme-totp-dev` selecionado `23235` (login, dev `23243`, "wp_admin · http://localhost:8083/login · TOTP"); detalhe `23290`: nome `23297`, `Badge ambiente` dev `23304`, "grupo acme" `23306`; corpo `23311`: linha `23312` com URL `23313` e Usuário `23327` lado a lado (como a grade de duas colunas do app), Senha = `Campo secreto` `23340`, **`Código TOTP` `23390`** (instância de `6894`, `Rótulo` "Código TOTP", `Código` "482 913", `Tempo` "18 s"), cartão `Nível=livre` `23405` (instância de `18986`); rodapé `23379` (metadados `23380`) | `app/src/screens/Credentials.svelte` (`acme-totp-dev` selecionada) |
+
+PNG: `docs/mission/evidence/fase-65b/design-credenciais-detalhe-com-totp.png` (frame
+`23159`), `design-codigo-totp-componente.png` (`6909`) e, do app (ponte de teste com o
+daemon falso, Chrome headless, 1280×800), `app-credenciais-detalhe-com-totp.png`.
