@@ -151,8 +151,8 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 `wardd`:
 - [ ] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
   `arquivos.rs`, `uso.rs`, `trava.rs` (formato do estado congelado; o V3.15 em
-  `tests/aprovacao.rs` lista `uso.rs` pelo nome e muda junto, achado da Fase 23). — V2.1, V2.7
-- [ ] Fase 20 — `nucleo.rs`, `aprovacao.rs` (o V3.15 em `tests/aprovacao.rs` lista os dois
+  `tests/approval.rs` lista `uso.rs` pelo nome e muda junto, achado da Fase 23). — V2.1, V2.7
+- [ ] Fase 20 — `nucleo.rs`, `aprovacao.rs` (o V3.15 em `tests/approval.rs` lista os dois
   pelo nome e muda junto, achado da Fase 23). — V2.1
 - [x] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
 - [x] Fase 22 — `playwright.rs`, `cdp.rs`, `login.rs`, `ponte.rs` (`serde` do CDP: campos
@@ -160,7 +160,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [x] Fase 23 — `servidor.rs`, `externo.rs`, `udisks.rs`; testes `comum/`, `units.rs`,
   `memoria.rs`, `socket.rs`, `datas.rs`. — V2.1, V2.4
 - [x] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
-- [ ] Fase 25 — testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (com o `[[test]]` `trava` no `Cargo.toml`, achado da Fase 4). — V2.1
+- [x] Fase 25 — testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (com o `[[test]]` `trava` no `Cargo.toml`, achado da Fase 4). — V2.1
 - [ ] Fase 26 — testes `externo.rs`, `backup.rs`, `configuracoes.rs`, `d62.rs` (o
   `externo_nao_usa_link` procura `rename_no_replace(destination.as_fd()` em `src/external.rs`;
   achado da Fase 23). — V2.1
