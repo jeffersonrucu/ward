@@ -136,7 +136,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [x] Fase 13 — `entrada/testes.rs`, `configuracao` (+ testes). — V2.1
 - [x] Fase 14 — `corpo.rs`, `corpo/cofre_teste.rs`, `corpo/testes.rs` (`VERSAO_CORPO`
   continua 4). — V2.1, V2.2
-- [ ] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
+- [x] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
   congelados). — V2.1
 - [ ] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
   máscara intocada. — V2.1, V2.5
