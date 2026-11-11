@@ -1,6 +1,6 @@
 //! `make dev-vault` (Phase 19, V2.29): builds the test vault from
 //! `dev/fixtures/entries.json` (D15 + `acme-totp-dev` from D28) through the public API of
-//! `ward-core` (validation from Phase 15, body v4 with the configuration from D30 and the
+//! `ward-core` (validation from Phase 15, body v5 of m2:DT4 with the configuration from D30 and the
 //! generation from D39, the entry writer from D27/D44) and reopens it with the test
 //! password to verify it. A freshly created vault is always at generation 1, and the
 //! entries are born without the dates of D65 d (only the daemon stamps them, by its own
@@ -989,24 +989,24 @@ type Built = (MasterPassword, Zeroizing<String>, Vec<Entry>);
 /// attachments).
 fn build(bytes: &[u8], read: &mut ReadFn<'_>) -> Result<Built, Error> {
     let mut top = Obj::from_value("(raiz)", json(bytes)?)?;
-    let _ = top.text("_sobre")?;
-    match top.take("versao") {
+    let _ = top.text("_about")?;
+    match top.take("version") {
         Some(Value::Integer(1)) => {}
-        _ => return Err(fixture("versao", "tem de ser 1")),
+        _ => return Err(fixture("version", "tem de ser 1")),
     }
     let password = top
-        .text("senha_mestra")?
+        .text("master_password")?
         .filter(|t| !t.is_empty())
-        .ok_or_else(|| fixture("senha_mestra", "obrigatória"))?;
+        .ok_or_else(|| fixture("master_password", "obrigatória"))?;
     let pin = top
         .text("pin")?
         .ok_or_else(|| fixture("pin", "obrigatório"))?;
     if pin.len() != 6 || !pin.bytes().all(|b| b.is_ascii_digit()) {
         return Err(fixture("pin", "tem de ter 6 dígitos"));
     }
-    let list = match top.take("entradas") {
+    let list = match top.take("entries") {
         Some(Value::List(l)) => l,
-        _ => return Err(fixture("entradas", "esperava uma lista")),
+        _ => return Err(fixture("entries", "esperava uma lista")),
     };
     top.finish()?;
 
@@ -1019,17 +1019,17 @@ fn build(bytes: &[u8], read: &mut ReadFn<'_>) -> Result<Built, Error> {
 }
 
 fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entry, Error> {
-    let mut e = Obj::from_value(format!("entradas[{i}]"), v)?;
-    let name = e.required("nome")?;
+    let mut e = Obj::from_value(format!("entries[{i}]"), v)?;
+    let name = e.required("name")?;
     e.at = name.clone();
-    let kind_text = e.required("tipo")?;
+    let kind_text = e.required("type")?;
     let kind = EntryType::from_name(&kind_text)
         .ok_or_else(|| fixture(name.as_str(), "tipo desconhecido"))?;
-    let level = AccessLevel::from_name(&e.required("nivel")?)
+    let level = AccessLevel::from_name(&e.required("level")?)
         .ok_or_else(|| fixture(name.as_str(), "nível desconhecido"))?;
-    let group = e.plain("grupo")?;
-    let environment = e.plain("ambiente")?;
-    let project = e.plain("projeto")?;
+    let group = e.plain("group")?;
+    let environment = e.plain("environment")?;
+    let project = e.plain("project")?;
     let tags = match e.take("tags") {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::List(l)) => l
@@ -1042,12 +1042,12 @@ fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entry, Error> {
         Some(_) => return Err(fixture(format!("{name}.tags"), "esperava lista")),
     };
     let fields = Obj::from_value(
-        format!("{name}.campos"),
-        e.take("campos").unwrap_or(Value::Object(Vec::new())),
+        format!("{name}.fields"),
+        e.take("fields").unwrap_or(Value::Object(Vec::new())),
     )?;
     let secrets = Obj::from_value(
-        format!("{name}.segredos"),
-        e.take("segredos").unwrap_or(Value::Object(Vec::new())),
+        format!("{name}.secrets"),
+        e.take("secrets").unwrap_or(Value::Object(Vec::new())),
     )?;
     let data = data(kind, fields, secrets, read)?;
 
@@ -1057,15 +1057,15 @@ fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entry, Error> {
         Some(Value::List(l)) => {
             for (j, x) in l.into_iter().enumerate() {
                 let mut x = Obj::from_value(format!("{name}.extras[{j}]"), x)?;
-                let extra_name = x.required("nome")?;
+                let extra_name = x.required("name")?;
                 let value = x
-                    .secret("valor")?
-                    .ok_or_else(|| fixture(format!("{name}.extras[{j}].valor"), "obrigatório"))?;
-                let secret = match x.take("segredo") {
+                    .secret("value")?
+                    .ok_or_else(|| fixture(format!("{name}.extras[{j}].value"), "obrigatório"))?;
+                let secret = match x.take("secret") {
                     Some(Value::Bool(b)) => b,
                     _ => {
                         return Err(fixture(
-                            format!("{name}.extras[{j}].segredo"),
+                            format!("{name}.extras[{j}].secret"),
                             "esperava true ou false",
                         ));
                     }
@@ -1082,13 +1082,13 @@ fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entry, Error> {
     }
 
     let mut attachments = Vec::new();
-    match e.take("anexos") {
+    match e.take("attachments") {
         None | Some(Value::Null) => {}
         Some(Value::List(l)) => {
             for (j, a) in l.into_iter().enumerate() {
-                let mut a = Obj::from_value(format!("{name}.anexos[{j}]"), a)?;
-                let attachment_name = a.required("nome")?;
-                let file = a.required("arquivo")?;
+                let mut a = Obj::from_value(format!("{name}.attachments[{j}]"), a)?;
+                let attachment_name = a.required("name")?;
+                let file = a.required("file")?;
                 a.finish()?;
                 attachments.push(AttachmentDraft {
                     name: attachment_name,
@@ -1096,7 +1096,7 @@ fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entry, Error> {
                 });
             }
         }
-        Some(_) => return Err(fixture(format!("{name}.anexos"), "esperava lista")),
+        Some(_) => return Err(fixture(format!("{name}.attachments"), "esperava lista")),
     }
     e.finish()?;
 
@@ -1126,7 +1126,7 @@ fn data(
     read: &mut ReadFn<'_>,
 ) -> Result<DataDraft, Error> {
     let mut key = |s: &mut Obj| -> Result<Option<Secret>, Error> {
-        match s.text("chave_privada_arquivo")? {
+        match s.text("private_key_file")? {
             None => Ok(None),
             Some(path) => read(Source::Key, &path).map(Some),
         }
@@ -1134,58 +1134,58 @@ fn data(
     let d = match kind {
         EntryType::Login => DataDraft::Login {
             url: c.plain("url")?,
-            username: c.plain("usuario")?,
-            password: s.secret("senha")?,
-            totp_seed: s.secret("totp_semente")?,
+            username: c.plain("username")?,
+            password: s.secret("password")?,
+            totp_seed: s.secret("totp_seed")?,
         },
         EntryType::Database => DataDraft::Database {
-            engine: c.plain("motor")?,
+            engine: c.plain("engine")?,
             host: c.plain("host")?,
-            port: c.port("porta")?,
-            db_name: c.plain("base")?,
-            username: c.plain("usuario")?,
-            password: s.secret("senha")?,
-            tunnel: c.plain("tunel")?,
+            port: c.port("port")?,
+            db_name: c.plain("db_name")?,
+            username: c.plain("username")?,
+            password: s.secret("password")?,
+            tunnel: c.plain("tunnel")?,
         },
         EntryType::Server => DataDraft::Server {
             host: c.plain("host")?,
-            port: c.port("porta")?,
-            username: c.plain("usuario")?,
-            password: s.secret("senha")?,
+            port: c.port("port")?,
+            username: c.plain("username")?,
+            password: s.secret("password")?,
             private_key: key(&mut s)?,
             passphrase: s.secret("passphrase")?,
-            jump: c.plain("salto")?,
+            jump: c.plain("jump")?,
         },
         EntryType::Api => DataDraft::Api {
             url: c.plain("url")?,
             token: s.secret("token")?,
-            variable: c.plain("variavel")?,
+            variable: c.plain("variable")?,
         },
         EntryType::Aws => DataDraft::Aws {
             access_key_id: c.plain("access_key_id")?,
             secret_access_key: s.secret("secret_access_key")?,
-            region: c.plain("regiao")?,
+            region: c.plain("region")?,
             role_arn: c.plain("role_arn")?,
             session_token: s.secret("session_token")?,
         },
         EntryType::Smtp => DataDraft::Smtp {
             host: c.plain("host")?,
-            port: c.port("porta")?,
-            username: c.plain("usuario")?,
-            password: s.secret("senha")?,
-            security: c.plain("seguranca")?,
+            port: c.port("port")?,
+            username: c.plain("username")?,
+            password: s.secret("password")?,
+            security: c.plain("security")?,
         },
         EntryType::FtpSftp => DataDraft::FtpSftp {
-            protocol: c.plain("protocolo")?,
+            protocol: c.plain("protocol")?,
             host: c.plain("host")?,
-            port: c.port("porta")?,
-            username: c.plain("usuario")?,
-            password: s.secret("senha")?,
+            port: c.port("port")?,
+            username: c.plain("username")?,
+            password: s.secret("password")?,
             private_key: key(&mut s)?,
             passphrase: s.secret("passphrase")?,
         },
         EntryType::SecureNote => DataDraft::SecureNote {
-            text: s.secret("texto")?,
+            text: s.secret("text")?,
         },
         EntryType::Generic => DataDraft::Generic,
     };

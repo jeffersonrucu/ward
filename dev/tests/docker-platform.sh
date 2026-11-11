@@ -68,7 +68,7 @@ install -m 0755 "$NM" "$TMP/ward-nm-real"
 install -m 0755 "$FAKE_CHROME" "$TMP/fake-chrome"
 install -m 0755 "$CLIENT" "$TMP/wardd-test-client"
 install -m 0644 "$VAULT" "$TMP/test-vault.ward"
-/usr/bin/python3 -I -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1]))["senha_mestra"])' \
+/usr/bin/python3 -I -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1]))["master_password"])' \
     "$ROOT/dev/fixtures/entries.json" > "$TMP/senha"
 chmod 0644 "$TMP/senha"
 gcc -shared -fPIC -O2 -Wall -Werror -o "$TMP/libmarca.so" "$ROOT/dev/container-platform/mark.c"

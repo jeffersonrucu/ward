@@ -5,7 +5,7 @@
 //! Integers in little-endian; every bytes field carries its length first (u32 LE).
 //!
 //! ```text
-//! body    = version (u16) = 4 ‖ configuration ‖ number of entries (u32) ‖ entry × n
+//! body    = version (u16) = 5 ‖ configuration ‖ number of entries (u32) ‖ entry × n
 //! configuration = generation (u64, ≥ 1)
 //!           ‖ PIN hash (field: Argon2id PHC text, required)
 //!           ‖ lock minutes (u32) ‖ backup enabled (u8 0|1)
@@ -32,12 +32,22 @@
 //!   [`Dates`] rule (range from 1 to [`MAX_DATE`], creation only with modification and
 //!   not after it). Version 3 (no dates) is refused as an unknown version, without
 //!   migration: there is no installed vault, and `make dev-vault` rewrites the test one.
+//! - **Version 5** (m2:DT4): the same layout as version 4; only the stored names of
+//!   type, level and SMTP security are the English ones (the `name()` of each enum:
+//!   `database`, `approval`, `none`…). Reading accepts v4 and v5; **writing only
+//!   produces v5** ([`BODY_VERSION`]). A v4 body is read through the closed table of
+//!   `legacy_v4` (only on the v4 reading path) and comes back as the same entries, so
+//!   serializing it again gives the v5 body (the migration of m2:DT5 is the daemon's).
+//!   A name outside the table of its version (a v5 name in a v4 body, a v4 name in a v5
+//!   body, any other text) refuses the whole body (m2:RM2).
 //! - Type, level, environment, engine, security and protocol go by the stable
 //!   identifiers of Phase 15 (the `name()` of each enum, e.g. `login`). The port goes in
 //!   2 bytes (u16). A missing optional field is an empty field.
 //! - **Canonical**: entries go out in name order; the same entries always give the same
 //!   bytes. Reading requires the strict order (which also blocks a repeated name), so
-//!   every accepted body, serialized again, gives the same bytes.
+//!   every accepted v5 body, serialized again, gives the same bytes (a v4 one gives its
+//!   v5 form). The names are the same set of bytes in both orders: only the stored
+//!   type/level/security names change, never an entry name.
 //! - **Write** (S8): the final size is computed first, and the buffer is a
 //!   `Zeroizing<Vec<u8>>` with that exact capacity; no reallocation leaves a cleartext
 //!   copy. A body above [`MAX_BODY`] or with more than [`MAX_ENTRIES`] is refused before
@@ -65,12 +75,27 @@ use crate::entry::{
 };
 use crate::format::{self, FormatError, MasterPassword, OpenVault};
 
+mod legacy_v4;
 #[cfg(test)]
 mod tests;
 
-/// Current body version (D30: with the configuration section; D39: with the generation;
-/// D65 d: with the dates of each entry).
-pub const BODY_VERSION: u16 = 4;
+/// Current body version, the only one written (D30: with the configuration section; D39:
+/// with the generation; D65 d: with the dates of each entry; m2:DT4: with the English
+/// stored names).
+pub const BODY_VERSION: u16 = 5;
+
+/// Previous body version (0.1.x, pt-BR stored names), accepted only on reading
+/// (m2:DT4). Never written.
+pub const LEGACY_BODY_VERSION: u16 = 4;
+
+/// Version of the body being read: picks the table of the stored names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Version {
+    /// [`LEGACY_BODY_VERSION`]: names through `legacy_v4`.
+    V4,
+    /// [`BODY_VERSION`]: names through the `from_name()` of each enum.
+    V5,
+}
 
 // The limits live in `crate::limits` (D32): reading refuses above them before
 // allocating, and the entry validation checks again, with the exact limit of each field.
@@ -287,13 +312,13 @@ pub fn deserialize(body: &[u8]) -> Result<ReadBody, BodyError> {
         .try_reserve_exact(n)
         .map_err(|_| BodyError::Invalid)?;
     let mut l = Reader { rest: body };
-    let (raw_cfg, n2) = read_header(&mut l)?;
+    let (version, raw_cfg, n2) = read_header(&mut l)?;
     if n2 != n {
         return Err(BodyError::Invalid);
     }
     let config = build_config(&raw_cfg)?;
     for _ in 0..n {
-        let raw = read_raw(&mut l)?;
+        let raw = read_raw(&mut l, version)?;
         entries.push(build(&raw)?);
     }
     if !l.rest.is_empty() {
@@ -316,7 +341,7 @@ pub(crate) fn body_generation(body: &[u8]) -> Option<u64> {
     }
     check_structure(body).ok()?;
     let mut l = Reader { rest: body };
-    let (cfg, _) = read_header(&mut l).ok()?;
+    let (_, cfg, _) = read_header(&mut l).ok()?;
     Some(cfg.generation)
 }
 
@@ -390,6 +415,9 @@ impl Field {
         }
     }
 }
+
+/// Position of the security among the fields of the `smtp` type (see [`schema`]).
+const SMTP_SECURITY: usize = 4;
 
 /// Order of the fields of each type in the body. Reading and writing use this same
 /// table.
@@ -722,13 +750,16 @@ struct RawConfig<'a> {
     uuid: &'a [u8],
 }
 
-/// Version, configuration and number of entries.
-fn read_header<'a>(l: &mut Reader<'a>) -> Result<(RawConfig<'a>, usize), BodyError> {
-    if l.u16()? != BODY_VERSION {
-        return Err(BodyError::Invalid);
-    }
+/// Version, configuration and number of entries. Only v5 and v4 (m2:DT4) are known;
+/// the configuration and the count have the same layout in both.
+fn read_header<'a>(l: &mut Reader<'a>) -> Result<(Version, RawConfig<'a>, usize), BodyError> {
+    let version = match l.u16()? {
+        BODY_VERSION => Version::V5,
+        LEGACY_BODY_VERSION => Version::V4,
+        _ => return Err(BodyError::Invalid),
+    };
     let cfg = read_config(l)?;
-    Ok((cfg, l.count(MAX_ENTRIES)?))
+    Ok((version, cfg, l.count(MAX_ENTRIES)?))
 }
 
 /// The configuration section (D30, D39): generation ≥ 1, PHC hash fully checked
@@ -839,15 +870,29 @@ fn read_list<'a, T>(
     })
 }
 
-fn read_raw<'a>(l: &mut Reader<'a>) -> Result<RawEntry<'a>, BodyError> {
-    let kind = core::str::from_utf8(l.field(MAX_TEXT)?)
-        .ok()
-        .and_then(EntryType::from_name)
-        .ok_or(BodyError::Invalid)?;
-    let level = core::str::from_utf8(l.field(MAX_TEXT)?)
-        .ok()
-        .and_then(AccessLevel::from_name)
-        .ok_or(BodyError::Invalid)?;
+/// Stored type: by the table of the body version (v4 only through `legacy_v4`).
+fn stored_kind(version: Version, stored: &[u8]) -> Option<EntryType> {
+    match version {
+        Version::V5 => core::str::from_utf8(stored)
+            .ok()
+            .and_then(EntryType::from_name),
+        Version::V4 => legacy_v4::kind(stored),
+    }
+}
+
+/// Stored level: by the table of the body version (v4 only through `legacy_v4`).
+fn stored_level(version: Version, stored: &[u8]) -> Option<AccessLevel> {
+    match version {
+        Version::V5 => core::str::from_utf8(stored)
+            .ok()
+            .and_then(AccessLevel::from_name),
+        Version::V4 => legacy_v4::level(stored),
+    }
+}
+
+fn read_raw<'a>(l: &mut Reader<'a>, version: Version) -> Result<RawEntry<'a>, BodyError> {
+    let kind = stored_kind(version, l.field(MAX_TEXT)?).ok_or(BodyError::Invalid)?;
+    let level = stored_level(version, l.field(MAX_TEXT)?).ok_or(BodyError::Invalid)?;
     let name = l.field(MAX_TEXT)?;
     let group = l.field(MAX_TEXT)?;
     let environment = l.field(MAX_TEXT)?;
@@ -860,6 +905,13 @@ fn read_raw<'a>(l: &mut Reader<'a>) -> Result<RawEntry<'a>, BodyError> {
             return Err(BodyError::Invalid);
         }
         data[i] = value;
+    }
+    // m2:DT4: the SMTP security of a v4 body becomes the v5 name here, by the closed
+    // table; outside it the body is refused already in the 1st pass. In a v5 body the
+    // stored name goes as it is to the validation, which only knows the v5 names.
+    if version == Version::V4 && kind == EntryType::Smtp {
+        data[SMTP_SECURITY] =
+            legacy_v4::smtp_security(data[SMTP_SECURITY]).ok_or(BodyError::Invalid)?;
     }
     let extras = read_list(l, MAX_EXTRAS, read_extra)?;
     let attachments = read_attachments(l)?;
@@ -890,10 +942,10 @@ fn read_dates(l: &mut Reader<'_>) -> Result<Dates, BodyError> {
 /// 1st pass: the whole body, without allocating. Returns the number of entries.
 fn check_structure(body: &[u8]) -> Result<usize, BodyError> {
     let mut l = Reader { rest: body };
-    let (_, n) = read_header(&mut l)?;
+    let (version, _, n) = read_header(&mut l)?;
     let mut previous: Option<&[u8]> = None;
     for _ in 0..n {
-        let b = read_raw(&mut l)?;
+        let b = read_raw(&mut l, version)?;
         // Strict order of the names: canonical and with no repeated name.
         if previous.is_some_and(|a| a >= b.name) {
             return Err(BodyError::Invalid);

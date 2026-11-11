@@ -503,7 +503,7 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(include_str!(
                 "../../../dev/fixtures/entries.json"
             ))
-            .unwrap()["entradas"]
+            .unwrap()["entries"]
                 .as_array()
                 .unwrap()
                 .len()

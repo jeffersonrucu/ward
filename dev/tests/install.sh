@@ -404,7 +404,7 @@ chmod 0755 "$C/bin/falso" "$C/bin/libmarca.so"
 install -m 0644 "$CRX" "$C/ward.crx"
 printf '%s\n' "$ID" >"$C/id"
 install -m 0644 "$TEST_VAULT" "$C/cofre.ward"
-/usr/bin/python3 -I -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1]))["senha_mestra"])' \
+/usr/bin/python3 -I -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1]))["master_password"])' \
     "$ROOT/dev/fixtures/entries.json" >"$C/senha"
 chmod 0644 "$C/senha"
 

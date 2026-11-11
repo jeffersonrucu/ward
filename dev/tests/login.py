@@ -66,8 +66,8 @@ def has_secret(data):
 
 
 fixtures = json.load(open(f"{ROOT}/dev/fixtures/entries.json", encoding="utf-8"))
-ENTRIES = {e["nome"]: e for e in fixtures["entradas"]}
-PROD_PASSWORD = ENTRIES["acme-wp-prod"]["segredos"]["senha"]
+ENTRIES = {e["name"]: e for e in fixtures["entries"]}
+PROD_PASSWORD = ENTRIES["acme-wp-prod"]["secrets"]["password"]
 HASH_PROD = hashlib.sha256(PROD_PASSWORD.encode()).hexdigest()
 ID = None
 with open(os.path.join(ROOT, "crates", "ward-nm", "src", "lib.rs"), encoding="utf-8") as f:
@@ -104,7 +104,7 @@ def req(obj):
 
 
 def unlock():
-    password = base64.b64encode(fixtures["senha_mestra"].encode()).decode()
+    password = base64.b64encode(fixtures["master_password"].encode()).decode()
     return req({"v": 1, "op": "destravar", "dados": {"senha": password}}).get("tipo") == "ok"
 
 

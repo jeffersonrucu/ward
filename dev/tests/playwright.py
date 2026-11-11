@@ -16,7 +16,7 @@ import threading
 import time
 
 WARD, ROOT, RT, WORK_DIR = sys.argv[1:5]
-PASSWORD = json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["senha_mestra"]
+PASSWORD = json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["master_password"]
 PATTERNS = [l for l in open(os.path.join(ROOT, ".dev/variations.txt"), "rb").read().split(b"\n") if l]
 failures = []
 

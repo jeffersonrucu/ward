@@ -1,215 +1,215 @@
 {
-  "_sobre": "Entradas do cofre de teste (D15 + acme-totp-dev de D28 + delta-api-simbolos de D59, tabela 'Cofre de teste' de docs/mission/validation-contract.md). Tudo falso. Fonte única: make dev-services lê daqui as senhas dos serviços de teste e make dev-vault (Fase 19) monta .dev/test-vault.ward e make dev-variations gera .dev/variations.txt a partir daqui. 'campos' não são segredo; 'segredos' são. Caminhos relativos à raiz do repositório.",
-  "versao": 1,
-  "senha_mestra": "falso-mestra-ward-01",
+  "_about": "Entradas do cofre de teste (D15 + acme-totp-dev de D28 + delta-api-simbolos de D59, tabela 'Cofre de teste' de docs/mission/validation-contract.md). Tudo falso. Fonte única: make dev-services lê daqui as senhas dos serviços de teste e make dev-vault (Fase 19) monta .dev/test-vault.ward e make dev-variations gera .dev/variations.txt a partir daqui. 'fields' não são segredo; 'secrets' são. Tipos e níveis com os nomes do corpo v5 (DT4 da missão 2). Caminhos relativos à raiz do repositório.",
+  "version": 1,
+  "master_password": "falso-mestra-ward-01",
   "pin": "135790",
-  "entradas": [
+  "entries": [
     {
-      "nome": "acme-wp-dev",
-      "tipo": "login",
-      "grupo": "acme",
-      "ambiente": "dev",
-      "nivel": "com-aprovacao",
-      "campos": { "url": "http://localhost:8081/wp-login.php", "usuario": "wp_admin" },
-      "segredos": { "senha": "falso-WP-senha-01", "totp_semente": "JBSWY3DPEHPK3PXP" }
+      "name": "acme-wp-dev",
+      "type": "login",
+      "group": "acme",
+      "environment": "dev",
+      "level": "approval",
+      "fields": { "url": "http://localhost:8081/wp-login.php", "username": "wp_admin" },
+      "secrets": { "password": "falso-WP-senha-01", "totp_seed": "JBSWY3DPEHPK3PXP" }
     },
     {
-      "nome": "acme-wp-prod",
-      "tipo": "login",
-      "grupo": "acme",
-      "ambiente": "prod",
-      "nivel": "livre",
-      "campos": { "url": "http://localhost:8081/wp-login.php", "usuario": "wp_editor" },
-      "segredos": { "senha": "falso-WP-senha-02", "totp_semente": "JBSWY3DPEHPK3PXP" }
+      "name": "acme-wp-prod",
+      "type": "login",
+      "group": "acme",
+      "environment": "prod",
+      "level": "free",
+      "fields": { "url": "http://localhost:8081/wp-login.php", "username": "wp_editor" },
+      "secrets": { "password": "falso-WP-senha-02", "totp_seed": "JBSWY3DPEHPK3PXP" }
     },
     {
-      "nome": "acme-pg-dev",
-      "tipo": "banco",
-      "grupo": "acme",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": { "motor": "postgres", "host": "127.0.0.1", "porta": 55432, "base": "app_teste", "usuario": "app" },
-      "segredos": { "senha": "falso-PG:s3nha/01@#" }
+      "name": "acme-pg-dev",
+      "type": "database",
+      "group": "acme",
+      "environment": "dev",
+      "level": "free",
+      "fields": { "engine": "postgres", "host": "127.0.0.1", "port": 55432, "db_name": "app_teste", "username": "app" },
+      "secrets": { "password": "falso-PG:s3nha/01@#" }
     },
     {
-      "nome": "acme-pg-aprovacao",
-      "tipo": "banco",
-      "grupo": "acme",
-      "ambiente": "stage",
-      "nivel": "com-aprovacao",
-      "campos": { "motor": "postgres", "host": "127.0.0.1", "porta": 55432, "base": "app_teste", "usuario": "app" },
-      "segredos": { "senha": "falso-PG:s3nha/01@#" }
+      "name": "acme-pg-aprovacao",
+      "type": "database",
+      "group": "acme",
+      "environment": "stage",
+      "level": "approval",
+      "fields": { "engine": "postgres", "host": "127.0.0.1", "port": 55432, "db_name": "app_teste", "username": "app" },
+      "secrets": { "password": "falso-PG:s3nha/01@#" }
     },
     {
-      "nome": "acme-pg-prod",
-      "tipo": "banco",
-      "grupo": "acme",
-      "ambiente": "prod",
-      "nivel": "com-aprovacao",
-      "campos": { "motor": "postgres", "host": "127.0.0.1", "porta": 55432, "base": "app_teste", "usuario": "app" },
-      "segredos": { "senha": "falso-PG:s3nha/01@#" }
+      "name": "acme-pg-prod",
+      "type": "database",
+      "group": "acme",
+      "environment": "prod",
+      "level": "approval",
+      "fields": { "engine": "postgres", "host": "127.0.0.1", "port": 55432, "db_name": "app_teste", "username": "app" },
+      "secrets": { "password": "falso-PG:s3nha/01@#" }
     },
     {
-      "nome": "acme-pg-tunel",
-      "tipo": "banco",
-      "grupo": "acme",
-      "ambiente": "stage",
-      "nivel": "livre",
-      "campos": { "motor": "postgres", "host": "postgres", "porta": 5432, "base": "app_teste", "usuario": "app", "tunel": "acme-ssh-senha-stage" },
-      "segredos": { "senha": "falso-PG:s3nha/01@#" }
+      "name": "acme-pg-tunel",
+      "type": "database",
+      "group": "acme",
+      "environment": "stage",
+      "level": "free",
+      "fields": { "engine": "postgres", "host": "postgres", "port": 5432, "db_name": "app_teste", "username": "app", "tunnel": "acme-ssh-senha-stage" },
+      "secrets": { "password": "falso-PG:s3nha/01@#" }
     },
     {
-      "nome": "acme-ssh-senha-stage",
-      "tipo": "servidor",
-      "grupo": "acme",
-      "ambiente": "stage",
-      "nivel": "livre",
-      "campos": { "host": "127.0.0.1", "porta": 2222, "usuario": "deploy" },
-      "segredos": { "senha": "falso-SSH-senha-01" }
+      "name": "acme-ssh-senha-stage",
+      "type": "server",
+      "group": "acme",
+      "environment": "stage",
+      "level": "free",
+      "fields": { "host": "127.0.0.1", "port": 2222, "username": "deploy" },
+      "secrets": { "password": "falso-SSH-senha-01" }
     },
     {
-      "nome": "acme-ssh-chave-prod",
-      "tipo": "servidor",
-      "grupo": "acme",
-      "ambiente": "prod",
-      "nivel": "livre",
-      "campos": { "host": "127.0.0.1", "porta": 2223, "usuario": "deploy" },
-      "segredos": { "chave_privada_arquivo": ".dev/services/keys/acme-deploy_ed25519", "passphrase": "falso-passphrase-01" }
+      "name": "acme-ssh-chave-prod",
+      "type": "server",
+      "group": "acme",
+      "environment": "prod",
+      "level": "free",
+      "fields": { "host": "127.0.0.1", "port": 2223, "username": "deploy" },
+      "secrets": { "private_key_file": ".dev/services/keys/acme-deploy_ed25519", "passphrase": "falso-passphrase-01" }
     },
     {
-      "nome": "acme-ssh-salto",
-      "tipo": "servidor",
-      "grupo": "acme",
-      "ambiente": "prod",
-      "nivel": "com-aprovacao",
-      "campos": { "host": "127.0.0.1", "porta": 2224, "usuario": "salto" },
-      "segredos": { "senha": "falso-SALTO-01" }
+      "name": "acme-ssh-salto",
+      "type": "server",
+      "group": "acme",
+      "environment": "prod",
+      "level": "approval",
+      "fields": { "host": "127.0.0.1", "port": 2224, "username": "salto" },
+      "secrets": { "password": "falso-SALTO-01" }
     },
     {
-      "nome": "acme-ssh-salto-livre",
-      "tipo": "servidor",
-      "grupo": "acme",
-      "ambiente": "prod",
-      "nivel": "livre",
-      "campos": { "host": "127.0.0.1", "porta": 2224, "usuario": "salto" },
-      "segredos": { "senha": "falso-SALTO-01" }
+      "name": "acme-ssh-salto-livre",
+      "type": "server",
+      "group": "acme",
+      "environment": "prod",
+      "level": "free",
+      "fields": { "host": "127.0.0.1", "port": 2224, "username": "salto" },
+      "secrets": { "password": "falso-SALTO-01" }
     },
     {
-      "nome": "acme-ssh-interno",
-      "tipo": "servidor",
-      "grupo": "acme",
-      "ambiente": "prod",
-      "nivel": "livre",
-      "campos": { "host": "ssh-interno", "porta": 22, "usuario": "deploy", "salto": "acme-ssh-salto-livre" },
-      "segredos": { "chave_privada_arquivo": ".dev/services/keys/acme-deploy_ed25519", "passphrase": "falso-passphrase-01" }
+      "name": "acme-ssh-interno",
+      "type": "server",
+      "group": "acme",
+      "environment": "prod",
+      "level": "free",
+      "fields": { "host": "ssh-interno", "port": 22, "username": "deploy", "jump": "acme-ssh-salto-livre" },
+      "secrets": { "private_key_file": ".dev/services/keys/acme-deploy_ed25519", "passphrase": "falso-passphrase-01" }
     },
     {
-      "nome": "acme-ssh-interno-aprov",
-      "tipo": "servidor",
-      "grupo": "acme",
-      "ambiente": "prod",
-      "nivel": "livre",
-      "campos": { "host": "ssh-interno", "porta": 22, "usuario": "deploy", "salto": "acme-ssh-salto" },
-      "segredos": { "chave_privada_arquivo": ".dev/services/keys/acme-deploy_ed25519", "passphrase": "falso-passphrase-01" }
+      "name": "acme-ssh-interno-aprov",
+      "type": "server",
+      "group": "acme",
+      "environment": "prod",
+      "level": "free",
+      "fields": { "host": "ssh-interno", "port": 22, "username": "deploy", "jump": "acme-ssh-salto" },
+      "secrets": { "private_key_file": ".dev/services/keys/acme-deploy_ed25519", "passphrase": "falso-passphrase-01" }
     },
     {
-      "nome": "beta-github-api",
-      "tipo": "api",
-      "grupo": "beta",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": { "url": "https://api.github.com", "variavel": "GITHUB_TOKEN" },
-      "segredos": { "token": "falso_token_github_01" }
+      "name": "beta-github-api",
+      "type": "api",
+      "group": "beta",
+      "environment": "dev",
+      "level": "free",
+      "fields": { "url": "https://api.github.com", "variable": "GITHUB_TOKEN" },
+      "secrets": { "token": "falso_token_github_01" }
     },
     {
-      "nome": "beta-aws-dev",
-      "tipo": "aws",
-      "grupo": "beta",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": { "access_key_id": "FALSOACCESSKEY01", "regiao": "sa-east-1", "role_arn": "arn:aws:iam::000000000000:role/teste" },
-      "segredos": { "secret_access_key": "falso-aws-secret-01", "session_token": "falso-aws-session-01" }
+      "name": "beta-aws-dev",
+      "type": "aws",
+      "group": "beta",
+      "environment": "dev",
+      "level": "free",
+      "fields": { "access_key_id": "FALSOACCESSKEY01", "region": "sa-east-1", "role_arn": "arn:aws:iam::000000000000:role/teste" },
+      "secrets": { "secret_access_key": "falso-aws-secret-01", "session_token": "falso-aws-session-01" }
     },
     {
-      "nome": "beta-smtp-stage",
-      "tipo": "smtp",
-      "grupo": "beta",
-      "ambiente": "stage",
-      "nivel": "livre",
-      "campos": { "host": "smtp.teste.invalid", "porta": 587, "usuario": "mailer", "seguranca": "starttls" },
-      "segredos": { "senha": "falso-SMTP-01" }
+      "name": "beta-smtp-stage",
+      "type": "smtp",
+      "group": "beta",
+      "environment": "stage",
+      "level": "free",
+      "fields": { "host": "smtp.teste.invalid", "port": 587, "username": "mailer", "security": "starttls" },
+      "secrets": { "password": "falso-SMTP-01" }
     },
     {
-      "nome": "beta-sftp-dev",
-      "tipo": "ftp-sftp",
-      "grupo": "beta",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": { "protocolo": "sftp", "host": "127.0.0.1", "porta": 2222, "usuario": "sftpuser" },
-      "segredos": { "senha": "falso-SFTP-01" }
+      "name": "beta-sftp-dev",
+      "type": "ftp-sftp",
+      "group": "beta",
+      "environment": "dev",
+      "level": "free",
+      "fields": { "protocol": "sftp", "host": "127.0.0.1", "port": 2222, "username": "sftpuser" },
+      "secrets": { "password": "falso-SFTP-01" }
     },
     {
-      "nome": "gama-nota",
-      "tipo": "nota-segura",
-      "grupo": "gama",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": {},
-      "segredos": { "texto": "falso-nota-01" }
+      "name": "gama-nota",
+      "type": "secure-note",
+      "group": "gama",
+      "environment": "dev",
+      "level": "free",
+      "fields": {},
+      "secrets": { "text": "falso-nota-01" }
     },
     {
-      "nome": "gama-generico",
-      "tipo": "generico",
-      "grupo": "gama",
-      "ambiente": "stage",
-      "nivel": "livre",
-      "campos": {},
-      "segredos": {},
+      "name": "gama-generico",
+      "type": "generic",
+      "group": "gama",
+      "environment": "stage",
+      "level": "free",
+      "fields": {},
+      "secrets": {},
       "extras": [
-        { "nome": "REGIAO", "valor": "r-01", "segredo": false },
-        { "nome": "CHAVE_LICENCA", "valor": "falso-licenca-01", "segredo": true }
+        { "name": "REGIAO", "value": "r-01", "secret": false },
+        { "name": "CHAVE_LICENCA", "value": "falso-licenca-01", "secret": true }
       ],
-      "anexos": [
-        { "nome": "app.env", "arquivo": "dev/fixtures/attachments/gama-generico/app.env" }
+      "attachments": [
+        { "name": "app.env", "file": "dev/fixtures/attachments/gama-generico/app.env" }
       ]
     },
     {
-      "nome": "gama-bloqueada",
-      "tipo": "login",
-      "grupo": "gama",
-      "ambiente": "prod",
-      "nivel": "bloqueado",
-      "campos": { "url": "https://bloqueada.invalid", "usuario": "x" },
-      "segredos": { "senha": "falso-BLOQ-01" }
+      "name": "gama-bloqueada",
+      "type": "login",
+      "group": "gama",
+      "environment": "prod",
+      "level": "blocked",
+      "fields": { "url": "https://bloqueada.invalid", "username": "x" },
+      "secrets": { "password": "falso-BLOQ-01" }
     },
     {
-      "nome": "delta-redir",
-      "tipo": "login",
-      "grupo": "delta",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": { "url": "http://localhost:8084/login", "usuario": "u" },
-      "segredos": { "senha": "falso-REDIR-01" }
+      "name": "delta-redir",
+      "type": "login",
+      "group": "delta",
+      "environment": "dev",
+      "level": "free",
+      "fields": { "url": "http://localhost:8084/login", "username": "u" },
+      "secrets": { "password": "falso-REDIR-01" }
     },
     {
-      "nome": "acme-totp-dev",
-      "tipo": "login",
-      "grupo": "acme",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": { "url": "http://localhost:8083/login", "usuario": "wp_admin" },
-      "segredos": { "senha": "falso-WP-senha-01", "totp_semente": "JBSWY3DPEHPK3PXP" }
+      "name": "acme-totp-dev",
+      "type": "login",
+      "group": "acme",
+      "environment": "dev",
+      "level": "free",
+      "fields": { "url": "http://localhost:8083/login", "username": "wp_admin" },
+      "secrets": { "password": "falso-WP-senha-01", "totp_seed": "JBSWY3DPEHPK3PXP" }
     },
     {
-      "nome": "delta-api-simbolos",
-      "tipo": "api",
-      "grupo": "delta",
-      "ambiente": "dev",
-      "nivel": "livre",
-      "campos": { "url": "https://api.teste.invalid", "variavel": "SIMBOLOS_TOKEN" },
-      "segredos": { "token": "falso-Ab3$k&<9>Zq!'/ç-01" },
+      "name": "delta-api-simbolos",
+      "type": "api",
+      "group": "delta",
+      "environment": "dev",
+      "level": "free",
+      "fields": { "url": "https://api.teste.invalid", "variable": "SIMBOLOS_TOKEN" },
+      "secrets": { "token": "falso-Ab3$k&<9>Zq!'/ç-01" },
       "extras": [
-        { "nome": "SEGREDO_ASCII", "valor": "falso-Ab3$k&<9>Zq!'", "segredo": true }
+        { "name": "SEGREDO_ASCII", "value": "falso-Ab3$k&<9>Zq!'", "secret": true }
       ]
     }
   ]

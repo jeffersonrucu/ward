@@ -1376,6 +1376,65 @@ fn combined_level_and_names() {
     assert_eq!(EntryType::SecureNote.label(), "nota segura");
     assert_eq!(EntryType::Generic.label(), "genérico");
     assert_eq!(Approval.label(), "com aprovação");
+    // m2:DT4: the stored names are the v5 ones; the labels stay the pt-BR texts.
+    let names: Vec<&str> = EntryType::ALL.iter().map(|k| k.name()).collect();
+    assert_eq!(
+        names,
+        [
+            "login",
+            "database",
+            "server",
+            "api",
+            "aws",
+            "smtp",
+            "ftp-sftp",
+            "secure-note",
+            "generic"
+        ]
+    );
+    let labels: Vec<&str> = EntryType::ALL.iter().map(|k| k.label()).collect();
+    assert_eq!(
+        labels,
+        [
+            "login",
+            "banco",
+            "servidor",
+            "api",
+            "aws",
+            "smtp",
+            "ftp/sftp",
+            "nota segura",
+            "genérico"
+        ]
+    );
+    let levels: Vec<(&str, &str)> = AccessLevel::ALL
+        .iter()
+        .map(|n| (n.name(), n.label()))
+        .collect();
+    assert_eq!(
+        levels,
+        [
+            ("blocked", "bloqueado"),
+            ("approval", "com aprovação"),
+            ("free", "livre")
+        ]
+    );
+    let securities: Vec<&str> = SmtpSecurity::ALL.iter().map(|s| s.name()).collect();
+    assert_eq!(securities, ["none", "starttls", "tls"]);
+    // The v4 names are not known outside the v4 reading of the body (m2:RM2).
+    for v4 in [
+        "banco",
+        "servidor",
+        "nota-segura",
+        "generico",
+        "bloqueado",
+        "com-aprovacao",
+        "livre",
+    ] {
+        assert_eq!(EntryType::from_name(v4), None, "{v4}");
+        assert_eq!(AccessLevel::from_name(v4), None, "{v4}");
+    }
+    assert_eq!(SmtpSecurity::from_name("nenhuma"), None);
 }
 
 // ---- Vault verification (unique name, tunnel and jump) ----

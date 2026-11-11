@@ -139,7 +139,7 @@ def dictionary_finding(rel, data, dic):
 
 
 fixtures = json.load(open(f"{ROOT}/dev/fixtures/entries.json", encoding="utf-8"))
-ENTRIES = {e["nome"]: e for e in fixtures["entradas"]}
+ENTRIES = {e["name"]: e for e in fixtures["entries"]}
 ID = None
 with open(os.path.join(ROOT, "crates", "ward-nm", "src", "lib.rs"), encoding="utf-8") as f:
     for line in f:
@@ -195,7 +195,7 @@ def req(obj):
 
 
 def unlock():
-    password = base64.b64encode(fixtures["senha_mestra"].encode()).decode()
+    password = base64.b64encode(fixtures["master_password"].encode()).decode()
     return req({"v": 1, "op": "destravar", "dados": {"senha": password}}).get("tipo") == "ok"
 
 
@@ -630,8 +630,8 @@ def click_entry(ps, name):
     evaluate(cdp, ps, f"document.querySelector('[data-entry=\"{name}\"]').click(), true")
 
 
-PASSWORD = {n: e["segredos"]["senha"] for n, e in ENTRIES.items() if e["tipo"] == "login"}
-USERNAME = {n: e["campos"]["usuario"] for n, e in ENTRIES.items() if e["tipo"] == "login"}
+PASSWORD = {n: e["secrets"]["password"] for n, e in ENTRIES.items() if e["type"] == "login"}
+USERNAME = {n: e["fields"]["username"] for n, e in ENTRIES.items() if e["type"] == "login"}
 
 
 def wait_for_value(s, field, deadline=10):
@@ -1064,7 +1064,7 @@ try:
     verify(g["origemTexto"] == "http://localhost:8081", "popup mostra a origem da aba", "origem_mostrada")
     verify(g["rotuloTexto"] == "2 entradas para esta origem" and g["estadoTexto"] == "destravado",
            "rótulo da lista e estado do cabeçalho", "rotulo_estado")
-    with_totp = lambda n: USERNAME[n] + (" · com TOTP" if ENTRIES[n]["segredos"].get("totp_semente") else "")
+    with_totp = lambda n: USERNAME[n] + (" · com TOTP" if ENTRIES[n]["secrets"].get("totp_seed") else "")
     env_details = [(x["amb"], x["det"]) for x in g["textos"]]
     verify([x["amb"] for x in g["textos"]] == ["dev", "prod"] and g["textos"][0]["det"] == with_totp("acme-wp-dev")
            and g["textos"][1]["det"] == with_totp("acme-wp-prod"),

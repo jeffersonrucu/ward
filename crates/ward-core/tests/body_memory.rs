@@ -198,9 +198,10 @@ fn field(v: &mut Vec<u8>, b: &[u8]) {
     v.extend_from_slice(b);
 }
 
-/// Version (4, D65 d) and generation (D39) at the start of every body forged here.
+/// Version (5, D65 d and m2:DT4) and generation (D39) at the start of every body forged
+/// here.
 fn start(generation: u64) -> Vec<u8> {
-    let mut v = vec![4, 0];
+    let mut v = vec![5, 0];
     v.extend_from_slice(&generation.to_le_bytes());
     v
 }
@@ -208,7 +209,7 @@ fn start(generation: u64) -> Vec<u8> {
 /// Where the PIN hash field starts: after the version (2) and the generation (8).
 const P_HASH: usize = 2 + 8;
 
-/// The empty body of the test vault: version 4 and the config (D30, D39), plus the
+/// The empty body of the test vault: version 5 and the config (D30, D39), plus the
 /// count.
 fn empty_body() -> Vec<u8> {
     serialize(test_config(), 1, &[]).unwrap().to_vec()
@@ -243,7 +244,7 @@ fn header_with_hash(hash: &[u8]) -> Vec<u8> {
 fn generic_until_tags() -> Vec<u8> {
     let mut v = header();
     v.extend_from_slice(&1u32.to_le_bytes());
-    for c in [&b"generico"[..], b"livre", b"x", b"g", b"dev", b""] {
+    for c in [&b"generic"[..], b"free", b"x", b"g", b"dev", b""] {
         field(&mut v, c);
     }
     v
@@ -293,7 +294,7 @@ fn forged_bodies() -> Vec<(&'static str, Vec<u8>)> {
     let mut v = with_count(generic_until_attachments(), 0);
     v[0] = 1;
     cases.push(("versão 1", v));
-    // D39: version 2 (without generation), 3 (without dates, D65 d) and 4 with generation 0.
+    // D39: version 2 (without generation), 3 (without dates, D65 d) and 5 with generation 0.
     let mut v = with_count(generic_until_attachments(), 0);
     v[0] = 2;
     cases.push(("versão 2", v));
@@ -313,8 +314,8 @@ fn forged_bodies() -> Vec<(&'static str, Vec<u8>)> {
     cases.push(("campo com u32::MAX", v));
     let mut v = header();
     v.extend_from_slice(&1u32.to_le_bytes());
-    field(&mut v, b"generico");
-    field(&mut v, b"livre");
+    field(&mut v, b"generic");
+    field(&mut v, b"free");
     field(&mut v, b"x");
     v.extend_from_slice(&u32::MAX.to_le_bytes());
     cases.push(("grupo com u32::MAX", v));

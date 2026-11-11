@@ -195,8 +195,8 @@ class D11FromBefore(unittest.TestCase):
 
     def test_database_url(self):
         e = {
-            "campos": {"motor": "postgres", "usuario": "app", "host": "127.0.0.1", "porta": "55432", "base": "app_teste"},
-            "segredos": {"senha": "falso-PG:s3nha/01@#"},
+            "fields": {"engine": "postgres", "username": "app", "host": "127.0.0.1", "port": "55432", "db_name": "app_teste"},
+            "secrets": {"password": "falso-PG:s3nha/01@#"},
         }
         urls = V.database_url(e)
         self.assertTrue(b"postgresql://app:falso-PG%3As3nha%2F01%40%23@127.0.0.1:55432/app_teste" in urls, "DATABASE_URL")
