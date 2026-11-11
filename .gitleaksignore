@@ -1,0 +1,16 @@
+# Fingerprints of fake test values that only exist in the git history (m2: Phase 54a,
+# user decision of 2026-11-11, Phase 61). Each line is one exact finding
+# (commit:file:rule:line); nothing generic. Those values were never real secrets and
+# were replaced by D15 values in the tree. A new finding is still reported.
+1b2820b236525f8bd054f8cbfef704a9042c6ff9:docs/mission/handoffs/phase-50.md:generic-api-key:181
+541720ef87270f53a33e5fddbc32a3482413b5eb:app/core/src/first_use.rs:generic-api-key:199
+541720ef87270f53a33e5fddbc32a3482413b5eb:app/core/src/first_use.rs:generic-api-key:227
+81960fb689df9dac1bc06f43c9670311b163b8f4:crates/wardd/tests/d62.rs:generic-api-key:449
+81960fb689df9dac1bc06f43c9670311b163b8f4:crates/wardd/tests/backup.rs:generic-api-key:437
+81960fb689df9dac1bc06f43c9670311b163b8f4:crates/wardd/tests/settings.rs:generic-api-key:111
+81960fb689df9dac1bc06f43c9670311b163b8f4:crates/wardd/tests/settings.rs:generic-api-key:465
+c0d849ee396103d26dc918a29e316956b24002ef:crates/wardd/tests/configuracoes.rs:generic-api-key:109
+c0d849ee396103d26dc918a29e316956b24002ef:crates/wardd/tests/configuracoes.rs:generic-api-key:459
+0c09209fd242b8fbb469f6e8ff01d4eefa8f0d5d:crates/ward-core/src/backup/tests.rs:generic-api-key:369
+1ae5610e4e3a9567286121c42eb8f2951ffd5b4f:crates/ward-test-bridge/tests/attacks.rs:generic-api-key:652
+1ae5610e4e3a9567286121c42eb8f2951ffd5b4f:crates/ward-test-bridge/tests/attacks.rs:generic-api-key:786
