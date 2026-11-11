@@ -24,13 +24,13 @@ Fases 66 e 66a não valem mais.
 
 | Artefato | sha256 |
 | --- | --- |
-| `ward_0.2.0_amd64.deb` | `9ff2397fc0813b0ea92c92bc50eebd57680039e5eec720015fbf774f60ddc0c2` |
-| `ward.crx` | `bd6e92f180ef90d5fb57ce33ba108ce9bac4c19ab75de2fb7b04c3b2e09fc9c0` |
+| `ward_0.2.0_amd64.deb` | `1b7adb945c29a83baeee3a86f6267ae49be825eea713cfb9bd90903781161667` |
+| `ward.crx` | `ad931ba0739de4b72635f37a20dc0aefe71be818f6e94e20f807327c17b8106b` |
 | `bin/ward` | `994f8d29eaabe5e1eae5b6bdabd925eae9f2736621759c735cb6e4bc886bd70b` |
-| `bin/wardd` | `d6bcb03dc0d5cea085a38951ddc9062f250ac37ddd3e250d7126742692cd2190` |
+| `bin/wardd` | `0f85fe58941c7f89e007405f8e2164bc1e3104373ed4c30d4fa1172f27e419e5` |
 | `bin/ward-nm` | `c073f81c88cae15bff34b3491772e9f5b1048543822b2b2c78ebef324cd76e97` |
-| `bin/ward-app` | `54ef9d199b7016eec6af469911760c9d744bbc74fd4cf74bdb36c371fa6dd004` |
-| `ward-install-0.2.0.tar` | `SHA_TAR` |
+| `bin/ward-app` | `ceaff36dc21f1b5bbcf80b21d737eeea3cbd51042deef085232131cd5c8445df` |
+| `ward-install-0.2.0.tar` | `a64fbc686db4ec4f0379d053136c628be0b15e4ad7cf3cb617abdabf4a227209` |
 
 | Arquivo | O que é |
 | --- | --- |
@@ -38,6 +38,10 @@ Fases 66 e 66a não valem mais.
 | `ward.crx` | extensão do Chrome 0.2.0, id `nhkehjnmlgkebhmelajfpmpblepaichf` (o de sempre) |
 | `bin/ward`, `bin/wardd`, `bin/ward-nm`, `bin/ward-app` | binários de release, para o caminho `sudo make install` |
 | `ward-install-0.2.0.tar` | o instalador do `make install` (`Makefile`, `install/` com o `tree.txt`, ícones), para rodar de uma pasta do root (3b) |
+
+O `ward-install-0.2.0.tar` é reprodutível: `git archive --format=tar
+a01b39e1d6435660000149418d1e664f17730996 Makefile install docs/design/logo` dá o mesmo
+sha256.
 
 Use **o mesmo meio** com que instalou a 0.1.x (`.deb` ou `make install`). Não misture.
 Esta máquina tem a 0.1.5 pelo `.deb` (`dpkg-query -W ward`): o seu caminho é o 3a.
@@ -65,7 +69,7 @@ reservados da 0.2.0 (`ENTRY`, `GROUP`, `ENVIRONMENT`, `FILE`, `FILE_…`; `PROTO
 
 ```sh
 cd ~/projetos/cofre/target/release-0.2.0
-sha256sum -c SHA256SUMS                 # todos "OK", e os mesmos da tabela acima (Fase 66a)
+sha256sum -c SHA256SUMS                 # todos "OK", e os mesmos da tabela acima (Fase 66b)
 dpkg-deb -f ward_0.2.0_amd64.deb Package Version Depends
 # Package: ward / Version: 0.2.0 / Depends: sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
 ./bin/ward --version                    # ward 0.2.0
