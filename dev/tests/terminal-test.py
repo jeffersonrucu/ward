@@ -1,26 +1,29 @@
 #!/usr/bin/python3 -IB
-""""Terminal" da ponte de teste (Fase 39c; D3, V5.24). Só desenvolvimento.
+""""Terminal" of the test bridge (Phase 39c; D3, V5.24). Development only.
 
-A ponte aberta pelo daemon de teste monta o "Conectar" com o mesmo `TerminalDoSistema`
-do app: este script faz o papel do `x-terminal-emulator`, recebe
-`-e <repo>/target/debug/ward ssh --token-fd <n> <entrada>` e o fd `<n>` herdado (o
-token vai só no socket; nunca em argv nem no ambiente). Não abre janela: roda o comando
-num pty, espera o prompt do servidor e manda `echo WARD-E2E-$(id -un); exit`.
+The bridge opened by the test daemon builds the Connect button with the same terminal
+type as the app (`app/core/src/terminal.rs`): this script plays the part of
+`x-terminal-emulator`, receives `-e <repo>/target/debug/ward ssh --token-fd <n> <entry>`
+and the inherited fd `<n>` (the token goes only in the socket; never in argv nor in the
+environment). It opens no window: it runs the command in a pty, waits for the server
+prompt and sends `echo WARD-E2E-$(id -un); exit`.
 
-O modo vem de `$WARD_DEV_DIR/terminal-teste.modo` (uma palavra; o QA grava antes de
-clicar em "Conectar"; sem o arquivo, `normal`):
-- `normal`: roda o comando como veio (o que o terminal de verdade faz);
-- `reuso`: lê o token do fd, procura-o em `/proc/*/cmdline` e `/proc/*/environ` (tem de
-  achar 0), usa-o uma vez (conecta sem aprovação) e de novo (vale o nível: a janela de
-  aprovação abre e o QA nega);
-- `expirado`: lê o token, espera 31 s e usa (vale o nível);
-- `outra-entrada`: lê o token de `acme-ssh-salto` e o usa em `acme-ssh-interno-aprov`, que
-  salta pelo próprio `acme-ssh-salto` (o token não cobre outra entrada nem o salto dela:
-  vale o nível, a janela abre).
+The mode comes from the mode file in `$WARD_DEV_DIR` (one word; QA writes it before
+clicking Connect; without the file, `normal`). The mode words are the ones `main()`
+accepts, written by `dev/tests/app_e2e.py`:
+- normal: runs the command as it came (what the real terminal does);
+- reuse: reads the token from the fd, looks for it in `/proc/*/cmdline` and
+  `/proc/*/environ` (must find 0), uses it once (connects without approval) and again
+  (the level applies: the approval window opens and QA denies);
+- expired: reads the token, waits 31 s and uses it (the level applies);
+- other entry: reads the token of the jump entry and uses it on the internal entry with
+  approval, which jumps through that same jump entry (the token covers neither another
+  entry nor its jump: the level applies, the window opens).
 
-Registra em `$WARD_DEV_DIR/logs/terminal-teste.log` (0600) uma linha por uso:
-`uso=<n> entrada=<e> saida=<código> conectou=<sim|nao> negado=<sim|nao>`, e no reuso
-`proc=<achados>/<lidos>`. Nunca grava o token nem a saída do servidor.
+Records in the test terminal log under `$WARD_DEV_DIR/logs/` (0600) one line per use
+(use number, entry, exit code, connected, denied) and, in the reuse mode, how many
+`/proc` files had the token out of how many were read. Never writes the token nor the
+server output.
 """
 
 import os
@@ -31,156 +34,160 @@ import subprocess
 import sys
 import time
 
-PRAZO = 150
-MARCA = b"WARD-E2E-"
+TIMEOUT = 150
+MARK = b"WARD-E2E-"
 
 
-def sair(msg):
+def die(msg):
     print(f"terminal-teste: {msg}", file=sys.stderr)
     sys.exit(2)
 
 
-def dev_e_ward():
+def dev_and_ward():
     dev = os.environ.get("WARD_DEV_DIR", "")
     if not dev.startswith("/") or not dev.endswith("/.dev") or "/../" in dev or "/./" in dev:
-        sair("WARD_DEV_DIR fora da forma <repositório>/.dev")
+        die("WARD_DEV_DIR fora da forma <repositório>/.dev")
     a = sys.argv[1:]
     if len(a) != 6 or a[0] != "-e" or a[2:4] != ["ssh", "--token-fd"]:
-        sair("uso: terminal-test.py -e <ward> ssh --token-fd <n> <entrada>")
+        die("uso: terminal-test.py -e <ward> ssh --token-fd <n> <entrada>")
     ward = a[1]
     if ward != os.path.dirname(dev) + "/target/debug/ward":
-        sair("o ward não é o do repositório")
+        die("o ward não é o do repositório")
     if not re.fullmatch(r"[0-9]{1,7}", a[4]) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", a[5]):
-        sair("fd ou entrada fora da forma")
+        die("fd ou entrada fora da forma")
     return dev, ward, int(a[4]), a[5]
 
 
-def registrar(dev, linha):
+def record(dev, line):
     os.makedirs(dev + "/logs", mode=0o700, exist_ok=True)
     fd = os.open(dev + "/logs/terminal-teste.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "a") as f:
-        f.write(f"{time.strftime('%H:%M:%S')} {linha}\n")
+        f.write(f"{time.strftime('%H:%M:%S')} {line}\n")
 
 
-def ambiente():
-    # O que o TerminalDoSistema passou (ambiente do zero): nada a mais.
+def environment():
+    # What the app's terminal type passed (environment from scratch): nothing more.
     return dict(os.environ)
 
 
-def rodar(argv, passar=()):
-    """Roda `argv` num pty; manda o comando de teste depois do prompt. Devolve
-    (código, conectou, negado)."""
-    mestre, escravo = os.openpty()
-    p = subprocess.Popen(argv, stdin=escravo, stdout=escravo, stderr=escravo, pass_fds=passar,
-                         env=ambiente(), cwd="/", start_new_session=True)
-    os.close(escravo)
-    for fd in passar:
+def run(argv, inherited=()):
+    """Runs `argv` in a pty; sends the test command after the prompt. Returns
+    (code, connected, denied)."""
+    master, slave = os.openpty()
+    p = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, pass_fds=inherited,
+                         env=environment(), cwd="/", start_new_session=True)
+    os.close(slave)
+    for fd in inherited:
         os.close(fd)
-    saida = bytearray()
-    enviado = False
-    fim = time.monotonic() + PRAZO
-    while time.monotonic() < fim:
-        r, _, _ = select.select([mestre], [], [], 0.2)
+    output = bytearray()
+    sent = False
+    deadline = time.monotonic() + TIMEOUT
+    while time.monotonic() < deadline:
+        r, _, _ = select.select([master], [], [], 0.2)
         if r:
             try:
-                b = os.read(mestre, 4096)
+                b = os.read(master, 4096)
             except OSError:
                 b = b""
             if not b:
                 break
-            saida += b
-        # O ash do busybox pergunta a posição do cursor (ESC[6n) depois do prompt: o
-        # terminal responde, e o prompt é procurado sem as sequências de escape.
+            output += b
+        # busybox's ash asks for the cursor position (ESC[6n) after the prompt: the
+        # terminal answers, and the prompt is searched without the escape sequences.
         if r and b"\x1b[6n" in b:
-            os.write(mestre, b"\x1b[1;1R")
-        fim_tela = re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", bytes(saida[-128:]))
-        if not enviado and re.search(rb"[$#] ?$", fim_tela.rstrip(b"\r\n ") + b" "):
-            os.write(mestre, b"echo " + MARCA + b"$(id -un); exit\n")
-            enviado = True
+            os.write(master, b"\x1b[1;1R")
+        screen_tail = re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", bytes(output[-128:]))
+        if not sent and re.search(rb"[$#] ?$", screen_tail.rstrip(b"\r\n ") + b" "):
+            os.write(master, b"echo " + MARK + b"$(id -un); exit\n")
+            sent = True
         if p.poll() is not None and not r:
             break
     try:
-        codigo = p.wait(timeout=10)
+        code = p.wait(timeout=10)
     except subprocess.TimeoutExpired:
         p.kill()
-        codigo = p.wait()
-    os.close(mestre)
-    texto = bytes(saida)
-    # A saída do pty (prompt, banner, erro do `ward ssh`) vai para .dev/logs (0600), que a
-    # varredura de logs do `make test-app-e2e` confere contra .dev/variations.txt.
+        code = p.wait()
+    os.close(master)
+    text = bytes(output)
+    # The pty output (prompt, banner, `ward ssh` error) goes to .dev/logs (0600), which the
+    # log scan of `make test-app-e2e` checks against .dev/variations.txt.
     dev = os.environ["WARD_DEV_DIR"]
     fd = os.open(dev + "/logs/terminal-teste.saida", os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "ab") as f:
-        f.write(b"--- " + " ".join(argv[1:3] + argv[4:]).encode() + b"\n" + texto[-2000:] + b"\n")
-    conectou = re.search(MARCA + rb"[a-z]", texto) is not None
-    negado = b"negad" in texto
-    return codigo, conectou, negado
+        f.write(b"--- " + " ".join(argv[1:3] + argv[4:]).encode() + b"\n" + text[-2000:] + b"\n")
+    connected = re.search(MARK + rb"[a-z]", text) is not None
+    denied = b"negad" in text
+    return code, connected, denied
 
 
-def canal(token):
+def yes_no(flag):
+    return "sim" if flag else "nao"
+
+
+def channel(token):
     a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     a.sendall(token)
     a.close()
     return b.detach()
 
 
-def ler_token(fd):
-    partes = []
+def read_token(fd):
+    parts = []
     while True:
         b = os.read(fd, 128)
         if not b:
             break
-        partes.append(b)
+        parts.append(b)
     os.close(fd)
-    return b"".join(partes)
+    return b"".join(parts)
 
 
-def varrer_proc(token):
-    achados = lidos = 0
+def scan_proc(token):
+    found = read_count = 0
     for pid in os.listdir("/proc"):
         if not pid.isdigit() or int(pid) == os.getpid():
             continue
-        for arq in ("cmdline", "environ"):
+        for name in ("cmdline", "environ"):
             try:
-                with open(f"/proc/{pid}/{arq}", "rb") as f:
-                    dados = f.read()
+                with open(f"/proc/{pid}/{name}", "rb") as f:
+                    data = f.read()
             except OSError:
                 continue
-            lidos += 1
-            if token in dados:
-                achados += 1
-    return achados, lidos
+            read_count += 1
+            if token in data:
+                found += 1
+    return found, read_count
 
 
 def main():
-    dev, ward, fd, entrada = dev_e_ward()
+    dev, ward, fd, entry = dev_and_ward()
     try:
         with open(dev + "/terminal-teste.modo") as f:
-            modo = f.read().strip() or "normal"
+            mode = f.read().strip() or "normal"
     except FileNotFoundError:
-        modo = "normal"
-    if modo not in ("normal", "reuso", "expirado", "outra-entrada"):
-        sair("modo desconhecido")
-    registrar(dev, f"abriu modo={modo} entrada={entrada}")
-    if modo == "normal":
-        c, con, neg = rodar([ward, "ssh", "--token-fd", str(fd), entrada], (fd,))
-        registrar(dev, f"uso=1 entrada={entrada} saida={c} conectou={'sim' if con else 'nao'} negado={'sim' if neg else 'nao'}")
+        mode = "normal"
+    if mode not in ("normal", "reuso", "expirado", "outra-entrada"):
+        die("modo desconhecido")
+    record(dev, f"abriu modo={mode} entrada={entry}")
+    if mode == "normal":
+        c, conn, den = run([ward, "ssh", "--token-fd", str(fd), entry], (fd,))
+        record(dev, f"uso=1 entrada={entry} saida={c} conectou={yes_no(conn)} negado={yes_no(den)}")
         return 0
-    token = ler_token(fd)
-    usos = []
-    if modo == "reuso":
-        achados, lidos = varrer_proc(token)
-        registrar(dev, f"proc={achados}/{lidos}")
-        usos = [(entrada, 0), (entrada, 0)]
-    elif modo == "expirado":
-        usos = [(entrada, 31)]
+    token = read_token(fd)
+    uses = []
+    if mode == "reuso":
+        found, read_count = scan_proc(token)
+        record(dev, f"proc={found}/{read_count}")
+        uses = [(entry, 0), (entry, 0)]
+    elif mode == "expirado":
+        uses = [(entry, 31)]
     else:
-        usos = [("acme-ssh-interno-aprov", 0)]
-    for i, (e, espera) in enumerate(usos, 1):
-        time.sleep(espera)
-        n = canal(token)
-        c, con, neg = rodar([ward, "ssh", "--token-fd", str(n), e], (n,))
-        registrar(dev, f"uso={i} entrada={e} saida={c} conectou={'sim' if con else 'nao'} negado={'sim' if neg else 'nao'}")
+        uses = [("acme-ssh-interno-aprov", 0)]
+    for i, (e, delay) in enumerate(uses, 1):
+        time.sleep(delay)
+        n = channel(token)
+        c, conn, den = run([ward, "ssh", "--token-fd", str(n), e], (n,))
+        record(dev, f"uso={i} entrada={e} saida={c} conectou={yes_no(conn)} negado={yes_no(den)}")
     token = b"\0" * len(token)
     return 0
 

@@ -1,23 +1,23 @@
 #!/usr/bin/python3 -IB
-"""Fase 39g (D51, V5.29): nenhum código fica fora do isolamento RTL e do escape bidi.
+"""Phase 39g (D51, V5.29): no code point stays outside the RTL isolation and the bidi escape.
 
-A janela de aprovação mostra o texto do agente em duas camadas:
-- o Rust (`crates/ward-core/src/display.rs`, `invisible`) troca por escape visível o
-  controle e a formatação (bidi, largura zero...);
-- a interface (`app/src/lib/bidi.js`, `RTL`) isola em `<bdi dir="rtl">` cada sequência
-  de letras RTL.
+The approval window shows the agent's text in two layers:
+- Rust (`crates/ward-core/src/display.rs`, `invisible`) swaps control and formatting
+  characters (bidi, zero width...) for a visible escape;
+- the interface (`app/src/lib/bidi.js`, `RTL`) isolates each run of RTL letters in
+  `<bdi dir="rtl">`.
 
-Este teste lê as duas listas dos fontes e varre U+0000–U+10FFFF com a ICU do sistema
-(a mesma do WebKitGTK, por ctypes; nada é compilado). Um código de classe bidi forte
-RTL (R, AL), número árabe (AN), separador de parágrafo (B) ou controle de direção
-(LRE, RLE, LRO, RLO, PDF, LRI, RLI, FSI, PDI) que não cai em nenhuma das duas é falha.
-Os não atribuídos contam: a ICU dá a eles a classe padrão do bloco (U+FEFD e U+FEFE,
-AL, foram o achado da 2ª auditoria do M5).
+This test reads both lists from the sources and scans U+0000–U+10FFFF with the system
+ICU (the same as WebKitGTK's, through ctypes; nothing is compiled). A code point of strong
+RTL bidi class (R, AL), Arabic number (AN), paragraph separator (B) or direction control
+(LRE, RLE, LRO, RLO, PDF, LRI, RLI, FSI, PDI) that falls in neither of them is a failure.
+Unassigned ones count: ICU gives them the default class of the block (U+FEFD and U+FEFE,
+AL, were the finding of the 2nd audit of M5).
 
-Antes, o autoteste: com a faixa antiga (U+FE70–U+FEFC) e sem o escape de U+FEFD/U+FEFE,
-a varredura tem de achar os dois. Sai 1 se algo falhar; 2 se não achar a ICU.
+First, the self-test: with the old range (U+FE70–U+FEFC) and without the escape of
+U+FEFD/U+FEFE, the scan has to find both. Exits 1 if something fails; 2 if ICU is not found.
 
-Uso: python3 -I -B dev/tests/bidi_icu.py   (ou `make app-front`)
+Usage: python3 -I -B dev/tests/bidi_icu.py   (or `make app-front`)
 """
 
 import ctypes
@@ -26,14 +26,14 @@ import os
 import re
 import sys
 
-RAIZ = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-BIDI_JS = os.path.join(RAIZ, "app", "src", "lib", "bidi.js")
-EXIBICAO = os.path.join(RAIZ, "crates", "ward-core", "src", "display.rs")
+ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+BIDI_JS = os.path.join(ROOT, "app", "src", "lib", "bidi.js")
+DISPLAY_RS = os.path.join(ROOT, "crates", "ward-core", "src", "display.rs")
 
-# UCharDirection (uchar.h): as classes que reordenam o texto em volta.
-# 1 R, 2 EN... ver a enum; 7 B, 11 LRE, 12 LRO, 13 AL, 14 RLE, 15 RLO, 16 PDF,
+# UCharDirection (uchar.h): the classes that reorder the surrounding text.
+# 1 R, 2 EN... see the enum; 7 B, 11 LRE, 12 LRO, 13 AL, 14 RLE, 15 RLO, 16 PDF,
 # 19 FSI, 20 LRI, 21 RLI, 22 PDI; 5 AN.
-NOMES = {
+NAMES = {
     1: "R",
     5: "AN",
     7: "B",
@@ -48,117 +48,117 @@ NOMES = {
     21: "RLI",
     22: "PDI",
 }
-U_CONTROL_CHAR = 15  # UCharCategory Cc (o `char::is_control` do Rust)
+U_CONTROL_CHAR = 15  # UCharCategory Cc (Rust's `char::is_control`)
 
 
-def carregar_icu():
-    for caminho in sorted(glob.glob("/usr/lib/x86_64-linux-gnu/libicuuc.so.*")) + sorted(
+def load_icu():
+    for path in sorted(glob.glob("/usr/lib/x86_64-linux-gnu/libicuuc.so.*")) + sorted(
         glob.glob("/usr/lib64/libicuuc.so.*")
     ):
-        m = re.search(r"libicuuc\.so\.(\d+)$", caminho)
+        m = re.search(r"libicuuc\.so\.(\d+)$", path)
         if not m:
             continue
-        lib = ctypes.CDLL(caminho)
+        lib = ctypes.CDLL(path)
         v = m.group(1)
-        direcao = getattr(lib, f"u_charDirection_{v}")
-        tipo = getattr(lib, f"u_charType_{v}")
-        for f in (direcao, tipo):
+        direction = getattr(lib, f"u_charDirection_{v}")
+        char_type = getattr(lib, f"u_charType_{v}")
+        for f in (direction, char_type):
             f.argtypes = [ctypes.c_int32]
             f.restype = ctypes.c_int
-        return direcao, tipo, caminho
+        return direction, char_type, path
     return None
 
 
-def faixas_js():
-    """As faixas da classe de caracteres `RTL` de bidi.js."""
-    texto = open(BIDI_JS, encoding="utf-8").read()
-    m = re.search(r"const RTL = /\[(.*?)\]\+/gu;", texto)
+def js_ranges():
+    """The ranges of the `RTL` character class of bidi.js."""
+    text = open(BIDI_JS, encoding="utf-8").read()
+    m = re.search(r"const RTL = /\[(.*?)\]\+/gu;", text)
     if not m:
         raise SystemExit("bidi_icu: não achei `const RTL = /[...]+/gu;` em bidi.js")
-    corpo = m.group(1)
-    itens = []
+    body = m.group(1)
+    items = []
     i = 0
-    while i < len(corpo):
-        if corpo.startswith("\\u{", i):
-            fim = corpo.index("}", i)
-            itens.append(int(corpo[i + 3 : fim], 16))
-            i = fim + 1
-        elif corpo[i] == "-":
-            itens.append("-")
+    while i < len(body):
+        if body.startswith("\\u{", i):
+            end = body.index("}", i)
+            items.append(int(body[i + 3 : end], 16))
+            i = end + 1
+        elif body[i] == "-":
+            items.append("-")
             i += 1
-        elif corpo[i] == "\\":
-            raise SystemExit(f"bidi_icu: escape não suportado em bidi.js: {corpo[i:i+6]!r}")
+        elif body[i] == "\\":
+            raise SystemExit(f"bidi_icu: escape não suportado em bidi.js: {body[i:i+6]!r}")
         else:
-            itens.append(ord(corpo[i]))
+            items.append(ord(body[i]))
             i += 1
-    faixas = []
+    ranges = []
     j = 0
-    while j < len(itens):
-        if j + 2 < len(itens) and itens[j + 1] == "-":
-            faixas.append((itens[j], itens[j + 2]))
+    while j < len(items):
+        if j + 2 < len(items) and items[j + 1] == "-":
+            ranges.append((items[j], items[j + 2]))
             j += 3
         else:
-            faixas.append((itens[j], itens[j]))
+            ranges.append((items[j], items[j]))
             j += 1
-    return faixas
+    return ranges
 
 
-def faixas_rust():
-    """As faixas do `matches!` de `invisible` em display.rs."""
-    texto = open(EXIBICAO, encoding="utf-8").read()
-    m = re.search(r"pub fn invisible\(c: char\) -> bool \{(.*?)\n\}", texto, re.S)
+def rust_ranges():
+    """The ranges of the `matches!` of `invisible` in display.rs."""
+    text = open(DISPLAY_RS, encoding="utf-8").read()
+    m = re.search(r"pub fn invisible\(c: char\) -> bool \{(.*?)\n\}", text, re.S)
     if not m or "c.is_control()" not in m.group(1):
         raise SystemExit("bidi_icu: não achei `invisible` com `c.is_control()` em display.rs")
-    corpo = re.sub(r"//[^\n]*", "", m.group(1))
-    faixas = []
-    for a, b in re.findall(r"0x([0-9A-Fa-f]+)(?:\s*\.\.=\s*0x([0-9A-Fa-f]+))?", corpo):
-        faixas.append((int(a, 16), int(b or a, 16)))
-    return faixas
+    body = re.sub(r"//[^\n]*", "", m.group(1))
+    ranges = []
+    for a, b in re.findall(r"0x([0-9A-Fa-f]+)(?:\s*\.\.=\s*0x([0-9A-Fa-f]+))?", body):
+        ranges.append((int(a, 16), int(b or a, 16)))
+    return ranges
 
 
-def dentro(c, faixas):
-    return any(a <= c <= b for a, b in faixas)
+def inside(c, ranges):
+    return any(a <= c <= b for a, b in ranges)
 
 
-def varrer(direcao, tipo, js, rust):
-    achados = []
+def scan(direction, char_type, js, rust):
+    found = []
     for c in range(0x110000):
-        d = direcao(c)
-        if d not in NOMES:
+        d = direction(c)
+        if d not in NAMES:
             continue
-        if dentro(c, js) or dentro(c, rust) or tipo(c) == U_CONTROL_CHAR:
+        if inside(c, js) or inside(c, rust) or char_type(c) == U_CONTROL_CHAR:
             continue
-        achados.append((c, NOMES[d]))
-    return achados
+        found.append((c, NAMES[d]))
+    return found
 
 
 def main():
-    icu = carregar_icu()
+    icu = load_icu()
     if icu is None:
         print("bidi_icu: libicuuc não encontrada", file=sys.stderr)
         return 2
-    direcao, tipo, caminho = icu
-    js = faixas_js()
-    rust = faixas_rust()
+    direction, char_type, path = icu
+    js = js_ranges()
+    rust = rust_ranges()
     if not js or not rust:
         print("bidi_icu: faixas vazias", file=sys.stderr)
         return 1
 
-    # Autoteste: o estado antes da Fase 39g (faixa até U+FEFC, sem escape de FEFD/FEFE).
-    js_velho = [(a, 0xFEFC if (a, b) == (0xFE70, 0xFEFE) else b) for a, b in js]
-    rust_velho = [f for f in rust if f not in ((0xFEFD, 0xFEFE), (0xFEFD, 0xFEFD), (0xFEFE, 0xFEFE))]
-    velhos = {c for c, _ in varrer(direcao, tipo, js_velho, rust_velho)}
-    if not {0xFEFD, 0xFEFE} <= velhos:
+    # Self-test: the state before Phase 39g (range up to U+FEFC, no escape of FEFD/FEFE).
+    js_old = [(a, 0xFEFC if (a, b) == (0xFE70, 0xFEFE) else b) for a, b in js]
+    rust_old = [f for f in rust if f not in ((0xFEFD, 0xFEFE), (0xFEFD, 0xFEFD), (0xFEFE, 0xFEFE))]
+    old_found = {c for c, _ in scan(direction, char_type, js_old, rust_old)}
+    if not {0xFEFD, 0xFEFE} <= old_found:
         print("FALHA autoteste: a varredura não achou U+FEFD/U+FEFE no estado antigo", file=sys.stderr)
         return 1
 
-    achados = varrer(direcao, tipo, js, rust)
-    for c, nome in achados[:50]:
-        print(f"FALHA U+{c:04X} ({nome}) sem isolamento nem escape", file=sys.stderr)
-    if achados:
-        print(f"bidi_icu: {len(achados)} código(s) descoberto(s)", file=sys.stderr)
+    found = scan(direction, char_type, js, rust)
+    for c, name in found[:50]:
+        print(f"FALHA U+{c:04X} ({name}) sem isolamento nem escape", file=sys.stderr)
+    if found:
+        print(f"bidi_icu: {len(found)} código(s) descoberto(s)", file=sys.stderr)
         return 1
-    print(f"bidi_icu: ok ({os.path.basename(caminho)})")
+    print(f"bidi_icu: ok ({os.path.basename(path)})")
     return 0
 
 

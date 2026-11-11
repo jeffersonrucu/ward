@@ -26,8 +26,6 @@
 export PATH=/usr/bin:/bin
 set -euo pipefail
 ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
-# common.sh (Phase 46) still reads the root from its old variable name.
-RAIZ="$ROOT"
 # shellcheck source=dev/services/common.sh
 . "$ROOT/dev/services/common.sh"
 unset MAKEFLAGS MAKELEVEL MFLAGS

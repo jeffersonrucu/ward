@@ -1,31 +1,31 @@
 #!/bin/bash -p
-# `make test-revealed-selection` (Fase 39g; S2, S12; 2ª auditoria do M5).
+# `make test-revealed-selection` (Phase 39g; S2, S12; 2nd audit of M5).
 #
-# O valor revelado no `Campo secreto` não vai à PRIMARY nem à CLIPBOARD por seleção,
-# Ctrl+A, Ctrl+C, arrasto ou clique triplo, no WebKitGTK de verdade: sobe um `wardd` de
-# teste só deste teste (socket em WARD_DEV_SOCKET_DIR, padrão
-# `/run/user/<uid>/ward-teste-selecao`; nunca o socket fixo de outro checkout) com
-# WARD_DEV_APP = a ponte, pede `abrir_app` (dev/bridge.sh) e roda
-# `dev/tests/revealed_selection.py`, que abre a interface de teste num WebKitGTK 4.1 dentro
-# de um Xwayland privado (a área de transferência da sessão do usuário não é lida nem
-# escrita). No fim, a varredura de logs (V5.27) em .dev/logs e o cofre de teste volta
-# ao que era.
+# The value revealed in the secret field does not go to PRIMARY nor to CLIPBOARD by
+# selection, Ctrl+A, Ctrl+C, drag or triple click, in the real WebKitGTK: starts a test
+# `wardd` of this test only (socket in WARD_DEV_SOCKET_DIR, default: a folder of its own
+# in `/run/user/<uid>/`; never the fixed socket of another checkout) with
+# WARD_DEV_APP = the bridge, asks the daemon to open the app (dev/bridge.sh) and runs
+# `dev/tests/revealed_selection.py`, which opens the test interface in a WebKitGTK 4.1
+# inside a private Xwayland (the clipboard of the user's session is neither read nor
+# written). At the end, the log scan (V5.27) of .dev/logs, and the test vault goes back
+# to what it was.
 #
-# Precisa de: `make dev-vault`, `make dev-variations`, `make app-front`, Xwayland, xauth,
-# python3-gi com o WebKit2 4.1 e a sessão Wayland (uma janela do Xwayland aparece por
-# uns 20 s). Nenhum daemon de teste deste repositório pode estar no ar
-# (`make dev-daemon-stop`). Fora do `make check`.
-# Uso: dev/tests/revealed-selection.sh
+# Needs: `make dev-vault`, `make dev-variations`, `make app-front`, Xwayland, xauth,
+# python3-gi with WebKit2 4.1 and the Wayland session (an Xwayland window shows up for
+# about 20 s). No test daemon of this repository may be running
+# (`make dev-daemon-stop`). Out of `make check`.
+# Usage: dev/tests/revealed-selection.sh
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
-RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
-. "$RAIZ/dev/env.sh"
+ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
+. "$ROOT/dev/env.sh"
 
-DEV="$RAIZ/.dev"
-for f in "$DEV/test-vault.ward" "$DEV/variations.txt" "$RAIZ/app/dist-teste/index.html" \
-    "$RAIZ/target/debug/wardd" "$RAIZ/target/debug/ward-test-bridge"; do
-    [[ -f "$f" ]] || { echo "selecao-revelado: falta ${f#"$RAIZ"/} (make dev-vault, dev-variations, app-front)" >&2; exit 1; }
+DEV="$ROOT/.dev"
+for f in "$DEV/test-vault.ward" "$DEV/variations.txt" "$ROOT/app/dist-teste/index.html" \
+    "$ROOT/target/debug/wardd" "$ROOT/target/debug/ward-test-bridge"; do
+    [[ -f "$f" ]] || { echo "selecao-revelado: falta ${f#"$ROOT"/} (make dev-vault, dev-variations, app-front)" >&2; exit 1; }
 done
 
 UID_="$(id -u)"
@@ -41,36 +41,36 @@ if [[ -f "$DEV/wardd.pid" ]] && p="$(head -c 16 "$DEV/wardd.pid")" && [[ "$p" =~
 fi
 
 umask 077
-GUARDA="$DEV/selecao-guarda"
-rm -rf "$GUARDA"
-mkdir -m 0700 "$GUARDA"
-cp -p "$DEV/test-vault.ward" "$GUARDA/"
-[[ -f "$DEV/test-vault.state" ]] && cp -p "$DEV/test-vault.state" "$GUARDA/"
+BACKUP="$DEV/selection-backup"
+rm -rf "$BACKUP"
+mkdir -m 0700 "$BACKUP"
+cp -p "$DEV/test-vault.ward" "$BACKUP/"
+[[ -f "$DEV/test-vault.state" ]] && cp -p "$DEV/test-vault.state" "$BACKUP/"
 
-limpar() {
-    WARD_DEV_SOCKET_DIR="$SOCKDIR" "$RAIZ/dev/daemon.sh" stop > /dev/null 2>&1 || true
-    cp -p "$GUARDA/test-vault.ward" "$DEV/test-vault.ward"
-    if [[ -f "$GUARDA/test-vault.state" ]]; then
-        cp -p "$GUARDA/test-vault.state" "$DEV/test-vault.state"
+cleanup() {
+    WARD_DEV_SOCKET_DIR="$SOCKDIR" "$ROOT/dev/daemon.sh" stop > /dev/null 2>&1 || true
+    cp -p "$BACKUP/test-vault.ward" "$DEV/test-vault.ward"
+    if [[ -f "$BACKUP/test-vault.state" ]]; then
+        cp -p "$BACKUP/test-vault.state" "$DEV/test-vault.state"
     else
         rm -f "$DEV/test-vault.state"
     fi
-    rm -rf "$GUARDA" "$DEV/revealed-selection"
+    rm -rf "$BACKUP" "$DEV/revealed-selection"
 }
-trap limpar EXIT
+trap cleanup EXIT
 
 echo "==> daemon de teste em $SOCKDIR com a ponte (D63)"
-WARD_DEV_SOCKET_DIR="$SOCKDIR" WARD_DEV_APP="$RAIZ/target/debug/ward-test-bridge" "$RAIZ/dev/daemon.sh" up
-URL="$(WARD_DEV_SOCKET_DIR="$SOCKDIR" "$RAIZ/dev/bridge.sh")"
+WARD_DEV_SOCKET_DIR="$SOCKDIR" WARD_DEV_APP="$ROOT/target/debug/ward-test-bridge" "$ROOT/dev/daemon.sh" up
+URL="$(WARD_DEV_SOCKET_DIR="$SOCKDIR" "$ROOT/dev/bridge.sh")"
 
 echo "==> valor revelado contra seleção e cópia (WebKitGTK num X privado)"
 set +e
-printf '%s\n' "$URL" | /usr/bin/python3 -I -B "$RAIZ/dev/tests/revealed_selection.py"
+printf '%s\n' "$URL" | /usr/bin/python3 -I -B "$ROOT/dev/tests/revealed_selection.py"
 qa=$?
 set -e
 unset URL
 
 echo "==> varredura de logs (V5.27): .dev/logs com .dev/variations.txt"
-WARD_DEV_SOCKET_DIR="$SOCKDIR" "$RAIZ/dev/daemon.sh" stop > /dev/null 2>&1 || true
-/usr/bin/python3 -I -B "$RAIZ/dev/tests/log-scan.py" "$DEV/logs"
+WARD_DEV_SOCKET_DIR="$SOCKDIR" "$ROOT/dev/daemon.sh" stop > /dev/null 2>&1 || true
+/usr/bin/python3 -I -B "$ROOT/dev/tests/log-scan.py" "$DEV/logs"
 exit "$qa"

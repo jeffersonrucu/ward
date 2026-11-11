@@ -1,24 +1,24 @@
 #!/usr/bin/python3 -IB
-"""Confere os pacotes da interface (Fase 29, V5.2, V5.6, S11). Sai 1 no primeiro problema.
+"""Checks the interface bundles (Phase 29, V5.2, V5.6, S11). Exits 1 on the first problem.
 
-`app/dist/` (embutido no Tauri):
-- nenhuma URL remota: o único `http(s)://` aceito é o namespace XML do HTML/SVG
-  (nome, não endereço; o navegador não busca);
-- nada da ponte de teste nem da vitrine (o ramo `import.meta.env.MODE === 'teste'`
-  some no build de produção);
-- `index.html` sem script ou estilo inline, sem `data:`/`blob:`, sem source map;
-- só arquivos de tipos esperados.
+`app/dist/` (embedded in Tauri):
+- no remote URL: the only `http(s)://` accepted is the XML namespace of HTML/SVG
+  (a name, not an address; the browser does not fetch it);
+- nothing from the test bridge nor the showcase (the branch on the test build mode of
+  `import.meta.env.MODE` disappears in the production build);
+- `index.html` without inline script or style, without `data:`/`blob:`, without source map;
+- only files of the expected types.
 
-`app/dist-teste/` (Chrome com a ponte): o mesmo, mas a ponte tem de estar lá.
+The test bundle next to it (Chrome with the bridge): the same, but the bridge has to be there.
 
-Uso: python3 -I -B dev/tests/app-dist.py   (ou `make app-check`)
+Usage: python3 -I -B dev/tests/app-dist.py   (or `make app-check`)
 """
 
 import os
 import re
 import sys
 
-RAIZ = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 NAMESPACES = {
     "http://www.w3.org/1999/xhtml",
     "http://www.w3.org/2000/svg",
@@ -27,61 +27,61 @@ NAMESPACES = {
     "http://www.w3.org/2000/xmlns/",
     "http://www.w3.org/XML/1998/namespace",
 }
-EXTENSOES = {".html", ".js", ".css", ".svg", ".woff", ".woff2"}
-SO_NO_TESTE = ("/ponte/", "token=", "ponte-teste", "test-bridge", "Vitrine", "Showcase", "ward-teste")
+EXTENSIONS = {".html", ".js", ".css", ".svg", ".woff", ".woff2"}
+TEST_ONLY = ("/ponte/", "token=", "ponte-teste", "test-bridge", "Vitrine", "Showcase", "ward-teste")
 URL = re.compile(rb"https?://[^\s\"'`)<>]*")
 
-erros = []
+errors = []
 
 
-def ler_tudo(dist):
+def read_all(dist):
     if not os.path.isfile(os.path.join(dist, "index.html")):
-        erros.append(f"{os.path.relpath(dist, RAIZ)}: sem index.html (rode o build)")
+        errors.append(f"{os.path.relpath(dist, ROOT)}: sem index.html (rode o build)")
         return {}
-    arquivos = {}
-    for raiz, _, nomes in os.walk(dist):
-        for n in nomes:
-            p = os.path.join(raiz, n)
+    files = {}
+    for dirpath, _, names in os.walk(dist):
+        for n in names:
+            p = os.path.join(dirpath, n)
             rel = os.path.relpath(p, dist)
             if os.path.islink(p):
-                erros.append(f"{rel}: link simbólico no pacote")
+                errors.append(f"{rel}: link simbólico no pacote")
                 continue
-            if os.path.splitext(n)[1] not in EXTENSOES:
-                erros.append(f"{rel}: tipo de arquivo inesperado no pacote")
+            if os.path.splitext(n)[1] not in EXTENSIONS:
+                errors.append(f"{rel}: tipo de arquivo inesperado no pacote")
             with open(p, "rb") as f:
-                arquivos[rel] = f.read()
-    return arquivos
+                files[rel] = f.read()
+    return files
 
 
-def conferir(nome, teste):
-    dist = os.path.join(RAIZ, "app", nome)
-    arquivos = ler_tudo(dist)
-    if not arquivos:
+def check(name, test):
+    dist = os.path.join(ROOT, "app", name)
+    files = read_all(dist)
+    if not files:
         return
-    for rel, dados in arquivos.items():
-        for url in set(URL.findall(dados)):
+    for rel, data in files.items():
+        for url in set(URL.findall(data)):
             if url.decode("ascii", "replace") not in NAMESPACES:
-                erros.append(f"{nome}/{rel}: URL remota {url[:60].decode('ascii', 'replace')}")
+                errors.append(f"{name}/{rel}: URL remota {url[:60].decode('ascii', 'replace')}")
         if rel.endswith((".js", ".css", ".html")):
-            for proibido in (b"sourceMappingURL", b"data:text", b"data:application", b"data:image", b"blob:"):
-                if proibido in dados:
-                    erros.append(f"{nome}/{rel}: contém {proibido.decode()}")
-        if not teste:
-            for marca in SO_NO_TESTE:
-                if marca.encode() in dados or marca in rel:
-                    erros.append(f"{nome}/{rel}: código de teste no pacote de produção ({marca})")
-    html = arquivos["index.html"].decode("utf-8")
+            for forbidden in (b"sourceMappingURL", b"data:text", b"data:application", b"data:image", b"blob:"):
+                if forbidden in data:
+                    errors.append(f"{name}/{rel}: contém {forbidden.decode()}")
+        if not test:
+            for mark in TEST_ONLY:
+                if mark.encode() in data or mark in rel:
+                    errors.append(f"{name}/{rel}: código de teste no pacote de produção ({mark})")
+    html = files["index.html"].decode("utf-8")
     if re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html) or "<style" in html or re.search(r"\son\w+=", html) or "style=" in html:
-        erros.append(f"{nome}/index.html: script, estilo ou evento inline")
-    if teste and not any("test-bridge" in rel for rel in arquivos):
-        erros.append(f"{nome}: a ponte de teste não está no pacote de teste")
+        errors.append(f"{name}/index.html: script, estilo ou evento inline")
+    if test and not any("test-bridge" in rel for rel in files):
+        errors.append(f"{name}: a ponte de teste não está no pacote de teste")
 
 
 def main():
-    conferir("dist", teste=False)
-    conferir("dist-teste", teste=True)
-    if erros:
-        for e in erros:
+    check("dist", test=False)
+    check("dist-teste", test=True)
+    if errors:
+        for e in errors:
             print(f"app-dist: {e}", file=sys.stderr)
         sys.exit(1)
     print("app-dist: sem URL remota, sem inline, sem código de teste no pacote de produção")
