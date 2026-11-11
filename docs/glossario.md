@@ -1680,6 +1680,17 @@ O nome no disco (`estado`, `.dev/test-vault.state` no teste) não muda o do cofr
 | `queimada <n>` | `burned <n>` |
 | `falhas_agente <n>` | `agent_failures <n>` |
 
+No `ward-state 2` as três linhas são obrigatórias; no `ward-estado 1` a de
+`falhas_agente` é opcional (formato da Fase 22, lido como 0). Formatos não se misturam.
+
+Nomes no código (Fase 49), todos novos, sem equivalente pt-BR: `STATE_HEADER`
+(`ward-state 2`), `LEGACY_STATE_HEADER` (`ward-estado 1`, só leitura), `StateKeys`,
+`STATE_KEYS`, `LEGACY_STATE_KEYS` (`wardd::files`); `BodyRead { generation, version }`,
+`BodyRead::is_legacy`, `open_entries_with_version` (`ward_core::body`, diz se o corpo lido
+era v4); `MigrationPoint { BeforeBurn, BeforeWrite, BeforeConfirm, AfterConfirm }`,
+`MigrationHook`, `Daemon::with_migration_hook` (gancho de teste, feature `test-hooks`) e
+`Daemon::migrate` (`wardd::core`, DT5).
+
 ### Outros nomes no disco que ficam
 
 `WARDCOFR` (magia do formato), `cofre.ward`, `estado`, `ward-<data>.ward` (versões do

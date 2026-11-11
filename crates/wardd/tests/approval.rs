@@ -491,10 +491,13 @@ fn rs_sources(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// In alphabetical order (the test compares with the list found, sorted).
 /// The login deadlines hook (Phase 43) only shortens the `ward login` waits in the tests;
 /// it does not touch the approval nor deliver a value.
-const TEST_HOOKS: [&str; 4] = [
+/// The migration hook (m2:DT5) only observes or stops the v4 → v5 write in the tests
+/// (m2:V4.3); it changes nothing in the write.
+const TEST_HOOKS: [&str; 5] = [
     "with_chrome",
     "with_hook_after_write",
     "with_login_deadlines",
+    "with_migration_hook",
     "with_ssh_programs",
 ];
 const CFG_HOOKS: &str = "#[cfg(feature = \"test-hooks\")]";

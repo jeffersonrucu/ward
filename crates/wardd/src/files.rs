@@ -10,6 +10,10 @@
 //! - The state is small text, without secrets, written atomically (temp file with
 //!   `O_EXCL` + fsync + rename + fsync of the directory), 0600. It keeps the generations
 //!   (D53) and the agent role's consecutive wrong passwords (D20 revised by D62).
+//! - State format (m2:DT6): the write only produces the state v2 (`ward-state 2`;
+//!   `seen`, `burned`, `agent_failures`, all required); the reading also accepts the
+//!   0.1.x one, the state v1 (pt-BR keys, the failures line optional), with the same
+//!   meaning. The file name on disk does not change.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -25,8 +29,37 @@ use ward_core::format;
 pub(crate) const MAX_VAULT_FILE: u64 = (format::HEADER_SIZE + format::MAX_CONTENT + 16) as u64;
 /// Largest state file accepted.
 const MAX_STATE: u64 = 256;
-/// First line of the state file.
-const STATE_HEADER: &str = "ward-estado 1";
+/// First line of the state file, the only one written (m2:DT6).
+const STATE_HEADER: &str = "ward-state 2";
+/// First line of the 0.1.x state file, accepted only on reading (m2:DT6).
+const LEGACY_STATE_HEADER: &str = "ward-estado 1";
+
+/// The line keys of one state format (m2:DT6). Closed: a key of the other format, or any
+/// other text, refuses the whole file.
+struct StateKeys {
+    seen: &'static str,
+    burned: &'static str,
+    agent_failures: &'static str,
+    /// The agent failures line may be missing (only in the old format of Phase 22,
+    /// read as 0; D62).
+    failures_optional: bool,
+}
+
+/// Keys of the state v2 (`ward-state 2`), the format written.
+const STATE_KEYS: StateKeys = StateKeys {
+    seen: "seen",
+    burned: "burned",
+    agent_failures: "agent_failures",
+    failures_optional: false,
+};
+
+/// Keys of the state v1 (0.1.x), only read.
+const LEGACY_STATE_KEYS: StateKeys = StateKeys {
+    seen: "vista",
+    burned: "queimada",
+    agent_failures: "falhas_agente",
+    failures_optional: true,
+};
 
 /// Opens for reading without following a link (`O_NOFOLLOW`) and without waiting
 /// (Phase 54l): with `O_NONBLOCK`, a FIFO put in place of the vault, of the state or of
@@ -181,8 +214,9 @@ pub fn read_state(path: &Path) -> Result<Generations, StateError> {
     read_full_state(path).map(|e| e.generations)
 }
 
-/// Reads the state file (strict: the exact lines, `burned ≥ seen`; the line with the
-/// agent's failures is optional, to read the old format as 0).
+/// Reads the state file (strict: the exact lines, `burned ≥ seen`). Accepts the state
+/// v2 (`ward-state 2`) and the 0.1.x state v1, whose line with the agent's failures is
+/// optional, to read the old format as 0 (m2:DT6).
 pub fn read_full_state(path: &Path) -> Result<StateFile, StateError> {
     let f = match open_read(path) {
         Ok(f) => f,
@@ -203,15 +237,18 @@ pub fn read_full_state(path: &Path) -> Result<StateFile, StateError> {
 fn parse_state(text: &str) -> Option<StateFile> {
     let body = text.strip_suffix('\n')?;
     let mut lines = body.split('\n');
-    if lines.next()? != STATE_HEADER {
-        return None;
-    }
-    let seen = number(lines.next()?, "vista")?;
-    let burned = number(lines.next()?, "queimada")?;
-    // Old format (Phase 22): without the line, 0 (D62).
+    let keys = match lines.next()? {
+        STATE_HEADER => &STATE_KEYS,
+        LEGACY_STATE_HEADER => &LEGACY_STATE_KEYS,
+        _ => return None,
+    };
+    let seen = number(lines.next()?, keys.seen)?;
+    let burned = number(lines.next()?, keys.burned)?;
+    // Old format (Phase 22): without the line, 0 (D62). Required in the state v2.
     let agent_failures = match lines.next() {
-        None => 0,
-        Some(l) => u32::try_from(number(l, "falhas_agente")?).ok()?,
+        None if keys.failures_optional => 0,
+        None => return None,
+        Some(l) => u32::try_from(number(l, keys.agent_failures)?).ok()?,
     };
     if lines.next().is_some() || burned < seen {
         return None;
@@ -222,10 +259,17 @@ fn parse_state(text: &str) -> Option<StateFile> {
     })
 }
 
+/// The text written: always the state v2, `ward-state 2` (m2:DT6).
 fn state_text(e: StateFile) -> String {
+    let k = &STATE_KEYS;
     format!(
-        "{STATE_HEADER}\nvista {}\nqueimada {}\nfalhas_agente {}\n",
-        e.generations.seen, e.generations.burned, e.agent_failures
+        "{STATE_HEADER}\n{} {}\n{} {}\n{} {}\n",
+        k.seen,
+        e.generations.seen,
+        k.burned,
+        e.generations.burned,
+        k.agent_failures,
+        e.agent_failures
     )
 }
 
@@ -527,6 +571,8 @@ mod tests {
     fn strict_state() {
         let ok = only_generations("ward-estado 1\nvista 3\nqueimada 4\n").unwrap();
         assert_eq!(ok, Generations { seen: 3, burned: 4 });
+        let ok = only_generations("ward-state 2\nseen 3\nburned 4\nagent_failures 0\n").unwrap();
+        assert_eq!(ok, Generations { seen: 3, burned: 4 });
         let full = StateFile {
             generations: Generations {
                 seen: 0,
@@ -571,7 +617,123 @@ mod tests {
         assert_eq!(new.generations, old.generations);
         assert_eq!(
             state_text(old),
-            "ward-estado 1\nvista 3\nqueimada 4\nfalhas_agente 0\n"
+            "ward-state 2\nseen 3\nburned 4\nagent_failures 0\n"
         );
+    }
+
+    /// m2:DT6: the state v2 reads with the same meaning as the state v1 (generations and
+    /// the agent's failures), and the write only produces the state v2, which reads back
+    /// the same.
+    #[test]
+    fn dt6_v1_and_v2_read_the_same_and_the_write_is_v2() {
+        let v1 = parse_state("ward-estado 1\nvista 3\nqueimada 4\nfalhas_agente 2\n").unwrap();
+        let v2 = parse_state("ward-state 2\nseen 3\nburned 4\nagent_failures 2\n").unwrap();
+        assert_eq!(v1, v2);
+        assert_eq!(v2.generations, Generations { seen: 3, burned: 4 });
+        assert_eq!(v2.agent_failures, 2);
+        let text = state_text(v1);
+        assert!(text.starts_with("ward-state 2\n"), "{text:?}");
+        assert_eq!(parse_state(&text), Some(v1));
+        // The 0.1.4 fixture (the state v1, generation 3).
+        let fixture = include_str!("../../../dev/fixtures/legacy/state-0.1.4");
+        let old = parse_state(fixture).unwrap();
+        assert_eq!(old.generations, Generations { seen: 3, burned: 3 });
+        assert_eq!(old.agent_failures, 0);
+        assert!(state_text(old).starts_with("ward-state 2\n"));
+        assert!(!state_text(old).contains("vista"));
+    }
+
+    /// m2:DT6 (attack): the two formats do not mix. A key of the other format, a v2
+    /// without the failures line, a repeated or reordered line, an unknown version or a
+    /// v2 header with different spacing or case refuse the whole file.
+    #[test]
+    fn dt6_attack_mixed_or_forged_state_refused() {
+        for bad in [
+            "ward-state 2\nseen 3\nburned 4\n",
+            "ward-state 2\nvista 3\nqueimada 4\nfalhas_agente 0\n",
+            "ward-state 2\nseen 3\nqueimada 4\nagent_failures 0\n",
+            "ward-state 2\nseen 3\nburned 4\nfalhas_agente 0\n",
+            "ward-estado 1\nseen 3\nburned 4\nagent_failures 0\n",
+            "ward-estado 1\nvista 3\nqueimada 4\nagent_failures 0\n",
+            "ward-state 1\nseen 3\nburned 4\nagent_failures 0\n",
+            "ward-estado 2\nseen 3\nburned 4\nagent_failures 0\n",
+            "ward-state 3\nseen 3\nburned 4\nagent_failures 0\n",
+            "ward-state  2\nseen 3\nburned 4\nagent_failures 0\n",
+            "Ward-State 2\nseen 3\nburned 4\nagent_failures 0\n",
+            "ward-state 2 \nseen 3\nburned 4\nagent_failures 0\n",
+            "ward-state 2\nseen 5\nburned 4\nagent_failures 0\n",
+            "ward-state 2\nseen 03\nburned 4\nagent_failures 0\n",
+            "ward-state 2\nseen 3\nburned 4\nagent_failures 01\n",
+            "ward-state 2\nseen 3\nburned 4\nagent_failures 4294967296\n",
+            "ward-state 2\nburned 4\nseen 3\nagent_failures 0\n",
+            "ward-state 2\nseen 3\nburned 4\nagent_failures 0\nagent_failures 0\n",
+            "ward-state 2\nseen 3\nburned 4\nagent_failures 0",
+            "ward-state 2\r\nseen 3\nburned 4\nagent_failures 0\n",
+            "ward-state 2\nseen 3\nburned 4\nagent_failures 0\n\n",
+        ] {
+            assert_eq!(parse_state(bad), None, "{bad:?}");
+        }
+    }
+
+    /// m2:DT6 / m2:V4.11: the write is atomic and 0600, the name on disk stays, a state v1
+    /// becomes a state v2 on the next write with the same values, and a link, a FIFO or a
+    /// loose mode in place of the state is refused as before.
+    #[test]
+    fn dt6_v1_state_on_disk_becomes_v2_and_strange_files_are_refused() {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt, symlink};
+        let root = std::env::temp_dir().join(format!("ward-dt6-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
+        let state = root.join("estado");
+        fs::write(
+            &state,
+            "ward-estado 1\nvista 3\nqueimada 3\nfalhas_agente 4\n",
+        )
+        .unwrap();
+        fs::set_permissions(&state, fs::Permissions::from_mode(0o600)).unwrap();
+        let read = read_full_state(&state).unwrap();
+        assert_eq!(read.generations, Generations { seen: 3, burned: 3 });
+        assert_eq!(read.agent_failures, 4);
+        write_full_state(&state, read).unwrap();
+        assert_eq!(
+            fs::read_to_string(&state).unwrap(),
+            "ward-state 2\nseen 3\nburned 3\nagent_failures 4\n"
+        );
+        assert_eq!(fs::metadata(&state).unwrap().mode() & 0o777, 0o600);
+        assert_eq!(read_full_state(&state).unwrap(), read);
+        // Only the state itself in the folder: no temp file left behind.
+        let names: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [std::ffi::OsString::from("estado")]);
+        // Loose mode, link and FIFO: refused, in both formats.
+        for text in [
+            "ward-state 2\nseen 3\nburned 3\nagent_failures 0\n",
+            "ward-estado 1\nvista 3\nqueimada 3\n",
+        ] {
+            fs::write(&state, text).unwrap();
+            fs::set_permissions(&state, fs::Permissions::from_mode(0o640)).unwrap();
+            assert_eq!(read_full_state(&state), Err(StateError::Invalid));
+            fs::set_permissions(&state, fs::Permissions::from_mode(0o600)).unwrap();
+            assert!(read_full_state(&state).is_ok());
+            let target = root.join("alvo");
+            fs::write(&target, text).unwrap();
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+            let link = root.join("estado-link");
+            let _ = fs::remove_file(&link);
+            symlink(&target, &link).unwrap();
+            assert_eq!(read_full_state(&link), Err(StateError::Invalid));
+        }
+        let fifo = root.join("estado-fifo");
+        let st = std::process::Command::new("/usr/bin/mkfifo")
+            .arg("-m")
+            .arg("600")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        assert_eq!(read_full_state(&fifo), Err(StateError::Invalid));
+        let _ = fs::remove_dir_all(&root);
     }
 }

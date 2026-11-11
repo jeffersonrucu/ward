@@ -238,8 +238,9 @@ fn v3_33_old_format_and_state_without_secret() {
     assert_eq!(r.waits(), [Duration::ZERO]);
     assert_eq!(
         state_text(&dir),
+        // m2:DT6: the rewrite is always `ward-state 2`.
         format!(
-            "ward-estado 1\nvista {}\nqueimada {}\nfalhas_agente 1\n",
+            "ward-state 2\nseen {}\nburned {}\nagent_failures 1\n",
             g.seen, g.burned
         )
     );

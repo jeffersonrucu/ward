@@ -58,7 +58,7 @@ trap cleanup EXIT
 
 cp -- "$VAULT" "$WORK_DIR/test-vault.ward"
 # New state (D39): generation 0, goes up on the first unlock (only in the test vault).
-printf 'ward-estado 1\nvista 0\nqueimada 0\n' > "$WORK_DIR/test-vault.state"
+printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' > "$WORK_DIR/test-vault.state"
 LOG="$WORK_DIR/wardd.log"
 
 env -i \

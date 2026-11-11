@@ -396,7 +396,7 @@ LOG40=/tmp/wardd-40.log
 DEV40=/tmp/ward-dev-40
 install -d -o 1000 -g 1000 -m 0700 "$DEV40"
 install -o 1000 -g 1000 -m 0600 /opt/teste/test-vault.ward "$DEV40/test-vault.ward"
-printf 'ward-estado 1\nvista 0\nqueimada 0\n' > "$DEV40/test-vault.state"
+printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' > "$DEV40/test-vault.state"
 chown 1000:1000 "$DEV40/test-vault.state"
 chmod 0600 "$DEV40/test-vault.state"
 install -o root -g root -m 0755 /opt/teste/wardd-real /usr/local/bin/wardd-real

@@ -131,7 +131,7 @@ sys.stdout.buffer.flush()
         sockdir = f"{rt}/ward-politica-chrome-{os.getpid()}"
     if scenario == "roubo" and outside:
         shutil.copyfile(f"{root}/.dev/test-vault.ward", f"{t}/test-vault.ward")
-        open(f"{t}/test-vault.state", "w").write("ward-estado 1\nvista 0\nqueimada 0\n")
+        open(f"{t}/test-vault.state", "w").write("ward-state 2\nseen 0\nburned 0\nagent_failures 0\n")
         env_wardd = {"HOME": t, "PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": rt, "LANG": "C.UTF-8",
                      "WARD_DEV_DIR": t, "WARD_DEV_SOCKET_DIR": sockdir, "WARD_DEV_EXTENSAO": "chrome",
                      "RUST_LOG": "info"}

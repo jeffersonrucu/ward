@@ -18,6 +18,10 @@
 //!   (`seen`, `burned`); before each write it writes `burned` = generation + 1 and
 //!   only then writes the vault; after the write that succeeded, `seen` = generation.
 //!   Without a state file and with the vault present, it does not unlock.
+//! - **Migration** (m2:DT5): the unlock of a vault with a v4 body (0.1.x) writes it as v5
+//!   through that same write (generation + 1, state, local backup) before answering
+//!   "ok"; if the write fails, the unlock answers the error and the v4 stays. A v5 body is
+//!   never written again just for being opened.
 //! - **Identity** (D39, D62): `dev`/inode/`mtime`/size of the vault by `fstat` of the fd
 //!   read and, after writing, of the temp file's fd (returned by `ward_core`), never by a
 //!   `stat` of the path after the rename; before writing (and when reopening) it is
@@ -275,6 +279,9 @@ pub struct Daemon {
     /// Only the tests set it (V3.35: file swap right after the rename); the binary
     /// never.
     write_hook: Option<Hook>,
+    /// Hook called at each [`MigrationPoint`] of the v4 → v5 migration (m2:DT5). Only the
+    /// tests set it (m2:V4.3: death at each point); the binary never.
+    migration_hook: Option<MigrationHook>,
     /// Approval engine (Phase 23).
     pub(crate) approval: Engine,
     /// `<rt>` (Phase 26): the `ward run` attachments are in `<rt>tmp/` (S2). `None`: the
@@ -298,6 +305,27 @@ pub struct Daemon {
 
 /// Test hook of [`Daemon::with_hook_after_write`].
 pub type Hook = Box<dyn Fn() + Send + Sync>;
+
+/// Point of the v4 → v5 migration on unlock (m2:DT5) where the test hook of
+/// [`Daemon::with_migration_hook`] runs (the death tests of m2:V4.3 stop the daemon
+/// there). The points inside the atomic write itself (temp file, write, fsync, rename,
+/// directory fsync) are the core's, tested in `ward_core::atomic_write`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationPoint {
+    /// The v4 is open and checked; nothing was written yet.
+    BeforeBurn,
+    /// The state has `burned` = generation + 1; the vault is still the v4 (before the
+    /// temp file).
+    BeforeWrite,
+    /// The v5 is in place (rename and directory fsync done) and in the backup; the state
+    /// still has the old `seen`.
+    BeforeConfirm,
+    /// The state has `seen` = the v5's generation; the unlock answers next.
+    AfterConfirm,
+}
+
+/// Test hook of [`Daemon::with_migration_hook`].
+pub type MigrationHook = Box<dyn Fn(MigrationPoint) + Send + Sync>;
 
 enum WriteFailure {
     Response(ResponseError),
@@ -337,8 +365,22 @@ fn new_password(s: &Secret, field: &str) -> Result<MasterPassword, ResponseError
     }
 }
 
-/// Verifies the vault and writes the entries and the config of `a` (D39, D53).
-fn write_vault(paths: &Paths, a: &mut Open, hook: Option<&Hook>) -> Result<(), WriteFailure> {
+/// Runs the migration test hook at `p`, if there is one (only the tests set it).
+fn at_point(points: Option<&MigrationHook>, p: MigrationPoint) {
+    if let Some(h) = points {
+        h(p);
+    }
+}
+
+/// Verifies the vault and writes the entries and the config of `a` (D39, D53). Every
+/// write of an unlocked vault goes through here, the v4 → v5 migration too (m2:DT5,
+/// which passes its `points`; the others pass `None`).
+fn write_vault(
+    paths: &Paths,
+    a: &mut Open,
+    hook: Option<&Hook>,
+    points: Option<&MigrationHook>,
+) -> Result<(), WriteFailure> {
     match files::identity(&paths.vault) {
         Ok(Some(id)) if Some(id) == a.identity => {}
         _ => return Err(WriteFailure::Changed),
@@ -363,19 +405,23 @@ fn write_vault(paths: &Paths, a: &mut Open, hook: Option<&Hook>) -> Result<(), W
         seen: a.generations.seen,
         burned: a.generations.burned.max(next),
     };
+    at_point(points, MigrationPoint::BeforeBurn);
     // D53: `burned` goes to disk before the vault; without it, the vault is not written.
     if files::write_state(&paths.state, before).is_err() {
         warning!("gravação recusada: não deu para gravar o arquivo de estado");
         return Err(WriteFailure::Response(ResponseError::WriteFailed));
     }
     a.generations = before;
+    at_point(points, MigrationPoint::BeforeWrite);
     let r = write_with_backup(paths, &mut a.vault, &a.entries);
     if let Some(g) = hook {
         g();
     }
     match r {
         Ok(id) => {
+            at_point(points, MigrationPoint::BeforeConfirm);
             confirm_write(paths, a, id);
+            at_point(points, MigrationPoint::AfterConfirm);
             Ok(())
         }
         Err(e) => {
@@ -457,7 +503,7 @@ fn write_with_backup(
     }
 }
 
-/// After a write that succeeded: `vista` = written generation and the identity that the
+/// After a write that succeeded: `seen` = written generation and the identity that the
 /// write read from the temp file's fd (D62). No `stat` of the path after the rename: a
 /// file swapped in the meantime gets another identity, and the next write refuses it as
 /// "changed".
@@ -551,6 +597,7 @@ impl Daemon {
             clock,
             approval: Engine::without_app(),
             write_hook: None,
+            migration_hook: None,
             temp_root: None,
             usb_drives: None,
             poke: OnceLock::new(),
@@ -719,6 +766,17 @@ impl Daemon {
     #[doc(hidden)]
     pub fn with_hook_after_write(mut self, hook: Hook) -> Self {
         self.write_hook = Some(hook);
+        self
+    }
+
+    /// Sets the test hook called at each [`MigrationPoint`] of the v4 → v5 migration on
+    /// unlock (m2:DT5, m2:V4.3). It observes or stops the process; it changes nothing in
+    /// the write. The binary does not call it, and no socket request reaches here. Only
+    /// with the `test-hooks` feature (V3.15, V9.2).
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn with_migration_hook(mut self, hook: MigrationHook) -> Self {
+        self.migration_hook = Some(hook);
         self
     }
 
@@ -956,8 +1014,8 @@ impl Daemon {
             }
         };
         let password = password_from(password);
-        let (vault, entries, read) =
-            match body::open_entries_with_generation(&bytes, &password, g.seen, g.burned) {
+        let (vault, entries, body_read) =
+            match body::open_entries_with_version(&bytes, &password, g.seen, g.burned) {
                 Ok(x) => x,
                 Err(e) => {
                     match e {
@@ -971,6 +1029,8 @@ impl Daemon {
                 }
             };
         drop(password);
+        drop(bytes);
+        let read = body_read.generation;
         if let Some(known) = st.known_identity.take()
             && known != id
         {
@@ -993,19 +1053,65 @@ impl Daemon {
             Ok(n) => warning!("{n} temporário(s) de gravação interrompida apagado(s)"),
             Err(_) => warning!("não deu para limpar os temporários do cofre"),
         }
+        // The password was right: the counters go to 0 (on disk they already went), even
+        // if the migration below fails.
         st.agent_failures = 0;
         st.app_failures = 0;
         st.pin_errors = 0;
-        st.last_use = self.clock.now();
-        st.open = Some(Open {
+        let mut open = Open {
             vault,
             entries,
             grants: HashMap::new(),
             tokens: Vec::new(),
             identity: Some(id),
             generations: new,
-        });
+        };
+        if body_read.is_legacy() {
+            self.migrate(&mut st, &mut open)?;
+        }
+        st.last_use = self.clock.now();
+        st.open = Some(open);
         Ok(Response::Ok)
+    }
+
+    /// m2:DT5: the vault just opened has a v4 body (0.1.x). It is written again as v5
+    /// through the normal write path ([`write_vault`]: `burned` in the state first, temp
+    /// file with `O_EXCL`, fsync, rename, directory fsync, version in the local backup,
+    /// `seen` after), with generation + 1, before the unlock answers. The v4 versions
+    /// already in the backup stay. A v5 body never comes here: opening it again writes
+    /// nothing.
+    ///
+    /// On error the vault stays locked and the unlock answers the error; nothing is
+    /// deleted. Before the rename the file on disk is the v4, intact, and the next
+    /// unlock tries again (the burned generation is not reused, D53). If only the
+    /// directory fsync failed, the v5 is already in place and the next unlock opens it
+    /// without migrating. The log has only fixed text (S13).
+    fn migrate(&self, st: &mut State, open: &mut Open) -> Result<(), ResponseError> {
+        warning!("cofre no formato da 0.1.x (corpo v4): gravando no formato novo (v5)");
+        match write_vault(
+            &self.paths,
+            open,
+            self.write_hook.as_ref(),
+            self.migration_hook.as_ref(),
+        ) {
+            Ok(()) => {
+                warning!("cofre migrado para o corpo v5");
+                Ok(())
+            }
+            Err(WriteFailure::Response(e)) => {
+                // The identity is the v4's (nothing renamed) or, after the rename, the
+                // v5's that Ward put in place (`write_vault` took it from the temp file's
+                // fd): the next unlock checks the file against it.
+                st.known_identity = open.identity;
+                warning!("migração para o corpo v5 falhou: cofre travado, nada apagado");
+                Err(e)
+            }
+            Err(WriteFailure::Changed) => {
+                warning!("migração recusada: o arquivo do cofre mudou fora do Ward (D39)");
+                st.known_identity = None;
+                Err(ResponseError::VaultChanged)
+            }
+        }
     }
 
     /// A wrong password (D20, D62). The agent's goes to the state file, with fsync,
@@ -1335,7 +1441,7 @@ impl Daemon {
         let Some(a) = st.open.as_mut() else {
             return Err(ResponseError::Locked);
         };
-        match write_vault(&self.paths, a, self.write_hook.as_ref()) {
+        match write_vault(&self.paths, a, self.write_hook.as_ref(), None) {
             Ok(()) => Ok(Response::Ok),
             Err(WriteFailure::Response(r)) => {
                 undo(a);
@@ -1561,7 +1667,7 @@ impl Daemon {
     }
 
     /// Changes the master password (D53): `burned` first, `ward_core`'s password change
-    /// with (`vista`, current generation), and an error after the password was verified
+    /// with (`seen`, current generation), and an error after the password was verified
     /// locks the vault.
     fn change_password(&self, current: &Secret, new: &Secret) -> Result<Response, ResponseError> {
         // Before anything: a short new password neither burns a generation nor touches
@@ -1776,7 +1882,10 @@ impl Daemon {
     ///    swap;
     /// 3. burns in the state the new generation = highest burned + 1 and seals the version
     ///    with it through the normal write (with the new version's backup); afterwards,
-    ///    `vista` = it.
+    ///    `seen` = it.
+    ///
+    /// A version with a v4 body (0.1.x) opens with its data and is sealed again as v5,
+    /// like any write (m2:DT5, m2:V4.10): the write only produces v5.
     ///
     /// Restoring never lowers the generation: the hand copy of the same backup stays in
     /// rollback (V7.11). An error after sealing locks the vault, as in the password

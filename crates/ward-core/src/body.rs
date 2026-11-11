@@ -37,7 +37,8 @@
 //!   `database`, `approval`, `none`…). Reading accepts v4 and v5; **writing only
 //!   produces v5** ([`BODY_VERSION`]). A v4 body is read through the closed table of
 //!   `legacy_v4` (only on the v4 reading path) and comes back as the same entries, so
-//!   serializing it again gives the v5 body (the migration of m2:DT5 is the daemon's).
+//!   serializing it again gives the v5 body. The migration of m2:DT5 is the daemon's:
+//!   [`open_entries_with_version`] says which version was read ([`BodyRead::is_legacy`]).
 //!   A name outside the table of its version (a v5 name in a v4 body, a v4 name in a v5
 //!   body, any other text) refuses the whole body (m2:RM2).
 //! - Type, level, environment, engine, security and protocol go by the stable
@@ -217,7 +218,7 @@ pub fn open_entries_since(
 
 /// Like [`open_entries_since`], and also returns the generation **read from the body**
 /// (Phase 22, D53). [`OpenVault::generation`] gets max(read, `burned_generation`); the
-/// daemon needs the read one to raise the highest generation confirmed on disk (`vista`)
+/// daemon needs the read one to raise the highest generation confirmed on disk (`seen`)
 /// without mistaking it for a burned one that never reached the disk.
 pub fn open_entries_with_generation(
     file: &[u8],
@@ -225,8 +226,43 @@ pub fn open_entries_with_generation(
     min_generation: u64,
     burned_generation: u64,
 ) -> Result<(OpenVault, Vec<Entry>, u64), OpenError> {
+    open_entries_with_version(file, password, min_generation, burned_generation)
+        .map(|(vault, entries, read)| (vault, entries, read.generation))
+}
+
+/// What the opening read from the body besides the configuration and the entries
+/// (m2:DT5). Numbers only; no vault data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BodyRead {
+    /// Generation read from the body (not raised by the burned one; see
+    /// [`open_entries_with_generation`]).
+    pub generation: u64,
+    /// Body version read: [`BODY_VERSION`] or [`LEGACY_BODY_VERSION`].
+    pub version: u16,
+}
+
+impl BodyRead {
+    /// Was the body in the 0.1.x version ([`LEGACY_BODY_VERSION`])? The daemon migrates
+    /// it to [`BODY_VERSION`] on unlock (m2:DT5); a current body is never written again
+    /// just for being opened.
+    pub fn is_legacy(&self) -> bool {
+        self.version == LEGACY_BODY_VERSION
+    }
+}
+
+/// Like [`open_entries_with_generation`], and also says which body version was read
+/// (m2:DT5): the daemon migrates a v4 vault on the first unlock. The checks are the
+/// same (whole body validated, then the rollback floor); the version decides nothing
+/// here.
+pub fn open_entries_with_version(
+    file: &[u8],
+    password: &MasterPassword,
+    min_generation: u64,
+    burned_generation: u64,
+) -> Result<(OpenVault, Vec<Entry>, BodyRead), OpenError> {
     let (keys, content) = format::open(file, password).map_err(OpenError::Format)?;
-    let (config, generation, entries) = deserialize(&content).map_err(OpenError::Body)?;
+    let ((config, generation, entries), version) =
+        deserialize_with_version(&content).map_err(OpenError::Body)?;
     drop(content);
     if generation < min_generation {
         // The entries and the configuration read are zeroed here.
@@ -235,7 +271,10 @@ pub fn open_entries_with_generation(
     Ok((
         OpenVault::from_parts(keys, config, generation.max(burned_generation)),
         entries,
-        generation,
+        BodyRead {
+            generation,
+            version,
+        },
     ))
 }
 
@@ -299,6 +338,12 @@ pub type ReadBody = (VaultConfig, u64, Vec<Entry>);
 /// Reads the decrypted body: the configuration, the generation and the entries. Refuses
 /// the whole body with [`BodyError::Invalid`] on any problem.
 pub fn deserialize(body: &[u8]) -> Result<ReadBody, BodyError> {
+    deserialize_with_version(body).map(|(read, _)| read)
+}
+
+/// [`deserialize`], and also the body version read ([`BODY_VERSION`] or
+/// [`LEGACY_BODY_VERSION`]; m2:DT5).
+fn deserialize_with_version(body: &[u8]) -> Result<(ReadBody, u16), BodyError> {
     if body.len() > MAX_BODY {
         return Err(BodyError::Invalid);
     }
@@ -330,7 +375,11 @@ pub fn deserialize(body: &[u8]) -> Result<ReadBody, BodyError> {
         return Err(BodyError::Invalid);
     }
     drop(order);
-    Ok((config, raw_cfg.generation, entries))
+    let version = match version {
+        Version::V4 => LEGACY_BODY_VERSION,
+        Version::V5 => BODY_VERSION,
+    };
+    Ok(((config, raw_cfg.generation, entries), version))
 }
 
 /// Only the generation of a decrypted body (Phase 49a), after checking the whole
