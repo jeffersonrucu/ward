@@ -3,6 +3,9 @@
 Called by `dev/tests/nm.sh`, which starts its own test `wardd`. Arguments: root, work
 directory (in `.dev/`), socket directory, `ward-nm`, the `chrome-parent` example,
 Chrome and the variation list. Never prints the list nor any value of it.
+
+m2:V5.10: the v1 requests of the 0.1.x extension (directly and through the real Chrome)
+get only unknown_version, with no username, password nor TOTP.
 """
 
 import base64
@@ -89,8 +92,8 @@ def messages(out):
 
 fixtures = json.load(open(f"{ROOT}/dev/fixtures/entries.json", encoding="utf-8"))
 password = base64.b64encode(fixtures["master_password"].encode()).decode()
-r = json.loads(req({"v": 1, "op": "destravar", "dados": {"senha": password}}))
-verify(r.get("tipo") == "ok", "destravou o cofre de teste (cópia) pelo socket")
+r = json.loads(req({"v": 2, "op": "unlock", "data": {"password": password}}))
+verify(r.get("type") == "ok", "destravou o cofre de teste (cópia) pelo socket")
 
 # Phase 41: `ward-nm` only accepts the Ward id; the test extension carries the same
 # public key (`key`) of `extension/public-key.txt`, so it has the same id.
@@ -98,21 +101,24 @@ with open(os.path.join(ROOT, "extension", "public-key.txt"), encoding="ascii") a
     PUBLIC_KEY = "".join(l for l in f.read().split("\n") if l and not l.startswith("-----"))
 eid = "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(base64.b64decode(PUBLIC_KEY)).hexdigest()[:32])
 ORIGIN = f"chrome-extension://{eid}/"
-FILL = {"v": 1, "op": "preencher", "dados": {"entrada": "acme-wp-dev", "origem": "http://localhost:8081"}}
-SUGGEST = {"v": 1, "op": "sugerir", "dados": {"origem": "http://localhost:8081"}}
+FILL = {"v": 2, "op": "fill", "data": {"entry": "acme-wp-dev", "origin": "http://localhost:8081"}}
+SUGGEST = {"v": 2, "op": "suggest", "data": {"origin": "http://localhost:8081"}}
+# m2:V5.10: the same requests as the 0.1.x extension sends them (protocol v1).
+FILL_V1 = {"v": 1, "op": "preencher", "dados": {"entrada": "acme-wp-dev", "origem": "http://localhost:8081"}}
+SUGGEST_V1 = {"v": 1, "op": "sugerir", "dados": {"origem": "http://localhost:8081"}}
 
 # --- V6.1: ward-nm run directly by a user process --------------------------------------
 env = {"PATH": "/usr/bin:/bin", "WARD_DEV_SOCKET_DIR": SOCKDIR, "HOME": WORK_DIR}
-input_data = frame({"v": 1, "op": "estado"}) + frame(FILL) + frame(SUGGEST)
+input_data = frame({"v": 2, "op": "status"}) + frame(FILL) + frame(SUGGEST)
 p = subprocess.run([NM, ORIGIN], input=input_data, capture_output=True, env=env, timeout=60)
 m = messages(p.stdout)
 verify(p.returncode == 0 and len(m) == 3, "V6.1: o ward-nm respondeu as três mensagens")
 if len(m) == 3:
-    verify(m[0].get("dados", {}).get("codigo") == "nao_autorizado",
+    verify(m[0].get("data", {}).get("code") == "unauthorized",
             "V6.1: aberto por um processo do usuário (sem setgid, pai não é o Chrome), o daemon não dá o papel extensão")
-    for i, name in ((1, "preencher"), (2, "sugerir")):
-        verify(m[i].get("dados", {}).get("codigo") == "nao_autorizado",
-                f"V6.1: {name} do ward-nm aberto à mão: o daemon recusa (nao_autorizado)")
+    for i, name in ((1, "fill"), (2, "suggest")):
+        verify(m[i].get("data", {}).get("code") == "unauthorized",
+                f"V6.1: {name} do ward-nm aberto à mão: o daemon recusa (unauthorized)")
 no_secret(p.stdout, "V6.1: stdout do ward-nm")
 no_secret(p.stderr, "V6.1: stderr do ward-nm")
 
@@ -120,15 +126,41 @@ no_secret(p.stderr, "V6.1: stderr do ward-nm")
 p = subprocess.run([NM, ORIGIN], input=struct.pack("=I", 70000) + b"{" * 70000,
                    capture_output=True, env=env, timeout=60)
 m = messages(p.stdout)
-verify(p.returncode == 1 and m and m[0]["dados"]["codigo"] == "quadro_invalido",
-        "mensagem de 70 000 bytes: quadro_invalido e o host sai ≠ 0")
+verify(p.returncode == 1 and m and m[0]["data"]["code"] == "invalid_frame",
+        "mensagem de 70 000 bytes: invalid_frame e o host sai ≠ 0")
 p = subprocess.run([NM, ORIGIN], input=frame(b"{nao json") + frame(
-    {"v": 1, "op": "revelar", "dados": {"entrada": "acme-wp-dev", "campo": "senha"}}),
+    {"v": 2, "op": "reveal", "data": {"entry": "acme-wp-dev", "field": "password"}}),
     capture_output=True, env=env, timeout=60)
 m = messages(p.stdout)
-verify([x["dados"]["codigo"] for x in m] == ["pedido_invalido", "nao_autorizado"],
-        "JSON malformado e revelar (operação do app): recusados no host")
+verify([x["data"]["code"] for x in m] == ["invalid_request", "unauthorized"],
+        "JSON malformado e reveal (operação do app): recusados no host")
 no_secret(p.stdout, "mensagens ruins: stdout do ward-nm")
+
+
+def only_unknown_version(r):
+    """m2:V5.10: the reply to a v1 frame is only the unknown_version error, with no
+    data (no username, password nor TOTP)."""
+    return (
+        isinstance(r, dict)
+        and sorted(r) == ["data", "type", "v"]
+        and r["v"] == 2
+        and r["type"] == "error"
+        and isinstance(r["data"], dict)
+        and sorted(r["data"]) == ["code", "message"]
+        and r["data"]["code"] == "unknown_version"
+    )
+
+
+# m2:V5.10 (S1): the 0.1.x extension talks v1 to this ward-nm; with the vault unlocked,
+# every v1 request gets unknown_version and nothing else.
+p = subprocess.run([NM, ORIGIN], input=frame({"v": 1, "op": "estado"}) + frame(FILL_V1) + frame(SUGGEST_V1),
+                   capture_output=True, env=env, timeout=60)
+m = messages(p.stdout)
+verify(len(m) == 3 and all(only_unknown_version(x) for x in m),
+        "m2:V5.10: estado, preencher e sugerir v1 (extensão 0.1.x): só unknown_version")
+no_secret(p.stdout, "m2:V5.10: stdout do ward-nm com os pedidos v1")
+for word in (b"password", b"senha", b"username", b"usuario", b"totp"):
+    verify(word not in p.stdout, f"m2:V5.10: nada de {word.decode()} na resposta aos pedidos v1")
 
 # --- Real Chrome ---------------------------------------------------------------------
 ext = os.path.join(WORK_DIR, "ext")
@@ -164,13 +196,15 @@ const enviar = (host, m) => new Promise((r) => chrome.runtime.sendNativeMessage(
 (async () => {
   const res = {};
   res.sonda = await enviar("br.ward.sonda", {oi: 1});
-  res.estado = await enviar("br.ward.nm", {v: 1, op: "estado"});
-  res.preencher = await enviar("br.ward.nm", %s);
-  res.revelar = await enviar("br.ward.nm", {v: 1, op: "revelar", dados: {entrada: "acme-wp-dev", campo: "senha"}});
-  res.grande = await enviar("br.ward.nm", {v: 1, op: "sugerir", dados: {origem: "http://localhost:8081/" + "a".repeat(70000)}});
+  res.status = await enviar("br.ward.nm", {v: 2, op: "status"});
+  res.fill = await enviar("br.ward.nm", %s);
+  res.reveal = await enviar("br.ward.nm", {v: 2, op: "reveal", data: {entry: "acme-wp-dev", field: "password"}});
+  res.grande = await enviar("br.ward.nm", {v: 2, op: "suggest", data: {origin: "http://localhost:8081/" + "a".repeat(70000)}});
+  res.fill_v1 = await enviar("br.ward.nm", %s);
+  res.suggest_v1 = await enviar("br.ward.nm", %s);
   await enviar("br.ward.relato", res);
 })();
-""" % json.dumps(FILL))
+""" % (json.dumps(FILL), json.dumps(FILL_V1), json.dumps(SUGGEST_V1)))
 
 probe_sock = os.path.join(WORK_DIR, "sonda.sock")
 srv = subprocess.Popen([PROBE, "serve", probe_sock, CHROME], stdout=subprocess.PIPE, text=True)
@@ -230,14 +264,17 @@ try:
         fail("a extensão não mandou o relatório")
     no_secret(json.dumps(res).encode(), "relatório da extensão")
     verify(res.get("sonda") == {"ok": True}, "Chrome real: a sonda respondeu pelo native messaging")
-    est = res.get("estado", {})
-    verify(est.get("dados", {}).get("codigo") == "nao_autorizado",
-            "Chrome real: o ward-nm de teste (sem setgid) não recebe o papel extensão (estado: nao_autorizado)")
-    for name in ("preencher", "revelar"):
-        verify(res.get(name, {}).get("dados", {}).get("codigo") == "nao_autorizado",
+    est = res.get("status", {})
+    verify(est.get("data", {}).get("code") == "unauthorized",
+            "Chrome real: o ward-nm de teste (sem setgid) não recebe o papel extensão (status: unauthorized)")
+    for name in ("fill", "reveal"):
+        verify(res.get(name, {}).get("data", {}).get("code") == "unauthorized",
                 f"Chrome real: {name} pelo ward-nm sem o papel extensão é recusado")
-    verify(res.get("grande", {}).get("dados", {}).get("codigo") == "quadro_invalido",
+    verify(res.get("grande", {}).get("data", {}).get("code") == "invalid_frame",
             "Chrome real: mensagem de mais de 64 KiB recusada pelo host")
+    for name in ("fill_v1", "suggest_v1"):
+        verify(only_unknown_version(res.get(name)),
+                f"m2:V5.10: Chrome real: {name} (extensão 0.1.x, protocolo v1) recebe só unknown_version")
 finally:
     ch.terminate()
     try:

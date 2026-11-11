@@ -196,7 +196,7 @@ def req(obj):
 
 def unlock():
     password = base64.b64encode(fixtures["master_password"].encode()).decode()
-    return req({"v": 1, "op": "destravar", "dados": {"senha": password}}).get("tipo") == "ok"
+    return req({"v": 2, "op": "unlock", "data": {"password": password}}).get("type") == "ok"
 
 
 def posts_phish():
@@ -388,11 +388,11 @@ PAGES = {
         "window.__res = {};"
         f"const ID = '{ID}';"
         "window.__res.runtime = typeof chrome === 'undefined' || !chrome.runtime ? 'sem chrome.runtime' : typeof chrome.runtime.sendMessage;"
-        "try { chrome.runtime.sendMessage(ID, {v:1, op:'preencher', dados:{entrada:'acme-wp-prod', origem: location.origin}},"
+        "try { chrome.runtime.sendMessage(ID, {v:2, op:'fill', data:{entry:'acme-wp-prod', origin: location.origin}},"
         " (r) => { window.__res.resposta = r === undefined ? 'nada' : 'algo'; }); window.__res.envio = 'chamou'; }"
         " catch (e) { window.__res.envio = 'erro'; }"
-        "window.postMessage({v:1, op:'preencher', dados:{entrada:'acme-wp-prod'}}, '*');"
-        "window.postMessage({tipo:'ward', entrada:'acme-wp-prod'}, '*');"
+        "window.postMessage({v:2, op:'fill', data:{entry:'acme-wp-prod'}}, '*');"
+        "window.postMessage({type:'ward', entry:'acme-wp-prod'}, '*');"
         "fetch('chrome-extension://' + ID + '/popup.html').then(() => { window.__res.fetch = 'leu'; }, () => { window.__res.fetch = 'bloqueado'; });"
         "fetch('chrome-extension://' + ID + '/manifest.json').then(() => { window.__res.fetch_manifesto = 'leu'; }, () => { window.__res.fetch_manifesto = 'bloqueado'; });"
         "const f = document.createElement('iframe'); f.src = 'chrome-extension://' + ID + '/popup.html';"
@@ -647,8 +647,8 @@ def wait_for_value(s, field, deadline=10):
 def forced_fill(ps, tab_origin, requested_origin, entry):
     """From the popup's context: a fill straight to the `ward-nm` (like a content script
     that forced the message). Returns only the type/code, never values."""
-    js = """(async () => { const r = await chrome.runtime.sendNativeMessage(%s, {v: 1, op: 'preencher',
-      dados: {entrada: %s, origem: %s}}); return r ? (r.tipo === 'erro' ? 'erro:' + r.dados.codigo : r.tipo) : 'nada'; })()""" % (
+    js = """(async () => { const r = await chrome.runtime.sendNativeMessage(%s, {v: 2, op: 'fill',
+      data: {entry: %s, origin: %s}}); return r ? (r.type === 'error' ? 'erro:' + r.data.code : r.type) : 'nada'; })()""" % (
         json.dumps(HOST), json.dumps(entry), json.dumps(requested_origin))
     return evaluate(cdp, ps, js)
 
@@ -737,7 +737,7 @@ def wait_for_load(s, cond, deadline=15):
 def pending_from_popup(ps):
     """What the service worker gives the popup about the pending login of the active tab."""
     return evaluate(cdp, ps, """(async () => { const [a] = await chrome.tabs.query({active: true, currentWindow: true});
-        try { const r = await chrome.runtime.sendMessage({t: 'pendente', aba: a.id}); return r === undefined ? null : r; }
+        try { const r = await chrome.runtime.sendMessage({t: 'pending', tab: a.id}); return r === undefined ? null : r; }
         catch (e) { return 'erro'; } })()""")
 
 
@@ -822,7 +822,7 @@ def phase_42_section(t, s):
 
     # 4. Vault locked at submit: the login is discarded at once (nothing stays in the
     # service worker).
-    verify(req({"v": 1, "op": "travar"}).get("tipo") == "ok", "cofre travado antes do envio")
+    verify(req({"v": 2, "op": "lock"}).get("type") == "ok", "cofre travado antes do envio")
     navigate(t, "http://localhost:8083/cadastro")
     activate(t)
     type_text(s, "usuario", "travado." + secrets.token_hex(3))
@@ -870,7 +870,7 @@ def phase_42_section(t, s):
     verify(tx["mascara"] == "••••••••••••" and new_password not in g["html"] and not has_secret(g["html"]),
            "V6.8: a senha não chega ao popup (máscara fixa, DOM sem o valor)", "v68_dom_sem_senha")
     pend = pending_from_popup(ps)
-    verify(isinstance(pend, dict) and sorted(pend) == ["origem", "usuario"] and pend["origem"] == "http://localhost:8083"
+    verify(isinstance(pend, dict) and sorted(pend) == ["origin", "username"] and pend["origin"] == "http://localhost:8083"
            and new_password not in json.dumps(pend), "V6.8: o service worker dá ao popup só a origem e o usuário", "v68_pendente_sem_senha")
     # Measurements of frame 17414 (360×600; the body scrolls) and of 18850 (whole
     # content, 806).
@@ -918,8 +918,8 @@ def phase_42_section(t, s):
     ctx = content_script_context(s)
     if ctx is not None:
         r = evaluate(cdp, s, """(async () => { const out = {};
-            for (const m of [{t: 'pendente', aba: 0}, {t: 'salvar', aba: 0, nome: 'invasor', usuario: 'x', grupo: 'g', ambiente: 'dev'},
-                             {t: 'descartar', aba: 0}]) {
+            for (const m of [{t: 'pending', tab: 0}, {t: 'save', tab: 0, name: 'invasor', username: 'x', group: 'g', environment: 'dev'},
+                             {t: 'discard', tab: 0}]) {
               try { const r = await chrome.runtime.sendMessage(m); out[m.t] = r === undefined ? 'nada' : JSON.stringify(r); }
               catch (e) { out[m.t] = 'sem resposta'; } }
             return out; })()""", context=ctx)
@@ -947,22 +947,22 @@ def phase_42_section(t, s):
                        env={"PATH": "/usr/bin:/bin", "HOME": WORK_DIR, "WARD_DEV_SOCKET_DIR": SOCKDIR, "LANG": "C.UTF-8"})
     try:
         items = json.loads(p.stdout)
-        items = items.get("entradas", items.get("itens", items)) if isinstance(items, dict) else items
-        item = next((i for i in items if i.get("nome") == "localhost-8083-novo"), None)
+        items = items.get("entries", items.get("items", items)) if isinstance(items, dict) else items
+        item = next((i for i in items if i.get("name") == "localhost-8083-novo"), None)
     except (ValueError, AttributeError):
         item = None
-    verify(p.returncode == 0 and item is not None and item.get("grupo") == "teste-fase-42" and item.get("ambiente") == "dev"
-           and item.get("tipo") == "login" and "nivel" not in item and new_password.encode() not in p.stdout,
+    verify(p.returncode == 0 and item is not None and item.get("group") == "teste-fase-42" and item.get("environment") == "dev"
+           and item.get("type") == "login" and "level" not in item and new_password.encode() not in p.stdout,
            f"V6.8: a entrada aparece no `ward lista --json` (login, grupo e ambiente escolhidos; sem nível, D50) ({item})", "v68_ward_lista")
     # Level "with approval": the use by the agent asks for approval with PIN (the test
     # window denies); a free entry would only ask for the origin confirmation (Phase 44c).
     set_window_mode("negar")
     seen = len(window_requests())
-    r = req({"v": 1, "op": "login", "dados": {"entrada": "localhost-8083-novo"}})
-    code = (r.get("dados") or {}).get("codigo")
+    r = req({"v": 2, "op": "login", "data": {"entry": "localhost-8083-novo"}})
+    code = (r.get("data") or {}).get("code")
     from_window = window_requests()[seen:]
     set_window_mode("confirmar")
-    verify(code == "negado" and len(from_window) == 1 and " confirmacao=0 " in from_window[0],
+    verify(code == "denied" and len(from_window) == 1 and " confirmacao=0 " in from_window[0],
            f"V6.8: nível inicial \"com aprovação\" (o uso pelo agente pede aprovação com PIN: {code}, {from_window})", "v68_com_aprovacao")
     # The fill of the new entry gives back the submitted password (compared without printing).
     navigate(t, "http://localhost:8083/login")
@@ -1040,7 +1040,7 @@ try:
         verify(v == {"user_login": "", "user_pass": ""} and "negado" in note,
                f"ataque [::1], popup negado na janela: nada preenchido no falso e o popup avisa ({note!r})",
                "c44_popup_v6_negado")
-        verify(from_window == ["pedido operacao=preencher entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=negar"],
+        verify(from_window == ["pedido operacao=fill entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=deny"],
                f"ataque [::1], popup: o pedido mostra a origem e não pede PIN ({from_window})", "c44_popup_v6_pedido")
         close_popup(pt)
         try:
@@ -1122,7 +1122,7 @@ try:
     from_window = window_requests()[seen:]
     verify(v == {"user_login": "", "user_pass": ""} and "negado" in note,
            f"Fase 44c: preencher do popup em http negado na janela: nada preenchido e o popup avisa ({note!r})", "c44_popup_negado")
-    verify(from_window == ["pedido operacao=preencher entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=negar"],
+    verify(from_window == ["pedido operacao=fill entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=deny"],
            f"Fase 44c: o pedido do popup mostra a origem http e não pede PIN ({from_window})", "c44_popup_pedido")
     close_popup(pt)
     set_window_mode("confirmar")
@@ -1166,8 +1166,8 @@ try:
     verify(g["itens"] == [] and g["rotuloTexto"] == "Nenhuma entrada para esta origem",
            "V6.2: em 127.0.0.1:8081, acme-wp-* não é sugerida", "v62_nao_sugere")
     screenshot(ps, "sugestoes-do-dominio-sem-entrada-127.png", g["popup"][3])
-    verify(forced_fill(ps, "", "http://127.0.0.1:8081", "acme-wp-dev") == "erro:origem_diferente",
-           "V6.2: preencher forçado para a aba 127.0.0.1:8081: o daemon recusa (origem_diferente)", "v62_daemon_recusa")
+    verify(forced_fill(ps, "", "http://127.0.0.1:8081", "acme-wp-dev") == "erro:origin_mismatch",
+           "V6.2: preencher forçado para a aba 127.0.0.1:8081: o daemon recusa (origin_mismatch)", "v62_daemon_recusa")
     # The other layer: the injection checks the document's origin before writing.
     res = evaluate(cdp, ps, """(async () => { const m = await import('./page.js');
         const [aba] = await chrome.tabs.query({active: true, currentWindow: true});
@@ -1175,7 +1175,7 @@ try:
           func: m.fillInPage, args: ['http://localhost:8081', 'x', btoa('nao-e-segredo'), '']});
         return r.result; })()""")
     v = values(s, ["user_login", "user_pass"])
-    verify(res == {"ok": False, "reason": "origem"} and v == {"user_login": "", "user_pass": ""},
+    verify(res == {"ok": False, "reason": "origin"} and v == {"user_login": "", "user_pass": ""},
            "injeção com origem esperada diferente da do documento: nada escrito", "injecao_confere_origem")
     close_popup(pt)
 
@@ -1184,7 +1184,7 @@ try:
     pt, ps = open_popup(t)
     g = evaluate(cdp, ps, GEOMETRY)
     verify(g["itens"] == [], "phishing localhost:8082: nada sugerido", "phish_nada")
-    verify(forced_fill(ps, "", "http://localhost:8082", "acme-wp-prod") == "erro:origem_diferente",
+    verify(forced_fill(ps, "", "http://localhost:8082", "acme-wp-prod") == "erro:origin_mismatch",
            "phishing: preencher acme-wp-prod forçado com a origem da aba: recusado", "phish_recusa")
     close_popup(pt)
     final = navigate(t, "http://localhost:8084/login")
@@ -1193,7 +1193,7 @@ try:
     g = evaluate(cdp, ps, GEOMETRY)
     verify(g["itens"] == [] and g["origemTexto"] == "http://localhost:8082",
            "redir: o popup usa a origem final (8082), delta-redir não é sugerida", "redir_nada")
-    verify(forced_fill(ps, "", "http://localhost:8082", "delta-redir") == "erro:origem_diferente",
+    verify(forced_fill(ps, "", "http://localhost:8082", "delta-redir") == "erro:origin_mismatch",
            "redir: preencher delta-redir com a origem final: recusado (D9)", "redir_recusa")
     close_popup(pt)
 
@@ -1299,7 +1299,7 @@ try:
     phase_42_section(t, s)
 
     # --- locked vault --------------------------------------------------------------------
-    verify(req({"v": 1, "op": "travar"}).get("tipo") == "ok", "cofre travado pelo socket")
+    verify(req({"v": 2, "op": "lock"}).get("type") == "ok", "cofre travado pelo socket")
     navigate(t, "http://localhost:8081/wp-login.php")
     pt, ps = open_popup(t, ".locked-body")
     g = evaluate(cdp, ps, GEOMETRY)
@@ -1326,7 +1326,7 @@ try:
         document.querySelector('.locked-body .button').click(); return true; })()""")
     cdp.pump(0.5)
     ops = evaluate(cdp, ps, "window.__ops")
-    verify(ops == ["abrir_app"] and closed(pt), f"V6.9: o botão do travado pede abrir_app ao daemon e o popup fecha ({ops})", "v69_botao_abre_app")
+    verify(ops == ["open_app"] and closed(pt), f"V6.9: o botão do travado pede open_app ao daemon e o popup fecha ({ops})", "v69_botao_abre_app")
     unlock()
 
     log_console(cdp)
@@ -1439,16 +1439,16 @@ def frame(obj):
     return struct.pack("=I", len(b)) + b
 
 
-stdin_data = frame({"v": 1, "op": "estado"}) + frame(
-    {"v": 1, "op": "preencher", "dados": {"entrada": "acme-wp-prod", "origem": "http://localhost:8081"}})
+stdin_data = frame({"v": 2, "op": "status"}) + frame(
+    {"v": 2, "op": "fill", "data": {"entry": "acme-wp-prod", "origin": "http://localhost:8081"}})
 p = subprocess.run([NM, f"chrome-extension://{ID}/"], input=stdin_data, capture_output=True, env=env, timeout=60)
-verify(b"preenchimento" not in p.stdout and b"nao_autorizado" in p.stdout and not has_secret(p.stdout),
+verify(b'"type":"fill"' not in p.stdout and b"unauthorized" in p.stdout and not has_secret(p.stdout),
        "exceção de teste: o ward-nm aberto por outro processo continua agente", "excecao_so_chrome")
 fake_file = os.path.join(WORK_DIR, "falso.txt")
 with open(fake_file, "w") as f:
-    f.write(json.dumps({"v": 1, "op": "preencher", "dados": {"entrada": "acme-wp-prod", "origem": "http://localhost:8081"}}) + "\n")
+    f.write(json.dumps({"v": 2, "op": "fill", "data": {"entry": "acme-wp-prod", "origin": "http://localhost:8081"}}) + "\n")
 p = subprocess.run([FAKE_CHROME, NM, fake_file], capture_output=True, env=env, timeout=60)
-verify(b"preenchimento" not in p.stdout and b"nao_autorizado" in p.stdout and not has_secret(p.stdout),
+verify(b'"type":"fill"' not in p.stdout and b"unauthorized" in p.stdout and not has_secret(p.stdout),
        "exceção de teste: o ward-nm filho de um Chrome falso (outro exe) continua agente", "excecao_chrome_falso")
 p = subprocess.run([NM, "chrome-extension://" + "a" * 32 + "/"], input=stdin_data, capture_output=True, env=env, timeout=60)
 verify(p.returncode == 2 and p.stdout == b"", "ward-nm recusa outra extensão (id diferente do do Ward)", "id_outra_extensao")

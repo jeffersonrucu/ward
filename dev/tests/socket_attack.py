@@ -67,11 +67,11 @@ def reply(s):
         return None
     except socket.timeout:
         # Neither a frame nor a close in time: the daemon kept waiting (failure).
-        return {"tipo": "sem resposta no prazo"}
+        return {"type": "sem resposta no prazo"}
 
 
 def request(s, op, data=None):
-    b = json.dumps({"v": 1, "op": op, "dados": data or {}}).encode()
+    b = json.dumps({"v": 2, "op": op, "data": data or {}}).encode()
     s.sendall(struct.pack(">I", len(b)) + b)
     return reply(s)
 
@@ -93,9 +93,9 @@ def closed(s, deadline=10):
 def kind_code(r):
     if r is None:
         return "fechou"
-    t = r.get("tipo")
-    if t == "erro":
-        return "erro:" + str(r.get("dados", {}).get("codigo"))
+    t = r.get("type")
+    if t == "error":
+        return "erro:" + str(r.get("data", {}).get("code"))
     return str(t)
 
 
@@ -111,13 +111,13 @@ def normal_client(label):
     t = time.monotonic()
     try:
         s = connect_new()
-        r = request(s, "estado")
+        r = request(s, "status")
         s.close()
     except OSError as e:
         fail(f"{label}: cliente normal sem resposta ({e.__class__.__name__})")
         return
     dt = time.monotonic() - t
-    if r is not None and r.get("tipo") == "estado":
+    if r is not None and r.get("type") == "status":
         ok(f"{label}: cliente normal atendido em {dt:.2f} s")
     else:
         fail(f"{label}: cliente normal recebeu {kind_code(r)}")
@@ -135,15 +135,26 @@ BAD_FRAMES = [
     ("JSON inválido", struct.pack(">I", 5) + b"{nao}", False),
     ("JSON sem versão nem op", struct.pack(">I", 2) + b"{}", False),
     ("UTF-8 inválido", struct.pack(">I", 4) + b"\xff\xfe\xfd\xfc", False),
-    ("versão errada", None, False),
+    # m2:DT8, m2:V4.13: a frame of another version gets unknown_version and the daemon
+    # closes the connection.
+    ("versão errada", None, True),
+    ("quadro v1 (0.1.x)", None, True),
     ("operação desconhecida", None, False),
 ]
 for label, raw, must_close in BAD_FRAMES:
     s = connect_new(10)
     if label == "versão errada":
-        b = json.dumps({"v": 99, "op": "estado", "dados": {}}).encode()
+        b = json.dumps({"v": 99, "op": "status", "data": {}}).encode()
         s.sendall(struct.pack(">I", len(b)) + b)
         r = reply(s)
+        if kind_code(r) != "erro:unknown_version":
+            fail(f"{label}: esperado erro:unknown_version, veio {kind_code(r)}")
+    elif label == "quadro v1 (0.1.x)":
+        b = json.dumps({"v": 1, "op": "estado", "dados": {}}).encode()
+        s.sendall(struct.pack(">I", len(b)) + b)
+        r = reply(s)
+        if kind_code(r) != "erro:unknown_version" or sorted(r.get("data", {})) != ["code", "message"]:
+            fail(f"{label}: esperado só erro:unknown_version, veio {kind_code(r)}")
     elif label == "operação desconhecida":
         r = request(s, "inventada")
     else:

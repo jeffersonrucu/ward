@@ -1723,6 +1723,16 @@ nunca persistido; muda com o código que o cria).
 | `t: 'pendente'`, `'manter'`, `'descartar'`, `'salvar'`, `'preencher'` | `'pending'`, `'keep'`, `'discard'`, `'save'`, `'fill'` |
 | campos `aba`, `usuario`, `senha`, `origem`, `erro` | `tab`, `username`, `password`, `origin`, `error` |
 | código local `sem_resposta` | `no_response` |
+| código local `pedido_invalido` | `invalid_request` (o mesmo código do daemon) |
+| código local `expirou` (o login pendente sumiu antes do "Salvar") | `pending_expired` (Fase 52; não `expired`, que é código do daemon para a janela de aprovação) |
+| campos `documento`, `entrada`, `nome`, `grupo`, `ambiente`, `problemas` (com `campo`, `motivo`) das mensagens internas | `document`, `entry`, `name`, `group`, `environment`, `problems` (com `field`, `reason`) |
+| motivos de `fillInPage`: `'origem'`, `'quadro'`, `'sem_campo'`, `'formulario'`, `'falha'` | `'origin'`, `'frame'`, `'no_field'`, `'form'`, `'failure'` |
+| desfechos do `ward login` (`login_result`): `'enviado'`, `'recusado'`, `'aba_mudou'`, `'sem_formulario'`, `'falha'` | os valores de `result` da seção 10: `'submitted'`, `'refused'`, `'tab_changed'`, `'no_form'`, `'failure'` |
+
+Em vigor desde a Fase 52 na extensão (`service.js`, `popup.js`, `login.js`, `page.js`,
+`submit.js`) e nos testes Python que falam com o socket ou com o `ward-nm`. As chaves de
+`FIELD_OF_PROBLEM` do popup continuam pt-BR: são os valores de `field` da validação do
+daemon (texto exibido, seção 10).
 | constante `HOST` (`br.ward.nm`) | fica |
 
 ## 13. Tauri: comandos, janelas, avisos e `serde` da webview (Fase 54)

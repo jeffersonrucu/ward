@@ -55,7 +55,7 @@
   let error = $state('');
   let sending = $state(false);
 
-  const current = $derived(accessLevel(entry?.nivel) ?? accessLevel('com-aprovacao'));
+  const current = $derived(accessLevel(entry?.nivel) ?? accessLevel('approval'));
   const next = $derived(accessLevel(chosen));
 
   function reset() {
