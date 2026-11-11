@@ -28,8 +28,8 @@
   // created and changed dates from the daemon, in the local time zone; without a date,
   // nothing.
   //
-  // Wire names (frozen until m2:Phase 54): the fields of the list items and of the entry
-  // detail, and the arguments and replies of the Tauri commands.
+  // Wire names (m2:Phase 54): the fields of the list items and of the entry detail, and
+  // the arguments and replies of the Tauri commands.
   import { onMount, tick } from 'svelte';
   import Button from '../lib/components/Button.svelte';
   import EnvironmentBadge from '../lib/components/EnvironmentBadge.svelte';
@@ -94,7 +94,7 @@
   const filtering = $derived(activeFilters(filters) > 0 || search.trim() !== '');
   const visible = $derived(filterItems(items, filters, search));
   const groups = $derived(groupItems(items, visible, filtering));
-  const order = $derived(groups.flatMap((g) => g.items.map((i) => i.nome)));
+  const order = $derived(groups.flatMap((g) => g.items.map((i) => i.name)));
   const empty = $derived(loaded && items.length === 0);
   const summary = $derived(
     topSummary(items.length, groupsOf(items).length, visible.length, filtering),
@@ -111,8 +111,8 @@
   }
   const metadata = $derived.by(() => {
     if (!detail) return '';
-    const created = date(detail.criada_em);
-    const changed = date(detail.alterada_em);
+    const created = date(detail.created_at);
+    const changed = date(detail.modified_at);
     return [created && `Criada em ${created}`, changed && `Alterada em ${changed}`]
       .filter(Boolean)
       .join(' · ');
@@ -134,10 +134,10 @@
   async function load() {
     error = '';
     try {
-      items = await call('listar_credenciais');
+      items = await call('list_credentials');
       loaded = true;
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
@@ -151,12 +151,12 @@
     mode = 'detail';
     const mine = ++detailRequest;
     try {
-      const d = await call('detalhe_credencial', { 'entrada': name });
+      const d = await call('credential_detail', { 'entry': name });
       if (mine === detailRequest) detail = d;
     } catch (e) {
       if (mine === detailRequest) {
         detail = null;
-        error = e.mensagem;
+        error = e.message;
       }
     }
     if (focus) {
@@ -171,12 +171,12 @@
     if (!detail) return;
     error = '';
     try {
-      await call('copiar_campo', { 'entrada': detail.nome, 'campo': field });
+      await call('copy_field', { 'entry': detail.name, 'field': field });
       copied = field;
       clearTimeout(timer);
       timer = setTimeout(() => (copied = ''), COPIED_MS);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
@@ -187,19 +187,19 @@
 
   async function reveal(field) {
     if (!detail) return;
-    const entry = detail.nome;
+    const entry = detail.name;
     try {
-      const r = await call('revelar_campo', { 'entrada': entry, 'campo': field });
-      if (detail?.nome !== entry || mode !== 'detail') return;
-      revealed = { id: field, value: r.valor };
+      const r = await call('reveal_field', { 'entry': entry, 'field': field });
+      if (detail?.name !== entry || mode !== 'detail') return;
+      revealed = { id: field, value: r.value };
       clearTimeout(revealDeadline);
       revealDeadline = setTimeout(hide, REVEAL_DEADLINE_MS);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
-  const editable = $derived(!!detail && Object.hasOwn(FORM_TYPES, detail.tipo));
+  const editable = $derived(!!detail && Object.hasOwn(FORM_TYPES, detail.type));
 
   function newCredential() {
     hide();
@@ -211,7 +211,7 @@
     if (!editable) return;
     hide();
     error = '';
-    formKind = detail.tipo;
+    formKind = detail.type;
     formDetail = detail;
     mode = 'form';
   }
@@ -237,7 +237,7 @@
   }
 
   async function levelChanged() {
-    const name = detail?.nome;
+    const name = detail?.name;
     levelOpen = false;
     if (!name) return;
     await load();
@@ -407,17 +407,17 @@
                   count={g.count}
                   color={g.color}
                 />
-                {#each g.items as item (item.nome)}
+                {#each g.items as item (item.name)}
                   <ListItem
                     compact
-                    name={item.nome}
-                    kind={item.tipo}
-                    environment={item.ambiente}
-                    detail={item.resumo}
-                    selected={item.nome === selected}
-                    tabindex={item.nome === selected ? 0 : -1}
-                    data-entry={item.nome}
-                    onclick={() => openEntry(item.nome)}
+                    name={item.name}
+                    kind={item.type}
+                    environment={item.environment}
+                    detail={item.summary}
+                    selected={item.name === selected}
+                    tabindex={item.name === selected ? 0 : -1}
+                    data-entry={item.name}
+                    onclick={() => openEntry(item.name)}
                   />
                 {/each}
               </div>
@@ -444,12 +444,12 @@
           oncancel={cancelForm}
         />
       {:else if mode === 'form'}
-        {#key formDetail?.nome ?? formKind}
+        {#key formDetail?.name ?? formKind}
           <Form
             kind={formKind}
             detail={formDetail}
             groups={groupsOf(items).map((g) => g.name)}
-            servers={items.filter((i) => i.tipo === 'server').map((i) => i.nome)}
+            servers={items.filter((i) => i.type === 'server').map((i) => i.name)}
             oncancel={cancelForm}
             onsaved={saved}
           />
@@ -471,13 +471,13 @@
         </div>
       {:else if detail}
         <header class="header">
-          <span class="avatar"><Icon name={entryType(detail.tipo).icon} size="lg" /></span>
+          <span class="avatar"><Icon name={entryType(detail.type).icon} size="lg" /></span>
           <div class="identification">
-            <h2 class="name">{detail.nome}</h2>
+            <h2 class="name">{detail.name}</h2>
             <div class="badges">
-              <TypeBadge kind={detail.tipo} />
-              <EnvironmentBadge environment={detail.ambiente} />
-              <span class="subtitle">{detail.subtitulo}</span>
+              <TypeBadge kind={detail.type} />
+              <EnvironmentBadge environment={detail.environment} />
+              <span class="subtitle">{detail.subtitle}</span>
             </div>
           </div>
           <Button
@@ -487,13 +487,13 @@
           >
         </header>
         <div class="body">
-          {#if detail.campos.length > 0}
+          {#if detail.fields.length > 0}
             <div class="grid">
-              {#each detail.campos as c (c.id)}
+              {#each detail.fields as c (c.id)}
                 <Field
                   id="field-{c.id}"
-                  label={c.rotulo}
-                  value={c.valor}
+                  label={c.label}
+                  value={c.value}
                   readOnly
                   copied={copied === c.id}
                   oncopy={() => copy(c.id)}
@@ -501,10 +501,10 @@
               {/each}
             </div>
           {/if}
-          {#each detail.segredos as s (s.id)}
+          {#each detail.secrets as s (s.id)}
             <SecretField
               id="secret-{s.id}"
-              label={s.rotulo}
+              label={s.label}
               revealed={revealed.id === s.id ? revealed.value : null}
               copied={copied === s.id}
               onreveal={() => reveal(s.id)}
@@ -514,32 +514,32 @@
           {/each}
           {#if detail.extras.length > 0}
             <div class="grid">
-              {#each detail.extras as x (x.nome)}
-                {#if x.segredo}
+              {#each detail.extras as x (x.name)}
+                {#if x.secret}
                   <SecretField
-                    id="extra-{x.nome}"
-                    label={x.nome}
+                    id="extra-{x.name}"
+                    label={x.name}
                     help=""
-                    revealed={revealed.id === x.nome ? revealed.value : null}
-                    copied={copied === x.nome}
-                    onreveal={() => reveal(x.nome)}
+                    revealed={revealed.id === x.name ? revealed.value : null}
+                    copied={copied === x.name}
+                    onreveal={() => reveal(x.name)}
                     onhide={hide}
-                    oncopy={() => copy(x.nome)}
+                    oncopy={() => copy(x.name)}
                   />
                 {:else}
                   <Field
-                    id="extra-{x.nome}"
-                    label={x.nome}
-                    value={x.valor ?? ''}
+                    id="extra-{x.name}"
+                    label={x.name}
+                    value={x.value ?? ''}
                     readOnly
-                    copied={copied === x.nome}
-                    oncopy={() => copy(x.nome)}
+                    copied={copied === x.name}
+                    oncopy={() => copy(x.name)}
                   />
                 {/if}
               {/each}
             </div>
           {/if}
-          <LevelCard level={detail.nivel} onchange={changeLevel} />
+          <LevelCard level={detail.level} onchange={changeLevel} />
         </div>
         <footer class="footer">
           <span class="metadata">{metadata}</span>

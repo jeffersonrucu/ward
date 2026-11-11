@@ -41,13 +41,13 @@ export function lockOptions(current) {
 
 /** USB drive name for the screen: the label, or a fixed text when there is no label. */
 export function usbDriveName(p) {
-  const r = typeof p?.rotulo === 'string' ? p.rotulo : '';
+  const r = typeof p?.label === 'string' ? p.label : '';
   return r || 'Pendrive sem rótulo';
 }
 
 /** "mounted" / "connected, but not mounted", for the list of the choice. */
 export function situationInList(p) {
-  return p?.montado ? 'montado' : 'conectado, mas não montado';
+  return p?.mounted ? 'montado' : 'conectado, mas não montado';
 }
 
 /**
@@ -56,8 +56,8 @@ export function situationInList(p) {
  * does not mount it).
  */
 export function usbDriveCard(external) {
-  const p = external?.pendrive ?? null;
-  if (p?.montado) {
+  const p = external?.usb_drive ?? null;
+  if (p?.mounted) {
     return {
       name: usbDriveName(p),
       situation: 'conectado e montado',
@@ -73,7 +73,7 @@ export function usbDriveCard(external) {
       mounted: false,
     };
   }
-  if (external && external.pendrives_visiveis === false) {
+  if (external && external.visible_usb_drives === false) {
     return {
       name: 'Pendrive escolhido',
       situation: 'não deu para ver os pendrives agora',

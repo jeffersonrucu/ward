@@ -114,13 +114,9 @@ impl<'de> Deserialize<'de> for MasterPassword {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RequestInfo {
     pub id: u64,
-    #[serde(rename = "restante")]
     pub remaining: u64,
-    #[serde(rename = "entrada")]
     pub entry: String,
-    #[serde(rename = "operacao")]
     pub operation: &'static str,
-    #[serde(rename = "comando")]
     pub command: String,
 }
 
@@ -216,7 +212,7 @@ pub fn watch(
     on_arrival: impl Fn() + Send + 'static,
 ) -> Result<(), AppError> {
     std::thread::Builder::new()
-        .name("ward-app-destrave".into())
+        .name("ward-app-unlock".into())
         .spawn(move || {
             loop {
                 if let Some(p) = queue.wait_unlock(Duration::from_secs(3600)) {
@@ -372,18 +368,17 @@ mod tests {
         let v = serde_json::to_value(&j).unwrap();
         let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["comando", "entrada", "id", "operacao", "restante"]);
+        assert_eq!(keys, ["command", "entry", "id", "operation", "remaining"]);
     }
 
-    /// The new Rust names are not wire names (frozen until m2:Phase 54): the screen still
-    /// gets the old keys.
+    /// m2:V4.23 (m2:Phase 54): the screen gets the English keys, never the 0.1.x ones.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn attack_old_wire_names_are_gone() {
         let p = PendingRequest::default();
         p.mark(&notice("acme-pg-aprovacao", 120));
         let v = serde_json::to_value(p.info().unwrap()).unwrap();
-        for new in ["remaining", "entry", "operation", "command"] {
-            assert!(v.get(new).is_none(), "{new}");
+        for old in ["restante", "entrada", "operacao", "comando"] {
+            assert!(v.get(old).is_none(), "{old}");
         }
     }
 }

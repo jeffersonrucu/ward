@@ -84,9 +84,9 @@ pub enum VaultStatus {
 impl VaultStatus {
     pub fn code(self) -> &'static str {
         match self {
-            VaultStatus::NoVault => "sem-cofre",
-            VaultStatus::Locked => "travado",
-            VaultStatus::Unlocked => "destravado",
+            VaultStatus::NoVault => "no-vault",
+            VaultStatus::Locked => "locked",
+            VaultStatus::Unlocked => "unlocked",
         }
     }
 }
@@ -301,7 +301,7 @@ impl Transport {
         let open = Arc::new(AtomicBool::new(true));
         let (w, o) = (waiting.clone(), open.clone());
         std::thread::Builder::new()
-            .name("ward-app-leitora".into())
+            .name("ward-app-reader".into())
             .spawn(move || read_loop(reader, &tx, &w, &o, &notices))
             .map_err(lost)?;
         Ok(Transport {
@@ -476,7 +476,7 @@ impl DaemonSocket {
         let t = self.transport.as_ref().ok_or(AppError::ConnectionLost)?;
         let s = t.stream.try_clone().map_err(|_| AppError::ConnectionLost)?;
         std::thread::Builder::new()
-            .name("ward-app-vigia".into())
+            .name("ward-app-watcher".into())
             .spawn(move || {
                 let _ = ward_platform::app::wait_for_close(&s);
                 on_close();

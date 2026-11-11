@@ -54,16 +54,16 @@
   let failure = $state('');
   let acknowledged = $state(false);
 
-  const blocked = $derived(request?.estado === 'bloqueado');
-  const prod = $derived(request?.ambiente === 'prod');
+  const blocked = $derived(request?.status === 'blocked');
+  const prod = $derived(request?.environment === 'prod');
   // Phase 44c (D9): only the confirmation of an `http` origin (no PIN, "Deny" or
   // "Confirm").
-  const confirmation = $derived(request?.confirmacao === true);
-  const popup = $derived(request?.operacao === 'preencher');
+  const confirmation = $derived(request?.confirmation === true);
+  const popup = $derived(request?.operation === 'fill');
   // Phase 54b: the stdin that this window does not show.
-  const hiddenStdin = $derived(request?.entrada_oculta === true);
+  const hiddenStdin = $derived(request?.hidden_entry === true);
   const notAcknowledged = $derived(hiddenStdin && !acknowledged);
-  const urgent = $derived(!blocked && request !== null && request.restante <= URGENT_SECONDS);
+  const urgent = $derived(!blocked && request !== null && request.remaining <= URGENT_SECONDS);
 
   let querying = false;
   let clock = null;
@@ -80,7 +80,7 @@
     if (querying || busy) return;
     querying = true;
     try {
-      const fresh = await call('pedido_de_aprovacao');
+      const fresh = await call('approval_request');
       const other = (fresh?.id ?? null) !== (request?.id ?? null);
       request = fresh;
       failure = '';
@@ -91,7 +91,7 @@
         if (fresh) focusDeny();
       }
     } catch (e) {
-      failure = e.mensagem;
+      failure = e.message;
     } finally {
       loaded = true;
       querying = false;
@@ -115,15 +115,15 @@
     pin = '';
     busy = true;
     try {
-      const r = await call('responder_aprovacao', {
+      const r = await call('answer_approval', {
         id,
-        'decisao': decision,
+        'decision': decision,
         pin: sent,
-        'ciente': withAcknowledgment,
+        'acknowledged': withAcknowledgment,
       });
-      error = resultMessage(r?.resultado);
+      error = resultMessage(r?.result);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     } finally {
       busy = false;
     }
@@ -134,7 +134,7 @@
     // V5.19: Esc denies. Enter has no shortcut: only the focused button answers.
     if (e.key === 'Escape') {
       e.preventDefault();
-      answer('negar');
+      answer('deny');
     }
   }
 
@@ -142,14 +142,14 @@
   // left the Rust side).
   function tickDown() {
     if (!request || blocked) return;
-    if (request.restante > 0) request.restante -= 1;
-    if (request.restante === 0) query();
+    if (request.remaining > 0) request.remaining -= 1;
+    if (request.remaining === 0) query();
   }
 
   onMount(async () => {
     clock = setInterval(tickDown, 1000);
     await query();
-    const stop = await listenNotices(query, 'pedido-de-aprovacao');
+    const stop = await listenNotices(query, 'approval-request');
     if (left) stop();
     else stopListening = stop;
   });
@@ -173,8 +173,8 @@
           <h1 id="approval-title">{TEXTS.title}</h1>
           <p class="subtitle">{popup ? TEXTS.popupSubtitle : TEXTS.subtitle}</p>
         </div>
-        {#if !blocked}<Countdown seconds={request.restante} urgent={urgent} />{/if}
-        <IconButton icon="close" label={TEXTS.closeAndDeny} onclick={() => answer('negar')} />
+        {#if !blocked}<Countdown seconds={request.remaining} urgent={urgent} />{/if}
+        <IconButton icon="close" label={TEXTS.closeAndDeny} onclick={() => answer('deny')} />
       </header>
 
       {#if blocked}
@@ -184,11 +184,11 @@
             >{confirmation ? TEXTS.prodHighlightOrigin : TEXTS.prodHighlight}</Highlight
           >{/if}
         <!-- Phase 44e: the origin warning in a warning highlight (frames 22812, 22957). -->
-        {#if request.origem}<Highlight kind="warning" icon="alert">{originNotice(request.origem)}</Highlight>{/if}
+        {#if request.origin}<Highlight kind="warning" icon="alert">{originNotice(request.origin)}</Highlight>{/if}
         <!-- Phase 54b (D68): the stdin that the window does not show (frames 22964, 23051). -->
         {#if hiddenStdin}<Highlight kind="warning" icon="alert">{TEXTS.stdinHighlight}</Highlight>{/if}
         {#if urgent}
-          <Highlight kind="danger" icon="clock">{TEXTS.expiring(request.restante)}</Highlight>
+          <Highlight kind="danger" icon="clock">{TEXTS.expiring(request.remaining)}</Highlight>
         {/if}
       {/if}
 
@@ -197,20 +197,20 @@
           ? TEXTS.blockedSummary
           : confirmation
             ? TEXTS.confirmationSummary
-            : request.origem
+            : request.origin
               ? TEXTS.originSummary
               : TEXTS.summary}
       </p>
 
       <div class="request" class:prod>
-        {#each request.entradas as entry, i (i)}
+        {#each request.entries as entry, i (i)}
           <div class="entry">
-            <span class="avatar"><Icon name={entryType(entry.tipo ?? 'generic').icon} /></span>
+            <span class="avatar"><Icon name={entryType(entry.type ?? 'generic').icon} /></span>
             <div class="texts">
-              <span class="name"><AgentText text={entry.nome} /></span>
+              <span class="name"><AgentText text={entry.name} /></span>
               <span class="badges">
-                {#if entry.tipo}<TypeBadge kind={entry.tipo} />{/if}
-                <EnvironmentBadge environment={request.ambiente} />
+                {#if entry.type}<TypeBadge kind={entry.type} />{/if}
+                <EnvironmentBadge environment={request.environment} />
               </span>
             </div>
             {#if i === 0}
@@ -223,21 +223,21 @@
         {/each}
         <!-- Phase 44c: the `http` origin where username and password go (the login, the
              playwright and the popup have no command). -->
-        {#if request.origem}
-          <CodeBox label={TEXTS.origin}><AgentText text={request.origem} /></CodeBox>
+        {#if request.origin}
+          <CodeBox label={TEXTS.origin}><AgentText text={request.origin} /></CodeBox>
         {/if}
-        {#if request.comando || !request.origem}
-          <CodeBox label={TEXTS.command}><AgentText text={request.comando} /></CodeBox>
+        {#if request.command || !request.origin}
+          <CodeBox label={TEXTS.command}><AgentText text={request.command} /></CodeBox>
         {/if}
         <!-- Phase 26a: the command runs in the CLI's directory; only the run request has
              one (frames 16701, 16810, 16885, 16960, 17035, 22964; Phase 54i). -->
-        {#if request.diretorio}
-          <CodeBox label={TEXTS.directory}><AgentText text={request.diretorio} /></CodeBox>
+        {#if request.directory}
+          <CodeBox label={TEXTS.directory}><AgentText text={request.directory} /></CodeBox>
         {/if}
         <!-- The arrow is only drawing (another color); one inside a name already arrives
              escaped. -->
         <CodeBox label={TEXTS.requestedBy}
-          >{#if request.cadeia.length === 0}{TEXTS.emptyChain}{/if}{#each request.cadeia as process, i (i)}{#if i > 0}<span
+          >{#if request.chain.length === 0}{TEXTS.emptyChain}{/if}{#each request.chain as process, i (i)}{#if i > 0}<span
                 class="arrow"
                 aria-hidden="true">{SEPARATOR}</span
               >{/if}<span class="process"><AgentText text={process} /></span>{/each}</CodeBox
@@ -248,10 +248,10 @@
         {#if error}<p class="failure" role="alert">{error}</p>{/if}
         <div class="actions">
           <div class="row">
-            <Button id={DENY_ID} variant="secondary" disabled={busy} onclick={() => answer('negar')}>
+            <Button id={DENY_ID} variant="secondary" disabled={busy} onclick={() => answer('deny')}>
               {TEXTS.deny}
             </Button>
-            <Button variant="primary" disabled={busy || blocked} onclick={() => answer('confirmar')}>
+            <Button variant="primary" disabled={busy || blocked} onclick={() => answer('confirm')}>
               {TEXTS.confirm}
             </Button>
           </div>
@@ -277,18 +277,18 @@
 
         <div class="actions">
           <div class="row">
-            <Button id={DENY_ID} variant="secondary" disabled={busy} onclick={() => answer('negar')}>
+            <Button id={DENY_ID} variant="secondary" disabled={busy} onclick={() => answer('deny')}>
               {TEXTS.deny}
             </Button>
-            <Button variant="primary" disabled={busy || blocked || notAcknowledged} onclick={() => answer('uma_vez')}>
+            <Button variant="primary" disabled={busy || blocked || notAcknowledged} onclick={() => answer('once')}>
               {TEXTS.once}
             </Button>
           </div>
           <div class="row">
-            <Button variant="secondary" disabled={busy || blocked || notAcknowledged} onclick={() => answer('uma_hora')}>
+            <Button variant="secondary" disabled={busy || blocked || notAcknowledged} onclick={() => answer('one_hour')}>
               {TEXTS.oneHour}
             </Button>
-            <Button variant="secondary" disabled={busy || blocked || notAcknowledged} onclick={() => answer('sempre')}>
+            <Button variant="secondary" disabled={busy || blocked || notAcknowledged} onclick={() => answer('always')}>
               {TEXTS.always}
             </Button>
           </div>

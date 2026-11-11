@@ -34,7 +34,7 @@
 
   /** How the agent asked, by the protocol operation (its wire name). */
   const OPERATION_COMMAND = Object.freeze({
-    'executar': 'ward run',
+    run: 'ward run',
     ssh: 'ward ssh',
     login: 'ward login',
     playwright: 'ward playwright',
@@ -46,10 +46,10 @@
    * @type {{
    *   request?: {
    *     id: number,
-   *     restante: number,
-   *     entrada: string,
-   *     operacao: string,
-   *     comando: string
+   *     remaining: number,
+   *     entry: string,
+   *     operation: string,
+   *     command: string
    *   } | null,
    *   onunlocked: () => void,
    *   onerror?: (message: string) => void
@@ -73,9 +73,9 @@
   $effect(() => {
     if (request && request.id !== requestId) {
       requestId = request.id;
-      remaining = request.restante;
-    } else if (request && request.id === requestId && Math.abs(request.restante - remaining) > 2) {
-      remaining = request.restante;
+      remaining = request.remaining;
+    } else if (request && request.id === requestId && Math.abs(request.remaining - remaining) > 2) {
+      remaining = request.remaining;
     }
   });
   const withRequest = $derived(request !== null && remaining > 0 && dismissed !== requestId);
@@ -112,19 +112,19 @@
     const sent = password;
     password = '';
     try {
-      await call('destravar', { 'senha': sent });
+      await call('unlock', { 'password': sent });
       error = '';
       consecutiveErrors = 0;
       onunlocked();
     } catch (e) {
-      if (e.codigo === 'senha-incorreta') {
+      if (e.code === 'wrong-password') {
         consecutiveErrors += 1;
         wait = Math.min(2 ** (consecutiveErrors - 1), MAX_WAIT);
-        error = e.mensagem;
-      } else if (e.codigo === 'travado' || e.codigo === 'pedido-invalido') {
-        error = e.codigo === 'pedido-invalido' ? 'Senha mestra fora do formato.' : e.mensagem;
+        error = e.message;
+      } else if (e.code === 'locked' || e.code === 'invalid-request') {
+        error = e.code === 'invalid-request' ? 'Senha mestra fora do formato.' : e.message;
       } else {
-        onerror?.(e.mensagem);
+        onerror?.(e.message);
       }
     } finally {
       sending = false;
@@ -169,12 +169,12 @@
           <div class="entry">
             <span class="avatar"><Icon name="key" /></span>
             <div class="texts">
-              <span class="name"><AgentText text={request.entrada} /></span>
-              <span class="operation">{operationCommand(request.operacao)}</span>
+              <span class="name"><AgentText text={request.entry} /></span>
+              <span class="operation">{operationCommand(request.operation)}</span>
             </div>
           </div>
-          {#if request.comando}
-            <CodeBox label="Comando"><AgentText text={request.comando} /></CodeBox>
+          {#if request.command}
+            <CodeBox label="Comando"><AgentText text={request.command} /></CodeBox>
           {/if}
         </section>
       {/if}

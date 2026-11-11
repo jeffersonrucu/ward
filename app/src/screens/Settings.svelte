@@ -57,7 +57,7 @@
   let successTimer = null;
 
   const options = $derived(lockOptions(config?.lockMinutes));
-  const externalOn = $derived(external ? external.ligado === true : config?.externalBackup === true);
+  const externalOn = $derived(external ? external.enabled === true : config?.externalBackup === true);
   const card = $derived(usbDriveCard(external));
 
   function notify(text) {
@@ -69,29 +69,29 @@
 
   function apply(c) {
     config = {
-      lockMinutes: c.minutos_trava,
-      externalBackup: c.backup_externo === true,
-      localBackup: c.backup_local !== false,
+      lockMinutes: c.lock_minutes,
+      externalBackup: c.external_backup === true,
+      localBackup: c.local_backup !== false,
     };
     minutes = String(config.lockMinutes);
   }
 
   /** Error of a request: locked goes to the unlock screen; the rest shows in the toast. */
   async function failed(e, fallback) {
-    if (e?.codigo === 'travado') {
+    if (e?.code === 'locked') {
       onlocked?.();
       return;
     }
     success = '';
-    error = rustMessage(e?.mensagem) || fallback;
+    error = rustMessage(e?.message) || fallback;
     await checkLock();
   }
 
   /** A write that fails after being checked can lock the vault in the daemon (D53). */
   async function checkLock() {
     try {
-      const r = await call('estado_do_cofre');
-      if (r?.estado === 'destravado') return;
+      const r = await call('vault_status');
+      if (r?.status === 'unlocked') return;
     } catch {
       // No reply: the unlock screen asks again.
     }
@@ -100,8 +100,8 @@
 
   async function load() {
     try {
-      apply(await call('configuracoes'));
-      external = await call('backup_externo');
+      apply(await call('settings'));
+      external = await call('external_backup');
     } catch (e) {
       await failed(e, 'Não foi possível ler as configurações.');
     }
@@ -116,7 +116,7 @@
     }
     changingExternal = true;
     try {
-      external = await call('definir_backup_externo', { 'ligado': false, uuid: null });
+      external = await call('set_external_backup', { 'enabled': false, uuid: null });
       config = config && { ...config, externalBackup: false };
       notify('Backup externo desligado. As cópias no pendrive continuam lá.');
     } catch (e) {
@@ -127,10 +127,10 @@
   }
 
   function usbDriveChosen(chosen) {
-    const replaced = external?.ligado === true;
+    const replaced = external?.enabled === true;
     dialog = '';
     external = chosen;
-    config = config && { ...config, externalBackup: chosen?.ligado === true };
+    config = config && { ...config, externalBackup: chosen?.enabled === true };
     notify(replaced ? 'Pendrive do backup externo trocado.' : 'Backup externo ligado.');
   }
 
@@ -139,7 +139,7 @@
     if (!config || saving || next === config.lockMinutes) return;
     saving = true;
     try {
-      apply(await call('definir_tempo_trava', { 'minutos': next }));
+      apply(await call('set_lock_timeout', { 'minutes': next }));
       notify('Tempo de trava salvo.');
     } catch (e) {
       minutes = String(config.lockMinutes);
@@ -226,7 +226,7 @@
             escolhido sempre que ele for conectado, também com 30 versões.{:else}Desligado. Ao
             ligar, escolha o pendrive; o Ward copia as versões sempre que ele for conectado.{/if}{/snippet}
       </OptionRow>
-      {#if external?.ligado && external.uuid}
+      {#if external?.enabled && external.uuid}
         <UsbDriveCard
           name={card.name}
           uuid={external.uuid}
@@ -283,7 +283,7 @@
 />
 <ChooseUsbDrive
   open={dialog === 'usb-drive'}
-  replace={external?.ligado === true}
+  replace={external?.enabled === true}
   current={external?.uuid ?? null}
   onclose={closeDialog}
   onchosen={usbDriveChosen}

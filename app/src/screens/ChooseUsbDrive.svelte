@@ -39,7 +39,7 @@
     loading = true;
     failure = '';
     try {
-      const list = await call('listar_pendrives');
+      const list = await call('list_usb_drives');
       usbDrives = Array.isArray(list) ? list : [];
       if (!usbDrives.some((p) => p.uuid === chosen)) {
         const same = usbDrives.find((p) => current && p.uuid.toUpperCase() === current.toUpperCase());
@@ -48,11 +48,11 @@
     } catch (e) {
       usbDrives = [];
       chosen = '';
-      if (e?.codigo === 'travado') {
+      if (e?.code === 'locked') {
         onlocked?.();
         return;
       }
-      failure = rustMessage(e?.mensagem) || 'Não deu para ver os pendrives.';
+      failure = rustMessage(e?.message) || 'Não deu para ver os pendrives.';
     } finally {
       loading = false;
     }
@@ -71,16 +71,16 @@
     sending = true;
     failure = '';
     try {
-      const external = await call('definir_backup_externo', { 'ligado': true, uuid: chosen });
+      const external = await call('set_external_backup', { 'enabled': true, uuid: chosen });
       onchosen?.(external);
     } catch (e) {
-      if (e?.codigo === 'travado') {
+      if (e?.code === 'locked') {
         onlocked?.();
         return;
       }
-      const msg = rustMessage(e?.mensagem) || 'Não foi possível ligar o backup externo.';
+      const msg = rustMessage(e?.message) || 'Não foi possível ligar o backup externo.';
       // The drive left (or the request did not match the list): the list comes back updated.
-      if (e?.codigo === 'pendrive-nao-conectado') await load();
+      if (e?.code === 'usb-drive-not-connected') await load();
       failure = msg;
     } finally {
       sending = false;

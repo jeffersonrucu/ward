@@ -22,8 +22,8 @@
   // screen gets only the size (or the notice), and the key goes on save as loaded, with
   // no clipboard and without passing through here.
   //
-  // Wire names (frozen until m2:Phase 54): the request and reply fields of the Tauri
-  // commands and of the entry detail, and the field ids (`dev/english-check/frozen.txt`).
+  // Wire names (m2:Phase 54): the request and reply fields of the Tauri commands and of
+  // the entry detail, and the field ids (the protocol v2 ones).
   import { onDestroy, onMount } from 'svelte';
   import Attachment from '../lib/components/Attachment.svelte';
   import EnvironmentBadge from '../lib/components/EnvironmentBadge.svelte';
@@ -76,21 +76,21 @@
   const def = FORM_TYPES[kind];
   const typeFields = fieldsOfType(kind);
 
-  const initial = (id) => detail?.campos.find((c) => c.id === id)?.valor ?? '';
-  const saved = (id) => detail?.segredos.some((s) => s.id === id) ?? false;
+  const initial = (id) => detail?.fields.find((c) => c.id === id)?.value ?? '';
+  const saved = (id) => detail?.secrets.some((s) => s.id === id) ?? false;
 
-  let name = $state(detail?.nome ?? '');
-  let group = $state(detail?.grupo ?? '');
-  let environment = $state(detail?.ambiente ?? '');
-  let project = $state(detail?.projeto ?? '');
+  let name = $state(detail?.name ?? '');
+  let group = $state(detail?.group ?? '');
+  let environment = $state(detail?.environment ?? '');
+  let project = $state(detail?.project ?? '');
   let tags = $state((detail?.tags ?? []).join(', '));
   // Initial value of the selects with no saved value. The authentication select (only
   // on the screen) comes from the secret the edited entry has.
   const DEFAULTS = {
-    'seguranca': 'starttls',
-    'motor': 'postgres',
-    'protocolo': 'sftp',
-    authentication: saved('chave_privada') ? 'key' : 'password',
+    'security': 'starttls',
+    'engine': 'postgres',
+    'protocol': 'sftp',
+    authentication: saved('private_key') ? 'key' : 'password',
   };
   let fields = $state(
     Object.fromEntries(
@@ -110,11 +110,11 @@
   let extras = $state(
     (detail?.extras ?? []).map((x) => ({
       key: nextExtra++,
-      name: x.nome,
-      value: x.segredo ? '' : (x.valor ?? ''),
-      secret: x.segredo,
-      stored: x.segredo,
-      original: x.nome,
+      name: x.name,
+      value: x.secret ? '' : (x.value ?? ''),
+      secret: x.secret,
+      stored: x.secret,
+      original: x.name,
     })),
   );
 
@@ -124,7 +124,7 @@
   // detail; the content never comes). Removing here only takes it off the list; it
   // counts on save.
   /** @type {Array<{ name: string, size: number }>} */
-  let stored = $state((detail?.anexos ?? []).map((a) => ({ name: a.nome, size: a.tamanho })));
+  let stored = $state((detail?.attachments ?? []).map((a) => ({ name: a.name, size: a.size })));
 
   // V5.10 (Phase 39c): in the New form, save stays disabled until something is filled in.
   const initialFields = $state.snapshot(fields);
@@ -153,10 +153,10 @@
   /** TOTP reply of the bridge (code and seconds left, wire names), or null. */
   let totp = $state(null);
 
-  const level = $derived(LEVELS[detail?.nivel] ?? LEVELS['approval']);
+  const level = $derived(LEVELS[detail?.level] ?? LEVELS['approval']);
   const regions = $derived(
     [{ value: '', label: 'Escolha a região' }].concat(
-      [...new Set([...(fields.regiao ? [fields.regiao] : []), ...AWS_REGIONS])].map((r) => ({
+      [...new Set([...(fields.region ? [fields.region] : []), ...AWS_REGIONS])].map((r) => ({
         value: r,
         label: r,
       })),
@@ -168,7 +168,7 @@
   const serverOptions = (current) =>
     [{ value: '', label: 'Nenhum' }].concat(
       [...new Set([...(current ? [current] : []), ...servers])]
-        .filter((n) => n !== detail?.nome)
+        .filter((n) => n !== detail?.name)
         .map((n) => ({ value: n, label: n })),
     );
   const selectOptions = $derived({
@@ -177,11 +177,11 @@
     engines: ENGINES,
     protocols: PROTOCOLS,
     // ftp does not take a key (ward-core refuses it); the screen offers only password.
-    authentications: fields.protocolo === 'ftp' ? AUTHENTICATIONS.slice(0, 1) : AUTHENTICATIONS,
-    servers: serverOptions(fields.tunel),
-    jumps: serverOptions(fields.salto),
+    authentications: fields.protocol === 'ftp' ? AUTHENTICATIONS.slice(0, 1) : AUTHENTICATIONS,
+    servers: serverOptions(fields.tunnel),
+    jumps: serverOptions(fields.jump),
   });
-  const accessText = $derived(kind === 'database' ? databaseAccess(fields.motor) : def.access);
+  const accessText = $derived(kind === 'database' ? databaseAccess(fields.engine) : def.access);
   const visibleRows = $derived(
     def.rows
       .map((l) => l.filter((c) => fieldVisible(c, fields.authentication)))
@@ -189,7 +189,7 @@
   );
 
   $effect(() => {
-    if (fields.protocolo === 'ftp' && fields.authentication !== 'password') fields.authentication = 'password';
+    if (fields.protocol === 'ftp' && fields.authentication !== 'password') fields.authentication = 'password';
   });
 
   let active = true;
@@ -209,13 +209,13 @@
   async function reveal(id) {
     if (!editing) return;
     try {
-      const r = await call('revelar_campo', { 'entrada': detail.nome, 'campo': id });
+      const r = await call('reveal_field', { 'entry': detail.name, 'field': id });
       if (!active) return;
-      revealed[id] = r.valor;
+      revealed[id] = r.value;
       clearTimeout(deadlines[id]);
       deadlines[id] = setTimeout(() => hide(id), REVEAL_DEADLINE_MS);
     } catch (e) {
-      generalError = e.mensagem;
+      generalError = e.message;
     }
   }
 
@@ -228,31 +228,31 @@
   async function copy(id) {
     if (!editing) return;
     try {
-      await call('copiar_campo', { 'entrada': detail.nome, 'campo': id });
+      await call('copy_field', { 'entry': detail.name, 'field': id });
       markCopied(id);
     } catch (e) {
-      generalError = e.mensagem;
+      generalError = e.message;
     }
   }
 
   async function copyTotp() {
     try {
-      await call('copiar_codigo_totp', { 'entrada': detail.nome });
+      await call('copy_totp_code', { 'entry': detail.name });
       markCopied('code');
     } catch (e) {
-      generalError = e.mensagem;
+      generalError = e.message;
     }
   }
 
   // TOTP code of the edited entry: one request, a local countdown, a new request at the end.
   async function refreshTotp() {
     clearTimeout(totpDeadline);
-    if (!editing || !saved('totp_semente') || secrets.totp_semente?.mode !== 'saved') {
+    if (!editing || !saved('totp_seed') || secrets.totp_seed?.mode !== 'saved') {
       totp = null;
       return;
     }
     try {
-      const r = await call('codigo_totp', { 'entrada': detail.nome });
+      const r = await call('totp_code', { 'entry': detail.name });
       if (!active) return;
       totp = r;
       countdown();
@@ -264,9 +264,9 @@
   function countdown() {
     totpDeadline = setTimeout(() => {
       if (!active || !totp) return;
-      if (totp.restante <= 1) refreshTotp();
+      if (totp.remaining <= 1) refreshTotp();
       else {
-        totp = { ...totp, 'restante': totp.restante - 1 };
+        totp = { ...totp, 'remaining': totp.remaining - 1 };
         countdown();
       }
     }, 1000);
@@ -276,7 +276,7 @@
     hide(id);
     delete keyNotice[id];
     secrets[id] = { mode: 'typing', typed: '', length: 0 };
-    if (id === 'totp_semente') {
+    if (id === 'totp_seed') {
       clearTimeout(totpDeadline);
       totp = null;
     }
@@ -293,16 +293,16 @@
     loading = true;
     delete keyNotice[id];
     try {
-      const r = await call('carregar_chave', { 'campo': id });
+      const r = await call('load_key', { 'field': id });
       if (!active) return;
-      if (r.resultado === 'carregada') {
-        secrets[id] = { mode: 'loaded', typed: '', length: r.tamanho };
+      if (r.result === 'loaded') {
+        secrets[id] = { mode: 'loaded', typed: '', length: r.size };
         delete errors[id];
-      } else if (r.resultado === 'aviso') {
-        keyNotice[id] = r.motivo;
+      } else if (r.result === 'notice') {
+        keyNotice[id] = r.reason;
       }
     } catch (e) {
-      keyNotice[id] = e.mensagem;
+      keyNotice[id] = e.message;
     } finally {
       loading = false;
     }
@@ -325,18 +325,18 @@
     attachmentNotice = '';
     try {
       const r = await call(
-        'escolher_anexo',
-        editing ? { 'edicao': { 'entrada': detail.nome, 'mantidos': stored.map((a) => a.name) } } : {},
+        'choose_attachment',
+        editing ? { 'edit': { 'entry': detail.name, 'kept': stored.map((a) => a.name) } } : {},
       );
       if (!active) return;
-      if (r.resultado === 'anexado') {
-        attachments.push({ id: r.id, name: r.nome, size: r.tamanho });
-        delete errors.anexos;
-      } else if (r.resultado === 'aviso') {
-        attachmentNotice = r.motivo;
+      if (r.result === 'attached') {
+        attachments.push({ id: r.id, name: r.name, size: r.size });
+        delete errors.attachments;
+      } else if (r.result === 'notice') {
+        attachmentNotice = r.reason;
       }
     } catch (e) {
-      attachmentNotice = e.mensagem;
+      attachmentNotice = e.message;
     } finally {
       choosing = false;
     }
@@ -345,17 +345,17 @@
   function removeStored(i) {
     stored.splice(i, 1);
     attachmentNotice = '';
-    delete errors.anexos;
+    delete errors.attachments;
   }
 
   async function removeAttachment(i) {
     const a = attachments[i];
     try {
-      await call('remover_anexo', { id: a.id });
+      await call('remove_attachment', { id: a.id });
       attachments.splice(i, 1);
       attachmentNotice = '';
     } catch (e) {
-      attachmentNotice = e.mensagem;
+      attachmentNotice = e.message;
     }
   }
 
@@ -364,13 +364,13 @@
     connecting = true;
     generalError = '';
     try {
-      await call('conectar', { 'entrada': detail.nome });
+      await call('connect', { 'entry': detail.name });
       if (!active) return;
       connected = true;
       clearTimeout(copiedDeadline);
       copiedDeadline = setTimeout(() => (connected = false), COPIED_MS);
     } catch (e) {
-      generalError = e.mensagem;
+      generalError = e.message;
     } finally {
       connecting = false;
     }
@@ -398,19 +398,19 @@
         attachments,
         stored,
       });
-      const r = await call('salvar_credencial', {
-        'anterior': editing ? detail.nome : null,
-        'formulario': form,
+      const r = await call('save_credential', {
+        'previous': editing ? detail.name : null,
+        'form': form,
       });
       if (!active) return;
-      if (r.salvo) {
-        onsaved(r.salvo);
+      if (r.saved) {
+        onsaved(r.saved);
         return;
       }
-      errors = errorsByField(r.erros);
-      generalError = errors.formulario ?? '';
+      errors = errorsByField(r.errors);
+      generalError = errors.form ?? '';
     } catch (e) {
-      generalError = e.mensagem;
+      generalError = e.message;
     } finally {
       saving = false;
     }
@@ -423,7 +423,7 @@
     hideAll();
     clearTimeout(copiedDeadline);
     clearTimeout(totpDeadline);
-    call('descartar_formulario').catch(() => {});
+    call('discard_form').catch(() => {});
   });
 </script>
 
@@ -519,8 +519,8 @@
   {:else if c.kind === 'totp'}
     <TotpCode
       id="form-code"
-      code={totp?.codigo ?? null}
-      remaining={totp?.restante ?? 0}
+      code={totp?.code ?? null}
+      remaining={totp?.remaining ?? 0}
       copied={copied === 'code'}
       oncopy={copyTotp}
     />
@@ -551,12 +551,12 @@
 <header class="header">
   <span class="avatar"><Icon name={entryType(kind).icon} size="lg" /></span>
   <div class="identification">
-    <h2 class="name">{editing ? detail.nome : 'Nova credencial'}</h2>
+    <h2 class="name">{editing ? detail.name : 'Nova credencial'}</h2>
     <div class="badges">
       <TypeBadge {kind} />
       {#if editing}
-        <EnvironmentBadge environment={detail.ambiente} />
-        <span class="subtitle">grupo {detail.grupo} · editando</span>
+        <EnvironmentBadge environment={detail.environment} />
+        <span class="subtitle">grupo {detail.group} · editando</span>
       {:else}
         <span class="subtitle">preencha nome, grupo e ambiente</span>
       {/if}
@@ -589,7 +589,7 @@
       label="Nome"
       bind:value={name}
       placeholder={def.example ?? 'Ex.: acme-wp-dev'}
-      error={errorOf('nome')}
+      error={errorOf('name')}
     />
     <Select
       id="form-kind"
@@ -598,17 +598,17 @@
       options={[{ value: kind, label: entryType(kind).label }]}
       disabled={editing}
     />
-    <GroupCombobox id="form-group" bind:value={group} {groups} error={errorOf('grupo')} />
+    <GroupCombobox id="form-group" bind:value={group} {groups} error={errorOf('group')} />
     <div class="select-with-error">
       <Select id="form-environment" label="Ambiente" bind:value={environment} options={FORM_ENVIRONMENTS} />
-      {#if errorOf('ambiente')}<span class="error">{errorOf('ambiente')}</span>{/if}
+      {#if errorOf('environment')}<span class="error">{errorOf('environment')}</span>{/if}
     </div>
     <Field
       id="form-project"
       label="Projeto"
       bind:value={project}
       placeholder="Opcional"
-      error={errorOf('projeto')}
+      error={errorOf('project')}
     />
     <Field
       id="form-tags"
@@ -681,7 +681,7 @@
       {/snippet}
     </SectionTitle>
     {#if attachments.length === 0 && stored.length === 0}
-      <p class="empty-box" class:error={errorOf('anexos')}>
+      <p class="empty-box" class:error={errorOf('attachments')}>
         Nenhum anexo. Use Adicionar arquivo (até 256 KiB somados).
       </p>
     {:else}
@@ -701,7 +701,7 @@
       {/each}
     {/if}
     {#if attachmentNotice}<span class="error" role="alert" id="attachment-notice">{attachmentNotice}</span>{/if}
-    {#if errorOf('anexos')}<span class="error" id="attachments-error">{errorOf('anexos')}</span>{/if}
+    {#if errorOf('attachments')}<span class="error" id="attachments-error">{errorOf('attachments')}</span>{/if}
   </section>
 
   <div class="level">

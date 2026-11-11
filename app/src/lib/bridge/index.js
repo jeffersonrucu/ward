@@ -23,7 +23,7 @@ async function getTransport() {
 
 /** Command error with the wire fields of code and message, with no input value. */
 function failure(code, message) {
-  return Object.freeze({ 'codigo': code, 'mensagem': message });
+  return Object.freeze({ 'code': code, 'message': message });
 }
 
 export async function call(command, args = {}) {
@@ -34,15 +34,15 @@ export async function call(command, args = {}) {
   try {
     return await t(command, args);
   } catch (e) {
-    if (e && typeof e.codigo === 'string' && typeof e.mensagem === 'string') {
-      throw failure(e.codigo, e.mensagem);
+    if (e && typeof e.code === 'string' && typeof e.message === 'string') {
+      throw failure(e.code, e.message);
     }
     throw failure('falha', 'não foi possível falar com o app');
   }
 }
 
 /** The notices the Rust side sends through the channel (D65 a), one per window. */
-export const NOTICES = Object.freeze(['pedido-de-destrave', 'pedido-de-aprovacao', 'estado-mudou']);
+export const NOTICES = Object.freeze(['unlock-request', 'approval-request', 'status-changed']);
 
 /**
  * Notices from the Rust side (D65 a): `onArrive()` is called when the notice arrives —
@@ -56,7 +56,7 @@ export const NOTICES = Object.freeze(['pedido-de-destrave', 'pedido-de-aprovacao
  * @param {string | string[]} [notice]
  * @returns {Promise<() => void>}
  */
-export async function listenNotices(onArrive, notice = ['pedido-de-destrave', 'estado-mudou']) {
+export async function listenNotices(onArrive, notice = ['unlock-request', 'status-changed']) {
   const notices = Array.isArray(notice) ? notice : [notice];
   if (notices.length === 0 || !notices.every((a) => NOTICES.includes(a))) {
     throw failure('aviso-desconhecido', 'aviso desconhecido');
@@ -68,10 +68,10 @@ export async function listenNotices(onArrive, notice = ['pedido-de-destrave', 'e
   let active = true;
   const channel = new Channel();
   channel.onmessage = (m) => {
-    if (active && m && notices.includes(m.aviso)) onArrive();
+    if (active && m && notices.includes(m.notice)) onArrive();
   };
   try {
-    await invoke('ouvir_avisos', { 'canal': channel });
+    await invoke('listen_notices', { 'channel': channel });
   } catch {
     // Without the channel, the screen still sees the request when it asks again.
   }

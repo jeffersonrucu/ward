@@ -63,7 +63,7 @@
   let sending = $state(false);
   let now = $state(new Date());
 
-  const version = $derived(versions.find((v) => v.nome === chosen) ?? null);
+  const version = $derived(versions.find((v) => v.name === chosen) ?? null);
 
   function clear() {
     password = '';
@@ -86,17 +86,17 @@
     failure = '';
     now = new Date();
     try {
-      const list = await call('listar_backups');
+      const list = await call('list_backups');
       versions = Array.isArray(list) ? list : [];
-      if (!versions.some((v) => v.nome === chosen)) chosen = '';
+      if (!versions.some((v) => v.name === chosen)) chosen = '';
     } catch (e) {
       versions = [];
       chosen = '';
-      if (e?.codigo === 'travado') {
+      if (e?.code === 'locked') {
         onlocked?.();
         return;
       }
-      failure = rustMessage(e?.mensagem) || 'Não foi possível ler as versões do backup.';
+      failure = rustMessage(e?.message) || 'Não foi possível ler as versões do backup.';
     } finally {
       loading = false;
     }
@@ -159,41 +159,41 @@
     // The password and the PIN leave the state before the answer: the screen does not
     // keep them, not even in the error.
     const chosenNow = version;
-    const args = { 'dados': { 'versao': chosenNow.nome, 'senha': password, pin } };
+    const args = { 'data': { 'version': chosenNow.name, 'password': password, pin } };
     clear();
     sending = true;
     try {
-      const r = await call('restaurar_backup', args);
-      args.dados = null;
+      const r = await call('restore_backup', args);
+      args.data = null;
       sending = false;
-      onrestored?.({ instant: chosenNow.instante, entries: r?.entradas ?? 0 });
+      onrestored?.({ instant: chosenNow.instant, entries: r?.entries ?? 0 });
       return;
     } catch (err) {
-      args.dados = null;
+      args.data = null;
       sending = false;
-      const code = err?.codigo ?? '';
-      if (code === 'senha-incorreta') {
+      const code = err?.code ?? '';
+      if (code === 'wrong-password') {
         passwordError = 'Essa senha não abre esta versão. Nada mudou no cofre atual.';
         return focusOn(PASSWORD_ID);
       }
-      if (code === 'pin-incorreto') {
+      if (code === 'wrong-pin') {
         pinError = 'PIN incorreto. Nada foi alterado.';
         if (await locked()) return;
         return focusOn(PIN_ID);
       }
-      if (code === 'travado' || code === 'cofre-mudou') {
+      if (code === 'locked' || code === 'vault-changed') {
         onlocked?.();
         return;
       }
-      if (code === 'backup-inexistente') {
+      if (code === 'backup-not-found') {
         // The version left the folder (rotation or another process): the list comes back
         // updated.
         step = 'versions';
         await load();
-        failure = rustMessage(err?.mensagem);
+        failure = rustMessage(err?.message);
         return;
       }
-      failure = rustMessage(err?.mensagem) || 'Não foi possível restaurar esta versão.';
+      failure = rustMessage(err?.message) || 'Não foi possível restaurar esta versão.';
       await locked();
     }
   }
@@ -202,8 +202,8 @@
    * daemon. */
   async function locked() {
     try {
-      const r = await call('estado_do_cofre');
-      if (r?.estado === 'destravado') return false;
+      const r = await call('vault_status');
+      if (r?.status === 'unlocked') return false;
     } catch {
       // No answer: treat it as locked; the unlock screen queries again.
     }
@@ -247,15 +247,15 @@
       </p>
     {:else if versions.length > 0}
       <div class="versions" role="radiogroup" aria-label="Versões do backup">
-        {#each versions as v, i (v.nome)}
+        {#each versions as v, i (v.name)}
           <VersionItem
             id="restore-version-{i}"
-            value={v.nome}
-            date={versionDate(v.instante)}
+            value={v.name}
+            date={versionDate(v.instant)}
             detail={versionDetail(v)}
-            alert={v.fora_de_ordem === true}
-            when={howLongAgo(v.instante, now)}
-            checked={chosen === v.nome}
+            alert={v.out_of_order === true}
+            when={howLongAgo(v.instant, now)}
+            checked={chosen === v.name}
             onchoose={(n) => (chosen = n)}
           />
         {/each}
@@ -272,16 +272,16 @@
       <VersionItem
         id="restore-chosen"
         staticView
-        date={versionDate(version.instante)}
+        date={versionDate(version.instant)}
         detail={versionDetail(version)}
-        alert={version.fora_de_ordem === true}
-        when={howLongAgo(version.instante, now)}
+        alert={version.out_of_order === true}
+        when={howLongAgo(version.instant, now)}
       />
       <PasswordField
         label="Senha mestra desta versão"
         id={PASSWORD_ID}
         bind:value={password}
-        help="É a senha que valia em {versionDay(version.instante)}."
+        help="É a senha que valia em {versionDay(version.instant)}."
         error={passwordError}
       />
       <PinField
@@ -291,7 +291,7 @@
         help="O PIN de agora confirma a troca. 5 erros seguidos travam o cofre."
         error={pinError}
       />
-      <Highlight kind="warning" icon="alert">{swapWarning(version.instante)}</Highlight>
+      <Highlight kind="warning" icon="alert">{swapWarning(version.instant)}</Highlight>
       <button class="visually-hidden" type="submit" tabindex="-1">Restaurar esta versão</button>
     </form>
     <p class="caption">Se a senha não abrir esta versão, nada muda no cofre atual.</p>

@@ -66,7 +66,7 @@ pub const SYSTEM_DIRS: &[&str] = &[
 ];
 
 /// Name of the icons folder inside `XDG_RUNTIME_DIR`.
-pub const ICONS_DIR: &str = "ward-bandeja";
+pub const ICONS_DIR: &str = "ward-tray";
 
 /// Status shown in the tray.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -345,6 +345,10 @@ mod tests {
                 "revelar_campo",
                 "copiar_campo",
                 "destravar",
+                "answer_approval",
+                "reveal_field",
+                "copy_field",
+                "unlock",
                 "bandeja-acao\0",
             ] {
                 assert_eq!(action(id, state), None, "{id:?} em {state:?}");

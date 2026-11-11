@@ -57,7 +57,7 @@
   let pin = $state('');
   let pinConfirmation = $state('');
   // The error keys are the wire ids of the fields of the create vault command.
-  let errors = $state({ 'senha': '', 'confirmacao': '', pin: '', 'confirmacao_pin': '' });
+  let errors = $state({ 'password': '', 'confirmation': '', pin: '', 'pin_confirmation': '' });
   let failure = $state('');
   let sending = $state(false);
 
@@ -67,7 +67,7 @@
   const strength = $derived(passwordStrength(password));
 
   function clearErrors() {
-    errors = { 'senha': '', 'confirmacao': '', pin: '', 'confirmacao_pin': '' };
+    errors = { 'password': '', 'confirmation': '', pin: '', 'pin_confirmation': '' };
     failure = '';
   }
 
@@ -98,7 +98,7 @@
     clearErrors();
     const short = passwordError(password);
     if (short) {
-      errors.senha = short;
+      errors.password = short;
       passwordInput?.focus();
       return;
     }
@@ -107,7 +107,7 @@
       return;
     }
     if (confirmation !== password) {
-      errors.confirmacao = MESSAGES.passwordMismatch;
+      errors.confirmation = MESSAGES.passwordMismatch;
       confirmationInput?.focus();
       return;
     }
@@ -147,39 +147,39 @@
       return;
     }
     if (pinConfirmation !== pin) {
-      errors.confirmacao_pin = MESSAGES.pinMismatch;
+      errors.pin_confirmation = MESSAGES.pinMismatch;
       await focusOn('first-use-confirm-pin');
       return;
     }
     sending = true;
     try {
-      const r = await call('criar_cofre', {
-        'dados': {
-          'senha': password,
-          'confirmacao': confirmation,
+      const r = await call('create_vault', {
+        'data': {
+          'password': password,
+          'confirmation': confirmation,
           pin,
-          'confirmacao_pin': pinConfirmation,
+          'pin_confirmation': pinConfirmation,
         },
       });
-      if (r?.criado) {
+      if (r?.created) {
         clearValues();
         oncreated();
         return;
       }
-      for (const error of r?.erros ?? []) {
-        if (error.campo in errors) errors[error.campo] = rustMessage(error.motivo);
+      for (const error of r?.errors ?? []) {
+        if (error.field in errors) errors[error.field] = rustMessage(error.reason);
       }
-      if (errors.senha || errors.confirmacao) {
-        const ofPassword = { 'senha': errors.senha, 'confirmacao': errors.confirmacao };
+      if (errors.password || errors.confirmation) {
+        const ofPassword = { 'password': errors.password, 'confirmation': errors.confirmation };
         step = 2;
         await tick();
         errors = { ...errors, ...ofPassword };
-        (errors.senha ? passwordInput : confirmationInput)?.focus();
+        (errors.password ? passwordInput : confirmationInput)?.focus();
       } else {
         await focusOn(errors.pin ? 'first-use-pin' : 'first-use-confirm-pin');
       }
     } catch (err) {
-      failure = rustMessage(err?.mensagem) || 'Não foi possível criar o cofre.';
+      failure = rustMessage(err?.message) || 'Não foi possível criar o cofre.';
     } finally {
       sending = false;
     }
@@ -233,8 +233,8 @@
           help="Mínimo de 12 caracteres."
           bind:value={password}
           bind:input={passwordInput}
-          error={errors.senha}
-          oninput={() => (errors.senha = '')}
+          error={errors.password}
+          oninput={() => (errors.password = '')}
         />
         <div class="strength" aria-live="polite">
           <div class="bars" aria-hidden="true">
@@ -253,8 +253,8 @@
           placeholder="Digite a senha mestra de novo"
           bind:value={confirmation}
           bind:input={confirmationInput}
-          error={errors.confirmacao}
-          oninput={() => (errors.confirmacao = '')}
+          error={errors.confirmation}
+          oninput={() => (errors.confirmation = '')}
         />
         <Highlight kind="warning" icon="alert">
           A senha mestra não tem recuperação: se você esquecer, o cofre não abre. Depois,
@@ -284,13 +284,13 @@
             error={errors.pin}
           />
         </div>
-        <div class="pin" onbeforeinput={pinRefusal('confirmacao_pin')}>
+        <div class="pin" onbeforeinput={pinRefusal('pin_confirmation')}>
           <PinField
             id="first-use-confirm-pin"
             label="Confirmar PIN"
             help="Digite o mesmo PIN de novo."
             bind:value={pinConfirmation}
-            error={errors.confirmacao_pin}
+            error={errors.pin_confirmation}
           />
         </div>
         <Highlight kind="info" icon="lock">

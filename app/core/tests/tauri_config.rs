@@ -50,13 +50,13 @@ fn approval_window_follows_rust_and_does_not_use_html() {
         "URGENT_SECONDS diverge do Rust"
     );
     let screen = fs::read_to_string(app().join("src/screens/ApprovalWindow.svelte")).unwrap();
-    assert!(screen.contains("{request.comando}"), "comando como texto");
+    assert!(screen.contains("{request.command}"), "comando como texto");
     assert!(screen.contains("{process}"), "cadeia como texto");
-    assert!(screen.contains("{entry.nome}"), "entrada como texto");
+    assert!(screen.contains("{entry.name}"), "entrada como texto");
     // Phase 44c (D9): the `http` origin also only as text.
-    assert!(screen.contains("{request.origem}"), "origem como texto");
+    assert!(screen.contains("{request.origin}"), "origem como texto");
     assert!(
-        js.contains("return decision !== 'negar' && decision !== 'confirmar';"),
+        js.contains("return decision !== 'deny' && decision !== 'confirm';"),
         "só negar e confirmar sem PIN"
     );
 }
@@ -76,12 +76,12 @@ fn attack_capability_with_extra_permission() {
     files.sort();
     assert_eq!(
         files,
-        vec!["aprovacao.json", "principal.json"],
+        vec!["approval.json", "main.json"],
         "só as duas capabilities"
     );
     for (file, window, commands) in [
-        ("principal.json", "principal", MAIN_COMMANDS),
-        ("aprovacao.json", "aprovacao", APPROVAL_COMMANDS),
+        ("main.json", "main", MAIN_COMMANDS),
+        ("approval.json", "approval", APPROVAL_COMMANDS),
     ] {
         let cap = json(&dir.join(file));
         let expected: Vec<Value> = commands
@@ -106,8 +106,8 @@ fn attack_capability_with_extra_permission() {
             );
         }
     }
-    assert_eq!(SHARED_COMMANDS, &["ouvir_avisos"]);
-    let main = json(&dir.join("principal.json"));
+    assert_eq!(SHARED_COMMANDS, &["listen_notices"]);
+    let main = json(&dir.join("main.json"));
     for c in APPROVAL_COMMANDS
         .iter()
         .filter(|c| !SHARED_COMMANDS.contains(c))
@@ -122,7 +122,7 @@ fn attack_capability_with_extra_permission() {
     }
     assert_eq!(
         conf()["app"]["security"]["capabilities"],
-        serde_json::json!(["principal", "aprovacao"])
+        serde_json::json!(["main", "approval"])
     );
 }
 
@@ -248,6 +248,78 @@ fn interface_command_list_is_the_same() {
         js.contains(&format!("Object.freeze([{list}])")),
         "commands.js diverge de COMMANDS"
     );
+}
+
+/// m2:V4.23 (m2:Phase 54): the 0.1.x (pt-BR) command names left everything: no permission,
+/// no capability, no window and no call of the interface uses them (no alias).
+#[test]
+fn attack_old_command_names_are_gone() {
+    const OLD: &[&str] = &[
+        "estado_do_cofre",
+        "copiar_campo",
+        "listar_credenciais",
+        "detalhe_credencial",
+        "gerar_senha",
+        "copiar_senha_gerada",
+        "revelar_senha_gerada",
+        "descartar_senha_gerada",
+        "revelar_campo",
+        "codigo_totp",
+        "copiar_codigo_totp",
+        "usar_senha_gerada",
+        "descartar_formulario",
+        "salvar_credencial",
+        "mudar_nivel",
+        "escolher_anexo",
+        "remover_anexo",
+        "carregar_chave",
+        "conectar",
+        "criar_cofre",
+        "destravar",
+        "ouvir_avisos",
+        "configuracoes",
+        "trocar_pin",
+        "trocar_senha_mestra",
+        "definir_tempo_trava",
+        "backup_externo",
+        "listar_pendrives",
+        "definir_backup_externo",
+        "listar_backups",
+        "restaurar_backup",
+        "pedido_de_aprovacao",
+        "responder_aprovacao",
+        "travar",
+    ];
+    let mut files = Vec::new();
+    sources(&app().join("src"), &mut files);
+    files.push(app().join("src-tauri/capabilities/main.json"));
+    files.push(app().join("src-tauri/capabilities/approval.json"));
+    files.push(app().join("src-tauri/tauri.conf.json"));
+    for old in OLD {
+        assert!(!COMMANDS.contains(old), "{old}");
+        // As a call or a permission (the screen names of the test bridge, one of them
+        // equal to an old command name, are another thing and stay).
+        let quoted = [
+            format!("call('{old}'"),
+            format!("invoke('{old}'"),
+            format!("\"allow-{}\"", old.replace('_', "-")),
+        ];
+        for f in &files {
+            let t = fs::read_to_string(f).unwrap();
+            for q in &quoted {
+                assert!(!t.contains(q.as_str()), "{} contém {q}", f.display());
+            }
+        }
+    }
+    for old in ["principal", "aprovacao"] {
+        assert!(
+            !conf()["app"]["security"]["capabilities"]
+                .as_array()
+                .unwrap()
+                .contains(&Value::from(old)),
+            "{old}"
+        );
+    }
 }
 
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {

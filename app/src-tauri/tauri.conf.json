@@ -29,7 +29,7 @@
       "assetProtocol": {
         "enable": false
       },
-      "capabilities": ["principal", "aprovacao"]
+      "capabilities": ["main", "approval"]
     }
   },
   "bundle": {
