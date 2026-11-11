@@ -346,7 +346,7 @@ Contrato: V5.1–V5.11. Sequencial.
   `ward --help` (texto pt-BR igual, só os nomes); mensagens que citam subcomando (CLI,
   daemon, app: "rode `ward unlock`"); `dev/tests/cli.py` e testes Rust. Compilação:
   `make compile`. — V5.1, V5.2
-- [ ] Fase 56 — (achado da Fase 54: ids do menu da bandeja `bandeja-*`, caminho `/ponte/`, nomes de tela do `&tela=`, modos `--daemon-falso` e códigos locais da ponte de teste ainda em pt-BR; e `incompatible-version` do app sem tela própria — cai no erro genérico) (também, achado da Fase 47b: o caminho `/cadastro` do serviço totp 8083 e o arquivo `aprovador.modo` do aprovador de teste, e as exceções de Fase 56 no `frozen.txt`) Variáveis internas e de teste e marca de `test-mode` (DT12): renomes com
+- [x] Fase 56 — (achado da Fase 54: ids do menu da bandeja `bandeja-*`, caminho `/ponte/`, nomes de tela do `&tela=`, modos `--daemon-falso` e códigos locais da ponte de teste ainda em pt-BR; e `incompatible-version` do app sem tela própria — cai no erro genérico) (também, achado da Fase 47b: o caminho `/cadastro` do serviço totp 8083 e o arquivo `aprovador.modo` do aprovador de teste, e as exceções de Fase 56 no `frozen.txt`) Variáveis internas e de teste e marca de `test-mode` (DT12): renomes com
   todos os usos (Rust, scripts, Makefile, units); recusa da marca nova e da antiga no
   `install/install.sh` e no `make release`; `dev/tests/no-test-mode.sh` procurando nomes
   novos e antigos; binários `wardd-app-teste`/`wardd-aprovador-teste`, texto de uso e
@@ -374,7 +374,7 @@ Contrato: V5.1–V5.11. Sequencial.
   comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
   `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
   de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
-- [ ] Fase 59 — (achado da Fase 55: `docs/migracao.md` com `dev/tests/migration-guide.py`, `docs/instalacao.md`, `docs/escopo.md`, `README.md`, `.claude/agents/planner.md` e `user-testing-validator.md` citam `lista`/`travar`/`destravar`; o texto do nível bloqueado no app virou "ward list" e `docs/mission/design-nodes.md` (linha 854) e o `Ward.figcraft` acompanham) (achado da Fase 54b: `docs/instalacao.md` avisa que, depois de atualizar, extras `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`/`PROTOCOL` e anexo `key` vindos da 0.1.x têm de ser renomeados no app: até lá o `ward run` dessa entrada só dá erro genérico, e o motivo fica no log do daemon) (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
+- [ ] Fase 59 — (achado da Fase 56: `design-nodes.md` cita `--daemon-falso`, agora `--fake-daemon`) (achado da Fase 55: `docs/migracao.md` com `dev/tests/migration-guide.py`, `docs/instalacao.md`, `docs/escopo.md`, `README.md`, `.claude/agents/planner.md` e `user-testing-validator.md` citam `lista`/`travar`/`destravar`; o texto do nível bloqueado no app virou "ward list" e `docs/mission/design-nodes.md` (linha 854) e o `Ward.figcraft` acompanham) (achado da Fase 54b: `docs/instalacao.md` avisa que, depois de atualizar, extras `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`/`PROTOCOL` e anexo `key` vindos da 0.1.x têm de ser renomeados no app: até lá o `ward run` dessa entrada só dá erro genérico, e o motivo fica no log do daemon) (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
   tipos, caminhos; o histórico das decisões fica), `docs/instalacao.md` (atualização
   0.1.x → 0.2.0, volta pelo backup v4, DT7), `docs/migracao.md` (comandos novos;
   `make test-migration-guide` com as expectativas novas), caminhos de arquivo em
@@ -402,7 +402,7 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
   `make test-attacks-foundation`, testes de fio no commit do fim do M3 (V2.2),
   `english_check.py --self-test`. — V1.*, V2.1, V2.2, V3.1, V3.6, V3.7, V4.1, V4.2,
   V4.8, V4.9, V4.15, V5.3, V5.5, V5.11, V6.1, V6.11
-- [ ] Fase 62 — Bateria B (daemon, CLI e serviços): `make dev-services` +
+- [ ] Fase 62 — (achado da Fase 56: `crates/wardd/tests/run.rs` perto da linha 1149 espera `operacao=executar … decisao=uma_vez` do aprovador de teste, que já fala v2 (`run`, `once`); deve falhar aqui; logs velhos `wardd-*-teste.log` podem ser apagados) Bateria B (daemon, CLI e serviços): `make dev-services` +
   `dev-services-up` + `dev-services-verify`, `make dev-daemon`,
   `make test-attacks-services`, `test-home-decoys`, `test-real-home`, `test-cli`,
   `test-ssh-home`, `test-socket-attacks`, `test-docker-uid`; V6.6, V6.7, V6.10 à mão
