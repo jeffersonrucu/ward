@@ -53,6 +53,9 @@ never an opened dir.
    installed `ward` and does not mention unlocking by another path (the `ward` of the
    `PATH`, `~/.local/bin/ward`), because a fake `ward` earlier in the `PATH` reads the
    master password.
+8. Phase 59 (m2:DT10, m2:V5.11): the guide uses the 0.2.0 subcommands (`ward list`,
+   `ward unlock`, `ward lock`, `ward help`) and none of the 0.1.x ones (`OLD_SUBCOMMANDS`),
+   which the 0.2.0 CLI refuses as unknown.
 
 Before verifying the real guide, the self-test verifies that it passes (control) and
 plants each attack (the ones of Phase 53, the 22 of the M10 audit, the ones of 53b and
@@ -115,6 +118,8 @@ SENDING = re.compile(
     r"|execut[ae]r?|liste|listar)\b",
     re.I,
 )
+# Phase 59 (m2:DT10): subcommands of the 0.1.x, refused by the 0.2.0 CLI.
+OLD_SUBCOMMANDS = re.compile(r"\bward\s+(lista|destravar|travar|ajuda)\b")
 RULE = (
     "**Nunca cole senha, chave, passphrase, token, código TOTP nem a saída de um comando "
     "deste guia na conversa com o Claude.**"
@@ -127,7 +132,7 @@ SEND_EXCEPTIONS = {
     "A missão não executa nenhum passo deste guia e o Claude não roda nenhum destes comandos:",
     "Para o registro do V10.4 no `plan.md`, escreva na missão só a frase \"Chrome manteve as "
     "senhas\", sem nenhum valor.",
-    "Num pedido como \"liste as credenciais do Ward\", o Claude usa `ward lista`.",
+    "Num pedido como \"liste as credenciais do Ward\", o Claude usa `ward list`.",
     # RA3 notice (the "means" phrasing is not sending)
     "Antes de deixar alguma entrada como \"livre\" (ou de usar \"Permitir sempre\"), saiba "
     "que \"livre\" quer dizer que o Claude **consegue ler o segredo** dela:",
@@ -622,10 +627,15 @@ def verify(text, patterns):
             errors.append("passo 8 sem abrir a cópia do .kdbx e guardar o arquivo-chave antes de desinstalar")
 
     # 7. Phase 54a (RA8): master password only through the installed `ward`, by the full path.
-    if "`/usr/local/bin/ward destravar`" not in text:
-        errors.append("falta destravar no terminal por `/usr/local/bin/ward destravar` (RA8)")
-    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", text):
-        errors.append("`ward destravar` fora do caminho completo /usr/local/bin/ward (RA8)")
+    if "`/usr/local/bin/ward unlock`" not in text:
+        errors.append("falta destravar no terminal por `/usr/local/bin/ward unlock` (RA8)")
+    if re.search(r"(?<!/usr/local/bin/)\bward\s+unlock\b", text):
+        errors.append("`ward unlock` fora do caminho completo /usr/local/bin/ward (RA8)")
+
+    # 8. Phase 59 (m2:DT10, m2:V5.11): no 0.1.x subcommand, which is now an unknown
+    # command (exit 2), in any form, not even through the full path.
+    for old in OLD_SUBCOMMANDS.finditer(text):
+        errors.append(f"subcomando da 0.1.x, que a 0.2.0 não conhece: {old.group(0)!r}")
     return errors
 
 
@@ -812,12 +822,19 @@ def attacks(text):
         ),
         # Phase 54a (RA8): the master password through the `ward` that the PATH finds
         "54a: destravar pelo PATH": text.replace(
-            "`/usr/local/bin/ward destravar`", "`ward destravar`"
+            "`/usr/local/bin/ward unlock`", "`ward unlock`"
         ),
         "54a: destravar por outro ward": text.replace(
-            "`/usr/local/bin/ward destravar`", "`~/.local/bin/ward destravar`"
+            "`/usr/local/bin/ward unlock`", "`~/.local/bin/ward unlock`"
         ),
-        "54a: destravar pelo PATH em outro passo": before_p2("No terminal, rode `ward  destravar`."),
+        "54a: destravar pelo PATH em outro passo": before_p2("No terminal, rode `ward  unlock`."),
+        # Phase 59 (m2:DT10): the guide goes back to a 0.1.x subcommand
+        "59: destravar da 0.1.x pelo caminho completo": text.replace(
+            "`/usr/local/bin/ward unlock`", "`/usr/local/bin/ward unlock`, ou `/usr/local/bin/ward destravar`", 1
+        ),
+        "59: ward lista": text.replace("`ward list`", "`ward lista`", 1),
+        "59: ward travar": before_p2("Ao terminar, rode `ward travar`."),
+        "59: ward ajuda": before_p2("Os comandos estão em `ward ajuda`."),
     }
 
 

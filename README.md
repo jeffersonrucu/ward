@@ -32,7 +32,7 @@ O Claude lista o que pode usar e pede para rodar o comando. Quem executa é o da
 Ward, com a credencial só no ambiente do processo filho:
 
 ```sh
-ward lista
+ward list
 ward run acme-pg-dev -- psql -tAc 'select count(*) from pedidos'
 ward ssh acme-ssh-chave-prod -- 'systemctl status nginx --no-pager'
 ward login acme-wp-prod          # a extensão preenche e envia o formulário na aba
@@ -138,7 +138,7 @@ Pela [release](https://github.com/jeffersonrucu/ward/releases/latest), com o `.d
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./ward_0.1.4_amd64.deb
+sudo apt install ./ward_0.2.0_amd64.deb
 ```
 
 Ou a partir do código:
@@ -152,7 +152,9 @@ sudo make install EXTENSION_ID=<id impresso pelo extension-crx> EXTENSION_CRX=$P
 O `sudo` só aparece uma vez, na instalação: ela cria os grupos, instala as units do
 systemd e a política do Chrome que instala a extensão. Depois disso, o uso diário não
 pede `sudo`. Leia o [roteiro de instalação](docs/instalacao.md) antes, porque ele tem as
-conferências do kernel e do Chrome que valem a pena fazer.
+conferências do kernel e do Chrome que valem a pena fazer. Quem já tem a 0.1.x
+instalada segue a seção de atualização do roteiro: o cofre é copiado antes e migra
+sozinho na primeira vez que você destrava a 0.2.0.
 
 Para o Claude Code aprender a usar o Ward, copie a skill de [`skill/`](skill/README.md)
 e as regras de deny que vêm junto. Se você está vindo do KeePassXC, o

@@ -1445,6 +1445,17 @@ Ficam: `WARD_URL`, `WARD_USER`, `WARD_PASS`, `WARD_TOTP`, `WARD_TOKEN`, `WARD_HO
 `DATABASE_URL`, `AWS_*`, `SMTP_*`, a variável do token da `api` (dado) e os
 `WARD_<CAMPO>` dos extras (dado: `WARD_REGIAO`, `WARD_CHAVE_LICENCA`).
 
+Nomes reservados (Fases 53 e 54b): com as variáveis novas, um campo extra `ENTRY`,
+`GROUP`, `ENVIRONMENT`, `FILE` ou `FILE_*` (qualquer tipo), um extra `PROTOCOL` em
+`ftp-sftp` e um anexo `key` em `server`/`ftp-sftp` passam a ser reservados; os antigos
+(`ENTRADA`, `GRUPO`, `AMBIENTE`, `ARQUIVO_*`, `PROTOCOLO`, anexo `chave`) ficam livres.
+Um cofre da 0.1.x com um nome reservado abre e migra; a recusa vem ao salvar a entrada
+(`Draft::validate`), e a entrega dessa entrada falha até o extra ou o anexo ser
+renomeado no app (aviso em `docs/instalacao.md` › "Atualizar da 0.1.x para a 0.2.0").
+O arquivo temporário da chave privada continua `<rt>tmp/<n>-chave` (literal, não é
+variável). Docs, README, skill e `design-nodes.md`/`Ward.figcraft` (textos dos
+formulários) acompanham na Fase 59.
+
 ### Internas e de teste (DT12; Fase 56)
 
 | Antiga | Nova | Onde |
