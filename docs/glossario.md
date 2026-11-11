@@ -2036,7 +2036,7 @@ a seção 2 (`ErroResposta::NaoAutorizado` → `ResponseError::Unauthorized`).
 | `LerVersao` | `ReadVersion` | `Limites` | `Limits` |
 | `Logins` | `Logins` | `Mascara` | `Mask` |
 | `Memoria` | `Memory` | `ModoCru` | `RawMode` |
-| `Montado` | `Mounted` | `MorreNaTrava` | `DiesOnLock` |
+| `Montado` (`app/core/form.rs`: as partes montadas do rascunho) | `Built` | `MorreNaTrava` | `DiesOnLock` |
 | `Motor` | `Engine` | `NivelAcesso` | `AccessLevel` |
 | `NivelMudado` | `LevelChanged` | `NotaSegura` | `SecureNote` |
 | `NovoCofre` | `NewVault` | `Objetos` | `Objects` |
@@ -2362,6 +2362,60 @@ PinIncorreto, Expirado }` → `Answered { Ok, WrongPin, Expired }`. Daemon falso
 `MAX_ERROS_PIN` → `MAX_PIN_ERRORS`, `VERSOES_FALSAS` → `FAKE_VERSIONS`; o re-export
 `daemon_falso::SEGREDOS` (achado da Fase 14) vira `fake_daemon::SECRETS`. Os modos da ponte
 (`aprovacao`, `aprovacao-prod`…, `--daemon-falso`) ficam (fio da ponte; Fase 56).
+Fase 32 (`app/core`: `form`, `approval`, `attachments`, `restore`, `tray`): módulos
+`formulario` → `form`, `aprovacao` → `approval`, `anexos` → `attachments`, `restaurar` →
+`restore`, `bandeja` → `tray`. Formulário: `TextoSecreto` → `SecretText` (`Debug`
+`"SecretText(••••)"`), `ValorSecreto { Vazio, Manter, Gerada, Carregada, Novo }` →
+`SecretValue { Empty, Keep, Generated, Loaded, New }`, `ValorExtra { Novo, Manter }` (o do
+`app/core`) → `ExtraValue { New, Keep }`, `ExtraFormulario { nome, segredo, valor }` →
+`FormExtra { name, secret, value }`, `Formulario { tipo, nome, grupo, ambiente, projeto,
+campos, segredos, anexos, anexos_mantidos }` → `Form { kind, name, group, environment,
+project, fields, secrets, attachments, kept_attachments }`, `ErroCampo { campo, posicao,
+motivo }` → `FieldError { field, position, reason }`, todos com `#[serde(rename =
+"<antigo>")]` até a Fase 54; `Fontes` → `Sources` (`guardado`/`gerada`/`carregada` →
+`stored`/`generated`/`loaded`), `Falta { App, Campos }` → `Missing { App, Fields }`,
+`Montado { dados }` → `Built { data }`, `SegredoMontado` → `BuiltSecret`;
+`TOTP_NAO_SUPORTADO`/`TOTP_URI_INVALIDA` → `TOTP_UNSUPPORTED`/`TOTP_INVALID_URI`,
+`tipo_do_formulario` → `form_kind`, `campos_do_tipo` → `fields_of_kind`,
+`campo_do_problema` → `problem_field`, `erros_do_daemon` → `daemon_errors`,
+`normalizar_semente` → `normalize_seed`, `montar` → `build`, `copiar_rascunho` →
+`copy_draft`, `validar_local` → `validate_local`. Aprovação: `PRAZO_APROVACAO` →
+`APPROVAL_TIMEOUT`, `SEGUNDOS_URGENTE` → `URGENT_SECONDS` (o mesmo nome do `approval.js`),
+`MAX_PENDENTES` → `MAX_PENDING`, `SEPARADOR_CADEIA` → `CHAIN_SEPARATOR`,
+`decisao_de_nome` → `decision_from_name`, `EntradaExibida { nome, tipo }` →
+`DisplayedEntry { name, kind }`, `PedidoExibido` → `DisplayedRequest` (campos pela seção
+13: `entries`, `environment`, `operation`, `command`, `directory`, `chain`, `origin`,
+`confirmation`, `hidden_entry`, `remaining`, `status`), `ResultadoAprovacao { resultado,
+ha_outro }` → `ApprovalResult { result, has_other }` (com `rename`), `Atual` → `Current`,
+`Aprovacoes` → `Approvals` (`chegou`/`chegou_ha`/`atual`/`guardar_tipos`/`confirmacao`/
+`entrada_oculta`/`situacao`/`remover`/`marcar_bloqueado`/`pendentes`/`ha_pedido`/
+`esvaziar` → `arrived`/`arrived_ago`/`current`/`store_kinds`/`confirmation`/
+`hidden_entry`/`state_of`/`remove`/`mark_blocked`/`pending`/`has_request`/`clear`),
+`exibir` → `display`, `vigiar` → `watch` (o `partida.vigiar` da Fase 34 é outro). Anexos:
+`Seletor` → `Picker` (`escolher`/`escolher_chave` → `choose`/`choose_key`), `SemSeletor` →
+`NoPicker`, `Pendente { nome, conteudo }` → `Pending { name, content }`, `Escolha {
+Anexado { nome, tamanho }, Cancelado, Aviso { motivo } }` → `Choice { Attached { name,
+size }, Canceled, Notice { reason } }` (tag `resultado` e valores com `rename`),
+`EdicaoDosAnexos { entrada, mantidos }` → `AttachmentEdit { entry, kept }` (com `rename`),
+`Base { soma, quantidade }` → `Base { total, count }`, `Anexos` → `Attachments`
+(`anexar`/`anexar_sobre`/`escolhidos`/`remover`/`limpar`/`soma` → `attach`/`attach_over`/
+`chosen`/`remove`/`clear`/`total`), `AVISO_*` → `*_NOTICE`, `nome_do_anexo` →
+`attachment_name`. Restaurar: `VersaoVista` → `VersionView` (`de_nome` → `from_name`),
+`Restauracao { versao, senha, pin }` → `Restore { version, password, pin }`, `Restaurado {
+restaurado, entradas }` → `Restored { restored, entries }` (todos com `rename`),
+`versoes_de` → `versions_from`, `versao_pedida` → `requested_version`. Bandeja:
+`EstadoBandeja { Destravado, Travado, SemCofre, SemDaemon }` → `TrayState { Unlocked,
+Locked, NoVault, NoDaemon }` (`de` → `from_status`), `Icone` → `Icon`, `Aparencia` →
+`Appearance`, `Acao { Abrir, Travar, Destravar, Sair }` → `Action { Open, Lock, Unlock,
+Quit }`, `ID_TITULO`/`ID_SUBTITULO`/`ID_ABRIR`/`ID_ACAO`/`ID_SAIR` → `ID_TITLE`/
+`ID_SUBTITLE`/`ID_OPEN`/`ID_ACTION`/`ID_QUIT` (os valores `bandeja-*` ficam até a Fase 54),
+`TEXTO_ABRIR`/`TEXTO_SAIR` → `OPEN_TEXT`/`QUIT_TEXT`, `BIBLIOTECAS` → `LIBRARIES`,
+`PASTAS_DO_SISTEMA` → `SYSTEM_DIRS`, `PASTA_DOS_ICONES` → `ICONS_DIR` (valor
+`ward-bandeja` fica), `ler_configuracao_na_passagem` → `read_settings_on_transition`,
+`descartar_na_passagem` → `discard_on_transition`, `subtitulo_destravado` →
+`unlocked_subtitle`, `pasta_dos_icones(_da_sessao)` → `(session_)icons_dir`,
+`biblioteca_disponivel`/`biblioteca_do_sistema` → `library_available`/`system_library`.
+O auxiliar de teste `trocar` do `credenciais.rs` → `exchange` (como o `Daemon::exchange`).
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;

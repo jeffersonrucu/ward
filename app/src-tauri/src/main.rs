@@ -43,24 +43,24 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent,
 };
 use ward_app_core::AppError;
-use ward_app_core::anexos::{EdicaoDosAnexos, Escolha, Seletor};
-use ward_app_core::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
+use ward_app_core::approval::{self, ApprovalResult, DisplayedRequest};
 use ward_app_core::area_transferencia::Copiador;
+use ward_app_core::attachments::{AttachmentEdit, Choice, Picker};
 use ward_app_core::backup_externo::{BackupExternoVisto, PendriveVisto};
-use ward_app_core::bandeja::{self, Acao, EstadoBandeja, Icone};
 use ward_app_core::chave::Carregamento;
 use ward_app_core::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
 use ward_app_core::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_core::daemon::DaemonSocket;
 use ward_app_core::destrave::{self, InfoPedido, SenhaMestra};
-use ward_app_core::formulario::Formulario;
+use ward_app_core::form::Form;
 use ward_app_core::gerador::Opcoes;
 use ward_app_core::nivel::{NivelMudado, Pin};
 use ward_app_core::partida;
 use ward_app_core::primeiro_uso::NovoCofre;
-use ward_app_core::restaurar::{Restauracao, Restaurado, VersaoVista};
+use ward_app_core::restore::{Restore, Restored, VersionView};
 use ward_app_core::service::{CreateResult, SaveResult, Service, TotpCode};
 use ward_app_core::terminal::TerminalDoSistema;
+use ward_app_core::tray::{self, Action, Icon, TrayState};
 
 type ServicoApp = Service<DaemonSocket, AreaGtk>;
 
@@ -131,7 +131,7 @@ struct Estado {
     /// O último estado do cofre que a vigia viu (Fase 39g), com ou sem bandeja: é por
     /// ele que a trava vinda de fora limpa a área de transferência e o formulário na
     /// hora. Antes ele só existia dentro da `Bandeja`, e sem bandeja nada limpava.
-    visto: Mutex<EstadoBandeja>,
+    visto: Mutex<TrayState>,
 }
 
 impl Estado {
@@ -139,7 +139,7 @@ impl Estado {
         Estado {
             servico,
             canal: Arc::new(Mutex::new(Canais::default())),
-            visto: Mutex::new(EstadoBandeja::SemDaemon),
+            visto: Mutex::new(TrayState::NoDaemon),
         }
     }
 
@@ -349,7 +349,7 @@ fn descartar_formulario(estado: State<'_, Estado>) -> Result<(), Falha> {
 #[tauri::command]
 fn salvar_credencial(
     anterior: Option<String>,
-    formulario: Formulario,
+    formulario: Form,
     estado: State<'_, Estado>,
 ) -> Result<SaveResult, Falha> {
     Ok(estado
@@ -376,9 +376,9 @@ fn mudar_nivel(
 /// continuam contam nos limites; o serviço confere os nomes no detalhe).
 #[tauri::command]
 fn escolher_anexo(
-    edicao: Option<EdicaoDosAnexos>,
+    edicao: Option<AttachmentEdit>,
     estado: State<'_, Estado>,
-) -> Result<Escolha, Falha> {
+) -> Result<Choice, Falha> {
     Ok(estado.servico()?.choose_attachment(edicao.as_ref())?)
 }
 
@@ -480,7 +480,7 @@ fn definir_backup_externo(
 /// Versões do backup local (Fase 47, V7.7): nome e instante (do nome), da mais nova
 /// para a mais antiga. Nenhum conteúdo nem caminho.
 #[tauri::command]
-fn listar_backups(estado: State<'_, Estado>) -> Result<Vec<VersaoVista>, Falha> {
+fn listar_backups(estado: State<'_, Estado>) -> Result<Vec<VersionView>, Falha> {
     Ok(estado.servico()?.list_backups()?)
 }
 
@@ -489,10 +489,10 @@ fn listar_backups(estado: State<'_, Estado>) -> Result<Vec<VersaoVista>, Falha> 
 /// (`Pin`, zera). A resposta traz só `restaurado` e a contagem de entradas.
 #[tauri::command]
 fn restaurar_backup<R: Runtime>(
-    dados: Restauracao,
+    dados: Restore,
     app: AppHandle<R>,
     estado: State<'_, Estado>,
-) -> Result<Restaurado, Falha> {
+) -> Result<Restored, Falha> {
     let servico = estado.servico()?;
     let r = servico.restore_backup(dados)?;
     // A versão traz a configuração dela (D30): a bandeja passa a dizer o tempo dela.
@@ -522,7 +522,7 @@ fn na_janela_de_aprovacao<R: Runtime>(janela: &WebviewWindow<R>) -> Result<(), F
 fn pedido_de_aprovacao<R: Runtime>(
     janela: WebviewWindow<R>,
     estado: State<'_, Estado>,
-) -> Result<Option<PedidoExibido>, Falha> {
+) -> Result<Option<DisplayedRequest>, Falha> {
     na_janela_de_aprovacao(&janela)?;
     let p = estado.servico()?.approval_request()?;
     if p.is_none() {
@@ -543,12 +543,12 @@ fn responder_aprovacao<R: Runtime>(
     ciente: Option<bool>,
     janela: WebviewWindow<R>,
     estado: State<'_, Estado>,
-) -> Result<ResultadoAprovacao, Falha> {
+) -> Result<ApprovalResult, Falha> {
     na_janela_de_aprovacao(&janela)?;
     let r = estado
         .servico()?
         .answer_approval(id, &decisao, pin, ciente == Some(true))?;
-    if !r.ha_outro {
+    if !r.has_other {
         let _ = janela.destroy();
     }
     Ok(r)
@@ -597,13 +597,13 @@ fn ao_fechar_a_aprovacao(servico: Arc<Result<ServicoApp, AppError>>) {
 /// O diálogo "Adicionar arquivo" do GTK, na janela do app.
 struct SeletorGtk;
 
-impl Seletor for SeletorGtk {
-    fn escolher(&self) -> Result<Option<PathBuf>, AppError> {
+impl Picker for SeletorGtk {
+    fn choose(&self) -> Result<Option<PathBuf>, AppError> {
         dialogo_de_arquivo("Adicionar arquivo", "Anexar")
     }
 
     /// Fase 53a: o mesmo diálogo, com o título e o botão do "Carregar de arquivo".
-    fn escolher_chave(&self) -> Result<Option<PathBuf>, AppError> {
+    fn choose_key(&self) -> Result<Option<PathBuf>, AppError> {
         dialogo_de_arquivo("Carregar chave privada", "Carregar")
     }
 }
@@ -653,9 +653,9 @@ const INTERVALO_DA_BANDEJA: Duration = Duration::from_secs(2);
 
 /// O menu da bandeja e o estado que ele mostra. Os itens de texto ficam desabilitados.
 struct Bandeja<R: Runtime> {
-    estado: Mutex<EstadoBandeja>,
+    estado: Mutex<TrayState>,
     /// Tempo de trava lido da configuração, só depois de uma ação do usuário
-    /// (`bandeja::ler_configuracao_na_passagem`, tela Configurações).
+    /// (`tray::read_settings_on_transition`, tela Configurações).
     minutos: Mutex<Option<u32>>,
     titulo: MenuItem<R>,
     subtitulo: MenuItem<R>,
@@ -663,55 +663,39 @@ struct Bandeja<R: Runtime> {
     icone: TrayIcon<R>,
 }
 
-fn icone_da_bandeja(i: Icone) -> Image<'static> {
+fn icone_da_bandeja(i: Icon) -> Image<'static> {
     match i {
-        Icone::Destravado => tauri::include_image!("icons/tray-unlocked-32.png"),
-        Icone::Travado => tauri::include_image!("icons/tray-locked-32.png"),
+        Icon::Unlocked => tauri::include_image!("icons/tray-unlocked-32.png"),
+        Icon::Locked => tauri::include_image!("icons/tray-locked-32.png"),
     }
 }
 
 /// Cria o ícone e o menu (frames `Bandeja / Destravado` `17269` e `/ Travado` `17300`).
 /// Sem a biblioteca do AppIndicator (o `tray-icon` entraria em pânico, e o release
 /// aborta) ou sem pasta segura para o PNG do ícone, não cria: o app segue sem bandeja.
-fn criar_bandeja<R: Runtime>(
-    app: &AppHandle<R>,
-    inicial: EstadoBandeja,
-) -> Result<(), &'static str> {
-    if !bandeja::biblioteca_do_sistema() {
+fn criar_bandeja<R: Runtime>(app: &AppHandle<R>, inicial: TrayState) -> Result<(), &'static str> {
+    if !tray::system_library() {
         return Err("sem a biblioteca do AppIndicator");
     }
-    let pasta =
-        bandeja::pasta_dos_icones_da_sessao().map_err(|_| "sem pasta segura para o ícone")?;
-    let a = bandeja::aparencia(inicial);
+    let pasta = tray::session_icons_dir().map_err(|_| "sem pasta segura para o ícone")?;
+    let a = tray::appearance(inicial);
     let erro = |_| "menu da bandeja";
     let titulo =
-        MenuItem::with_id(app, bandeja::ID_TITULO, a.titulo, false, None::<&str>).map_err(erro)?;
-    let subtitulo = MenuItem::with_id(app, bandeja::ID_SUBTITULO, a.subtitulo, false, None::<&str>)
-        .map_err(erro)?;
-    let abrir = MenuItem::with_id(
-        app,
-        bandeja::ID_ABRIR,
-        bandeja::TEXTO_ABRIR,
-        true,
-        None::<&str>,
-    )
-    .map_err(erro)?;
+        MenuItem::with_id(app, tray::ID_TITLE, a.title, false, None::<&str>).map_err(erro)?;
+    let subtitulo =
+        MenuItem::with_id(app, tray::ID_SUBTITLE, a.subtitle, false, None::<&str>).map_err(erro)?;
+    let abrir =
+        MenuItem::with_id(app, tray::ID_OPEN, tray::OPEN_TEXT, true, None::<&str>).map_err(erro)?;
     let acao = MenuItem::with_id(
         app,
-        bandeja::ID_ACAO,
-        a.acao,
-        a.acao_habilitada,
+        tray::ID_ACTION,
+        a.action,
+        a.action_enabled,
         None::<&str>,
     )
     .map_err(erro)?;
-    let sair = MenuItem::with_id(
-        app,
-        bandeja::ID_SAIR,
-        bandeja::TEXTO_SAIR,
-        true,
-        None::<&str>,
-    )
-    .map_err(erro)?;
+    let sair =
+        MenuItem::with_id(app, tray::ID_QUIT, tray::QUIT_TEXT, true, None::<&str>).map_err(erro)?;
     let sep1 = PredefinedMenuItem::separator(app).map_err(erro)?;
     let sep2 = PredefinedMenuItem::separator(app).map_err(erro)?;
     let menu = Menu::with_items(
@@ -720,7 +704,7 @@ fn criar_bandeja<R: Runtime>(
     )
     .map_err(erro)?;
     let icone = TrayIconBuilder::with_id("ward")
-        .icon(icone_da_bandeja(a.icone))
+        .icon(icone_da_bandeja(a.icon))
         .menu(&menu)
         .show_menu_on_left_click(true)
         .temp_dir_path(pasta)
@@ -738,7 +722,7 @@ fn criar_bandeja<R: Runtime>(
     Ok(())
 }
 
-fn estado_mostrado<R: Runtime>(b: &Bandeja<R>) -> std::sync::MutexGuard<'_, EstadoBandeja> {
+fn estado_mostrado<R: Runtime>(b: &Bandeja<R>) -> std::sync::MutexGuard<'_, TrayState> {
     b.estado.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -763,23 +747,23 @@ fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
     if *atual == novo {
         return;
     }
-    let a = bandeja::aparencia(novo);
+    let a = tray::appearance(novo);
     // `configuracao` conta como uso no daemon: só na passagem que o usuário fez
     // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
     let mut minutos = b.minutos.lock().unwrap_or_else(|e| e.into_inner());
-    if bandeja::ler_configuracao_na_passagem(*atual, novo) {
+    if tray::read_settings_on_transition(*atual, novo) {
         *minutos = s.settings().ok().map(|c| c.minutos_trava);
     }
     let subtitulo = match novo {
-        EstadoBandeja::Destravado => bandeja::subtitulo_destravado(*minutos),
-        _ => a.subtitulo.to_owned(),
+        TrayState::Unlocked => tray::unlocked_subtitle(*minutos),
+        _ => a.subtitle.to_owned(),
     };
     drop(minutos);
-    let _ = b.titulo.set_text(a.titulo);
+    let _ = b.titulo.set_text(a.title);
     let _ = b.subtitulo.set_text(subtitulo);
-    let _ = b.acao.set_text(a.acao);
-    let _ = b.acao.set_enabled(a.acao_habilitada);
-    let _ = b.icone.set_icon(Some(icone_da_bandeja(a.icone)));
+    let _ = b.acao.set_text(a.action);
+    let _ = b.acao.set_enabled(a.action_enabled);
+    let _ = b.icone.set_icon(Some(icone_da_bandeja(a.icon)));
     *atual = novo;
     drop(atual);
     avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
@@ -792,10 +776,10 @@ fn tempo_da_bandeja<R: Runtime>(app: &AppHandle<R>, minutos_trava: u32) {
         return;
     };
     *b.minutos.lock().unwrap_or_else(|e| e.into_inner()) = Some(minutos_trava);
-    if *estado_mostrado(&b) == EstadoBandeja::Destravado {
+    if *estado_mostrado(&b) == TrayState::Unlocked {
         let _ = b
             .subtitulo
-            .set_text(bandeja::subtitulo_destravado(Some(minutos_trava)));
+            .set_text(tray::unlocked_subtitle(Some(minutos_trava)));
     }
 }
 
@@ -814,16 +798,16 @@ fn vigiar_bandeja<R: Runtime>(app: AppHandle<R>) {
     }
 }
 
-/// Clique num item (S10, S13): o id é conferido em `bandeja::acao` contra o estado que o
+/// Clique num item (S10, S13): o id é conferido em `tray::action` contra o estado que o
 /// menu mostrava; nenhuma ação revela, copia ou aprova. Na thread principal.
 fn ao_clicar_na_bandeja<R: Runtime>(app: &AppHandle<R>, id: &str) {
     let Some(b) = app.try_state::<Bandeja<R>>() else {
         return;
     };
     let mostrado = *estado_mostrado(&b);
-    match bandeja::acao(id, mostrado) {
-        Some(Acao::Abrir | Acao::Destravar) => mostrar_principal(app),
-        Some(Acao::Travar) => {
+    match tray::action(id, mostrado) {
+        Some(Action::Open | Action::Unlock) => mostrar_principal(app),
+        Some(Action::Lock) => {
             // A conversa com o daemon fora da thread principal.
             let h = app.clone();
             let _ = std::thread::Builder::new()
@@ -837,7 +821,7 @@ fn ao_clicar_na_bandeja<R: Runtime>(app: &AppHandle<R>, id: &str) {
                     atualizar_bandeja(&h);
                 });
         }
-        Some(Acao::Sair) => app.exit(0),
+        Some(Action::Quit) => app.exit(0),
         None => {}
     }
 }
@@ -1005,7 +989,7 @@ fn main() {
             // janela de aprovação e a avisa pelo canal dela (`ouvir_avisos`), sem dado.
             if let (Some(fila), Ok(s)) = (fila, na_aprovacao.as_ref()) {
                 let h = app.handle().clone();
-                let r = aprovacao::vigiar(fila, s.approvals(), move || {
+                let r = approval::watch(fila, s.approvals(), move || {
                     let h2 = h.clone();
                     let _ = h.run_on_main_thread(move || abrir_janela_de_aprovacao(&h2));
                     avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
@@ -1021,7 +1005,7 @@ fn main() {
                 .state::<Estado>()
                 .servico()
                 .map(|s| s.tray_state())
-                .unwrap_or(EstadoBandeja::SemDaemon);
+                .unwrap_or(TrayState::NoDaemon);
             *app.state::<Estado>()
                 .visto
                 .lock()
@@ -1929,7 +1913,7 @@ mod testes {
     fn bandeja_ausente_nao_quebra() {
         let app = app_de_teste();
         atualizar_bandeja(app.handle());
-        ao_clicar_na_bandeja(app.handle(), bandeja::ID_SAIR);
+        ao_clicar_na_bandeja(app.handle(), tray::ID_QUIT);
         ao_clicar_na_bandeja(app.handle(), "inventado");
         assert!(app.try_state::<Bandeja<MockRuntime>>().is_none());
     }
@@ -1943,8 +1927,8 @@ mod testes {
         let app = app_de_teste();
         assert!(app.try_state::<Bandeja<MockRuntime>>().is_none());
         let estado = app.state::<Estado>();
-        *estado.visto.lock().unwrap() = EstadoBandeja::Destravado;
+        *estado.visto.lock().unwrap() = TrayState::Unlocked;
         atualizar_bandeja(app.handle());
-        assert_eq!(*estado.visto.lock().unwrap(), EstadoBandeja::SemDaemon);
+        assert_eq!(*estado.visto.lock().unwrap(), TrayState::NoDaemon);
     }
 }

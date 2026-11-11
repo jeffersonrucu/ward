@@ -19,13 +19,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ward_app_core::AppError;
-use ward_app_core::anexos::Seletor;
+use ward_app_core::attachments::Picker;
 use ward_app_core::terminal::{Terminal, TerminalDoSistema, Token};
 
 pub struct DirPicker(pub PathBuf);
 
-impl Seletor for DirPicker {
-    fn escolher(&self) -> Result<Option<PathBuf>, AppError> {
+impl Picker for DirPicker {
+    fn choose(&self) -> Result<Option<PathBuf>, AppError> {
         let mut files = Vec::new();
         for e in fs::read_dir(&self.0).map_err(|_| AppError::PickerUnavailable)? {
             let e = e.map_err(|_| AppError::PickerUnavailable)?;

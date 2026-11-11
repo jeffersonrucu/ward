@@ -11,17 +11,17 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use ward_app_core::AppError;
-use ward_app_core::anexos::EdicaoDosAnexos;
 use ward_app_core::area_transferencia::AreaTransferencia;
+use ward_app_core::attachments::AttachmentEdit;
 use ward_app_core::comandos::Comando;
 use ward_app_core::configuracoes::{TrocaPin, TrocaSenha};
 use ward_app_core::daemon::Daemon;
 use ward_app_core::destrave::SenhaMestra;
-use ward_app_core::formulario::Formulario;
+use ward_app_core::form::Form;
 use ward_app_core::gerador::Opcoes;
 use ward_app_core::nivel::Pin;
 use ward_app_core::primeiro_uso::NovoCofre;
-use ward_app_core::restaurar::Restauracao;
+use ward_app_core::restore::Restore;
 use ward_app_core::service::Service;
 use zeroize::Zeroizing;
 
@@ -221,9 +221,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
         };
         // Phase 47: the version password and the current PIN also leave the map (ownership).
         let restore = match command {
-            Comando::RestaurarBackup => args
-                .remove("dados")
-                .map(serde_json::from_value::<Restauracao>),
+            Comando::RestaurarBackup => args.remove("dados").map(serde_json::from_value::<Restore>),
             _ => None,
         };
         let text = |key: &str| args.get(key).and_then(Value::as_str);
@@ -328,7 +326,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                 let form = args
                     .get("formulario")
                     .cloned()
-                    .map(serde_json::from_value::<Formulario>)
+                    .map(serde_json::from_value::<Form>)
                     .and_then(Result::ok)
                     .ok_or(AppError::InvalidRequest);
                 match (previous, form) {
@@ -352,7 +350,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             Comando::EscolherAnexo => {
                 let edit = match args.get("edicao") {
                     None | Some(Value::Null) => Ok(None),
-                    Some(v) => serde_json::from_value::<EdicaoDosAnexos>(v.clone())
+                    Some(v) => serde_json::from_value::<AttachmentEdit>(v.clone())
                         .map(Some)
                         .map_err(|_| AppError::InvalidRequest),
                 };
