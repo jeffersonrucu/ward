@@ -91,7 +91,7 @@
       if (!isText(username) || !isText(password)) return;
       // No reply and no callback: the service worker checks who sent it (tab, main
       // frame, origin) by the `sender`, never by the message content.
-      chrome.runtime.sendMessage({ t: 'enviado', 'usuario': username, 'senha': password }).catch(() => {});
+      chrome.runtime.sendMessage({ t: 'submitted', username, password }).catch(() => {});
     } catch {
       // Odd page: nothing is offered.
     }

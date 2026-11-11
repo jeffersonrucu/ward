@@ -218,7 +218,7 @@ code, out, err = ward(["playwright", "acme-wp-prod"])
 dur = time.time() - t0
 watcher.stop = True
 # Phase 44c (D9): free level on an http origin, so only after the origin is confirmed.
-verify(window_requests() == ["pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirmar"],
+verify(window_requests() == ["pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirm"],
          f"Fase 44c: acme-wp-prod (livre, http) só depois da confirmação da origem, sem PIN ({window_requests()})")
 watcher.join()
 expected = os.path.join(RT, "playwright", "acme-wp-prod.json")
@@ -318,7 +318,7 @@ try:
     new_requests = window_requests()[seen_count:]
     verify(code != 0 and "negado" in err.decode(errors="replace") and not out,
              f"ataque [::1], janela negada: `ward playwright acme-wp-prod` sai ≠ 0 com \"negado\" (saiu {code})")
-    verify(new_requests == ["pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=negar"],
+    verify(new_requests == ["pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=deny"],
              f"ataque [::1], janela negada: o pedido mostra a origem ({new_requests})")
     # Confirmed: `--host-resolver-rules` takes `localhost` to 127.0.0.1 (the real
     # WordPress); the fake one on [::1] receives nothing.

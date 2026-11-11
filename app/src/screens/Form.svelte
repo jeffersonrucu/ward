@@ -153,7 +153,7 @@
   /** TOTP reply of the bridge (code and seconds left, wire names), or null. */
   let totp = $state(null);
 
-  const level = $derived(LEVELS[detail?.nivel] ?? LEVELS['com-aprovacao']);
+  const level = $derived(LEVELS[detail?.nivel] ?? LEVELS['approval']);
   const regions = $derived(
     [{ value: '', label: 'Escolha a região' }].concat(
       [...new Set([...(fields.regiao ? [fields.regiao] : []), ...AWS_REGIONS])].map((r) => ({
@@ -181,7 +181,7 @@
     servers: serverOptions(fields.tunel),
     jumps: serverOptions(fields.salto),
   });
-  const accessText = $derived(kind === 'banco' ? databaseAccess(fields.motor) : def.access);
+  const accessText = $derived(kind === 'database' ? databaseAccess(fields.motor) : def.access);
   const visibleRows = $derived(
     def.rows
       .map((l) => l.filter((c) => fieldVisible(c, fields.authentication)))
@@ -562,7 +562,7 @@
       {/if}
     </div>
   </div>
-  {#if editing && kind === 'servidor'}
+  {#if editing && kind === 'server'}
     <Button
       variant="secondary"
       icon={connected ? 'check' : 'type-server'}
@@ -636,7 +636,7 @@
     <SectionTitle
       id="section-extras"
       title="Campos extras"
-      description={kind === 'generico' && editing
+      description={kind === 'generic' && editing
         ? 'Só eles são entregues, como WARD_<NOME>.'
         : (EXTRAS_TEXTS[kind] ?? EXTRAS_TEXTS.default)}
     >

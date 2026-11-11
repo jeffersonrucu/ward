@@ -96,22 +96,21 @@ export function filtersSummary(filters, search) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-// Level card of the form, by the wire name of the level (keys quoted: frozen until
-// m2:Phase 54).
+// Level card of the form, by the level name of the vault v5 (m2:DT4).
 export const LEVELS = Object.freeze({
-  'livre': {
+  'free': {
     label: 'Livre',
     icon: 'check',
     explanation:
       'O Claude usa sem perguntar e só vê a saída mascarada. Mudar o nível pede o PIN.',
   },
-  'com-aprovacao': {
+  'approval': {
     label: 'Com aprovação',
     icon: 'lock',
     explanation:
       'Cada uso do Claude abre a janela de aprovação, que pede o seu PIN. Mudar o nível também pede o PIN.',
   },
-  'bloqueado': {
+  'blocked': {
     label: 'Bloqueado',
     icon: 'eye-closed',
     explanation:

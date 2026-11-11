@@ -144,16 +144,17 @@ mod tests {
         assert_eq!(level_from_name("free"), Ok(AccessLevel::Free));
         assert_eq!(level_from_name("approval"), Ok(AccessLevel::Approval));
         assert_eq!(level_from_name("blocked"), Ok(AccessLevel::Blocked));
-        // m2:DT4: the v4 names are refused too.
+        // m2:DT4: the vault v4 names (0.1.x interface) are refused too.
         for bad in [
             "",
             "Free",
+            "com aprovação",
+            "with_approval",
+            "admin",
+            "free ",
             "livre",
             "com-aprovacao",
             "bloqueado",
-            "com aprovação",
-            "admin",
-            "free ",
         ] {
             assert_eq!(
                 level_from_name(bad),

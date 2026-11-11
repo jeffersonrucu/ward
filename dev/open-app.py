@@ -34,7 +34,7 @@ def main():
     if len(sys.argv) != 2 or not sys.argv[1].startswith("/"):
         print("uso: open-app.py <socket absoluto>", file=sys.stderr)
         return 2
-    body = json.dumps({"v": 1, "op": "abrir_app", "dados": {}}).encode()
+    body = json.dumps({"v": 2, "op": "open_app", "data": {}}).encode()
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.settimeout(30)
@@ -45,14 +45,14 @@ def main():
                 raise ConnectionError("quadro fora do limite")
             reply = json.loads(read_exact(s, n))
     except (OSError, ValueError) as e:
-        print(f"abrir_app: sem resposta do daemon de teste ({type(e).__name__})", file=sys.stderr)
+        print(f"open_app: sem resposta do daemon de teste ({type(e).__name__})", file=sys.stderr)
         return 1
-    kind = reply.get("tipo")
+    kind = reply.get("type")
     if kind == "ok":
-        print("abrir_app: ok")
+        print("open_app: ok")
         return 0
-    code = (reply.get("dados") or {}).get("codigo", "?")
-    print(f"abrir_app: o daemon respondeu {kind} {code}", file=sys.stderr)
+    code = (reply.get("data") or {}).get("code", "?")
+    print(f"open_app: o daemon respondeu {kind} {code}", file=sys.stderr)
     return 1
 
 

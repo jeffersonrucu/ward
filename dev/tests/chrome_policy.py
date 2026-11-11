@@ -121,7 +121,7 @@ sys.stdout.buffer.flush()
             os.chmod(host, 0o700)
         manifest(f"{t}/host-sistema.py", f"{nmh}/br.ward.nm.json")
         manifest(f"{t}/host-usuario.py", f"{profile}/NativeMessagingHosts/br.ward.nm.json")
-        sw = 'chrome.runtime.sendNativeMessage("br.ward.nm", {v: 1, op: "estado"}, () => {});'
+        sw = 'chrome.runtime.sendNativeMessage("br.ward.nm", {v: 2, op: "status"}, () => {});'
     else:
         wardd_bin, nm_bin = sys.argv[5:7]
         fx = json.load(open(f"{root}/dev/fixtures/entries.json"))
@@ -150,15 +150,15 @@ sys.stdout.buffer.flush()
             time.sleep(0.05)
         s = socket.socket(socket.AF_UNIX)
         s.connect(f"{sockdir}/wardd.sock")
-        b = json.dumps({"v": 1, "op": "destravar", "dados": {
-            "senha": base64.b64encode(fx["master_password"].encode()).decode()}}).encode()
+        b = json.dumps({"v": 2, "op": "unlock", "data": {
+            "password": base64.b64encode(fx["master_password"].encode()).decode()}}).encode()
         s.sendall(struct.pack(">I", len(b)) + b)
         n = struct.unpack(">I", s.recv(4))[0]
         r = b""
         while len(r) < n:
             r += s.recv(n - len(r))
         s.close()
-        if json.loads(r).get("tipo") != "ok":
+        if json.loads(r).get("type") != "ok":
             sys.exit("o wardd de teste não destravou")
     if scenario == "roubo":
         # The attacker's host (the audit's host script): records that it ran, creates the
@@ -182,12 +182,12 @@ if os.fork() == 0:
         return json.loads(ib.read(n))
     res = {}
     for origin in ("http://localhost:8081", "http://localhost:8083", "http://localhost:8084"):
-        s = exchange({"v": 1, "op": "sugerir", "dados": {"origem": origin}})
-        res["sugerir " + origin] = s
-        d = s.get("dados") if isinstance(s.get("dados"), dict) else {}
-        for item in d.get("itens", []) or []:
-            name = item.get("nome")
-            res["preencher " + str(name)] = exchange({"v": 1, "op": "preencher", "dados": {"entrada": name, "origem": origin + "/"}})
+        s = exchange({"v": 2, "op": "suggest", "data": {"origin": origin}})
+        res["suggest " + origin] = s
+        d = s.get("data") if isinstance(s.get("data"), dict) else {}
+        for item in d.get("items", []) or []:
+            name = item.get("name")
+            res["fill " + str(name)] = exchange({"v": 2, "op": "fill", "data": {"entry": name, "origin": origin + "/"}})
     open(OUTPUT, "w").write(json.dumps(res))
     os._exit(0)
 os.close(a_w); os.close(b_r)
@@ -264,10 +264,10 @@ os.execv(NM, ["ward-nm", f"chrome-extension://{ID}/"])
         except ValueError:
             stolen = {}
         for request, resp in stolen.items():
-            answers[request] = resp.get("tipo") if isinstance(resp, dict) else "?"
-            data = resp.get("dados") if isinstance(resp, dict) else None
-            if (isinstance(resp, dict) and resp.get("tipo") == "preenchimento" and isinstance(data, dict)
-                    and (data.get("senha") or data.get("totp"))):
+            answers[request] = resp.get("type") if isinstance(resp, dict) else "?"
+            data = resp.get("data") if isinstance(resp, dict) else None
+            if (isinstance(resp, dict) and resp.get("type") == "fill" and isinstance(data, dict)
+                    and (data.get("password") or data.get("totp"))):
                 with_secret += 1
         # What the attack took (fake, D15) does not stay on disk after the summary.
         os.remove(f"{t}/roubado.json")

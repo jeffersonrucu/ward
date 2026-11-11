@@ -14,7 +14,7 @@
    */
   let { level, disabled = false, onchange = undefined } = $props();
 
-  const n = $derived(accessLevel(level) ?? ACCESS_LEVELS['com-aprovacao']);
+  const n = $derived(accessLevel(level) ?? ACCESS_LEVELS['approval']);
 </script>
 
 <div class="card" data-level={level}>

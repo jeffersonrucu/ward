@@ -6,7 +6,7 @@
 // The order is the one of the dialog: blocked, with approval, free.
 
 export const ACCESS_LEVELS = Object.freeze({
-  'bloqueado': Object.freeze({
+  'blocked': Object.freeze({
     label: 'Bloqueado',
     lower: 'bloqueado',
     icon: 'eye-closed',
@@ -14,7 +14,7 @@ export const ACCESS_LEVELS = Object.freeze({
       'O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app. Mudar o nível pede o PIN.',
     option: 'O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app.',
   }),
-  'com-aprovacao': Object.freeze({
+  'approval': Object.freeze({
     label: 'Com aprovação',
     lower: 'com aprovação',
     icon: 'lock',
@@ -22,7 +22,7 @@ export const ACCESS_LEVELS = Object.freeze({
       'Cada uso do Claude abre a janela de aprovação, que pede o seu PIN. Mudar o nível também pede o PIN.',
     option: 'Padrão. Cada uso do Claude abre a janela de aprovação, que pede o seu PIN.',
   }),
-  'livre': Object.freeze({
+  'free': Object.freeze({
     label: 'Livre',
     lower: 'livre',
     icon: 'check',
@@ -31,7 +31,7 @@ export const ACCESS_LEVELS = Object.freeze({
   }),
 });
 
-export const LEVEL_ORDER = Object.freeze(['bloqueado', 'com-aprovacao', 'livre']);
+export const LEVEL_ORDER = Object.freeze(['blocked', 'approval', 'free']);
 
 /** The level by the protocol name, or `undefined` if the name is not one of the three. */
 export function accessLevel(name) {

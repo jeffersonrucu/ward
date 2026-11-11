@@ -205,7 +205,7 @@
       <div class="request" class:prod>
         {#each request.entradas as entry, i (i)}
           <div class="entry">
-            <span class="avatar"><Icon name={entryType(entry.tipo ?? 'generico').icon} /></span>
+            <span class="avatar"><Icon name={entryType(entry.tipo ?? 'generic').icon} /></span>
             <div class="texts">
               <span class="name"><AgentText text={entry.nome} /></span>
               <span class="badges">

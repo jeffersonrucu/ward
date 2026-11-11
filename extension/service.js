@@ -96,16 +96,16 @@ function fromPopup(sender) {
 }
 
 async function onSubmitted(msg, from) {
-  if (!isText(msg.usuario, MAX) || !isText(msg.senha, MAX)) return;
-  const r = await send({ v: 1, op: 'sugerir', 'dados': { 'origem': from.origin } });
-  if (!r || r.tipo !== 'sugestoes' || !r.dados || !Array.isArray(r.dados.itens)) return;
-  if (r.dados.itens.some((s) => s && s.usuario === msg.usuario)) return;
+  if (!isText(msg.username, MAX) || !isText(msg.password, MAX)) return;
+  const r = await send({ v: 2, op: 'suggest', data: { origin: from.origin } });
+  if (!r || r.type !== 'suggestions' || !r.data || !Array.isArray(r.data.items)) return;
+  if (r.data.items.some((s) => s && s.username === msg.username)) return;
   discard(from.tab);
   const p = {
     origin: from.origin,
     url: from.url,
-    username: msg.usuario,
-    password: msg.senha,
+    username: msg.username,
+    password: msg.password,
     timer: setTimeout(() => discard(from.tab), TIMEOUT_MS),
   };
   pendingLogins.set(from.tab, p);
@@ -162,33 +162,33 @@ function requestByPort(request) {
 /** Phase 44c: the popup fill on an `http` origin (Phase 44e: or on a host of this
  * machine in `https`), with the Ward window. */
 async function fillWithWindow(msg) {
-  const origin = typeof msg.origem === 'string' ? originOf(msg.origem) : null;
+  const origin = typeof msg.origin === 'string' ? originOf(msg.origin) : null;
   if (
-    !isText(msg.entrada, MAX) ||
-    typeof msg.documento !== 'string' ||
-    msg.documento.length === 0 ||
-    msg.documento.length > MAX ||
+    !isText(msg.entry, MAX) ||
+    typeof msg.document !== 'string' ||
+    msg.document.length === 0 ||
+    msg.document.length > MAX ||
     !origin ||
-    origin !== msg.origem ||
+    origin !== msg.origin ||
     !needsWindow(origin)
   ) {
-    return { 'erro': 'pedido_invalido' };
+    return { error: 'invalid_request' };
   }
-  let r = await requestByPort({ v: 1, op: 'preencher', 'dados': { 'entrada': msg.entrada, 'origem': origin } });
-  if (!r || r.tipo !== 'preenchimento' || !r.dados) {
-    const code = r && r.tipo === 'erro' && r.dados ? String(r.dados.codigo) : 'sem_resposta';
-    return { 'erro': code };
+  let r = await requestByPort({ v: 2, op: 'fill', data: { entry: msg.entry, origin } });
+  if (!r || r.type !== 'fill' || !r.data) {
+    const code = r && r.type === 'error' && r.data ? String(r.data.code) : 'no_response';
+    return { error: code };
   }
-  const d = r.dados;
-  const args = [origin, String(d.usuario ?? ''), String(d.senha ?? ''), String(d.totp ?? '')];
-  d.senha = '';
+  const d = r.data;
+  const args = [origin, String(d.username ?? ''), String(d.password ?? ''), String(d.totp ?? '')];
+  d.password = '';
   d.totp = '';
-  d.usuario = '';
+  d.username = '';
   r = null;
   let done = null;
   try {
     [done] = await chrome.scripting.executeScript({
-      target: { tabId: msg.aba, documentIds: [msg.documento] },
+      target: { tabId: msg.tab, documentIds: [msg.document] },
       world: 'ISOLATED',
       func: fillInPage,
       args,
@@ -200,7 +200,7 @@ async function fillWithWindow(msg) {
   }
   const v = done && done.result;
   if (v && v.ok === true) return { ok: true };
-  return { 'erro': (v && typeof v.reason === 'string' && v.reason) || 'origem' };
+  return { error: (v && typeof v.reason === 'string' && v.reason) || 'origin' };
 }
 
 /** Base64 of the UTF-8 bytes (how the protocol carries the secrets). */
@@ -213,44 +213,44 @@ function base64(s) {
 }
 
 async function save(msg) {
-  const p = pendingLogins.get(msg.aba);
-  if (!p) return { 'erro': 'expirou' };
+  const p = pendingLogins.get(msg.tab);
+  if (!p) return { error: 'pending_expired' };
   if (
-    !isText(msg.nome, MAX) ||
-    !isText(msg.usuario, MAX) ||
-    typeof msg.grupo !== 'string' ||
-    msg.grupo.length > MAX ||
-    !ENVIRONMENTS.has(msg.ambiente)
+    !isText(msg.name, MAX) ||
+    !isText(msg.username, MAX) ||
+    typeof msg.group !== 'string' ||
+    msg.group.length > MAX ||
+    !ENVIRONMENTS.has(msg.environment)
   ) {
-    return { 'erro': 'pedido_invalido' };
+    return { error: 'invalid_request' };
   }
   const request = {
-    v: 1,
-    op: 'salvar_login',
-    'dados': {
-      'entrada': {
-        'nome': msg.nome,
-        'grupo': msg.grupo,
-        'ambiente': msg.ambiente,
-        'tipo': 'login',
-        'campos': { url: p.url, 'usuario': msg.usuario, 'senha': base64(p.password) },
+    v: 2,
+    op: 'save_login',
+    data: {
+      entry: {
+        name: msg.name,
+        group: msg.group,
+        environment: msg.environment,
+        type: 'login',
+        fields: { url: p.url, username: msg.username, password: base64(p.password) },
       },
     },
   };
   const r = await send(request);
-  request.dados.entrada.campos.senha = '';
-  if (r && r.tipo === 'ok') {
-    discard(msg.aba);
+  request.data.entry.fields.password = '';
+  if (r && r.type === 'ok') {
+    discard(msg.tab);
     return { ok: true };
   }
-  const d = r && r.tipo === 'erro' && r.dados ? r.dados : null;
-  if (!d) return { 'erro': 'sem_resposta' };
-  const problems = Array.isArray(d.problemas)
-    ? d.problemas
-        .filter((x) => x && typeof x.campo === 'string' && typeof x.motivo === 'string')
-        .map((x) => ({ 'campo': x.campo, 'motivo': x.motivo }))
+  const d = r && r.type === 'error' && r.data ? r.data : null;
+  if (!d) return { error: 'no_response' };
+  const problems = Array.isArray(d.problems)
+    ? d.problems
+        .filter((x) => x && typeof x.field === 'string' && typeof x.reason === 'string')
+        .map((x) => ({ field: x.field, reason: x.reason }))
     : [];
-  return { 'erro': String(d.codigo), 'problemas': problems };
+  return { error: String(d.code), problems };
 }
 
 chrome.tabs.onRemoved.addListener((tab) => discard(tab));
@@ -261,30 +261,30 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return false;
   if (sender.tab) {
     // Content script: only the submit, and no reply at all.
-    const from = msg.t === 'enviado' ? fromContentScript(sender) : null;
+    const from = msg.t === 'submitted' ? fromContentScript(sender) : null;
     if (from) onSubmitted(msg, from);
     return false;
   }
-  if (!fromPopup(sender) || !Number.isInteger(msg.aba)) return false;
+  if (!fromPopup(sender) || !Number.isInteger(msg.tab)) return false;
   switch (msg.t) {
-    case 'pendente': {
-      const p = pendingLogins.get(msg.aba);
-      respond(p ? { 'origem': p.origin, 'usuario': p.username } : null);
+    case 'pending': {
+      const p = pendingLogins.get(msg.tab);
+      respond(p ? { origin: p.origin, username: p.username } : null);
       return false;
     }
-    case 'manter':
+    case 'keep':
       // The open popup keeps the service worker alive while the user fills in.
-      respond(pendingLogins.has(msg.aba));
+      respond(pendingLogins.has(msg.tab));
       return false;
-    case 'descartar':
-      discard(msg.aba);
+    case 'discard':
+      discard(msg.tab);
       respond(true);
       return false;
-    case 'salvar':
-      save(msg).then(respond, () => respond({ 'erro': 'sem_resposta' }));
+    case 'save':
+      save(msg).then(respond, () => respond({ error: 'no_response' }));
       return true;
-    case 'preencher':
-      fillWithWindow(msg).then(respond, () => respond({ 'erro': 'sem_resposta' }));
+    case 'fill':
+      fillWithWindow(msg).then(respond, () => respond({ error: 'no_response' }));
       return true;
     default:
       return false;

@@ -449,7 +449,7 @@
             kind={formKind}
             detail={formDetail}
             groups={groupsOf(items).map((g) => g.name)}
-            servers={items.filter((i) => i.tipo === 'servidor').map((i) => i.nome)}
+            servers={items.filter((i) => i.tipo === 'server').map((i) => i.nome)}
             oncancel={cancelForm}
             onsaved={saved}
           />
