@@ -6,6 +6,9 @@ with the terminal in a real pty.
    socket path (`WARD_DEV_SOCKET_DIR` in a 0700 dir of this test only). The
    CLI's unlock must abort with the "server is not the wardd" message without showing
    the password prompt; the password is typed anyway and the fake's record stays empty.
+   m2:V4.16 (S5): a non-dumpable fake server of this uid that answers protocol v1; the
+   CLI stops with the incompatible version message before the password prompt, and no
+   byte of the password reaches it.
 2. Against the test daemon (`make dev-daemon`, vault in `.dev/`): lock, then the list
    answers "locked" (V4.22); unlock with the wrong and the right password through the
    pty; the JSON list with only the six fields and no pattern
@@ -44,12 +47,14 @@ default test socket dir in `$XDG_RUNTIME_DIR`.
 Usage: dev/tests/cli.py <ward binary> <repository root>. Only fake values (D15).
 """
 
+import base64
 import json
 import os
 import pty
 import re
 import select
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -186,6 +191,86 @@ finally:
     os.unlink(path)
     os.rmdir(fake_dir)
 
+# --- 1b. m2:V4.16 (S5): fake server that answers protocol v1 -------------------------
+# A Python server, non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`) and of this uid, so it
+# passes the test-mode server check like the 0.1.x `wardd` would; it answers every frame
+# with the v1 status reply and records every byte it receives. The CLI unlock must stop
+# with the incompatible version message before the password prompt, and no byte of the
+# password (nor its base64) reaches the fake.
+V1_FAKE = r"""
+import ctypes, os, socket, struct, sys
+path, record = sys.argv[1], sys.argv[2]
+if ctypes.CDLL(None, use_errno=True).prctl(4, 0, 0, 0, 0) != 0:
+    sys.exit(3)
+srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+srv.bind(path)
+os.chmod(path, 0o600)
+srv.listen(8)
+print("pronto", flush=True)
+reply = b'{"v":1,"tipo":"estado","dados":{"travado":true,"cofre_existe":true,"papel":"agente"}}'
+fd = os.open(record, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+while True:
+    c, _ = srv.accept()
+    c.settimeout(5)
+    try:
+        while True:
+            n = c.recv(4)
+            if len(n) < 4:
+                break
+            size = struct.unpack(">I", n)[0]
+            body = b""
+            while len(body) < min(size, 1 << 20):
+                b = c.recv(size - len(body))
+                if not b:
+                    break
+                body += b
+            os.write(fd, n + body)
+            c.sendall(struct.pack(">I", len(reply)) + reply)
+    except OSError:
+        pass
+    c.close()
+"""
+v1_dir = f"/run/user/{UID}/ward-cli-v1-{os.getpid()}"
+os.mkdir(v1_dir, 0o700)
+v1_record = os.path.join(v1_dir, "registro")
+v1_srv = subprocess.Popen([sys.executable, "-I", "-c", V1_FAKE, os.path.join(v1_dir, "wardd.sock"), v1_record],
+                          stdout=subprocess.PIPE, text=True)
+try:
+    verify(v1_srv.stdout.readline().strip() == "pronto", "m2:V4.16 servidor falso v1 (não dumpable) no ar")
+    env = environment({"WARD_DEV_SOCKET_DIR": v1_dir})
+    code, screen, prompt = run_pty(["destravar"], to_type=PASSWORD, env=env, deadline=20)
+    verify(code != 0, f"m2:V4.16 destravar contra o servidor v1 sai ≠ 0 (saiu {code})")
+    verify("incompatível" in screen, "m2:V4.16 mensagem pt-BR de versão incompatível")
+    verify(not prompt, "m2:V4.16 o prompt da senha não apareceu")
+    time.sleep(0.2)
+    try:
+        got = open(v1_record, "rb").read()
+    except FileNotFoundError:
+        got = b""
+    verify(PASSWORD.encode() not in got and base64.b64encode(PASSWORD.encode()) not in got,
+           "m2:V4.16 nenhum byte da senha chegou ao servidor v1")
+    ops = []
+    while len(got) >= 4:
+        n = int.from_bytes(got[:4], "big")
+        try:
+            ops.append(json.loads(got[4:4 + n]).get("op"))
+        except ValueError:
+            ops.append("?")
+        got = got[4 + n:]
+    verify(all(o == "status" for o in ops), f"m2:V4.16 o servidor v1 só recebeu status ({ops})")
+    for args in (["lista", "--json"], ["travar"]):
+        code, screen, _ = run_pty(args, env=env, deadline=20)
+        verify(code != 0 and "incompatível" in screen, f"m2:V4.16 {args[0]} recusa o servidor v1")
+finally:
+    v1_srv.kill()
+    v1_srv.wait()
+    for f in ("wardd.sock", "registro"):
+        try:
+            os.unlink(os.path.join(v1_dir, f))
+        except FileNotFoundError:
+            pass
+    os.rmdir(v1_dir)
+
 # --- 2. Against the test daemon -------------------------------------------------------
 sock = os.path.join(SOCKET_DIR, "wardd.sock")
 if not os.path.exists(sock):
@@ -204,7 +289,6 @@ verify("`/usr/local/bin/ward destravar`" in screen,
 # waits the daemon's 2 min and exits ≠ 0 in 120 s ± 2 s; with an unlock from
 # another terminal within the deadline, the request goes on and exits 0 (the unlock
 # comes right below, with the wrong password before the right one).
-import subprocess  # noqa: E402
 
 t0 = time.monotonic()
 r = subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/true"], env=environment(),
@@ -242,14 +326,17 @@ verify(code == 0 and "já está destravado" in screen and not prompt, "destravar
 r = subprocess.run([WARD, "lista", "--json"], env=environment(), capture_output=True, timeout=60)
 verify(r.returncode == 0, "V4.1 lista --json sai 0")
 items = json.loads(r.stdout)
-names = [i["nome"] for i in items]
+names = [i["name"] for i in items]
 verify("gama-bloqueada" not in names, "V4.1 sem a bloqueada")
 expected = [e["name"] for e in json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["entries"]
             if e.get("level") != "blocked"]
 verify(sorted(names) == sorted(expected), f"V4.1 {len(names)} entradas visíveis, todas menos a bloqueada")
 verify(len(names) == 21, f"V4.1 são 21 entradas visíveis (as 22 do cofre menos a bloqueada; vieram {len(names)})")
-fields = {"nome", "tipo", "grupo", "ambiente", "projeto", "endereco"}
-verify(all(set(i) == fields for i in items), "V4.1 só nome, tipo, grupo, ambiente, projeto e endereço")
+# m2:V4.18 (Phase 51): keys and values in English (protocol v2 and vault v5 names).
+fields = {"name", "type", "group", "environment", "project", "address"}
+verify(all(set(i) == fields for i in items), "V4.1 só name, type, group, environment, project e address")
+V5_TYPES = {"login", "database", "server", "api", "aws", "smtp", "ftp-sftp", "secure-note", "generic"}
+verify(all(i["type"] in V5_TYPES for i in items), "m2:V4.18 o type de cada entrada é um nome v5")
 r2 = subprocess.run([WARD, "lista"], env=environment(), capture_output=True, timeout=60)
 verify(r2.returncode == 0 and b"NOME" in r2.stdout, "V4.1 lista em texto")
 

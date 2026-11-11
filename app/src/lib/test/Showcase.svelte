@@ -50,8 +50,8 @@
     {#each Object.keys(TYPES) as t (t)}<TypeBadge kind={t} />{/each}
   </div>
   <div class="list">
-    <ListItem name="clientex-pg-stage" detail="db.stage.clientex.local · banco" kind="banco" environment="stage" level="com aprovação" />
-    <ListItem name="clientex-ssh-prod" detail="deploy@prod.clientex.local" kind="servidor" environment="prod" level="com aprovação" selected />
+    <ListItem name="clientex-pg-stage" detail="db.stage.clientex.local · banco" kind="database" environment="stage" level="com aprovação" />
+    <ListItem name="clientex-ssh-prod" detail="deploy@prod.clientex.local" kind="server" environment="prod" level="com aprovação" selected />
   </div>
   <div class="row">
     <Toast message="Senha copiada. A área de transferência é limpa em 30 s." />

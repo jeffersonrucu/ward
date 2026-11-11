@@ -168,12 +168,12 @@ export function fillInPage(expectedOrigin, username, passwordB64, totp, submit) 
 
   let bytes = null;
   try {
-    if (window !== window.top) return { ok: false, reason: 'quadro' };
-    if (String(window.location.origin) !== expectedOrigin) return { ok: false, reason: 'origem' };
+    if (window !== window.top) return { ok: false, reason: 'frame' };
+    if (String(window.location.origin) !== expectedOrigin) return { ok: false, reason: 'origin' };
 
     const inputs = all('input').filter((el) => visible(el));
     const passwords = inputs.filter((el) => typeOf(el) === 'password');
-    if (passwords.length === 0) return { ok: false, reason: 'sem_campo' };
+    if (passwords.length === 0) return { ok: false, reason: 'no_field' };
     const passwordField = passwords[0];
     const form = formOf(passwordField);
     const sameForm = (el) => formOf(el) === form;
@@ -207,8 +207,8 @@ export function fillInPage(expectedOrigin, username, passwordB64, totp, submit) 
 
     let doSubmit = null;
     if (submit === true) {
-      if (passwords.length !== 1 || !form) return { ok: false, reason: 'formulario' };
-      if (username && !usernameField) return { ok: false, reason: 'formulario' };
+      if (passwords.length !== 1 || !form) return { ok: false, reason: 'form' };
+      if (username && !usernameField) return { ok: false, reason: 'form' };
       const F = HTMLFormElement.prototype;
       const ofForm = (k) => desc(F, k).get.call(form);
       const destinationOk = (action, method, target) => {
@@ -225,7 +225,7 @@ export function fillInPage(expectedOrigin, username, passwordB64, totp, submit) 
         );
       };
       if (!destinationOk(ofForm('action'), ofForm('method'), ofForm('target'))) {
-        return { ok: false, reason: 'formulario' };
+        return { ok: false, reason: 'form' };
       }
       const B = HTMLButtonElement.prototype;
       const isButton = (c) =>
@@ -247,7 +247,7 @@ export function fillInPage(expectedOrigin, username, passwordB64, totp, submit) 
             has('formtarget') ? g('formTarget') : ofForm('target'),
           )
         ) {
-          return { ok: false, reason: 'formulario' };
+          return { ok: false, reason: 'form' };
         }
       }
       doSubmit = () => F.requestSubmit.call(form, button);
@@ -270,7 +270,7 @@ export function fillInPage(expectedOrigin, username, passwordB64, totp, submit) 
     }
     return { ok: true, username: Boolean(usernameField && username), totp: Boolean(totpField) };
   } catch {
-    return { ok: false, reason: 'falha' };
+    return { ok: false, reason: 'failure' };
   } finally {
     if (bytes) bytes.fill(0);
     bytes = null;

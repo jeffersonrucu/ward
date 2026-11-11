@@ -141,16 +141,20 @@ mod tests {
 
     #[test]
     fn level_only_by_the_three_protocol_names() {
-        assert_eq!(level_from_name("livre"), Ok(AccessLevel::Free));
-        assert_eq!(level_from_name("com-aprovacao"), Ok(AccessLevel::Approval));
-        assert_eq!(level_from_name("bloqueado"), Ok(AccessLevel::Blocked));
+        assert_eq!(level_from_name("free"), Ok(AccessLevel::Free));
+        assert_eq!(level_from_name("approval"), Ok(AccessLevel::Approval));
+        assert_eq!(level_from_name("blocked"), Ok(AccessLevel::Blocked));
+        // m2:DT4: the vault v4 names (0.1.x interface) are refused too.
         for bad in [
             "",
-            "Livre",
+            "Free",
             "com aprovação",
-            "com_aprovacao",
+            "with_approval",
             "admin",
-            "livre ",
+            "free ",
+            "livre",
+            "com-aprovacao",
+            "bloqueado",
         ] {
             assert_eq!(
                 level_from_name(bad),
@@ -165,12 +169,12 @@ mod tests {
     fn attack_new_rust_names_are_not_wire_names() {
         let v = serde_json::to_value(LevelChanged {
             entry: "acme-pg-dev".into(),
-            level: "livre",
+            level: "free",
         })
         .unwrap();
         assert_eq!(
             v,
-            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "livre"})
+            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "free"})
         );
     }
 }

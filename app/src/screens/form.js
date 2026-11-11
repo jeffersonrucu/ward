@@ -11,9 +11,10 @@
 // key read by the load-from-file button goes as loaded (likewise, Phase 53a), and only
 // what the user typed goes as a new value.
 //
-// Wire names (frozen until m2:Phase 54): the type keys, the field ids, the keys of the
-// save form and of its errors, and the secret values above. They stay as quoted
-// literals, or as property names listed in `dev/english-check/frozen.txt`.
+// The type keys and the SMTP security values are the vault v5 names (m2:DT4, Phase 52).
+// Wire names frozen until m2:Phase 54: the field ids, the keys of the save form and of
+// its errors, and the secret values above. They stay as quoted literals, or as property
+// names listed in `dev/english-check/frozen.txt`.
 
 export const FORM_ENVIRONMENTS = Object.freeze([
   { value: '', label: 'Escolha o ambiente' },
@@ -50,7 +51,7 @@ export const AWS_REGIONS = Object.freeze([
 export const SECURITY_OPTIONS = Object.freeze([
   { value: 'starttls', label: 'STARTTLS' },
   { value: 'tls', label: 'TLS' },
-  { value: 'nenhuma', label: 'Nenhuma' },
+  { value: 'none', label: 'Nenhuma' },
 ]);
 
 // Engines of the database type (ward-core engine), with the default port and the
@@ -82,10 +83,10 @@ export function databaseAccess(engine) {
 
 /** Default port (placeholder) of the port field, by engine, protocol or security. */
 export function defaultPort(kind, fields) {
-  if (kind === 'banco') return ENGINES.find((x) => x.value === fields.motor)?.port ?? '';
+  if (kind === 'database') return ENGINES.find((x) => x.value === fields.motor)?.port ?? '';
   if (kind === 'ftp-sftp') return PROTOCOLS.find((x) => x.value === fields.protocolo)?.port ?? '';
-  if (kind === 'servidor') return '22';
-  if (kind === 'smtp') return { 'nenhuma': '25', 'starttls': '587', 'tls': '465' }[fields.seguranca] ?? '587';
+  if (kind === 'server') return '22';
+  if (kind === 'smtp') return { none: '25', starttls: '587', tls: '465' }[fields.seguranca] ?? '587';
   return '';
 }
 
@@ -118,7 +119,7 @@ export const FORM_TYPES = Object.freeze({
       [S('totp_semente', 'Semente TOTP'), { id: 'code', kind: 'totp' }],
     ],
   },
-  'banco': {
+  'database': {
     example: 'Ex.: acme-pg-dev',
     access: databaseAccess('postgres'),
     rows: [
@@ -134,7 +135,7 @@ export const FORM_TYPES = Object.freeze({
       [{ id: 'tunel', label: 'Túnel SSH (opcional)', kind: 'select', options: 'servers' }],
     ],
   },
-  'servidor': {
+  'server': {
     example: 'Ex.: acme-ssh-stage',
     access: 'O Claude entra com ward ssh; o Conectar abre o seu terminal.',
     rows: [
@@ -201,36 +202,36 @@ export const FORM_TYPES = Object.freeze({
       ...AUTHENTICATION_ROWS,
     ],
   },
-  'nota-segura': {
+  'secure-note': {
     access: 'Sem entrega: o ward run recusa este tipo e o Claude nunca recebe o texto.',
     accessTitle: 'Conteúdo',
     rows: [[{ id: 'texto', label: 'Nota', kind: 'note' }]],
   },
-  'generico': { access: '', rows: [] },
+  'generic': { access: '', rows: [] },
 });
 
 export const EXTRAS_TEXTS = Object.freeze({
-  'nota-segura': 'Ficam com a nota; nota segura não tem entrega.',
-  'generico': 'Só estes campos são entregues, como WARD_<NOME>.',
+  'secure-note': 'Ficam com a nota; nota segura não tem entrega.',
+  'generic': 'Só estes campos são entregues, como WARD_<NOME>.',
   default: 'Viram WARD_<NOME> no ward run.',
 });
 
 export const ATTACHMENTS_TEXTS = Object.freeze({
-  'nota-segura': 'Ficam cifrados com a nota; sem entrega no ward run.',
+  'secure-note': 'Ficam cifrados com a nota; sem entrega no ward run.',
   default: 'Viram WARD_ARQUIVO_<NOME> no ward run.',
 });
 
 // Cards of the choose-type screen (FigCraft 17657).
 export const TYPE_CARDS = Object.freeze([
   { kind: 'login', name: 'login', description: 'URL, usuário, senha e TOTP' },
-  { kind: 'banco', name: 'banco', description: 'Motor, host, porta, base e senha' },
-  { kind: 'servidor', name: 'servidor', description: 'SSH com senha ou chave' },
+  { kind: 'database', name: 'banco', description: 'Motor, host, porta, base e senha' },
+  { kind: 'server', name: 'servidor', description: 'SSH com senha ou chave' },
   { kind: 'api', name: 'api', description: 'URL base, token e variável' },
   { kind: 'aws', name: 'aws', description: 'Access key, secret, região e role' },
   { kind: 'smtp', name: 'smtp', description: 'Envio de e-mail com usuário e senha' },
   { kind: 'ftp-sftp', name: 'ftp/sftp', description: 'Arquivos por senha ou chave' },
-  { kind: 'nota-segura', name: 'nota segura', description: 'Texto secreto, sem entrega' },
-  { kind: 'generico', name: 'genérico', description: 'Só campos extras, do seu jeito' },
+  { kind: 'secure-note', name: 'nota segura', description: 'Texto secreto, sem entrega' },
+  { kind: 'generic', name: 'genérico', description: 'Só campos extras, do seu jeito' },
 ]);
 
 export function fieldsOfType(kind) {

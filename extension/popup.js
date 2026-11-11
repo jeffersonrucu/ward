@@ -109,7 +109,7 @@ async function send(request) {
   }
 }
 
-const errorCode = (r) => (r && r.tipo === 'erro' && r.dados ? r.dados.codigo : null);
+const errorCode = (r) => (r && r.type === 'error' && r.data ? r.data.code : null);
 
 /** Only `http:`/`https:` have an origin to fill; the rest (chrome:, file:, about:) do not. */
 function originOf(url) {
@@ -129,7 +129,7 @@ function openWardButton(cls, label, withSymbol) {
   b.type = 'button';
   b.addEventListener('click', async () => {
     b.disabled = true;
-    await send({ v: 1, op: 'abrir_app' });
+    await send({ v: 2, op: 'open_app' });
     window.close();
   });
   return b;
@@ -168,17 +168,17 @@ const NOTE =
 const EMPTY_NOTE =
   'Só aparecem entradas com a mesma origem desta aba (esquema, endereço e porta), e nada fica salvo no navegador.';
 
-// Keys: the fill reasons of `fillInPage` and the daemon error codes (wire names).
+// Keys: the fill reasons of `fillInPage` and the daemon error codes (protocol v2 names).
 const FAILURES = {
-  'origem': 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
-  'quadro': 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
-  'sem_campo': 'Não achei um campo de senha visível nesta página. Nada foi preenchido.',
-  'origem_diferente': 'A origem da aba não confere com a da entrada. Nada foi preenchido.',
-  'entrada_inexistente': 'Essa entrada não existe mais no cofre.',
+  origin: 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
+  frame: 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
+  no_field: 'Não achei um campo de senha visível nesta página. Nada foi preenchido.',
+  origin_mismatch: 'A origem da aba não confere com a da entrada. Nada foi preenchido.',
+  entry_not_found: 'Essa entrada não existe mais no cofre.',
   // Phase 44c: the confirmation of the `http` origin in the Ward window.
-  'negado': 'O preenchimento foi negado na janela do Ward. Nada foi enviado à página.',
-  'expirado': 'A confirmação na janela do Ward expirou. Nada foi preenchido.',
-  'aprovacao_indisponivel':
+  denied: 'O preenchimento foi negado na janela do Ward. Nada foi enviado à página.',
+  expired: 'A confirmação na janela do Ward expirou. Nada foi preenchido.',
+  approval_unavailable:
     'O app do Ward não abriu para confirmar a origem. Nada foi preenchido.',
 };
 
@@ -199,13 +199,13 @@ function showSuggestions(tab, origin, items) {
     'ul',
     'list',
     items.map((s) => {
-      const detail = s.totp ? `${s.usuario} · com TOTP` : s.usuario;
+      const detail = s.totp ? `${s.username} · com TOTP` : s.username;
       const b = el('button', 'item', [
         el('span', 'avatar', [icon('type-login', 'md')]),
         el('span', 'item-texts', [
           el('span', 'row', [
-            text('span', 'item-name text-body-strong', s.nome),
-            text('span', `badge-environment ${s.ambiente} text-badge`, s.ambiente),
+            text('span', 'item-name text-body-strong', s.name),
+            text('span', `badge-environment ${s.environment} text-badge`, s.environment),
           ]),
           el('span', 'row', [
             el('span', 'badge-type text-tag', [icon('type-login', 'xs'), 'login']),
@@ -214,8 +214,8 @@ function showSuggestions(tab, origin, items) {
         ]),
       ]);
       b.type = 'button';
-      b.dataset.entry = s.nome;
-      b.addEventListener('click', () => fill(tab, origin, s.nome, buttons, note));
+      b.dataset.entry = s.name;
+      b.addEventListener('click', () => fill(tab, origin, s.name, buttons, note));
       buttons.push(b);
       return el('li', null, [b]);
     }),
@@ -255,12 +255,12 @@ async function fill(tab, origin, name, buttons, note) {
       func: probe,
     });
   } catch {
-    fail(note, buttons, 'origem');
+    fail(note, buttons, 'origin');
     return;
   }
   const doc = probed && probed.result;
   if (!doc || doc.top !== true || doc.origin !== origin || !probed.documentId) {
-    fail(note, buttons, 'origem');
+    fail(note, buttons, 'origin');
     return;
   }
   // Phase 44c: an `http` origin, with the Ward window, through the service worker.
@@ -269,18 +269,18 @@ async function fill(tab, origin, name, buttons, note) {
     note.textContent = WAITING_WINDOW;
     note.classList.remove('error');
     const r = await askService({
-      t: 'preencher',
-      'aba': tab.id,
-      'documento': probed.documentId,
-      'entrada': name,
-      'origem': doc.origin,
+      t: 'fill',
+      tab: tab.id,
+      document: probed.documentId,
+      entry: name,
+      origin: doc.origin,
     });
     if (r && r.ok === true) {
       window.close();
       return;
     }
-    const code = r && typeof r.erro === 'string' ? r.erro : null;
-    if (code === 'travado') {
+    const code = r && typeof r.error === 'string' ? r.error : null;
+    if (code === 'locked') {
       showLocked(new URL(origin).host);
       return;
     }
@@ -288,11 +288,11 @@ async function fill(tab, origin, name, buttons, note) {
     return;
   }
   // 3. The daemon compares the document origin with the entry's (D9).
-  let r = await send({ v: 1, op: 'preencher', 'dados': { 'entrada': name, 'origem': doc.origin } });
-  if (!r || r.tipo !== 'preenchimento' || !r.dados) {
+  let r = await send({ v: 2, op: 'fill', data: { entry: name, origin: doc.origin } });
+  if (!r || r.type !== 'fill' || !r.data) {
     const code = errorCode(r);
     r = null;
-    if (code === 'travado') {
+    if (code === 'locked') {
       showLocked(new URL(origin).host);
       return;
     }
@@ -301,21 +301,21 @@ async function fill(tab, origin, name, buttons, note) {
   }
   let outcome = null;
   try {
-    const d = r.dados;
+    const d = r.data;
     [outcome] = await chrome.scripting.executeScript({
       target: { tabId: tab.id, documentIds: [probed.documentId] },
       world: 'ISOLATED',
       func: fillInPage,
-      args: [doc.origin, String(d.usuario ?? ''), String(d.senha ?? ''), String(d.totp ?? '')],
+      args: [doc.origin, String(d.username ?? ''), String(d.password ?? ''), String(d.totp ?? '')],
     });
   } catch {
     outcome = null;
   } finally {
     // 4. The reply with the password stays nowhere in the popup.
-    if (r.dados) {
-      r.dados.senha = '';
-      r.dados.totp = '';
-      r.dados.usuario = '';
+    if (r.data) {
+      r.data.password = '';
+      r.data.totp = '';
+      r.data.username = '';
     }
     r = null;
   }
@@ -397,14 +397,16 @@ function selectField(id, label, options, value) {
   return el('div', 'field', [l, el('div', 'select-input', [sel, icon('chevron-down', 'md')]), help]);
 }
 
-/** Field of a daemon validation problem (wire name) → field of the form. */
+/** Field of a daemon validation problem → field of the form. The keys are the `field`
+ * values of the validation, a pt-BR text the daemon shows (m2:PRD DT8: they do not
+ * change with the protocol v2). */
 const FIELD_OF_PROBLEM = { 'nome': 'name', 'grupo': 'group', 'ambiente': 'environment', 'usuario': 'username', 'senha': 'password', url: 'url' };
 
-// Keys: local codes of the service worker (wire names until m2:Phase 52).
+// Keys: local codes of the service worker (`invalid_request` is also a daemon code).
 const SAVE_FAILURES = {
-  'expirou': 'O pedido para salvar expirou. Envie o formulário de novo.',
-  'pedido_invalido': 'Confira nome, usuário e ambiente.',
-  'sem_resposta': 'O Ward não respondeu. Nada foi salvo.',
+  pending_expired: 'O pedido para salvar expirou. Envie o formulário de novo.',
+  invalid_request: 'Confira nome, usuário e ambiente.',
+  no_response: 'O Ward não respondeu. Nada foi salvo.',
 };
 
 /** Frame of the save new login form (node 17414; 18850 with the whole content). */
@@ -469,11 +471,11 @@ function showSave(tab, origin, username) {
   };
 
   // The service worker stays alive while the popup is open (it keeps the pending login).
-  const keepAlive = setInterval(() => askService({ t: 'manter', 'aba': tab.id }), 20000);
+  const keepAlive = setInterval(() => askService({ t: 'keep', tab: tab.id }), 20000);
 
   cancel.addEventListener('click', async () => {
     clearInterval(keepAlive);
-    await askService({ t: 'descartar', 'aba': tab.id });
+    await askService({ t: 'discard', tab: tab.id });
     window.close();
   });
 
@@ -483,12 +485,12 @@ function showSave(tab, origin, username) {
     saveButton.disabled = true;
     cancel.disabled = true;
     const r = await askService({
-      t: 'salvar',
-      'aba': tab.id,
-      'nome': value(name).trim(),
-      'usuario': value(usernameField).trim(),
-      'grupo': value(group).trim(),
-      'ambiente': value(environment),
+      t: 'save',
+      tab: tab.id,
+      name: value(name).trim(),
+      username: value(usernameField).trim(),
+      group: value(group).trim(),
+      environment: value(environment),
     });
     saveButton.disabled = false;
     cancel.disabled = false;
@@ -497,22 +499,22 @@ function showSave(tab, origin, username) {
       window.close();
       return;
     }
-    const code = r && typeof r.erro === 'string' ? r.erro : 'sem_resposta';
-    if (code === 'travado') {
+    const code = r && typeof r.error === 'string' ? r.error : 'no_response';
+    if (code === 'locked') {
       clearInterval(keepAlive);
       showLocked(host);
       return;
     }
-    let general = code === 'validacao' ? '' : (SAVE_FAILURES[code] ?? 'Não deu para salvar. Nada foi gravado.');
-    for (const p of (r && Array.isArray(r.problemas) ? r.problemas : [])) {
-      const c = fields[FIELD_OF_PROBLEM[p.campo]];
+    let general = code === 'validation' ? '' : (SAVE_FAILURES[code] ?? 'Não deu para salvar. Nada foi gravado.');
+    for (const p of (r && Array.isArray(r.problems) ? r.problems : [])) {
+      const c = fields[FIELD_OF_PROBLEM[p.field]];
       if (c) {
         c.classList.add('with-error');
         const a = c.querySelector('.help');
-        a.textContent = p.motivo;
+        a.textContent = p.reason;
         a.hidden = false;
       } else if (!general) {
-        general = `${p.campo}: ${p.motivo}`;
+        general = `${p.field}: ${p.reason}`;
       }
     }
     if (general) {
@@ -532,11 +534,11 @@ async function start() {
   } catch {
     tab = null;
   }
-  const pending = tab ? await askService({ t: 'pendente', 'aba': tab.id }) : null;
-  if (pending && typeof pending.origem === 'string' && typeof pending.usuario === 'string') {
-    const o = originOf(pending.origem);
+  const pending = tab ? await askService({ t: 'pending', tab: tab.id }) : null;
+  if (pending && typeof pending.origin === 'string' && typeof pending.username === 'string') {
+    const o = originOf(pending.origin);
     if (o) {
-      showSave(tab, o, pending.usuario);
+      showSave(tab, o, pending.username);
       return;
     }
   }
@@ -546,22 +548,22 @@ async function start() {
     return;
   }
   // 1. Suggestions for the tab origin; the daemon compares (D9).
-  const r = await send({ v: 1, op: 'sugerir', 'dados': { 'origem': origin } });
-  if (r && r.tipo === 'sugestoes' && r.dados && Array.isArray(r.dados.itens)) {
-    const items = r.dados.itens.filter(
+  const r = await send({ v: 2, op: 'suggest', data: { origin } });
+  if (r && r.type === 'suggestions' && r.data && Array.isArray(r.data.items)) {
+    const items = r.data.items.filter(
       (s) =>
         s &&
-        typeof s.nome === 'string' &&
-        typeof s.usuario === 'string' &&
-        ['dev', 'stage', 'prod'].includes(s.ambiente),
+        typeof s.name === 'string' &&
+        typeof s.username === 'string' &&
+        ['dev', 'stage', 'prod'].includes(s.environment),
     );
     showSuggestions(tab, origin, items);
     return;
   }
   const code = errorCode(r);
-  if (code === 'travado') {
+  if (code === 'locked') {
     showLocked(new URL(origin).host);
-  } else if (code === 'nao_autorizado') {
+  } else if (code === 'unauthorized') {
     showNotice('O Ward não reconheceu esta extensão. Confira a instalação do Ward.');
   } else {
     showNotice('O Ward não respondeu. Confira se o Ward está instalado e rodando.');

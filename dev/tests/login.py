@@ -105,7 +105,7 @@ def req(obj):
 
 def unlock():
     password = base64.b64encode(fixtures["master_password"].encode()).decode()
-    return req({"v": 1, "op": "destravar", "dados": {"senha": password}}).get("tipo") == "ok"
+    return req({"v": 2, "op": "unlock", "data": {"password": password}}).get("type") == "ok"
 
 
 # --- Phase 44c: the test window (the test approver binary) ------------------------------
@@ -450,6 +450,8 @@ try:
         title = evaluate(cdp, s, "document.title", deadline=10)
         verify(title == "falso-v6", f"ataque [::1]: a aba em localhost:8081 caiu no falso de [::1] (título {title!r})",
                 "c44_v6_aba_no_falso")
+        # The mode file takes the approver's input; its log prints the protocol v2 decision.
+        DECISION = {"negar": "deny"}
         for m in ("negar",):
             set_window_mode(m)
             seen = len(window_requests())
@@ -459,7 +461,7 @@ try:
             verify(code != 0 and v is not None and not v["u"] and not v["p"],
                     f"ataque [::1], janela {m}: `ward login acme-wp-prod` sai ≠ 0 e nada é preenchido (saiu {code};"
                     f" {err.strip()[:80]})", f"c44_v6_{m}_nada")
-            verify(new_requests == [f"pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao={m}"],
+            verify(new_requests == [f"pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao={DECISION[m]}"],
                     f"ataque [::1], janela {m}: o pedido mostra a origem ({new_requests})", f"c44_v6_{m}_origem")
         try:
             received = os.path.getsize(fake_output)
@@ -485,7 +487,7 @@ try:
     print(f"info  mensagem do `ward login` negado: {err.strip()[:120]!r}")
     report["v611_mensagem_negado"] = err.strip()[:120]
     new_requests = window_requests()[seen:]
-    verify(new_requests == ["pedido operacao=login entradas=acme-wp-dev origem=http://localhost:8081 confirmacao=0 decisao=negar"],
+    verify(new_requests == ["pedido operacao=login entradas=acme-wp-dev origem=http://localhost:8081 confirmacao=0 decisao=deny"],
             f"Fase 44c: o pedido de acme-wp-dev (com aprovação) mostra a origem http e pede o PIN ({new_requests})",
             "c44_com_aprovacao_origem")
     set_window_mode("confirmar")
@@ -496,7 +498,7 @@ try:
     code, out, err = ward_login("acme-wp-prod", t)
     verify(code == 0, f"V6.10: `ward login acme-wp-prod` sai 0 (saiu {code}: {err.strip()[:120]})", "v610_sai_0")
     new_requests = window_requests()[seen:]
-    verify(new_requests == ["pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirmar"],
+    verify(new_requests == ["pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirm"],
             f"Fase 44c: acme-wp-prod (livre, http) só depois da confirmação da origem, sem PIN ({new_requests})",
             "c44_livre_confirmacao")
     verify(not has_secret(out + err), "V6.10: a saída da CLI não tem padrão de .dev/variations.txt", "v610_saida_sem_segredo")

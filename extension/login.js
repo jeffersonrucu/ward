@@ -98,14 +98,14 @@ function connect() {
 
 async function loop(p) {
   while (port === p) {
-    const r = await request(p, { v: 1, op: 'aguardar_login' });
+    const r = await request(p, { v: 2, op: 'await_login' });
     if (port !== p || !r) return;
-    if (r.tipo === 'pedido_de_login' && r.dados && typeof r.dados.id === 'string') {
-      await serve(p, r.dados.id);
-    } else if (r.tipo === 'erro') {
+    if (r.type === 'login_request' && r.data && typeof r.data.id === 'string') {
+      await serve(p, r.data.id);
+    } else if (r.type === 'error') {
       // Locked, daemon down, or this host does not have the extension role.
-      const code = r.dados && r.dados.codigo;
-      await sleep(code === 'nao_autorizado' ? 60 * 1000 : 5 * 1000);
+      const code = r.data && r.data.code;
+      await sleep(code === 'unauthorized' ? 60 * 1000 : 5 * 1000);
     }
   }
 }
@@ -129,7 +129,7 @@ async function afterSubmit(tab, submittedDocument, origin) {
     try {
       loading = (await chrome.tabs.get(tab)).status === 'loading';
     } catch {
-      return 'falha';
+      return 'failure';
     }
     // The tab is still loading (the submit, a redirect or the next page).
     if (loading) continue;
@@ -140,14 +140,14 @@ async function afterSubmit(tab, submittedDocument, origin) {
     if (!r.result.ready) continue;
     // A page of another origin after the submit: the login was sent to the right
     // origin, but there is no telling whether it got in.
-    if (r.result.origin !== origin) return 'enviado';
-    return r.result.password ? 'recusado' : 'enviado';
+    if (r.result.origin !== origin) return 'submitted';
+    return r.result.password ? 'refused' : 'submitted';
   }
-  return 'enviado';
+  return 'submitted';
 }
 
 async function serve(p, id) {
-  let outcome = 'falha';
+  let outcome = 'failure';
   try {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (!tab || !Number.isInteger(tab.id) || tab.id < 0 || tab.incognito) return;
@@ -156,37 +156,37 @@ async function serve(p, id) {
     // and the daemon refuses it as a different origin.
     const origin = probed && probed.result && probed.result.top ? String(probed.result.origin) : '';
     const documentId = probed ? probed.documentId : undefined;
-    const r = await request(p, { v: 1, op: 'preencher_login', 'dados': { id, 'origem': origin } });
-    if (!r || r.tipo !== 'preenchimento' || !r.dados || typeof documentId !== 'string') {
+    const r = await request(p, { v: 2, op: 'fill_login', data: { id, origin } });
+    if (!r || r.type !== 'fill' || !r.data || typeof documentId !== 'string') {
       // The daemon already decided (different origin, expired) or the reply did not come.
-      outcome = r && r.tipo === 'erro' ? null : 'falha';
+      outcome = r && r.type === 'error' ? null : 'failure';
       return;
     }
-    const d = r.dados;
-    const args = [origin, String(d.usuario || ''), String(d.senha || ''), String(d.totp || ''), true];
-    d.senha = '';
+    const d = r.data;
+    const args = [origin, String(d.username || ''), String(d.password || ''), String(d.totp || ''), true];
+    d.password = '';
     d.totp = '';
-    r.dados = null;
+    r.data = null;
     const done = await inject({ tabId: tab.id, documentIds: [documentId] }, fillInPage, args);
     args.fill('');
     const v = done && done.result;
     if (!v) {
-      outcome = 'aba_mudou';
+      outcome = 'tab_changed';
     } else if (!v.ok) {
       outcome =
-        v.reason === 'origem' || v.reason === 'quadro'
-          ? 'aba_mudou'
-          : v.reason === 'formulario' || v.reason === 'sem_campo'
-            ? 'sem_formulario'
-            : 'falha';
+        v.reason === 'origin' || v.reason === 'frame'
+          ? 'tab_changed'
+          : v.reason === 'form' || v.reason === 'no_field'
+            ? 'no_form'
+            : 'failure';
     } else {
       outcome = await afterSubmit(tab.id, documentId, origin);
     }
   } catch {
-    outcome = 'falha';
+    outcome = 'failure';
   } finally {
     if (outcome && port === p) {
-      await request(p, { v: 1, op: 'resultado_login', 'dados': { id, 'resultado': outcome } });
+      await request(p, { v: 2, op: 'login_result', data: { id, result: outcome } });
     }
   }
 }

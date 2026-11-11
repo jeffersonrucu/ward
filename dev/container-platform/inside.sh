@@ -414,67 +414,67 @@ check "Fase 40: destravou a cópia do cofre de teste" "$r" "resposta: ok"
 
 M=/tmp/msgs-40.jsonl
 cat > "$M" <<'FIM'
-{"v":1,"op":"estado"}
-{"v":1,"op":"sugerir","dados":{"origem":"http://localhost:8081/wp-login.php"}}
-{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081/wp-login.php"}}
-{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://127.0.0.1:8081/wp-login.php"}}
-{"v":1,"op":"sugerir","dados":{"origem":"http://127.0.0.1:8081/wp-login.php"}}
-{"v":1,"op":"revelar","dados":{"entrada":"acme-wp-dev","campo":"senha"}}
-{"v":1,"op":"lista"}
+{"v":2,"op":"status"}
+{"v":2,"op":"suggest","data":{"origin":"http://localhost:8081/wp-login.php"}}
+{"v":2,"op":"fill","data":{"entry":"acme-wp-dev","origin":"http://localhost:8081/wp-login.php"}}
+{"v":2,"op":"fill","data":{"entry":"acme-wp-dev","origin":"http://127.0.0.1:8081/wp-login.php"}}
+{"v":2,"op":"suggest","data":{"origin":"http://127.0.0.1:8081/wp-login.php"}}
+{"v":2,"op":"reveal","data":{"entry":"acme-wp-dev","field":"password"}}
+{"v":2,"op":"list"}
 FIM
 chmod 0644 "$M"
 # Line $1 of the output in $r.
 l() { sed -n "${1}p" <<<"$r"; }
 r="$(as_1000 /opt/google/chrome/chrome /usr/local/bin/ward-nm "$M")"
-check "D47: ward-nm setgid aberto pelo Chrome instalado recebe o papel extensão" "$(l 1)" '"papel":"extensao"'
-check "D9: sugerir em localhost:8081 traz acme-wp-dev" "$(l 2)" '"nome":"acme-wp-dev"'
-check "D9: sugerir em localhost:8081 traz acme-wp-prod" "$(l 2)" '"nome":"acme-wp-prod"'
+check "D47: ward-nm setgid aberto pelo Chrome instalado recebe o papel extensão" "$(l 1)" '"role":"extension"'
+check "D9: suggest em localhost:8081 traz acme-wp-dev" "$(l 2)" '"name":"acme-wp-dev"'
+check "D9: suggest em localhost:8081 traz acme-wp-prod" "$(l 2)" '"name":"acme-wp-prod"'
 # Phase 54 (44c/44e): http (even on localhost) asks for the origin confirmation in the
 # approval window; here nobody confirms (the host ends stdin and exits): the request is
 # denied and nothing comes out. The daemon log must show the requested confirmation (checked at the end).
 # Without app or session in the container, the window does not open: the daemon denies or
 # answers "approval unavailable"; both refuse the fill (checked right below).
 case "$(l 3)" in
-    *'"codigo":"negado"'* | *'"codigo":"aprovacao_indisponivel"'*) ok "D9/44c: preencher acme-wp-dev em http://localhost:8081 sem confirmar: recusado" ;;
-    *) failed "D9/44c: preencher acme-wp-dev em http://localhost:8081 sem confirmar: recusado (veio '$(l 3)')" ;;
+    *'"code":"denied"'* | *'"code":"approval_unavailable"'*) ok "D9/44c: fill acme-wp-dev em http://localhost:8081 sem confirmar: recusado" ;;
+    *) failed "D9/44c: fill acme-wp-dev em http://localhost:8081 sem confirmar: recusado (veio '$(l 3)')" ;;
 esac
-lacks "D9/44c: sem a confirmação, nada de preenchimento" "$(l 3)" '"preenchimento"'
-lacks "D9/44c: sem a confirmação, nada de senha" "$(l 3)" '"senha"'
-check "V6.2: preencher acme-wp-dev em 127.0.0.1:8081 é recusado pelo daemon" "$(l 4)" '"codigo":"origem_diferente"'
-lacks "V6.2: a recusa de origem não leva valor" "$(l 4)" '"senha"'
-check "V6.2: sugerir em 127.0.0.1:8081 não traz acme-wp-*" "$(l 5)" '"itens":[]'
-check "papel extensão: revelar (operação do app) recusado" "$(l 6)" '"codigo":"nao_autorizado"'
-check "papel extensão: lista (operação do agente e do app) recusada" "$(l 7)" '"codigo":"nao_autorizado"'
+lacks "D9/44c: sem a confirmação, nada de preenchimento" "$(l 3)" '"type":"fill"'
+lacks "D9/44c: sem a confirmação, nada de senha" "$(l 3)" '"password"'
+check "V6.2: fill acme-wp-dev em 127.0.0.1:8081 é recusado pelo daemon" "$(l 4)" '"code":"origin_mismatch"'
+lacks "V6.2: a recusa de origem não leva valor" "$(l 4)" '"password"'
+check "V6.2: suggest em 127.0.0.1:8081 não traz acme-wp-*" "$(l 5)" '"items":[]'
+check "papel extensão: reveal (operação do app) recusado" "$(l 6)" '"code":"unauthorized"'
+check "papel extensão: list (operação do agente e do app) recusada" "$(l 7)" '"code":"unauthorized"'
 check "o host sai 0 no fim do stdin" "$(l 8)" "saida=0"
 
 # V6.1: the same ward-nm executed by a user process (the parent is not Chrome).
-printf '{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081/wp-login.php"}}' > /tmp/v61.json
+printf '{"v":2,"op":"fill","data":{"entry":"acme-wp-dev","origin":"http://localhost:8081/wp-login.php"}}' > /tmp/v61.json
 printf "$(printf '\\x%02x\\x00\\x00\\x00' "$(stat -c %s /tmp/v61.json)")" > /tmp/v61.bin
 cat /tmp/v61.json >> /tmp/v61.bin
 chmod 0644 /tmp/v61.bin
 r="$(as_1000 /usr/bin/bash -c '/usr/local/bin/ward-nm chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf/ < /tmp/v61.bin | tr -d "\000-\037"; true')"
-check "V6.1: ward-nm executado direto: o daemon recusa (nao_autorizado)" "$r" "nao_autorizado"
-lacks "V6.1: ward-nm executado direto: nada de senha no stdout" "$r" "senha"
+check "V6.1: ward-nm executado direto: o daemon recusa (unauthorized)" "$r" "unauthorized"
+lacks "V6.1: ward-nm executado direto: nada de senha no stdout" "$r" "password"
 # A copy of "Chrome" outside the installed path, the user's: agent.
 as_1000 cp /opt/google/chrome/chrome /run/user/1000/chrome
 r="$(as_1000 /run/user/1000/chrome /usr/local/bin/ward-nm "$M")"
-check "V6.1: pai que é cópia do Chrome fora de /opt/google/chrome: estado nao_autorizado" "$(l 1)" '"codigo":"nao_autorizado"'
-check "V6.1: pai que é cópia do Chrome: preencher recusado" "$(l 3)" '"codigo":"nao_autorizado"'
-lacks "V6.1: pai que é cópia do Chrome: nada de preenchimento" "$r" "preenchimento"
+check "V6.1: pai que é cópia do Chrome fora de /opt/google/chrome: status unauthorized" "$(l 1)" '"code":"unauthorized"'
+check "V6.1: pai que é cópia do Chrome: fill recusado" "$(l 3)" '"code":"unauthorized"'
+lacks "V6.1: pai que é cópia do Chrome: nada de preenchimento" "$r" '"type":"fill"'
 # The installed Chrome with LD_PRELOAD in the environment (Chrome is not setgid): agent.
 r="$(as_1000 /usr/bin/env LD_PRELOAD="$LIB" /opt/google/chrome/chrome /usr/local/bin/ward-nm "$M")"
-check "D5: Chrome com LD_PRELOAD de pai: preencher recusado" "$(l 3)" '"codigo":"nao_autorizado"'
-lacks "D5: Chrome com LD_PRELOAD de pai: nada de preenchimento" "$r" "preenchimento"
+check "D5: Chrome com LD_PRELOAD de pai: fill recusado" "$(l 3)" '"code":"unauthorized"'
+lacks "D5: Chrome com LD_PRELOAD de pai: nada de preenchimento" "$r" '"type":"fill"'
 # A copy of ward-nm (without setgid) with the installed Chrome as parent: agent.
 as_1000 cp /usr/local/bin/ward-nm /run/user/1000/ward-nm-copia
 r="$(as_1000 /opt/google/chrome/chrome /run/user/1000/ward-nm-copia "$M")"
-check "V3.5/D47: cópia do ward-nm sem setgid, com o Chrome de pai: preencher recusado" "$(l 3)" '"codigo":"nao_autorizado"'
-lacks "V3.5/D47: cópia do ward-nm: nada de preenchimento" "$r" "preenchimento"
+check "V3.5/D47: cópia do ward-nm sem setgid, com o Chrome de pai: fill recusado" "$(l 3)" '"code":"unauthorized"'
+lacks "V3.5/D47: cópia do ward-nm: nada de preenchimento" "$r" '"type":"fill"'
 # Message above the limit through Chrome.
-printf '{"v":1,"op":"sugerir","dados":{"origem":"http://localhost:8081/%s"}}\n' "$(head -c 70000 /dev/zero | tr '\0' a)" > /tmp/grande-40.jsonl
+printf '{"v":2,"op":"suggest","data":{"origin":"http://localhost:8081/%s"}}\n' "$(head -c 70000 /dev/zero | tr '\0' a)" > /tmp/grande-40.jsonl
 chmod 0644 /tmp/grande-40.jsonl
 r="$(as_1000 /opt/google/chrome/chrome /usr/local/bin/ward-nm /tmp/grande-40.jsonl)"
-check "mensagem de mais de 64 KiB: quadro_invalido" "$r" '"codigo":"quadro_invalido"'
+check "mensagem de mais de 64 KiB: invalid_frame" "$r" '"code":"invalid_frame"'
 check "mensagem de mais de 64 KiB: o host sai ≠ 0" "$r" "saida=1"
 
 kill "$SRV40" 2>/dev/null || true
