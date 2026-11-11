@@ -187,6 +187,10 @@ fn attack_v3_41_date_from_the_client_refused() {
     save(&d, &login("t-datas", SECRETS[0]));
     let before = std::fs::read(&dir.paths().vault).unwrap();
     clock.set(T0 + DAY);
+    let originals = [
+        edit("t-datas", "t-datas", SECRETS[1]),
+        login("t-nova", SECRETS[1]),
+    ];
     for forged in [
         edit("t-datas", "t-datas", SECRETS[1]).replacen(
             r#""name":"t-datas","group""#,
@@ -201,7 +205,17 @@ fn attack_v3_41_date_from_the_client_refused() {
         login("t-nova", SECRETS[1]).replacen('{', r#"{"created_at":1,"#, 1),
         login("t-nova", SECRETS[1]).replacen(r#""url":"#, r#""modified_at":1,"url":"#, 1),
     ] {
-        assert!(forged.contains("_em\":1"), "{forged}");
+        // The guard: the forged date really went into the draft (a `replacen` that
+        // finds nothing would send the original and prove nothing).
+        assert!(
+            forged.contains("\"created_at\":1") || forged.contains("\"modified_at\":1"),
+            "{forged}"
+        );
+        assert!(!originals.contains(&forged), "{forged}");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&forged).is_ok(),
+            "{forged}"
+        );
         let r = request(&d, Role::App, "save_entry", &forged);
         assert_eq!(error(&r), Some(ResponseError::InvalidRequest), "{forged}");
     }

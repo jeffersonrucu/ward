@@ -885,7 +885,23 @@ mod tests {
                 r => break r.unwrap(),
             }
         };
-        let chain = process_chain(child.id());
+        // `spawn` (posix_spawn, `CLONE_VFORK`) returns when the child releases the old
+        // memory, a moment before the kernel sets the new `comm` in the same `exec`:
+        // right after it, the name can still be the one of the test thread that forked.
+        // Waits (up to 2 s) for the name of the forking thread to go; the assertions
+        // below are unchanged.
+        let thread = std::thread::current();
+        let forker = thread.name().unwrap_or_default();
+        let forker: String = forker.chars().take(15).collect();
+        let mut chain = process_chain(child.id());
+        for _ in 0..100 {
+            match chain.last() {
+                Some(l) if l.pid == child.id() && l.name != forker => break,
+                _ => {}
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            chain = process_chain(child.id());
+        }
         let _ = child.kill();
         let _ = child.wait();
         let _ = std::fs::remove_dir_all(&dir);

@@ -1,0 +1,181 @@
+dev/tests/attacks-foundation.sh
+ok    V1.2 make check sai 2 e aponta leak.txt
+ok    V1.2 a saída do make check não repete o segredo
+ok    V1.2 sem o arquivo, make check volta a 0
+ok    allowlist: valor falso com sufixo ainda é achado
+ok    índice: chave em .dev/ forçada com git add -f é achada
+ok    V1.3 make check falha em cargo audit com RUSTSEC-2020-0071
+ok    V1.3 cargo deny também recusa RUSTSEC-2020-0071
+ok    V1.3 make check recusa a origem git na pré-checagem, antes do passo 1
+ok    V1.3 cargo deny também recusa a origem git (source-not-allowed)
+ok    V1.3 Cargo.lock existe e não é ignorado
+ok    V1.5 .dev/anything é ignorado
+ok    V1.5 .dev/test-vault.ward é ignorado
+ok    V1.5 .dev/tools/bin/gitleaks é ignorado
+ok    V1.5 Makefile e dev/ não citam pasta proibida
+ok    47a controle: a linha de base 0.1.4 tem os padrões (a exclusão tem efeito)
+ok    47a controle: cópia sem mudança limpa (só a linha de base é pulada)
+ok    47a padrão plantado em dev/ fora da linha de base é acusado
+ok    47a padrão plantado em dev/fixtures/ (vizinho de legacy/) é acusado
+ok    47a padrão plantado em pasta com prefixo legacy (dev/fixtures/legacy-x/) é acusado
+ok    47a padrão plantado em pasta legacy/ aninhada (dev/tests/fixtures/legacy/) é acusado
+ok    47a padrão plantado em arquivo novo em legacy/ (fora do SHA256SUMS) é acusado
+ok    47a padrão plantado em subpasta de legacy/ fora do SHA256SUMS é acusado
+ok    47a padrão plantado em arquivo da linha de base alterado (sha256 não bate) é acusado
+ok    47a padrão plantado em Makefile é acusado
+ok    47a SHA256SUMS com ../ não tira da varredura um arquivo fora de legacy/
+ok    extra: chave em app/package-lock.json é achado na árvore
+ok    extra: chave em app/package-lock.json é achado no índice
+ok    extra: chave em app/pnpm-lock.yaml é achado na árvore
+ok    extra: chave em app/pnpm-lock.yaml é achado no índice
+ok    extra: chave em Cargo.lock.bak é achado na árvore
+ok    extra: chave em Cargo.lock.bak é achado no índice
+ok    extra: chave em go.sum é achado na árvore
+ok    extra: chave em go.sum é achado no índice
+ok    extra: chave em gitleaks.toml é achado na árvore
+ok    extra: chave em gitleaks.toml é achado no índice
+ok    extra: chave em docs/.gitleaks.toml é achado na árvore
+ok    extra: chave em docs/.gitleaks.toml é achado no índice
+ok    extra: chave em docs/icon.svg é achado na árvore
+ok    extra: chave em docs/icon.svg é achado no índice
+ok    extra: chave em docs/photo.png é achado na árvore
+ok    extra: chave em docs/photo.png é achado no índice
+ok    extra: chave em docs/manual.pdf é achado na árvore
+ok    extra: chave em docs/manual.pdf é achado no índice
+ok    extra: chave em docs/font.woff2 é achado na árvore
+ok    extra: chave em docs/font.woff2 é achado no índice
+ok    extra: chave em vendor/x/README é achado na árvore
+ok    extra: chave em vendor/x/README é achado no índice
+ok    extra: chave em docs/package.txt.gz é achado na árvore
+ok    extra: chave em docs/package.txt.gz é achado no índice
+ok    extra: aws em app/package-lock.json é achado na árvore
+ok    extra: aws em app/package-lock.json é achado no índice
+ok    extra: aws em app/pnpm-lock.yaml é achado na árvore
+ok    extra: aws em app/pnpm-lock.yaml é achado no índice
+ok    extra: aws em Cargo.lock.bak é achado na árvore
+ok    extra: aws em Cargo.lock.bak é achado no índice
+ok    extra: aws em go.sum é achado na árvore
+ok    extra: aws em go.sum é achado no índice
+ok    extra: aws em gitleaks.toml é achado na árvore
+ok    extra: aws em gitleaks.toml é achado no índice
+ok    extra: aws em docs/.gitleaks.toml é achado na árvore
+ok    extra: aws em docs/.gitleaks.toml é achado no índice
+ok    extra: aws em docs/icon.svg é achado na árvore
+ok    extra: aws em docs/icon.svg é achado no índice
+ok    extra: aws em docs/photo.png é achado na árvore
+ok    extra: aws em docs/photo.png é achado no índice
+ok    extra: aws em docs/manual.pdf é achado na árvore
+ok    extra: aws em docs/manual.pdf é achado no índice
+ok    extra: aws em docs/font.woff2 é achado na árvore
+ok    extra: aws em docs/font.woff2 é achado no índice
+ok    extra: aws em vendor/x/README é achado na árvore
+ok    extra: aws em vendor/x/README é achado no índice
+ok    extra: aws em docs/package.txt.gz é achado na árvore
+ok    extra: aws em docs/package.txt.gz é achado no índice
+ok    extra: id em app/package-lock.json é achado na árvore
+ok    extra: id em app/package-lock.json é achado no índice
+ok    extra: id em app/pnpm-lock.yaml é achado na árvore
+ok    extra: id em app/pnpm-lock.yaml é achado no índice
+ok    extra: id em Cargo.lock.bak é achado na árvore
+ok    extra: id em Cargo.lock.bak é achado no índice
+ok    extra: id em go.sum é achado na árvore
+ok    extra: id em go.sum é achado no índice
+ok    extra: id em gitleaks.toml é achado na árvore
+ok    extra: id em gitleaks.toml é achado no índice
+ok    extra: id em docs/.gitleaks.toml é achado na árvore
+ok    extra: id em docs/.gitleaks.toml é achado no índice
+ok    extra: id em docs/icon.svg é achado na árvore
+ok    extra: id em docs/icon.svg é achado no índice
+ok    extra: id em docs/photo.png é achado na árvore
+ok    extra: id em docs/photo.png é achado no índice
+ok    extra: id em docs/manual.pdf é achado na árvore
+ok    extra: id em docs/manual.pdf é achado no índice
+ok    extra: id em docs/font.woff2 é achado na árvore
+ok    extra: id em docs/font.woff2 é achado no índice
+ok    extra: id em vendor/x/README é achado na árvore
+ok    extra: id em vendor/x/README é achado no índice
+ok    extra: id em docs/package.txt.gz é achado na árvore
+ok    extra: id em docs/package.txt.gz é achado no índice
+ok    origens: make check falha na pré-checagem (antes do passo 1) com replace-with para vendor/
+ok    origens: source em chave pontilhada é recusado
+ok    origens: .cargo/config com [patch] é recusado
+ok    origens: [registries] é recusado
+ok    origens: source num .cargo/config.toml de diretório pai é recusado
+ok    origens: .cargo/config.toml inválido é recusado
+ok    origens: CARGO_REGISTRIES_MAU_INDEX no ambiente é recusado
+ok    origens: [patch] no Cargo.toml é recusado
+ok    origens: [replace] no Cargo.toml é recusado
+ok    origens: dependência por path fora do repositório é recusado
+ok    origens: path relativo com .. para fora do repositório é recusado
+ok    origens: cópia limpa passa
+ok    GITLEAKS=/bin/true no ambiente não desliga o gitleaks
+ok    CARGO=false no ambiente não troca o cargo
+ok    gitleaks trocado em .dev/ é recusado pelo sha256
+ok    gitleaks com um byte a mais é recusado
+ok    pré-checagem: [alias] audit/deny para um fake-ok (v13-alias), com RUSTSEC-2020-0071 é barrado antes do passo 1
+ok    cargo-audit pelo caminho absoluto ignora o [alias] e acha RUSTSEC-2020-0071
+ok    pré-checagem: [alias] audit/deny = version é barrado antes do passo 1
+ok    pré-checagem: build.rustc é barrado antes do passo 1
+ok    pré-checagem: build.rustc-wrapper (wrap.sh) é barrado antes do passo 1
+ok    pré-checagem: build.rustc-workspace-wrapper é barrado antes do passo 1
+ok    pré-checagem: target.<triplo>.linker é barrado antes do passo 1
+ok    pré-checagem: build.rustflags com -C linker é barrado antes do passo 1
+ok    pré-checagem: target.<triplo>.runner é barrado antes do passo 1
+ok    pré-checagem: [env] é barrado antes do passo 1
+ok    pré-checagem: chave pontilhada build.rustc-wrapper é barrado antes do passo 1
+ok    pré-checagem: .cargo/config.toml só com [term] é barrado antes do passo 1
+ok    pré-checagem: .cargo/config sem extensão é barrado antes do passo 1
+ok    pré-checagem: .cargo/config.toml numa subpasta (crates/ward-core) é barrado antes do passo 1
+ok    pré-checagem: .cargo/config.bak (qualquer config*) é barrado antes do passo 1
+ok    pré-checagem: .cargo como link simbólico para fora é barrado antes do passo 1
+ok    pré-checagem: .cargo/config.toml inofensivo em diretório pai é barrado antes do passo 1
+ok    pré-checagem: RUSTC no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTC_WRAPPER no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTC_WORKSPACE_WRAPPER no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_BUILD_RUSTC_WRAPPER no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_BUILD_RUSTC no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTFLAGS no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_BUILD_RUSTFLAGS no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_ENCODED_RUSTFLAGS no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTDOCFLAGS no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTDOC no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_ALIAS_AUDIT no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_TARGET_DIR no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTC_BOOTSTRAP no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTUP_TOOLCHAIN no ambiente é barrado antes do passo 1
+ok    pré-checagem: RUSTUP_DIST_SERVER no ambiente é barrado antes do passo 1
+ok    pré-checagem: CARGO_UNSTABLE_BUILD_STD no ambiente é barrado antes do passo 1
+ok    CARGO_HOME/RUSTUP_HOME/CARGO do ambiente não valem (o Makefile fixa os do passwd)
+ok    origins.py sozinho recusa CARGO_HOME diferente do esperado
+ok    pré-checagem: CARGO_TERM_COLOR (da lista) passa
+ok    pré-checagem: rust-toolchain.toml com path é barrado antes do passo 1
+ok    pré-checagem: rust-toolchain.toml com canal móvel (nightly) é barrado antes do passo 1
+ok    pré-checagem: rust-toolchain sem extensão é barrado antes do passo 1
+ok    controle: sem a pré-checagem o rustc-wrapper plantado roda (o vetor é real)
+ok    CARGO_HOME: config com '[alias] audit = "version"' é recusado
+ok    CARGO_HOME: config com '[build] rustc-wrapper = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.Z26gSj/decoys/wrap.sh"' é recusado
+ok    CARGO_HOME: config com '[build] rustc = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.Z26gSj/decoys/rustc.sh"' é recusado
+ok    CARGO_HOME: config com '[target.x86_64-unknown-linux-gnu] linker = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.Z26gSj/decoys/linker.sh"' é recusado
+ok    CARGO_HOME: config com '[build] rustflags = ["-Cdebuginfo=0"]' é recusado
+ok    CARGO_HOME: config com '[env] RUSTC_BOOTSTRAP = "1"' é recusado
+ok    CARGO_HOME: config com '[source.crates-io] replace-with = "v"' é recusado
+ok    CARGO_HOME: config com '[registries.mau] index = "sparse+https://example.invalid/"' é recusado
+ok    CARGO_HOME: config com '[http] proxy = "http://127.0.0.1:9"' é recusado
+ok    CARGO_HOME: config com '[net] git-fetch-with-cli = true' é recusado
+ok    CARGO_HOME: config com 'include = "other.toml"' é recusado
+ok    CARGO_HOME: config com '[term] color = ["never"]' é recusado
+ok    CARGO_HOME: config com '[source' é recusado
+ok    CARGO_HOME: config ausente passa
+ok    CARGO_HOME: config só com chaves permitidas (term, net.retry, build.jobs) passa
+ok    rustup override de diretório é recusado
+ok    28f: make origins da raiz limpo com 21 .cargo/config* plantados nas cópias
+ok    PATH/MAKEFLAGS/BASH_ENV/HOME/gitconfig do usuário não trocam nada no make check
+ok    controle: core.fsmonitor do gitconfig roda sem o isolamento
+ok    core.fsmonitor no .git/config não roda no make gitleaks
+ok    git dos testes ignora o ignore global do usuário (check-ignore depende só do repositório)
+ok    controle: sem o isolamento o ignore global vale
+ok    28f: make origins da raiz limpo com 21 .cargo/config* plantados nas cópias
+
+Todos os ataques foram barrados.

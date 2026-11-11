@@ -298,23 +298,36 @@ mod tests {
         let ward = base.join("ward-falso");
         let output = base.join("saida");
         let ready = base.join("pronto");
-        std::fs::write(&emulator, "#!/bin/sh\nshift\nexec \"$@\"\n").unwrap();
+        // The scripts are written to a `.tmp` and `/bin/cp` creates the file that runs:
+        // no fd of this (multithreaded) process ever writes the inode that is executed,
+        // so a child forked at the same time by another test cannot hold it open for
+        // writing and make the `exec` fail with ETXTBSY (dash then exits 2).
+        let install = |path: &Path, content: &str| {
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, content).unwrap();
+            let st = Command::new("/bin/cp")
+                .arg("--")
+                .arg(&tmp)
+                .arg(path)
+                .status()
+                .unwrap();
+            assert!(st.success(), "{st:?}");
+            std::fs::remove_file(&tmp).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        };
+        install(&emulator, "#!/bin/sh\nshift\nexec \"$@\"\n");
         // $1=ssh $2=--token-fd $3=<n> $4=<entry>. Reads the channel, lists the fds and
         // stays alive a little so the reader sweeps the process with the fd still open.
-        std::fs::write(
+        install(
             &ward,
-            format!(
+            &format!(
                 "#!/bin/sh\nls -l /proc/$$/fd > '{d}/fds' 2>&1\nsleep 0.4\n\
                  eval \"cat <&$3\" > '{s}'\n: > '{p}'\nsleep 0.4\n",
                 d = base.display(),
                 s = output.display(),
                 p = ready.display()
             ),
-        )
-        .unwrap();
-        for f in [&emulator, &ward] {
-            std::fs::set_permissions(f, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
+        );
 
         // A new token on each run, generated here (never written in the repository).
         let generated = ward_core::generator::connect_token().unwrap();
