@@ -321,7 +321,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   `#[serde(rename = "<antigo>")]`; lista do `strings` do V5.6 (missão 1) com os nomes
   novos. `frozen.txt` vazio e apagado. Compilação: `make compile`. — V4.22, V4.23, V4.24
 
-- [ ] Fase 54a — Correção (achados da Fase 51): (1) `crates/ward-nm/tests/binary.rs` › `no_daemon_answers_internal`, rodado com
+- [x] Fase 54a — Correção (achados da Fase 51): (1) `crates/ward-nm/tests/binary.rs` › `no_daemon_answers_internal`, rodado com
   `cargo test -p ward -p ward-nm -p ward-test-bridge`, compilou o `ward-nm` sem `test-mode` e alcançou o `wardd` 0.1.4
   instalado na máquina pelo socket do sistema (pedido `fill` sem segredo, recusado). Nenhum teste pode alcançar o socket do
   sistema: todo teste que fala com um daemon exige `test-mode` (falha alta sem ele, nunca cai no socket real) e um socket
@@ -396,7 +396,7 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
   versão 0.2.0 (DT19); comparação dos literais com `strings-0.1.4.txt` e lista da
   diferença no handoff; procura dos nomes antigos (V6.2). Compilação: `make compile`. —
   V6.1, V6.2, V6.3
-- [ ] Fase 61 — (achado da Fase 50: gitleaks acusa `"falso-mestra-ward-03"` em `crates/ward-core/src/backup/tests.rs:369`, fora da allowlist de D15) Bateria A (estática e unitária): `make check`, `make app-check`,
+- [ ] Fase 61 — (achado das Fases 50 e 54a: a árvore está limpa no gitleaks, mas o `gitleaks git` acusa 12 valores falsos de teste no histórico — commits `1ae5610`, `0c09209`, `c0d849e`, `81960fb`, `541720e`, `1b2820b`, lista no handoff da 54a; o usuário decide reescrever, ignorar por fingerprint ou aceitar; roda também `make test-system-socket`) Bateria A (estática e unitária): `make check`, `make app-check`,
   `make test-no-test-mode`, `make test-skill`, `make test-migration-guide`,
   `make dev-vault` + `dev-variations` + `test-dev-vault`,
   `make test-attacks-foundation`, testes de fio no commit do fim do M3 (V2.2),
