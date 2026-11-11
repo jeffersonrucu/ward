@@ -1,5 +1,0 @@
-# Wire names frozen until the phase that changes them (m2:DT3, m2:PRD rule 4).
-#
-# One per line: <path-glob> <word-or-identifier> <phase> <reason...>
-# Same matching as allow.txt. An entry that matches no finding fails the checker.
-# Phase 60 requires this list empty and removes the file.

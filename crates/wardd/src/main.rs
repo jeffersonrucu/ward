@@ -40,7 +40,7 @@ fn listener(config: &Config) -> Result<Listener, String> {
 fn test_opener(config: &Config) -> (Option<RealOpener>, Option<TestApp>) {
     match &config.test_app {
         Some(b) => {
-            warning!("daemon de teste: abrir_app abre o app de teste da configuração");
+            warning!("daemon de teste: open_app abre o app de teste da configuração");
             let a = RealOpener::for_test(b.clone());
             let app = TestApp::new(a.launched_app());
             (Some(a), Some(app))

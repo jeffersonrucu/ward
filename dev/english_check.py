@@ -18,11 +18,12 @@ A comment or identifier is flagged when it has:
 
 Exceptions (one per line, `#` starts a comment, fields split by whitespace):
   dev/english-check/allow.txt   <path-glob> <word-or-identifier> <reason...>
-  dev/english-check/frozen.txt  <path-glob> <word-or-identifier> <phase> <reason...>
-`allow.txt` is permanent; `frozen.txt` holds wire names frozen until the phase that
-changes them (m2:DT3). The glob follows `fnmatch` (`*` also crosses `/`). An
+`allow.txt` is permanent. The glob follows `fnmatch` (`*` also crosses `/`). An
 exception that matches no finding fails the run (reported as unused); with `--paths`
 only the exceptions whose glob matches a checked file are held to that.
+`dev/english-check/frozen.txt` held the wire names frozen until the phase that changed
+them (m2:DT3); m2 Phase 60 emptied and removed it, and the file existing again fails
+the run (m2:V6.1).
 
 Usage (always with `python3 -I`; only the standard library):
   dev/english_check.py                      whole repository
@@ -1383,17 +1384,18 @@ class Rule:
 
 def load_exceptions(root):
     out, errors = [], []
-    for rel, min_fields in ((ALLOW, 3), (FROZEN, 4)):
-        for n, raw in enumerate(read_list(root, rel).splitlines(), 1):
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            fields = line.split()
-            if len(fields) < min_fields or (rel == FROZEN and not re.fullmatch(r"\d+", fields[2])):
-                errors.append(f"{rel}:{n}: linha mal formada (esperado: caminho palavra"
-                              + (" fase" if rel == FROZEN else "") + " motivo)")
-                continue
-            out.append(Rule(rel, n, fields[0], fold(fields[1])))
+    # m2:V6.1: the frozen list is gone for good (Phase 60); it coming back is an error.
+    if os.path.lexists(os.path.join(root, FROZEN)):
+        errors.append(f"{FROZEN}: não deve existir (a Fase 60 da missão 2 a esvaziou e apagou)")
+    for n, raw in enumerate(read_list(root, ALLOW).splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split()
+        if len(fields) < 3:
+            errors.append(f"{ALLOW}:{n}: linha mal formada (esperado: caminho palavra motivo)")
+            continue
+        out.append(Rule(ALLOW, n, fields[0], fold(fields[1])))
     return out, errors
 
 
@@ -1629,7 +1631,6 @@ def self_test():
         _copy_repo(ROOT, dest)
         # Exceptions of the copy start empty: each case writes its own.
         _write(dest, ALLOW, "")
-        _write(dest, FROZEN, "")
         copied = list_files(dest)
 
         for lang, rel, content, expected, glob, appended in PLANTS:
@@ -1694,17 +1695,23 @@ def self_test():
         _write(dest, ALLOW, "dev/selftest_clean.rs senha self-test\n")
         found, problems = run_check(dest, ["dev/selftest_clean.rs"], words)
         expect("allow sem uso", any("exceção sem uso" in p for p in problems), str(problems))
-        _write(dest, ALLOW, "")
-        _write(dest, FROZEN, "dev/selftest_clean.rs destravar 54 self-test\n")
-        found, problems = run_check(dest, ["dev/selftest_clean.rs"], words)
-        expect("frozen sem uso", any("exceção sem uso" in p for p in problems), str(problems))
-        _write(dest, FROZEN, "nao/existe.rs cofre 54 self-test\n")
+        _write(dest, ALLOW, "nao/existe.rs cofre self-test\n")
         found, problems = run_check(dest, [], words)
-        expect("frozen sem uso (tudo)", any("exceção sem uso" in p and "nao/existe.rs" in p for p in problems),
+        expect("allow sem uso (tudo)", any("exceção sem uso" in p and "nao/existe.rs" in p for p in problems),
                str(problems))
-        _write(dest, FROZEN, "dev/selftest_allowed.rs cofre self-test\n")
+        _write(dest, ALLOW, "dev/selftest_allowed.rs cofre\n")
         found, problems = run_check(dest, ["dev/selftest_allowed.rs"], words)
-        expect("frozen sem fase", any("mal formada" in p for p in problems), str(problems))
+        expect("allow sem motivo", any("mal formada" in p for p in problems), str(problems))
+        _write(dest, ALLOW, "")
+        # m2:V6.1: the frozen list came back (even empty, even with a used line): fails.
+        for content in ("", "dev/selftest_allowed.rs cofre 54 self-test\n"):
+            _write(dest, FROZEN, content)
+            found, problems = run_check(dest, ["dev/selftest_allowed.rs"], words)
+            expect("frozen.txt presente", any("frozen.txt: não deve existir" in p for p in problems),
+                   str(problems))
+        os.unlink(os.path.join(dest, FROZEN))
+        found, problems = run_check(dest, ["dev/selftest_clean.rs"], words)
+        expect("sem frozen.txt", not any("frozen" in p for p in problems), str(problems))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     for f in failures:

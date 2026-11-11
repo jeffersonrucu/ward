@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ward",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Preenche logins do cofre Ward só na origem certa da aba e oferece salvar login novo.",
   "minimum_chrome_version": "120",
   "incognito": "not_allowed",

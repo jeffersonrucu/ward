@@ -37,7 +37,7 @@ check "/run/ward/$UID_T root:root 0755" "$(stat -c '%U:%G %a' /run/ward/$UID_T)"
 check "socket do uid, 0600" "$(stat -c '%u %a %F' /run/ward/$UID_T/wardd.sock)" "$UID_T 600 socket"
 
 # The first connection starts the wardd (reply of the daemon, as uid 1000).
-r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" estado)"
+r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" status)"
 check "primeira conexão responde" "$r" "resposta: status"
 check "serviço subiu" "$(systemctl is-active "wardd@$UID_T.service" || true)" "active"
 
@@ -64,9 +64,9 @@ printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' >"$VAULT_T/estado"
 chown "$UID_T:$UID_T" "$VAULT_T/estado"
 chmod 0600 "$VAULT_T/estado"
 # Test master password (D15, fake) through stdin, never in argv.
-r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" destravar)"
+r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" unlock)"
 check "destrava o cofre de teste" "$r" "resposta: ok"
-r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" lista)"
+r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" list)"
 check "lista com o cofre destravado" "$r" "resposta: list"
 
 # V4.38 (Phase 26, D63): install groups and setgid copies of the minimal client. The
@@ -77,7 +77,7 @@ install -m 2755 -o root -g ward-app /opt/teste/cliente /usr/local/bin/ward-app
 install -m 2755 -o root -g ward-nm /opt/teste/cliente /usr/local/bin/ward-nm
 install -m 0755 -o root -g root /opt/teste/ward /usr/local/bin/ward
 systemctl stop "wardd@$UID_T.service"
-r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" destravar)"
+r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" unlock)"
 check "V4.38 destrava de novo, com os grupos" "$r" "resposta: ok"
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 st="/proc/$pid/status"
@@ -118,7 +118,7 @@ if [[ "$output" == *pronto* ]]; then failed "8 MiB de memlock: chegou a subir"; 
 # Killing the wardd: the next connection starts another (Restart/activation).
 kill -9 "$pid"
 sleep 1.5
-r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" estado)"
+r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" status)"
 check "depois de morto, a conexão sobe de novo" "$r" "resposta: status"
 new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 if [[ "$new_pid" != "$pid" && "$new_pid" != 0 ]]; then ok "pid novo ($new_pid)"; else failed "pid não mudou"; fi

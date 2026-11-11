@@ -71,10 +71,10 @@ def pedir(op, dados):
     q = json.dumps({"v": 2, "op": op, "data": dados}).encode()
     s.sendall(struct.pack(">I", len(q)) + q)
     return ler(struct.unpack(">I", ler(4))[0]).decode()
-print("estado -", pedir("status", {}))
-if sys.argv[2] == "destravar":
+print("status -", pedir("status", {}))
+if sys.argv[2] == "unlock":
     senha = sys.stdin.readline().strip()
-    print("destravar -", pedir("unlock", {"password": senha}))
+    print("unlock -", pedir("unlock", {"password": senha}))
 for op in ("reveal", "copy"):
     for e in ("acme-pg-dev", "gama-bloqueada"):
         print(op, e, pedir(op, {"entry": e, "field": "password"}))
@@ -158,7 +158,7 @@ fn python_client(sock: &Path, unlock: bool, name: &str) -> String {
         .env("PATH", "/usr/bin:/bin")
         .args(["-I", "-c", CLIENT])
         .arg(sock)
-        .arg(if unlock { "destravar" } else { "nao" })
+        .arg(if unlock { "unlock" } else { "no" })
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -246,7 +246,7 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
             lines[0]
         );
         if unlock {
-            assert!(lines[1].starts_with("destravar - "));
+            assert!(lines[1].starts_with("unlock - "));
             assert!(lines[1].contains(r#""type":"ok""#), "{}", lines[1]);
         }
         let attacks: Vec<&&str> = lines

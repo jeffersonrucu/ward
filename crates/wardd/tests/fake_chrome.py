@@ -163,7 +163,7 @@ while True:
         args = [a.get("value") for a in p.get("arguments", [])]
         # The parameter list of the daemon's fill script (a literal of `playwright.rs`).
         if "usuario, senha" in decl:
-            record({"evento": "preencher",
+            record({"evento": "fill",
                     "sha256": [hashlib.sha256(a.encode()).hexdigest() if a is not None else None for a in args],
                     "origem": args[3] if len(args) > 3 else None,
                     "contexto": p.get("executionContextId")})

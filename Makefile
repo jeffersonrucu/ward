@@ -71,22 +71,26 @@ CARGO_DENY_VERSION := 0.20.2
 	release install uninstall test-install extension test-extension deb extension-crx test-deb test-login \
 	test-ssh-home test-chrome-policy compile english-check test-system-socket
 
-## check: origins pre-check, then fmt, clippy -D warnings, tests, cargo audit,
-## cargo deny and gitleaks, in this order (V1.1)
+## check: origins pre-check, then the pt-BR checker (self-test and the whole repository,
+## m2:V6.1), fmt, clippy -D warnings, tests, cargo audit, cargo deny and gitleaks, in
+## this order (V1.1)
 check:
-	@echo "==> 0/6 origens do cargo (pré-checagem: configs, ambiente, toolchain, fontes)"
+	@echo "==> 0/7 origens do cargo (pré-checagem: configs, ambiente, toolchain, fontes)"
 	@$(MAKE) origins
-	@echo "==> 1/6 cargo fmt --check"
+	@echo "==> 1/7 english-check (autoteste e repositório inteiro)"
+	@$(PYTHON) dev/english_check.py --self-test
+	@$(MAKE) english-check PATHS=
+	@echo "==> 2/7 cargo fmt --check"
 	@$(MAKE) fmt-check
-	@echo "==> 2/6 cargo clippy --all-targets -- -D warnings"
+	@echo "==> 3/7 cargo clippy --all-targets -- -D warnings"
 	@$(MAKE) clippy
-	@echo "==> 3/6 cargo test"
+	@echo "==> 4/7 cargo test"
 	@$(MAKE) test
-	@echo "==> 4/6 cargo audit"
+	@echo "==> 5/7 cargo audit"
 	@$(MAKE) audit
-	@echo "==> 5/6 cargo deny check"
+	@echo "==> 6/7 cargo deny check"
 	@$(MAKE) deny
-	@echo "==> 6/6 gitleaks"
+	@echo "==> 7/7 gitleaks"
 	@$(MAKE) gitleaks
 	@echo "==> make check: tudo limpo"
 
@@ -303,8 +307,9 @@ compile: origins
 	$(PYTHON) dev/syntax_check.py --node "$(NODE_DIR)/node"
 
 ## english-check: report of the pt-BR leftovers in comments, identifiers and file names
-## (m2:DT17; not in `make check` until Phase 60). `PATHS="<file or folder> ..."` limits
-## it to the paths of a phase. The self-test: `python3 -I dev/english_check.py --self-test`
+## (m2:DT17; step 1/7 of `make check` since Phase 60, with the self-test).
+## `PATHS="<file or folder> ..."` limits it to some paths. The self-test alone:
+## `python3 -I dev/english_check.py --self-test`
 english-check:
 	$(PYTHON) dev/english_check.py $(if $(strip $(PATHS)),--paths $(PATHS))
 
