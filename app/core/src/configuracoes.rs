@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use ward_core::limits::{MAX_LOCK_MINUTES, MAX_SECRET, MIN_LOCK_MINUTES};
 
 use crate::AppError;
-use crate::formulario::ErroCampo;
+use crate::form::FieldError;
 use crate::primeiro_uso::{Digitado, PIN_DIFERENTE, PIN_INVALIDO, erros_da_senha, pin_valido};
 
 pub const PIN_ATUAL_INVALIDO: &str = "o PIN atual tem de 4 a 6 dígitos, só números";
@@ -39,11 +39,11 @@ pub struct Configuracoes {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResultadoTroca {
     pub trocado: bool,
-    pub erros: Vec<ErroCampo>,
+    pub erros: Vec<FieldError>,
 }
 
 impl ResultadoTroca {
-    pub(crate) fn com_erros(erros: Vec<ErroCampo>) -> Self {
+    pub(crate) fn com_erros(erros: Vec<FieldError>) -> Self {
         ResultadoTroca {
             trocado: false,
             erros,
@@ -58,11 +58,11 @@ impl ResultadoTroca {
     }
 }
 
-fn erro(campo: &'static str, motivo: &str) -> ErroCampo {
-    ErroCampo {
-        campo,
-        posicao: None,
-        motivo: motivo.to_owned(),
+fn erro(campo: &'static str, motivo: &str) -> FieldError {
+    FieldError {
+        field: campo,
+        position: None,
+        reason: motivo.to_owned(),
     }
 }
 
@@ -77,7 +77,7 @@ pub struct TrocaPin {
 
 impl TrocaPin {
     /// Todos os erros por campo; vazio se pode ir ao daemon.
-    pub fn erros(&self) -> Vec<ErroCampo> {
+    pub fn erros(&self) -> Vec<FieldError> {
         let mut erros = Vec::new();
         if !pin_valido(&self.atual) {
             erros.push(erro("atual", PIN_ATUAL_INVALIDO));
@@ -103,15 +103,15 @@ pub struct TrocaSenha {
 impl TrocaSenha {
     /// Todos os erros por campo; vazio se pode ir ao daemon. A nova segue a regra do
     /// primeiro uso (o mesmo texto de erro).
-    pub fn erros(&self) -> Vec<ErroCampo> {
+    pub fn erros(&self) -> Vec<FieldError> {
         let mut erros = Vec::new();
         let atual = self.atual.bytes();
         if atual.is_empty() || atual.len() > MAX_SECRET {
             erros.push(erro("atual", SENHA_ATUAL_VAZIA));
         }
         for mut e in erros_da_senha(&self.nova, &self.confirmacao) {
-            if e.campo == "senha" {
-                e.campo = "nova";
+            if e.field == "senha" {
+                e.field = "nova";
             }
             erros.push(e);
         }
@@ -151,8 +151,8 @@ mod testes {
         }
     }
 
-    fn campos(e: Vec<ErroCampo>) -> Vec<&'static str> {
-        e.iter().map(|e| e.campo).collect()
+    fn campos(e: Vec<FieldError>) -> Vec<&'static str> {
+        e.iter().map(|e| e.field).collect()
     }
 
     const SENHA: &str = "falso-mestra-ward-01";

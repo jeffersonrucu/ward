@@ -299,7 +299,7 @@ mod testes {
     use ward_core::entry::{AccessLevel, DataDraft, Draft, Secret};
     use ward_core::protocolo::{self, Papel, Pedido, Resposta};
 
-    fn trocar(d: &mut FakeDaemon, pedido: &Pedido) -> Resposta {
+    fn exchange(d: &mut FakeDaemon, pedido: &Pedido) -> Resposta {
         let q = protocolo::codificar_pedido(Papel::App, pedido).unwrap();
         let r = d.exchange(&q).unwrap();
         protocolo::decodificar_resposta(Papel::App, &r).unwrap()
@@ -309,7 +309,7 @@ mod testes {
         let p = Pedido::Detalhe {
             entrada: nome.to_owned(),
         };
-        match trocar(d, &p) {
+        match exchange(d, &p) {
             Resposta::Detalhe(x) => DetalheCredencial::novo(&x),
             outra => panic!("{:?}", outra.tipo()),
         }
@@ -356,7 +356,7 @@ mod testes {
                 attachments: Vec::new(),
             },
         };
-        assert!(matches!(trocar(&mut d, &novo), Resposta::Ok));
+        assert!(matches!(exchange(&mut d, &novo), Resposta::Ok));
         let x = detalhe(&mut d, "clientex-stage-wp");
         let criada = x.criada_em.unwrap();
         assert!(criada >= antes && criada <= agora());
@@ -372,7 +372,7 @@ mod testes {
             nivel: AccessLevel::Free,
             pin: Secret::from_text("135790".to_owned()),
         };
-        assert!(matches!(trocar(&mut d, &mudar), Resposta::Ok));
+        assert!(matches!(exchange(&mut d, &mudar), Resposta::Ok));
         let y = detalhe(&mut d, "clientex-stage-wp");
         assert_eq!(y.criada_em, Some(criada));
         assert!(y.alterada_em.unwrap() >= criada);
