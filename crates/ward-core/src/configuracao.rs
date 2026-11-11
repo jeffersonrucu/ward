@@ -18,7 +18,7 @@ use core::fmt;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use crate::crypto;
-use crate::formato::ParametrosKdf;
+use crate::format::KdfParams;
 use crate::limits::{
     DEFAULT_LOCK_MINUTES, MAX_BACKUP_UUID, MAX_LOCK_MINUTES, MAX_PIN_DIGITS, MAX_PIN_HASH,
     MIN_LOCK_MINUTES, MIN_PIN_DIGITS,
@@ -30,19 +30,19 @@ mod testes;
 /// Argon2id do PIN para hash novo: 64 MiB, 3 passes, 1 faixa. O daemon confere a cada
 /// aprovação, então o custo fica abaixo do da senha mestra (que é 256 MiB). O hash só
 /// existe dentro da parte cifrada do cofre.
-pub const KDF_PIN: ParametrosKdf = ParametrosKdf {
-    memoria_kib: 64 * 1024,
+pub const KDF_PIN: KdfParams = KdfParams {
+    memory_kib: 64 * 1024,
     passes: 3,
-    paralelismo: 1,
+    parallelism: 1,
 };
 /// Menor custo aceito na leitura do hash do PIN (o mesmo de [`KDF_PIN`]).
-pub const KDF_PIN_MINIMO: ParametrosKdf = KDF_PIN;
+pub const KDF_PIN_MINIMO: KdfParams = KDF_PIN;
 /// Maior custo aceito na leitura: um hash com custo inflado é recusado sem rodar o
 /// Argon2 (nem alocar a memória dele).
-pub const KDF_PIN_MAXIMO: ParametrosKdf = ParametrosKdf {
-    memoria_kib: 256 * 1024,
+pub const KDF_PIN_MAXIMO: KdfParams = KdfParams {
+    memory_kib: 256 * 1024,
     passes: 16,
-    paralelismo: 4,
+    parallelism: 4,
 };
 
 /// Erro da configuração. Nenhuma variante carrega o PIN, o hash ou outro valor.
@@ -120,7 +120,7 @@ impl HashPin {
     }
 
     /// Parâmetros do Argon2id deste hash (não são segredo).
-    pub fn parametros(&self) -> ParametrosKdf {
+    pub fn parametros(&self) -> KdfParams {
         // O texto foi conferido ao nascer; `KDF_PIN` só se algo muito errado acontecer.
         ler(self.phc.as_bytes()).map_or(KDF_PIN, |p| p.cost)
     }

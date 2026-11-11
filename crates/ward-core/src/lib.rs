@@ -17,7 +17,8 @@ pub mod display;
 pub mod entrada;
 // Delivery through environment variables (D10, Phase 16).
 pub mod entrega;
-pub mod formato;
+// Vault file format: header, key wrapping and sealing (S6).
+pub mod format;
 // Limits in a single source (D32, Phase 19a).
 pub mod limits;
 // Streaming output mask (D11, Phase 17).
@@ -30,7 +31,7 @@ pub mod generator;
 pub mod totp;
 // Atomic write: uses only std with the Unix extensions (mode 0600, directory fsync).
 #[cfg(unix)]
-pub mod gravacao;
+pub mod atomic_write;
 
 // Wire tests against the 0.1.4 baseline in `dev/fixtures/legacy/` (m2:DT18, m2:V2.2).
 #[cfg(all(test, unix))]

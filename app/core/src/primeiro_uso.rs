@@ -48,8 +48,8 @@ impl Digitado {
     /// A regra do daemon para senha mestra nova (12 caracteres depois do NFC), numa
     /// cópia que zera ao sair. O daemon confere de novo; aqui é para o erro no campo.
     pub(crate) fn serve_de_nova(&self) -> bool {
-        ward_core::formato::SenhaMestra::digitada(Zeroizing::new(self.bytes().to_vec()))
-            .serve_de_nova()
+        ward_core::format::MasterPassword::typed(Zeroizing::new(self.bytes().to_vec()))
+            .is_valid_new()
     }
 
     pub(crate) fn igual(&self, outro: &Digitado) -> bool {

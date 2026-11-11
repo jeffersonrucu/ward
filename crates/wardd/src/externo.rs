@@ -67,7 +67,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use ward_core::backup::{Versao, para_apagar_conferidas};
-use ward_core::formato;
+use ward_core::format;
 use ward_platform::dir::rename_no_replace;
 
 use crate::arquivos::{self, PastaAberta};
@@ -405,7 +405,7 @@ pub fn copiar(
             // Sumiu pela rotação local no meio, ou não é um arquivo do usuário.
             Ok(None) | Err(_) => continue,
         };
-        if formato::ler_cabecalho(&bytes).is_err() {
+        if format::read_header(&bytes).is_err() {
             continue;
         }
         // Fase 54: selada pela chave do cofre aberto (a AEAD autentica a geração).

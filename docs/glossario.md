@@ -1243,6 +1243,26 @@ Ficam para a Fase 46 (contrato do `common.sh`): `RAIZ` em quem faz `source` dele
 `OPCOES_SSH`, `IMAGEM_PG`, `DS`, `SEG` e as funções; para a 56: `WARD_HOME_COBERTO`,
 `WARD_TESTE_PG_SENHA_ARQUIVO`, `WARD_PAI_CHROME_SOCK`.
 
+Identificadores de `dev/tests/dev-vault.sh`, `ssh_home.py`, `install.sh`,
+`attacks-services.sh`, `chrome_policy.py`, `app_e2e.py` e `playwright.py` (Fase 44), pela
+seção 2 e como nas Fases 40–42: `LISTA` (lista de padrões) → `PATTERN_LIST`, `TRAVA`
+(arquivo do `flock`) → `LOCK_FILE`, `limpar` → `cleanup`, `sem_segredo` → `no_secret`,
+`cofre_duas_vezes` → `vault_twice`, `cruzado` (teste) → `cross_check`, `saida_fora`/
+`saida_dentro` → `output_outside`/`output_inside`, `faltou` → `missing`; `CASA` (home do
+passwd, no Python) → `PASSWD_HOME`, `fase` (etapa do teste) → `stage`, `escritor` →
+`writer`, `acusados` → `flagged`, `pastas_vigiadas` → `watched_dirs`, `pty_rodar` →
+`pty_run`, `encerrar_daemon` → `stop_daemon`; `confere` (contém) → `verify`, `nao_tem` →
+`lacks`, `recusa` (espera recusa) → `expect_refusal`, `recusado` (idem, comando) →
+`expect_refused`, `nada_do_ward` → `nothing_from_ward`, `despejo` → `dump`,
+`politica_outra` → `other_policy`, `nao_saiu0` → `not_exit0`, opção `--so-destdir` →
+`--destdir-only`; `cenario` → `scenario`, `rotulo` → `label`, `ler_pagina_de_politicas` →
+`read_policy_page`, `FOLHAS` → `LEAVES`; `checar` → `check`, `pedido_na_janela` →
+`request_in_window`, `responder` (botão) → `answer`, `fim_do_run` → `run_result`,
+`run_em_fundo` → `run_in_background`; `Vigia` → `Watcher`, `pids_do_chrome` →
+`chrome_pids`, `inodes_escutando` → `listening_inodes`. O `RAIZ` de `common.sh` e o
+`CASA_PASSWD` de `env.sh` ficam para a Fase 46 (os scripts que leem `common.sh` fazem
+`RAIZ="$ROOT"` antes do `.`).
+
 ### Evidência dos scripts (DT1; Fase 5)
 
 `docs/mission/evidence/fase-NN/` → `docs/mission/evidence/<suíte>/`, pelo alvo novo:
@@ -1342,6 +1362,27 @@ Feitos na Fase 6: `dev/daemon.sh` (`up`, `stop`, `status`), `--no-mps`/`--no-39c
 `--version`, `--read`, `WARD_MODE` …) não passam pelo Makefile e vão com o script, nas
 Fases 40–46. O `--conferir` do exemplo `dev-cofre` (e `--senha-stdin`, `--cruzado`)
 vai com o exemplo, na Fase 43.
+
+Feitos na Fase 43 (exemplos e scripts de contêiner, sem alias para o nome velho):
+
+| Antes | Depois |
+| --- | --- |
+| `dev-cofre --conferir`, `--senha-stdin`, `--cruzado` (prefixo `dev-cofre:` na saída) | `dev-vault --verify`, `--password-stdin`, `--cross` (prefixo `dev-vault:`) |
+| `falso --ativar`, `--conectar` (`dev/container-platform/fake.c`) | `--activate`, `--connect` |
+| subcomandos do `ward-platform-container`: `ativar`, `servidor`, `cliente`, `prender`, `lancar-app`, `escutar`, `ambiente` (`traceme`, `bind`, `--user` ficam) | `activate`, `server`, `client`, `attach`, `launch-app`, `listen`, `environment` |
+| opções do `ward-platform-container`: `--lancar`, `--abrir-app`, `--abrir-app-com`, `--sistema-em`, `--pausar` (`--chrome` fica) | `--launch`, `--open-app`, `--open-app-with`, `--system-at`, `--pause` |
+| subcomando `servir` do `chrome-parent` | `serve` |
+| cópias no contêiner `/opt/teste/chrome-falso`, `/opt/teste/wardd-cliente-teste` | `/opt/teste/fake-chrome`, `/opt/teste/wardd-test-client` |
+| `/usr/local/sbin/iniciar` (PID 1 das imagens `units`, `install` e `deb`) | `/usr/local/sbin/start` |
+| funções dos `inside.sh`: `confere`, `nao_tem`, `igual`, `falhou`, `como_1000`, `como_usuario`, `instalar`, `caso_grupo`, `nada_do_ward`, `retrato_ssh`, `linha_app`, `ultimo_erro_pid`, `conferir_cli` | `check`, `lacks`, `equal`, `failed`, `as_1000`, `as_user`, `install_ward`, `group_case`, `no_ward_file`, `ssh_snapshot`, `app_line`, `last_error_pid`, `verify_cli` |
+
+Os marcadores impressos pelos exemplos (`servidor: pronto`, `papel=…`, `lancador:`,
+`gerente:`, `inicio`/`depois`/`erro`/`queda` do relatório do app, `saida=`,
+`resposta:`), os subcomandos do `wardd-test-client` (`estado`, `lista`, `destravar`, nomes
+de operação do protocolo, Fase 51), o nome do teste `area_gtk::testes::sessao_real` e o
+protocolo de linhas do `clipboard.py` (vão com o teste do `app/src-tauri`) e os outros
+nomes de dentro do contêiner (`/opt/teste`, `cliente`, `plataforma`, `falso`,
+`ward-servidor`, `libmarca.so`) ficam.
 
 Pasta de build (Fase 6): `target/sem-modo-teste/` → `target/no-test-mode/`.
 
@@ -2098,6 +2139,45 @@ digits, symbols }`; `gerar`/`gerar_com` → `generate`/`generate_with`,
 → `MAX_COMMON_FRAME`/`MAX_APP_FRAME`/`MAX_RESPONSE_FRAME`, `MAX_VARIAVEIS_AMBIENTE` →
 `MAX_ENV_VARIABLES`, `MAX_TEXTO_EXIBIDO` → `MAX_DISPLAYED_TEXT`. O `backup::MAX_NOME`
 (Fase 15) e o `MAX_CORPO` da ponte de teste (Fase 29) são outros itens e não mudaram.
+
+Fase 11 (`ward-core`: `format`, `atomic_write`): módulos `formato` → `format` e
+`gravacao` → `atomic_write`; `MAGIA`/`VERSAO`/`TAM_SAL`/`TAM_CABECALHO`/`MAX_CONTEUDO`
+→ `MAGIC`/`VERSION`/`SALT_SIZE`/`HEADER_SIZE`/`MAX_CONTENT` (a magia `WARDCOFR` fica);
+`ParametrosKdf { memoria_kib, passes, paralelismo }` → `KdfParams { memory_kib, passes,
+parallelism }` com `PADRAO`/`MINIMO`/`MAXIMO` → `DEFAULT`/`MINIMUM`/`MAXIMUM`;
+`Cabecalho { versao, kdf, tamanho_corpo }` → `Header { version, kdf, body_size }`;
+`ErroFormato` → `FormatError` com `SenhaOuArquivo` → `PasswordOrFile`,
+`VersaoNaoSuportada` → `UnsupportedVersion`, `ParametrosAbaixoDoMinimo`/
+`ParametrosAcimaDoMaximo` → `ParamsBelowMinimum`/`ParamsAboveMaximum`,
+`ConteudoGrande` → `ContentTooLarge`, `SenhaVazia` → `EmptyPassword`, `Aleatorio` →
+`Random`, `Cifrar` → `Encrypt`; `SenhaMestra` → `MasterPassword` (`nova`/`de_bytes`/
+`digitada`/`serve_de_nova` → `new`/`from_bytes`/`typed`/`is_valid_new`);
+`CofreAberto` → `OpenVault` (`novo`/`novo_com`/`depois_da_geracao`/`de_partes`/
+`geracao`/`proxima_geracao`/`queimar`/`parametros`/`configuracao`/`configuracao_mut`/
+`selar`/`autentica`/`geracao_selada` → `new`/`new_with`/`after_generation`/`from_parts`/
+`generation`/`next_generation`/`burn`/`params`/`config`/`config_mut`/`seal`/
+`authenticates`/`sealed_generation`); `ChavesCofre` → `VaultKeys` (`chave_dados` →
+`data_key`, `abrir_proprio` → `open_own`); `ler_cabecalho` → `read_header`, `abrir` →
+`open`, `trocar_senha` → `change_password`, `SenhaTrocada` → `PasswordChanged`.
+`IdentidadeArquivo` → `FileIdentity`; `Etapa` → `Step` com `Ler` → `Read`,
+`CriarTemporario` → `CreateTemp`, `Escrever` → `Write`, `FsyncTemporario` →
+`FsyncTemp`, `Renomear` → `Rename`, `FsyncDiretorio` → `FsyncDir`; `ErroGravacao` →
+`WriteError` com `GeracaoEsgotada` → `GenerationExhausted`, `Retrocesso` → `Rollback`,
+`NaoECofre` → `NotVault`, `Formato` → `Format`, `Corpo` → `Body`, `DestinoInvalido` →
+`InvalidDestination`, `Io { etapa, tipo, identidade }` → `Io { step, kind, identity }`;
+`Ponto` → `Point` com `DepoisDeCriar`/`Escrevendo`/`DepoisDeEscrever`/`DepoisDoFsync`/
+`DepoisDoRename`/`DepoisDoFsyncDir` → `AfterCreate`/`Writing`/`AfterWrite`/`AfterFsync`/
+`AfterRename`/`AfterFsyncDir`; `Gravado { identidade, backup }` → `Written { identity,
+backup }`; `gravar_entradas`(`_com_backup`) → `write_entries`(`_with_backup`),
+`trocar_senha_lido`/`trocar_senha_com_backup_lido` → `change_password_from_bytes`/
+`change_password_with_backup_from_bytes` ("lido" = com os bytes já lidos pelo
+chamador → `from_bytes`), `gravar_cofre` → `write_vault`, `gravar` → `write`,
+`limpar_temporarios` → `clean_temp_files` (só o do `atomic_write`: os
+`limpar_temporarios` de `wardd/execucao.rs` e `wardd/externo.rs` são outros e ficam
+para as fases deles), `gravar_novo_com_pontos` → `write_new_with_points`,
+`Temporario` → `TempFile`. Os ids `ErroResposta::Retrocesso`/`GeracaoEsgotada` do
+protocolo (Fase 17) e `ErroAbrir::Retrocesso` do corpo (Fase 14) são outros e não
+mudaram; o `backup::geracao_selada` (Fase 15) também não.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →

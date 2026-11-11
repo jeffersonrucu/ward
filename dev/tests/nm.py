@@ -1,7 +1,7 @@
 """`make test-nm` (Phase 40): the test `ward-nm` run directly and through the real Chrome.
 
 Called by `dev/tests/nm.sh`, which starts its own test `wardd`. Arguments: root, work
-directory (in `.dev/`), socket directory, `ward-nm`, the Chrome parent probe example,
+directory (in `.dev/`), socket directory, `ward-nm`, the `chrome-parent` example,
 Chrome and the variation list. Never prints the list nor any value of it.
 """
 
@@ -173,7 +173,7 @@ const enviar = (host, m) => new Promise((r) => chrome.runtime.sendNativeMessage(
 """ % json.dumps(FILL))
 
 probe_sock = os.path.join(WORK_DIR, "sonda.sock")
-srv = subprocess.Popen([PROBE, "servir", probe_sock, CHROME], stdout=subprocess.PIPE, text=True)
+srv = subprocess.Popen([PROBE, "serve", probe_sock, CHROME], stdout=subprocess.PIPE, text=True)
 verify(srv.stdout.readline().strip() == "pronto", "verificador do pai pronto")
 
 r_cmd, w_cmd = os.pipe()
@@ -248,7 +248,7 @@ finally:
         srv.kill()
 
 # Control: the same host opened by this process (not by Chrome).
-srv = subprocess.Popen([PROBE, "servir", probe_sock, CHROME], stdout=subprocess.PIPE, text=True)
+srv = subprocess.Popen([PROBE, "serve", probe_sock, CHROME], stdout=subprocess.PIPE, text=True)
 srv.stdout.readline()
 subprocess.run([PROBE, ORIGIN], env={"WARD_PAI_CHROME_SOCK": probe_sock}, capture_output=True, timeout=30)
 line = srv.communicate(timeout=30)[0].strip()

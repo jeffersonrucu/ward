@@ -21,3 +21,8 @@ dev/compose.yml ssh-senha name of the test SSH service, host name in the test va
 dev/compose.yml ssh-chave name of the test SSH service, host name in the test vault data
 dev/compose.yml ssh-salto name of the test SSH service, host name in the test vault data
 dev/compose.yml ssh-interno name of the test SSH service, host name in the test vault data
+# Fake master password of D15 ("falso-mestra-ward-01") in the doc tests (test data, m2:PRD rule 5).
+crates/ward-core/src/format.rs falso fake test password of D15 in doc tests (test data)
+crates/ward-core/src/format.rs mestra fake test password of D15 in doc tests (test data)
+crates/ward-core/src/atomic_write.rs falso fake test password of D15 in doc tests (test data)
+crates/ward-core/src/atomic_write.rs mestra fake test password of D15 in doc tests (test data)

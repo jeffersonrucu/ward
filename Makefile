@@ -222,14 +222,14 @@ VARIATIONS ?= .dev/variations.txt
 ## VAULT=.dev/<nome>.ward troca o destino (só dentro de .dev/)
 dev-vault: export WARD_DEV_OUTPUT = $(VAULT)
 dev-vault: origins dev-services
-	$(CARGO) run --quiet --locked -p ward-core --example dev-cofre -- --output "$$WARD_DEV_OUTPUT"
+	$(CARGO) run --quiet --locked -p ward-core --example dev-vault -- --output "$$WARD_DEV_OUTPUT"
 	@# Cofre recriado: o estado do daemon de teste (D39) era do cofre anterior.
 	rm -f -- "$${WARD_DEV_OUTPUT%.ward}.state"
 
 ## dev-vault-verify: só abre o cofre de teste com a senha de teste e confere as entradas
 dev-vault-verify: export WARD_DEV_OUTPUT = $(VAULT)
 dev-vault-verify: origins
-	$(CARGO) run --quiet --locked -p ward-core --example dev-cofre -- --output "$$WARD_DEV_OUTPUT" --conferir
+	$(CARGO) run --quiet --locked -p ward-core --example dev-vault -- --output "$$WARD_DEV_OUTPUT" --verify
 
 ## dev-variations: grava em .dev/variations.txt (0600) os segredos do cofre de teste e as
 ## variações da tabela única de D54 (segredo inteiro, Basic, por linha e valor de linha,
@@ -391,31 +391,31 @@ test-gst-channels:
 ## pai e o wardd de teste real; precisa de `make dev-vault`) num contêiner ubuntu:24.04
 test-docker-platform: origins
 	$(CARGO) build --quiet --locked -p ward-platform --features test-mode --example ward-platform-container
-	$(CARGO) build --quiet --locked -p ward-app-core --example partida-conteiner
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
-	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --example chrome-falso --target-dir target/no-test-mode
-	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-cliente-teste
-	dev/tests/docker-platform.sh target/debug/examples/ward-platform-container target/debug/examples/partida-conteiner \
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --example fake-chrome --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-test-client
+	dev/tests/docker-platform.sh target/debug/examples/ward-platform-container target/debug/examples/startup-container \
 		target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
-		target/debug/wardd target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/chrome-falso \
-		target/debug/examples/wardd-cliente-teste
+		target/debug/wardd target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/fake-chrome \
+		target/debug/examples/wardd-test-client
 
 ## test-docker-uid: V3.2 (D49) num contêiner ubuntu:24.04: o wardd de teste roda como
 ## uid 1000; clientes de outro uid (4242, também com CAP_DAC_OVERRIDE) e o root são
 ## recusados sem receber um byte; o uid 1000 é atendido
 test-docker-uid: origins
-	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-cliente-teste
-	dev/tests/docker-uid.sh target/debug/wardd target/debug/examples/wardd-cliente-teste
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-test-client
+	dev/tests/docker-uid.sh target/debug/wardd target/debug/examples/wardd-test-client
 
 ## test-units: V3.21 (Fase 24; D46, D57, D62): `systemd-analyze verify` das units de
 ## `install/systemd/` e, num contêiner ubuntu:24.04 com systemd e sem rede, a primeira
 ## conexão ao `wardd@1000.socket` sobe o `wardd` (sem `test-mode`) como o uid 1000,
 ## com LimitCORE=0, LimitMEMLOCK=infinity e sem no_new_privs
 test-units: origins
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
-	dev/tests/units.sh target/no-test-mode/debug/wardd target/no-test-mode/debug/examples/wardd-cliente-teste target/no-test-mode/debug/ward
+	dev/tests/units.sh target/no-test-mode/debug/wardd target/no-test-mode/debug/examples/wardd-test-client target/no-test-mode/debug/ward
 
 # --- Instalação (Fase 51; D18, D46, D47, D57, D60, D62, D63) --------------------------
 # `make release` (como o usuário, sem root) compila os artefatos por pacote (`-p`, sem
@@ -473,10 +473,10 @@ uninstall:
 ## (V9.4), app aberto pelo daemon com o papel app, CLI recusa servidor falso (V9.3).
 ## Exige Docker (o build da imagem usa rede), gcc e `make dev-vault`; fora do `make check`
 test-install: origins
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
-	$(CARGO) build --quiet --locked -p ward-app-core --example partida-conteiner --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-platform --features test-mode --example ward-platform-container
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
 	dev/tests/install.sh
@@ -492,12 +492,12 @@ test-chrome-policy: origins
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
-	$(CARGO) build --quiet --locked -p ward-app-core --example partida-conteiner --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-aprovador-teste
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
 	dev/tests/chrome-policy.sh target/debug/wardd target/debug/ward-nm \
 		target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
-		target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/partida-conteiner \
+		target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/startup-container \
 		target/debug/wardd-aprovador-teste
 
 # --- Pacote .deb (Fase 52; D18; V9.9) ------------------------------------------------
@@ -533,10 +533,10 @@ extension-crx:
 ## conexão, pasta SSH do usuário e /etc/ssh intactas, V9.8), reinstalar, `dpkg -r`/`-P`
 ## com o cofre intacto. Exige Docker (o build da imagem usa rede) e gcc; fora do `make check`
 test-deb: origins
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
-	$(CARGO) build --quiet --locked -p ward-app-core --example partida-conteiner --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
 	dev/tests/deb.sh
 
@@ -630,8 +630,8 @@ test-migration-guide:
 test-nm: origins
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
-	$(CARGO) build --quiet --locked -p ward-platform --example pai-chrome
-	dev/tests/nm.sh target/debug/wardd target/debug/ward-nm target/debug/examples/pai-chrome
+	$(CARGO) build --quiet --locked -p ward-platform --example chrome-parent
+	dev/tests/nm.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-parent
 
 ## extension: monta a extensão do Chrome em extension/dist/ (Fase 41) com os tokens, ícones
 ## e fontes do app e confere o pacote e o manifesto (id fixo = ward-nm, sem
@@ -649,9 +649,9 @@ extension:
 test-extension: origins extension
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-aprovador-teste
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
-	$(CARGO) build --quiet --locked -p ward-nm --example chrome-falso
+	$(CARGO) build --quiet --locked -p ward-nm --example fake-chrome
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
-	dev/tests/extension.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso target/debug/ward target/debug/wardd-aprovador-teste
+	dev/tests/extension.sh target/debug/wardd target/debug/ward-nm target/debug/examples/fake-chrome target/debug/ward target/debug/wardd-aprovador-teste
 
 ## test-login: `ward login` de ponta a ponta (Fase 43; V6.3, V6.10, V6.11, V6.15, V6.16):
 ## a extensão no Chrome real headless, o `ward-nm` aberto pelo service worker e um `wardd`

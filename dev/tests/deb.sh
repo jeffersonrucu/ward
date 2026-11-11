@@ -39,8 +39,8 @@ NO_TM="$RAIZ/target/no-test-mode/debug"
 WARD="$NO_TM/ward"
 WARDD="$NO_TM/wardd"
 NM="$NO_TM/ward-nm"
-APP="$NO_TM/examples/partida-conteiner"
-CLIENT="$NO_TM/examples/wardd-cliente-teste"
+APP="$NO_TM/examples/startup-container"
+CLIENT="$NO_TM/examples/wardd-test-client"
 WARDD_TEST="$RAIZ/target/debug/wardd"
 for b in "$WARD" "$WARDD" "$NM" "$APP" "$CLIENT" "$WARDD_TEST"; do
     [ -x "$b" ] || { echo "binário não encontrado: $b (rode pelo 'make test-deb')" >&2; exit 1; }
