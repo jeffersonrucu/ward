@@ -735,7 +735,7 @@ fora da lista da 10a (escala ou conjunto que o código pode precisar): `peso/reg
 
 ## Fase 10 — conferência final do M0
 
-Conferido no arquivo salvo (cópia reaberta pela CLI headless) por `docs/mission/evidence/fase-10/v0-auditoria.json`.
+Conferido no arquivo salvo (cópia reaberta pela CLI headless) por `docs/mission/arquivo/m1/evidence/fase-10/v0-auditoria.json`.
 
 | Mudança | Id | Motivo |
 | --- | --- | --- |
@@ -783,47 +783,47 @@ Lidos de uma cópia do `Ward.figcraft` (o original não foi alterado), pelo MCP 
 
 | O quê | Origem no FigCraft | No código |
 | --- | --- | --- |
-| Variables (todas as coleções) e estilos de texto/efeito | `variable.export css`, `variable.list`, `style.list` → `app/design/figcraft-export.jsonl` | `app/src/lib/estilo/tokens.css` (gerado por `python3 -I -B app/scripts/gerar_design.py`) |
-| Ícones 20×20, traço 1.5 | frame `178` (filhos `179`–`257` e `5197`) → `app/design/icones/*.svg` | `app/src/lib/componentes/icones.js` (gerado) e `Icone.svelte` |
-| Botão, Campo, Campo secreto, Select, Badge de ambiente/tipo, Toast, Item de lista (`553`), Modal, Campo de PIN | página Design System | `app/src/lib/componentes/*.svelte` (só tokens; conferência pixel a pixel por tela fica para as fases de UI) |
+| Variables (todas as coleções) e estilos de texto/efeito | `variable.export css`, `variable.list`, `style.list` → `app/design/figcraft-export.jsonl` | `app/src/lib/style/tokens.css` (gerado por `python3 -I -B app/scripts/generate_design.py`) |
+| Ícones 20×20, traço 1.5 | frame `178` (filhos `179`–`257` e `5197`) → `app/design/icons/*.svg` | `app/src/lib/components/icons.js` (gerado) e `Icon.svelte` |
+| Botão, Campo, Campo secreto, Select, Badge de ambiente/tipo, Toast, Item de lista (`553`), Modal, Campo de PIN | página Design System | `app/src/lib/components/*.svelte` (só tokens; conferência pixel a pixel por tela fica para as fases de UI) |
 
 ## Fase 32 — tela Credenciais no código (só leitura do FigCraft)
 
 Lidos de uma cópia do `Ward.figcraft` (o original não foi alterado). Capturas do app
 (ponte de teste, Chrome headless, 1280×800) e PNG dos frames em
-`docs/mission/evidence/fase-32/`.
+`docs/mission/arquivo/m1/evidence/fase-32/`.
 
 | Frame / componente | Id | No código |
 | --- | --- | --- |
-| `Credenciais / Vazia` | `4780` | `app/src/telas/Credenciais.svelte` (cofre sem entradas) |
+| `Credenciais / Vazia` | `4780` | `app/src/screens/Credentials.svelte` (cofre sem entradas) |
 | `Credenciais / Cheia` | `4063` | idem, com `acme-pg-dev` selecionada |
 | `Credenciais / Filtrada` | `4410` | idem, tipo banco + ambiente stage + busca "pg" |
-| `Credenciais / Filtros` | `5259` (diálogo `5578`) | `app/src/lib/componentes/DialogoFiltros.svelte` (componente `5222`) |
-| `Navegação lateral` | set `782` (instância `4064`) | `app/src/lib/componentes/NavegacaoLateral.svelte` |
-| `Cabeçalho de grupo` | `901` (instância `4161`) | `app/src/lib/componentes/CabecalhoDeGrupo.svelte` |
-| `Item de lista` compacto | `4002`/`4028`/`4045` | `app/src/lib/componentes/ItemDeLista.svelte` (`compacta`) |
-| `Destaque` | `18673` (instância `18726`) | `app/src/lib/componentes/Destaque.svelte` |
-| `Esmaecer rolagem` | `18948` (instância `18949`) | `.esmaecer` em `Credenciais.svelte` |
-| Busca em pílula | `4128` | `Campo.svelte` com `pilula`, `icone`, `rotuloOculto` |
+| `Credenciais / Filtros` | `5259` (diálogo `5578`) | `app/src/lib/components/FiltersDialog.svelte` (componente `5222`) |
+| `Navegação lateral` | set `782` (instância `4064`) | `app/src/lib/components/SideNav.svelte` |
+| `Cabeçalho de grupo` | `901` (instância `4161`) | `app/src/lib/components/GroupHeader.svelte` |
+| `Item de lista` compacto | `4002`/`4028`/`4045` | `app/src/lib/components/ListItem.svelte` (`compacta`) |
+| `Destaque` | `18673` (instância `18726`) | `app/src/lib/components/Highlight.svelte` |
+| `Esmaecer rolagem` | `18948` (instância `18949`) | `.esmaecer` em `Credentials.svelte` |
+| Busca em pílula | `4128` | `Field.svelte` com `pilula`, `icone`, `rotuloOculto` |
 ## Fase 37 — gerador de senha avulso no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node`,
 `screenshot` e `inspect.code` (HTML/CSS com as variables ligadas). Capturas em
-`docs/mission/evidence/fase-37/` (a do FigCraft é `figcraft-13141-gerador-avulso.png`).
+`docs/mission/arquivo/m1/evidence/fase-37/` (a do FigCraft é `figcraft-13141-gerador-avulso.png`).
 
 | Node no FigCraft | No código |
 | --- | --- |
-| `Gerador de senha / Avulso` `13141` (`principal` `13182`: `topo` `13183`, `colunas` `13199`) | `app/src/telas/GeradorSenha.svelte` |
-| `Navegação lateral` `782`, variante `Ativo=Gerador de senha` `3037` (instância `13142`) | `app/src/lib/componentes/NavegacaoLateral.svelte` |
-| `Linha de opção` `10379`, variante interruptor `10368`; `Interruptor` `6838` (ligado `6836`, desligado `6839`) | `app/src/lib/componentes/LinhaDeOpcao.svelte` |
-| `Controle deslizante` `12604` (alça e preenchido de `9896`) | `app/src/lib/componentes/ControleDeslizante.svelte` |
+| `Gerador de senha / Avulso` `13141` (`principal` `13182`: `topo` `13183`, `colunas` `13199`) | `app/src/screens/PasswordGenerator.svelte` |
+| `Navegação lateral` `782`, variante `Ativo=Gerador de senha` `3037` (instância `13142`) | `app/src/lib/components/SideNav.svelte` |
+| `Linha de opção` `10379`, variante interruptor `10368`; `Interruptor` `6838` (ligado `6836`, desligado `6839`) | `app/src/lib/components/OptionRow.svelte` |
+| `Controle deslizante` `12604` (alça e preenchido de `9896`) | `app/src/lib/components/Slider.svelte` |
 | `Campo secreto` `375` (máscara de 24 pontos `13822`), `Ação de campo` `2882`, `Botão` `263` | componentes da Fase 29; o `Campo secreto` ganhou `mascara` (um ponto por caractere) |
 
 ## Fase 37a — correções do design (D65 f e design pendente da Fase 32)
 
 Editado no `Ward.figcraft` original (cópia de segurança antes de editar, no scratchpad
 da sessão), pelo MCP `figcraft` headless; salvo com `save_file` e conferido reaberto.
-PNG em `docs/mission/evidence/fase-37a/`.
+PNG em `docs/mission/arquivo/m1/evidence/fase-37a/`.
 
 ### Símbolos do gerador (D35)
 
@@ -851,7 +851,7 @@ raio `VariableID:15`, padding `6:134`, gap `6:133`), `ícone` 20 px (`6:144`, tr
 | --- | --- | --- | --- |
 | `Nível=livre` | `18986` | `Ícone/check` `189` | O Claude usa sem perguntar e só vê a saída mascarada. Mudar o nível pede o PIN. |
 | `Nível=com aprovação` | `18999` | `Ícone/cadeado` `206` | Cada uso do Claude abre a janela de aprovação, que pede o seu PIN. Mudar o nível também pede o PIN. |
-| `Nível=bloqueado` | `19011` | `Ícone/olho-fechado` `182` | O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app. Mudar o nível pede o PIN. |
+| `Nível=bloqueado` | `19011` | `Ícone/olho-fechado` `182` | O Claude nem vê esta entrada: ela some do ward list. Só você usa, pelo app. Mudar o nível pede o PIN. |
 
 Os cartões soltos do detalhe de Credenciais viraram instâncias (o frame antigo foi
 apagado): `Credenciais / Cheia` `19026` (livre, era `4336`), `/ Filtrada` `19038` (com
@@ -869,7 +869,7 @@ soltos.
 
 ### Contagens da fixture
 
-`dev/fixtures/entradas.json` tem 21 entradas: acme 13, beta 4, gama 3, delta 1. Todos os
+`dev/fixtures/entries.json` tem 21 entradas: acme 13, beta 4, gama 3, delta 1. Todos os
 "20 entradas · 4 grupos" viraram "21 entradas · 4 grupos", "12 entradas" (acme) viraram
 "13 entradas" (texto e propriedade `Contagem` do `Cabeçalho de grupo`), e a Filtrada
 mostra "2 de 21 entradas · filtros ativos" (`4475`) e "2 de 13 entradas" (`4500`). Os
@@ -882,107 +882,107 @@ novo.
 ## Fase 33 — formulário parte 1 no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`, Chrome headless,
-1280×800) e `qa.json` em `docs/mission/evidence/fase-33/`.
+`screenshot`. Capturas do app (ponte de teste com `--fake-daemon full`, Chrome headless,
+1280×800) e `qa.json` em `docs/mission/arquivo/m1/evidence/fase-33/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Formulário / login / Novo` e `/ Edição` | `7450` (detalhe `7648`, corpo `7669`) e `6926` (`7120`, `7141`) | `app/src/telas/Formulario.svelte` + `formulario.js` (`TIPOS_FORM.login`) |
+| `Formulário / login / Novo` e `/ Edição` | `7450` (detalhe `7648`, corpo `7669`) e `6926` (`7120`, `7141`) | `app/src/screens/Form.svelte` + `form.js` (`TIPOS_FORM.login`) |
 | `Formulário / api / Novo` e `/ Edição` | `11272` (corpo `11475`) e `10389` (`10608`) | idem (`TIPOS_FORM.api`) |
 | `Formulário / aws / Novo` e `/ Edição` | `12170` (`12373`) e `11705` (`11908`) | idem (`TIPOS_FORM.aws`) |
 | `Formulário / smtp / Novo` e `/ Edição` | `13867` (`14086`) e `9454` (`9673`) | idem (`TIPOS_FORM.smtp`) |
 | `Formulário / nota segura / Novo` e `/ Edição` | `15399` (`15618`) e `12683` (`12835`) | idem; `Campo nota segura` (`15828` vazio, `13122` oculto) virou o `textarea` da tela e o `Campo secreto` editável |
 | `Formulário / genérico / Novo` e `/ Edição` | `15845` (`16064`) e `13459` (`13600`) | idem (`TIPOS_FORM.generico`) |
-| `Gerador de senha / No formulário` | `14307` (popover `15135`) | `app/src/lib/componentes/PopoverGerador.svelte` |
-| `Nova credencial / Escolher tipo` e `/ Tipo escolhido` | `17657` (detalhe `17851`, grade `17975`) e `18055` | `app/src/telas/EscolherTipo.svelte` |
-| `Título de seção` | `6841` | `app/src/lib/componentes/TituloDeSecao.svelte` |
-| `Campo extra` (não `6861`, sim `6879`) | set `6878` | `app/src/lib/componentes/CampoExtra.svelte` (editável) |
-| `Código TOTP` | `6909` | `app/src/lib/componentes/CodigoTotp.svelte` |
-| `Popover do gerador` | `11671` | `PopoverGerador.svelte` |
-| `Cartão de tipo` | `17607` | `app/src/lib/componentes/CartaoDeTipo.svelte` |
-| Combobox de grupo | `7691` (smtp: `14115`) | `app/src/lib/componentes/ComboboxGrupo.svelte` |
-| `Interruptor` compacto | `6838` | `app/src/lib/componentes/Interruptor.svelte` |
-| `Campo secreto` vazio (10c) | `375` / `18609` | `CampoSecreto.svelte` ganhou `editavel`, `ontrocar`, `mostrarRevelar`, `mostrarCopiar` e `erro`; o revelar do detalhe de Credenciais usa `revelar_campo` (D65 b) |
+| `Gerador de senha / No formulário` | `14307` (popover `15135`) | `app/src/lib/components/GeneratorPopover.svelte` |
+| `Nova credencial / Escolher tipo` e `/ Tipo escolhido` | `17657` (detalhe `17851`, grade `17975`) e `18055` | `app/src/screens/ChooseType.svelte` |
+| `Título de seção` | `6841` | `app/src/lib/components/SectionTitle.svelte` |
+| `Campo extra` (não `6861`, sim `6879`) | set `6878` | `app/src/lib/components/ExtraField.svelte` (editável) |
+| `Código TOTP` | `6909` | `app/src/lib/components/TotpCode.svelte` |
+| `Popover do gerador` | `11671` | `GeneratorPopover.svelte` |
+| `Cartão de tipo` | `17607` | `app/src/lib/components/TypeCard.svelte` |
+| Combobox de grupo | `7691` (smtp: `14115`) | `app/src/lib/components/GroupCombobox.svelte` |
+| `Interruptor` compacto | `6838` | `app/src/lib/components/Switch.svelte` |
+| `Campo secreto` vazio (10c) | `375` / `18609` | `SecretField.svelte` ganhou `editavel`, `ontrocar`, `mostrarRevelar`, `mostrarCopiar` e `erro`; o revelar do detalhe de Credenciais usa `revelar_campo` (D65 b) |
 
 ## Fase 34 — formulário parte 2 no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado; sha256 igual antes e
 depois), por `get_node` e `screenshot`. Capturas do app (ponte de teste com
-`--daemon-falso cheio --anexos <pasta>`, Chrome headless, 1280×800) e `qa.json` em
-`docs/mission/evidence/fase-34/`.
+`--fake-daemon full --attachments <pasta>`, Chrome headless, 1280×800) e `qa.json` em
+`docs/mission/arquivo/m1/evidence/fase-34/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Formulário / banco / Novo` e `/ Edição` | `8537` (detalhe `8731`, corpo `8752`) e `7908` (`8106`, `8127`; túnel `8475`, anexo `8507`) | `app/src/telas/Formulario.svelte` + `formulario.js` (`TIPOS_FORM.banco`; texto de "Acesso" e porta padrão pelo motor) |
+| `Formulário / banco / Novo` e `/ Edição` | `8537` (detalhe `8731`, corpo `8752`) e `7908` (`8106`, `8127`; túnel `8475`, anexo `8507`) | `app/src/screens/Form.svelte` + `form.js` (`TIPOS_FORM.banco`; texto de "Acesso" e porta padrão pelo motor) |
 | `Formulário / servidor / Novo` e `/ Edição` | `9900` (`10094`, `10119`; `Conectar` oculto `10113`) e `8981` (`9175`, `9196`; `Conectar` `9192`, anexo `9387`, chave `9326`) | idem (`TIPOS_FORM.servidor`; "Autenticação" escolhe senha ou chave + passphrase; `Conectar` no cabeçalho só na edição) |
 | `Formulário / ftp/sftp / Novo` e `/ Edição` | `14743` (corpo `14962`) e `10895` (corpo `11047`) | idem (`TIPOS_FORM['ftp-sftp']`; com `ftp`, só senha) |
-| `Anexo` | `6849` (avatar `6850`, nome `6859`, detalhe `6860`, Remover `6852`) | `app/src/lib/componentes/Anexo.svelte` |
+| `Anexo` | `6849` (avatar `6850`, nome `6859`, detalhe `6860`, Remover `6852`) | `app/src/lib/components/Attachment.svelte` |
 | `Botão` secundário com `Ícone/tipo-servidor` ("Conectar") | `9192` (main `280`, ícone `225`) | `Botao` com `icone="tipo-servidor"` |
 
 ## Fase 30 — primeiro uso no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado; sha256 igual antes e
 depois), por `get_node` e `screenshot`. Capturas do app (ponte de teste com
-`--daemon-falso sem-cofre`, Chrome headless, 1280×800, sistema em tema claro), as do
-FigCraft (`figcraft-<id>-*.png`) e `qa.json` em `docs/mission/evidence/fase-30/`.
+`--fake-daemon no-vault`, Chrome headless, 1280×800, sistema em tema claro), as do
+FigCraft (`figcraft-<id>-*.png`) e `qa.json` em `docs/mission/arquivo/m1/evidence/fase-30/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Primeiro uso / Criar cofre` | `3537` (`conteúdo` `3562`, `formulário` `3563`, cartão `3583`, itens `3594` `3602` `3610`) | `app/src/telas/PrimeiroUso.svelte` (passo 1) |
-| `Primeiro uso / Senha mestra` | `3619` (`formulário` `3645`, `força` `3720`, aviso `18716`, `ações` `3692`) | idem (passo 2) + `primeiro-uso.js` (mínimo de 12, força com os limiares de D65 f) |
+| `Primeiro uso / Criar cofre` | `3537` (`conteúdo` `3562`, `formulário` `3563`, cartão `3583`, itens `3594` `3602` `3610`) | `app/src/screens/FirstUse.svelte` (passo 1) |
+| `Primeiro uso / Senha mestra` | `3619` (`formulário` `3645`, `força` `3720`, aviso `18716`, `ações` `3692`) | idem (passo 2) + `first-use.js` (mínimo de 12, força com os limiares de D65 f) |
 | `Primeiro uso / PIN` | `3733` (`formulário` `3759`, `Campo PIN` `3821`/`3831`, info `18721`, `ações` `3811`) | idem (passo 3) |
-| `Painel de marca` | `717` (instância `3538`) | `app/src/lib/componentes/PainelDeMarca.svelte` |
-| `Indicador de passos` | set `741` (`742`, `748`, `754`) | `app/src/lib/componentes/IndicadorDePassos.svelte` |
-| `Campo senha` | foco `17524`, padrão `17511` | `app/src/lib/componentes/CampoSenha.svelte` |
-| `Destaque` aviso e info | `18684` e `18679` | `Destaque.svelte` ganhou `tipo` (`neutro`, `aviso`, `info`) |
-| `Campo PIN` | set `650` | `CampoPin.svelte` (já existia; o foco fica visível com os 6 dígitos cheios) |
+| `Painel de marca` | `717` (instância `3538`) | `app/src/lib/components/BrandPanel.svelte` |
+| `Indicador de passos` | set `741` (`742`, `748`, `754`) | `app/src/lib/components/StepIndicator.svelte` |
+| `Campo senha` | foco `17524`, padrão `17511` | `app/src/lib/components/PasswordField.svelte` |
+| `Destaque` aviso e info | `18684` e `18679` | `Highlight.svelte` ganhou `tipo` (`neutro`, `aviso`, `info`) |
+| `Campo PIN` | set `650` | `PinField.svelte` (já existia; o foco fica visível com os 6 dígitos cheios) |
 
 ## Fase 35 — nível de acesso com PIN no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`, Chrome
-headless, 1280×800), PNG dos frames e `qa.json` em `docs/mission/evidence/fase-35/`.
+`screenshot`. Capturas do app (ponte de teste com `--fake-daemon full`, Chrome
+headless, 1280×800), PNG dos frames e `qa.json` em `docs/mission/arquivo/m1/evidence/fase-35/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Cartão de nível` (set; `Nível=livre`, `com aprovação`, `bloqueado`) | `18998` (`18986`, `18999`, `19011`) | `app/src/lib/componentes/CartaoDeNivel.svelte` (no detalhe de `Credenciais.svelte`, no lugar do cartão solto) |
-| `Opção de nível` (set; Nível × Selecionado) | `909` (`910`/`920`, `931`/`940`, `950`/`958`) | `app/src/lib/componentes/OpcaoDeNivel.svelte` (`<input type="radio">`) |
-| `Diálogo de nível` (set; Escolher, PIN, PIN errado) | `967` (`968`, `1027`, `1078`) | `app/src/lib/componentes/DialogoDeNivel.svelte` (`<dialog>` nativo, `data-etapa`) |
-| `Campo PIN` (instâncias `1052` e `1103`) | `674` (completo), `690` (erro) | `CampoPin.svelte`: dígito cheio com `borda/padrao` e erro com `perigo/texto` |
+| `Cartão de nível` (set; `Nível=livre`, `com aprovação`, `bloqueado`) | `18998` (`18986`, `18999`, `19011`) | `app/src/lib/components/LevelCard.svelte` (no detalhe de `Credentials.svelte`, no lugar do cartão solto) |
+| `Opção de nível` (set; Nível × Selecionado) | `909` (`910`/`920`, `931`/`940`, `950`/`958`) | `app/src/lib/components/LevelOption.svelte` (`<input type="radio">`) |
+| `Diálogo de nível` (set; Escolher, PIN, PIN errado) | `967` (`968`, `1027`, `1078`) | `app/src/lib/components/LevelDialog.svelte` (`<dialog>` nativo, `data-etapa`) |
+| `Campo PIN` (instâncias `1052` e `1103`) | `674` (completo), `690` (erro) | `PinField.svelte`: dígito cheio com `borda/padrao` e erro com `perigo/texto` |
 | `Nível de acesso / Escolher` | `5615` (diálogo `5935`) | `nivel-escolher.png` |
 | `Nível de acesso / PIN` | `5994` (diálogo `6314`) | `nivel-pin.png` |
 | `Nível de acesso / PIN errado` | `6373` (diálogo `6693`) | `nivel-pin-errado.png` |
 
-Textos dos níveis (cartão e opção) em `app/src/lib/componentes/niveis.js`.
+Textos dos níveis (cartão e opção) em `app/src/lib/components/levels.js`.
 
 ## Fase 31 — destravar no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas do app (ponte de teste com `--daemon-falso travado-com-pedido`,
+`screenshot`. Capturas do app (ponte de teste com `--fake-daemon locked-with-request`,
 Chrome headless, 1280×800), PNG dos frames e `qa.json` em
-`docs/mission/evidence/fase-31/`.
+`docs/mission/arquivo/m1/evidence/fase-31/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Painel de marca` (instância `3343`) | `717` | `app/src/lib/componentes/PainelDeMarca.svelte` (largura 560 = `largura/dialogo-largo`, sem variable própria) |
-| `Campo senha` (set; vazio, foco, erro) | `17502` (`17503`, `17524`, `17537`) | `app/src/lib/componentes/CampoSenha.svelte` (erro com borda `perigo/texto`) |
-| `Destravar / Padrão` | `3342` (`formulário` `3368`, selo `3389`, `Destaque` `18701`) | `app/src/telas/Destravar.svelte` › `destravar-padrao.png` |
+| `Painel de marca` (instância `3343`) | `717` | `app/src/lib/components/BrandPanel.svelte` (largura 560 = `largura/dialogo-largo`, sem variable própria) |
+| `Campo senha` (set; vazio, foco, erro) | `17502` (`17503`, `17524`, `17537`) | `app/src/lib/components/PasswordField.svelte` (erro com borda `perigo/texto`) |
+| `Destravar / Padrão` | `3342` (`formulário` `3368`, selo `3389`, `Destaque` `18701`) | `app/src/screens/Unlock.svelte` › `destravar-padrao.png` |
 | `Destravar / Senha errada` | `3393` (`Campo senha` erro `3427`, botão `3435`, `Destaque` `18706`) | `destravar-senha-errada.png` (campo esvaziado, foco nele) |
-| `Destravar / Pedido do agente` | `3450` (`formulário` `3476`, cartão `3501`, contagem `3506`, `ações` `3527`, `Destaque` `18711`) | Fase 39a: `entrada` `3503` (avatar `3507` com `Ícone/chave`, nome `3518`) e `comando` `3504` = `CaixaDeCodigo.svelte`; no lugar dos `selos` `3519` (tipo e ambiente não existem com o cofre travado) vai o comando da operação (`ward run` etc.); `evidence/fase-39a/destravar-pedido-do-agente*.png` |
+| `Destravar / Pedido do agente` | `3450` (`formulário` `3476`, cartão `3501`, contagem `3506`, `ações` `3527`, `Destaque` `18711`) | Fase 39a: `entrada` `3503` (avatar `3507` com `Ícone/chave`, nome `3518`) e `comando` `3504` = `CodeBox.svelte`; no lugar dos `selos` `3519` (tipo e ambiente não existem com o cofre travado) vai o comando da operação (`ward run` etc.); `evidence/fase-39a/destravar-pedido-do-agente*.png` |
 
 ## Fase 38 — Configurações no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`, Chrome
+`screenshot`. Capturas do app (ponte de teste com `--fake-daemon full`, Chrome
 headless, 1280×800, tema claro do sistema), PNG do frame e `qa.json` em
-`docs/mission/evidence/fase-38/`.
+`docs/mission/arquivo/m1/evidence/fase-38/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Configurações / Geral` | `15242` (`acesso` `15289`, `backup` `15325`, `nota` `15374`) | `app/src/telas/Configuracoes.svelte` › `configuracoes-geral-1280x800.png` |
-| `Linha de opção` `Controle=botão` / `Controle=select` | `10380` / `10825` | `app/src/lib/componentes/LinhaDeOpcao.svelte` (snippet `controle`) |
-| `Select` compacto na linha | `10829` (`largura/select-compacto`) | `app/src/lib/componentes/Select.svelte` (`compacto`) |
-| Diálogos "Trocar senha mestra" e "Trocar PIN" | sem frame | `app/src/telas/TrocarSenha.svelte`, `TrocarPin.svelte` (`Modal` 611 + `Campo senha` 17511 / `Campo PIN` 650) |
+| `Configurações / Geral` | `15242` (`acesso` `15289`, `backup` `15325`, `nota` `15374`) | `app/src/screens/Settings.svelte` › `configuracoes-geral-1280x800.png` |
+| `Linha de opção` `Controle=botão` / `Controle=select` | `10380` / `10825` | `app/src/lib/components/OptionRow.svelte` (snippet `controle`) |
+| `Select` compacto na linha | `10829` (`largura/select-compacto`) | `app/src/lib/components/Select.svelte` (`compacto`) |
+| Diálogos "Trocar senha mestra" e "Trocar PIN" | sem frame | `app/src/screens/ChangePassword.svelte`, `ChangePin.svelte` (`Modal` 611 + `Campo senha` 17511 / `Campo PIN` 650) |
 
 `Configurações / Backup externo ligado` (`16178`) não entra: ligar o backup externo é da
 Fase 46.
@@ -990,73 +990,73 @@ Fase 46.
 ## Fase 48 — Configurações › backup externo no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`,
+`screenshot`. Capturas do app (ponte de teste com `--fake-daemon full`,
 `backup-externo-ligado` e `sem-udisks`, Chrome headless, 1280×800), PNG do frame e
-`qa.json` em `docs/mission/evidence/fase-48/`.
+`qa.json` em `docs/mission/arquivo/m1/evidence/fase-48/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Configurações / Backup externo ligado` | `16178` (`corpo` `16255`; `Linha de opção` interruptor `16265`) | `app/src/telas/Configuracoes.svelte` › `configuracoes-backup-externo-ligado-1280x800.png` |
-| Cartão `pendrive` (frame solto, não é componente) | `16318` (avatar `16320` com `Ícone/sucesso` `16329`; textos `16321`: nome `16332`, detalhe `16333`, estado `16334`; `Botão` "Trocar" `16322`) | `app/src/lib/componentes/CartaoDePendrive.svelte` (borda `borda/foco` 6:71, estado `sucesso/texto` 6:86) |
-| Diálogo "Escolher pendrive" / "Trocar pendrive" | sem frame | `app/src/telas/EscolherPendrive.svelte` (`Modal` 611, opções no desenho do `16318`, `Botão` 263) › `escolher-pendrive-1280x800.png` |
+| `Configurações / Backup externo ligado` | `16178` (`corpo` `16255`; `Linha de opção` interruptor `16265`) | `app/src/screens/Settings.svelte` › `configuracoes-backup-externo-ligado-1280x800.png` |
+| Cartão `pendrive` (frame solto, não é componente) | `16318` (avatar `16320` com `Ícone/sucesso` `16329`; textos `16321`: nome `16332`, detalhe `16333`, estado `16334`; `Botão` "Trocar" `16322`) | `app/src/lib/components/UsbDriveCard.svelte` (borda `borda/foco` 6:71, estado `sucesso/texto` 6:86) |
+| Diálogo "Escolher pendrive" / "Trocar pendrive" | sem frame | `app/src/screens/ChooseUsbDrive.svelte` (`Modal` 611, opções no desenho do `16318`, `Botão` 263) › `escolher-pendrive-1280x800.png` |
 
 ## Fase 36 — janela de aprovação no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas da janela (ponte de teste com `--daemon-falso aprovacao`,
-`aprovacao-prod`, `aprovacao-expirando` e `aprovacao-ataque`, `&tela=aprovacao`, Chrome
-headless), PNG dos frames e `qa.json` em `docs/mission/evidence/fase-36/`.
+`screenshot`. Capturas da janela (ponte de teste com `--fake-daemon approval`,
+`approval-prod`, `approval-expiring` e `approval-attack`, `&screen=approval`, Chrome
+headless), PNG dos frames e `qa.json` em `docs/mission/arquivo/m1/evidence/fase-36/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Contagem` (set; normal, urgente) | `16348` (`16335`, `16343`) | `app/src/lib/componentes/Contagem.svelte` (`urgente` a partir de 20 s, `SEGUNDOS_URGENTE`) |
-| `Caixa de código` | `16340` | `app/src/lib/componentes/CaixaDeCodigo.svelte` (texto puro, `direction: ltr; unicode-bidi: isolate`) |
-| `Botão ícone` | `18832` | `app/src/lib/componentes/BotaoIcone.svelte` (fechar = negar) |
-| `Destaque` prod / perigo | `18756` / `18760`, `18765` | `Destaque.svelte` (`tipo="prod"`, `tipo="perigo"`) |
-| `Aprovação / Normal` | `16701` | `app/src/telas/JanelaAprovacao.svelte` › `aprovacao-normal.png` |
+| `Contagem` (set; normal, urgente) | `16348` (`16335`, `16343`) | `app/src/lib/components/Countdown.svelte` (`urgente` a partir de 20 s, `SEGUNDOS_URGENTE`) |
+| `Caixa de código` | `16340` | `app/src/lib/components/CodeBox.svelte` (texto puro, `direction: ltr; unicode-bidi: isolate`) |
+| `Botão ícone` | `18832` | `app/src/lib/components/IconButton.svelte` (fechar = negar) |
+| `Destaque` prod / perigo | `18756` / `18760`, `18765` | `Highlight.svelte` (`tipo="prod"`, `tipo="perigo"`) |
+| `Aprovação / Normal` | `16701` | `app/src/screens/ApprovalWindow.svelte` › `aprovacao-normal.png` |
 | `Aprovação / prod` | `16810` | `aprovacao-prod.png` (borda do `pedido` e `Destaque` prod) |
 | `Aprovação / PIN errado` | `16885` | `aprovacao-pin-errado.png` (campo esvaziado a cada envio) |
 | `Aprovação / PIN bloqueado` | `16960` | `aprovacao-pin-bloqueado.png` (sem `Contagem`, Permitir desligados) |
 | `Aprovação / Expirando` | `17035` | `aprovacao-expirando.png` |
 | (sem frame: V5.29) | — | `aprovacao-ataque-d51.png`: comando e cadeia com escapes de D51 |
 
-Textos da janela em `app/src/telas/aprovacao.js`.
+Textos da janela em `app/src/screens/approval.js`.
 
 ## Fase 49 — kit de emergência no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas (ponte com `--daemon-falso cheio` e `backup-externo-ligado`,
-`&tela=configuracoes`, Chrome headless 1280×800), página do PDF, `qa-falso.json` e
-`qa-backup-externo-ligado.json` em `docs/mission/evidence/fase-49/`.
+`screenshot`. Capturas (ponte com `--fake-daemon full` e `external-backup-enabled`,
+`&screen=settings`, Chrome headless 1280×800), página do PDF, `qa-falso.json` e
+`qa-backup-externo-ligado.json` em `docs/mission/arquivo/m1/evidence/fase-49/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |
-| `Kit de emergência / Impressão` | `16773` | `app/src/telas/KitEmergencia.svelte` (folha `.folha`, 794×1123 por `pagina/a4-*`) |
-| cabeçalho / cofre / backups / senha mestra / como restaurar | `16774` / `16775` / `16776` / `16777` / `16778` | seções da folha; textos em `app/src/telas/kit-emergencia.js` |
+| `Kit de emergência / Impressão` | `16773` | `app/src/screens/EmergencyKit.svelte` (folha `.folha`, 794×1123 por `pagina/a4-*`) |
+| cabeçalho / cofre / backups / senha mestra / como restaurar | `16774` / `16775` / `16776` / `16777` / `16778` | seções da folha; textos em `app/src/screens/emergency-kit.js` |
 | linhas em branco da senha | `16796` (`16805`, `16806`) | `.linhas` / `.linha` (borda `impressao/linha`, sem texto) |
 | `Logo / Horizontal` com o nome em `impressao/texto` | `16781` (`16785`) | `Logo.svelte` com `impressao` |
-| `Linha de opção` botão (Kit de emergência › Imprimir) | `15242` › `10380` | `Configuracoes.svelte` › `config-kit`, agora habilitado |
-| (sem frame) janela de pré-visualização com "Fechar"/"Imprimir" | — | `KitEmergencia.svelte` › `.barra` (`kit-de-emergencia-1280x800-falso.png`) |
+| `Linha de opção` botão (Kit de emergência › Imprimir) | `15242` › `10380` | `Settings.svelte` › `config-kit`, agora habilitado |
+| (sem frame) janela de pré-visualização com "Fechar"/"Imprimir" | — | `EmergencyKit.svelte` › `.barra` (`kit-de-emergencia-1280x800-falso.png`) |
 
 ## Fase 47 — Restaurar backup (UI; lido de uma cópia do `Ward.figcraft`, nada salvo)
 
 | Nó | Id | No código |
 | --- | --- | --- |
-| `Restaurar backup / Versões` | `16349` (diálogo `16458`, itens `16466` … `16494`, legenda `16501`, rodapé `16502`) | `app/src/telas/RestaurarBackup.svelte`, etapa `versoes` |
-| `Restaurar backup / Confirmar` | `16512` (diálogo `16621`, item `16676`, `Campo senha` `16683`, aviso `18775`, legenda `16664`, rodapé `16665`) | `RestaurarBackup.svelte`, etapa `confirmar` (+ `Campo PIN` "PIN atual", que o frame não tem) |
-| `Item de versão` (set) | `11264` (padrão `11243`, selecionado `11265`) | `app/src/lib/componentes/ItemDeVersao.svelte` |
-| `Diálogo de restauração` (set) | `13033` | o `<dialog>` de `RestaurarBackup.svelte` |
+| `Restaurar backup / Versões` | `16349` (diálogo `16458`, itens `16466` … `16494`, legenda `16501`, rodapé `16502`) | `app/src/screens/RestoreBackup.svelte`, etapa `versoes` |
+| `Restaurar backup / Confirmar` | `16512` (diálogo `16621`, item `16676`, `Campo senha` `16683`, aviso `18775`, legenda `16664`, rodapé `16665`) | `RestoreBackup.svelte`, etapa `confirmar` (+ `Campo PIN` "PIN atual", que o frame não tem) |
+| `Item de versão` (set) | `11264` (padrão `11243`, selecionado `11265`) | `app/src/lib/components/VersionItem.svelte` |
+| `Diálogo de restauração` (set) | `13033` | o `<dialog>` de `RestoreBackup.svelte` |
 
 ## Fase 39d — correções do scrutiny do M5 (design)
 
 Editado no `Ward.figcraft` original pelo MCP `figcraft` headless (cópia de segurança antes,
 no scratchpad da sessão, sha256 `382bafe5…0360`); salvo com `save_file`, reaberto e
 conferido pelo JSON do arquivo (`unzip -t` sem erro). PNG em
-`docs/mission/evidence/fase-39d/`.
+`docs/mission/arquivo/m1/evidence/fase-39d/`.
 
 ### Contagens da fixture (22 entradas, D59)
 
-`dev/fixtures/entradas.json` tem 22 entradas: acme 13, beta 4, gama 3, delta 2. Os 26
+`dev/fixtures/entries.json` tem 22 entradas: acme 13, beta 4, gama 3, delta 2. Os 26
 textos "21 entradas · 4 grupos" viraram "22 entradas · 4 grupos" (`4137` `5304` `5660`
 `6039` `6418` `6971` `7495` `7953` `8582` `9026` `9499` `9945` `10434` `10940` `11317`
 `11750` `12215` `12728` `13504` `13912` `14352` `14788` `15444` `15890` `17702` `18100`),
@@ -1069,7 +1069,7 @@ arquivo.
 
 Os 19 cartões soltos (18 formulários e `Gerador de senha / No formulário`) foram apagados
 e trocados por instâncias do `Cartão de nível` (set `18998`), no mesmo lugar do `corpo`,
-largura `fill`, camada `nível de acesso`. Como no app (`Formulario.svelte`):
+largura `fill`, camada `nível de acesso`. Como no app (`Form.svelte`):
 - Novo: `Nível=com aprovação` com a explicação "Toda entrada nova começa assim. Mudar o
   nível pede o PIN." (override);
 - Edição: a variante do nível da entrada da fixture, com a explicação do componente
@@ -1118,7 +1118,7 @@ descrição `19917`; fundo `6:56`, raio `VariableID:16`, gap `6:133`, padding `6
 Componente `Diálogo de troca` (set `19978`), feito a partir do `Modal` `Tipo=padrão`
 (`612`) com os mesmos tokens (largura `VariableID:8`, fundo `6:59`, borda `6:69`, raio
 `VariableID:17`, `Sombra/Modal` `8:21`) e um `corpo` (gap 16) entre o cabeçalho e o
-rodapé. Textos do app (`TrocarSenha.svelte`, `TrocarPin.svelte`).
+rodapé. Textos do app (`ChangePassword.svelte`, `ChangePin.svelte`).
 
 | Variante | Id | Principais |
 | --- | --- | --- |
@@ -1139,14 +1139,14 @@ Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless (a ab
 "Ward" que a sessão já tinha aberta estava velha, sem a 39d; ver handoff) e salvo por
 cima do original com `save_file` depois de conferir que o sha256 do original não tinha
 mudado. Conferido no `document.json` do arquivo salvo (`unzip -t` sem erro; 39d e 49b
-presentes). PNG em `docs/mission/evidence/fase-49b/`. Textos iguais aos do app
-(`restaurar.js`, `configuracoes.js`).
+presentes). PNG em `docs/mission/arquivo/m1/evidence/fase-49b/`. Textos iguais aos do app
+(`restore.js`, `settings.js`).
 
 ### Componentes (Design System)
 
 | Item | Id | O que mudou |
 | --- | --- | --- |
-| `Item de versão` (set) | `11264` | duas variantes novas: `Estado=fora de ordem` `20534` (cópia do padrão; `detalhe` `20539`) e `Estado=fora de ordem selecionado` `20541` (cópia do selecionado; `detalhe` `20546`). O `detalhe` fica com `aviso/texto` (`6:83`) e o texto "Cópia local · gravação mais antiga do que a data diz" (`ItemDeVersao.svelte` › `alerta`) |
+| `Item de versão` (set) | `11264` | duas variantes novas: `Estado=fora de ordem` `20534` (cópia do padrão; `detalhe` `20539`) e `Estado=fora de ordem selecionado` `20541` (cópia do selecionado; `detalhe` `20546`). O `detalhe` fica com `aviso/texto` (`6:83`) e o texto "Cópia local · gravação mais antiga do que a data diz" (`VersionItem.svelte` › `alerta`) |
 | `Diálogo de restauração` › `Etapa=confirmar` | `13034` (aviso `18770`) | `Texto` do `Destaque` aviso ganhou "O tempo de trava e o backup externo continuam os de agora. A versão volta como uma gravação nova do cofre." (`avisoDaTroca`); vale para `Restaurar backup / Confirmar` `16512` (aviso `18775`) |
 
 ### Telas (Layout, 1280×800)
@@ -1162,8 +1162,8 @@ presentes). PNG em `docs/mission/evidence/fase-49b/`. Textos iguais aos do app
 Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless e salvo por
 cima do original com `save_file` depois de conferir que o sha256 do original não tinha
 mudado. Conferido relendo o arquivo do disco (`unzip -t` sem erro; PNG exportados do
-arquivo salvo pela CLI). PNG em `docs/mission/evidence/fase-53c/`. Textos iguais aos
-do app (`Formulario.svelte`, `chave.rs`; Fase 53a).
+arquivo salvo pela CLI). PNG em `docs/mission/arquivo/m1/evidence/fase-53c/`. Textos iguais aos
+do app (`Form.svelte`, `key.rs`; Fase 53a).
 
 ### Componente (Design System)
 
@@ -1197,8 +1197,8 @@ Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless, salv
 `save_file` na cópia e posta no lugar do original depois de conferir que o sha256 do
 original não tinha mudado (`7efbd69b…` → `3a2afbfb…`). Conferido pelo disco (`unzip -t`
 sem erro; frames da 53c e da 44d no `document.json`; PNG exportados do original pela
-CLI). PNG em `docs/mission/evidence/fase-44d/`. Referência: a tela da 44c
-(`JanelaAprovacao.svelte`, `aprovacao.js`) e os modos `aprovacao-origem`,
+CLI). PNG em `docs/mission/arquivo/m1/evidence/fase-44d/`. Referência: a tela da 44c
+(`ApprovalWindow.svelte`, `approval.js`) e os modos `aprovacao-origem`,
 `aprovacao-origem-popup` e `aprovacao-origem-pin` do daemon falso. Sem componente nem
 variable nova: tudo por instância (`Destaque` aviso `18684`, `Caixa de código`
 `16340`, `Botão`, `Campo PIN`, `Badge tipo` login, `Ícone/tipo-login` `219`).
@@ -1222,15 +1222,15 @@ app; ver o handoff da 44d):
 
 ## Fase 44e — app alinhado à 44d (UI)
 
-As três diferenças da tabela acima foram fechadas no app (`JanelaAprovacao.svelte`,
-`aprovacao.js`): aviso da origem em `Destaque` aviso, `prodDestaqueOrigem` na
+As três diferenças da tabela acima foram fechadas no app (`ApprovalWindow.svelte`,
+`approval.js`): aviso da origem em `Destaque` aviso, `prodDestaqueOrigem` na
 confirmação e `resumoOrigem` no pedido com PIN e origem. O daemon falso usa o ambiente
 e a origem reais da entrada (`acme-wp-dev` dev). Conferido pela ponte de teste no Chrome
 headless (Playwright, 1280 de largura) contra `22733`, `22817` e `22882`: largura 560,
 altura (772/790/874), y e altura de cada bloco (cabeçalho, destaques, resumo, pedido,
 PIN, ações, nota), textos, cores do aviso (`#3F2A06`, borda `#F5B544` a 32%) e borda do
 pedido (prod `#E5484D`, dev `#343A46`), sem diferença. PNG e `medidas.json` em
-`docs/mission/evidence/fase-44e/`. Sem frame para o aviso de `https` de loopback
+`docs/mission/arquivo/m1/evidence/fase-44e/`. Sem frame para o aviso de `https` de loopback
 (`origemDestaqueLocal`, o mesmo texto sem o "http").
 
 ## Fase 54d — aviso dos backups antigos na troca de senha (design)
@@ -1238,8 +1238,8 @@ pedido (prod `#E5484D`, dev `#343A46`), sem diferença. PNG e `medidas.json` em
 Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless (as abas do
 caminho original estavam velhas, uma delas suja com a 39d) e salvo por cima do original
 com `save_file` depois de conferir que o sha256 do original não tinha mudado. Texto e
-cor iguais ao app (`TrocarSenha.svelte` › `.aviso`, `--cor-aviso-texto`). PNG em
-`docs/mission/evidence/fase-54d/`.
+cor iguais ao app (`ChangePassword.svelte` › `.aviso`, `--cor-aviso-texto`). PNG em
+`docs/mission/arquivo/m1/evidence/fase-54d/`.
 
 | Item | Id | O que mudou |
 | --- | --- | --- |
@@ -1251,12 +1251,12 @@ cor iguais ao app (`TrocarSenha.svelte` › `.aviso`, `--cor-aviso-texto`). PNG 
 
 Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless e salvo por
 cima do original com `save_file` depois de conferir que o sha256 do original não tinha
-mudado (`1f397e4b…` → `24addb5f…`). Referência: `JanelaAprovacao.svelte`/`aprovacao.js`
-da 54b e `docs/mission/evidence/fase-54b/`. Sem componente nem variable nova: tudo por
+mudado (`1f397e4b…` → `24addb5f…`). Referência: `ApprovalWindow.svelte`/`approval.js`
+da 54b e `docs/mission/arquivo/m1/evidence/fase-54b/`. Sem componente nem variable nova: tudo por
 instância (`Destaque` aviso `18684`, `Interruptor` `6838`, `Caixa de código` `16340`,
 `Campo PIN` `650`, `Botão`). Os dois frames saíram de uma cópia de `Aprovação / Normal`
 `16701`, na linha y 4000 da Layout, 560 de largura, altura `hug` (1002, igual à captura
-do app). PNG em `docs/mission/evidence/fase-54f/`.
+do app). PNG em `docs/mission/arquivo/m1/evidence/fase-54f/`.
 
 | Frame | Id | x | Principais |
 | --- | --- | --- | --- |
@@ -1271,7 +1271,7 @@ não tinha mudado (`24addb5f…` → `5bec641a…`). Em cada frame, a `pedido` g
 `Caixa de código` (instância do `16340`, duplicada de `23048` da 54f) entre "Comando" e
 "Quem pediu", como o app mostra desde a 26a: Rótulo "Diretório de trabalho", Conteúdo
 `"/home/dev/projetos/acme"` (o mesmo do `daemon_falso`). Nada mais mudou; os frames são
-`hug` e cresceram 88 (72 da caixa + 16 do gap). PNG em `docs/mission/evidence/fase-54i/`.
+`hug` e cresceram 88 (72 da caixa + 16 do gap). PNG em `docs/mission/arquivo/m1/evidence/fase-54i/`.
 
 | Frame | Id | `pedido` | Caixa "Diretório de trabalho" | Altura nova |
 | --- | --- | --- | --- | --- |
@@ -1292,7 +1292,7 @@ tamanho (`size`, altura ligada a `controle/md` `6:141`, 40) saiu por
 registrado, a altura foi religada a `VariableID:47`). O `paddingTop` de 4 px
 (`espaco/4` `6:129`) saiu dos rodapés. O rodapé continua com 44 e os diálogos com a mesma
 altura; o botão sobe 4 px (y 635 no `20085`, y 489 no `20193`, iguais ao app). PNG em
-`docs/mission/evidence/fase-54j/`.
+`docs/mission/arquivo/m1/evidence/fase-54j/`.
 
 | Item | Id | Rodapé | Botões (44) |
 | --- | --- | --- | --- |
@@ -1304,7 +1304,7 @@ altura; o botão sobe 4 px (y 635 no `20085`, y 489 no `20193`, iguais ao app). 
 | `Configurações / Trocar PIN` (instância `20471`, herda) | `20193` | `20525` | `20526`, `20530` |
 
 Trocar PIN: a diferença de 4 px era do app. A explicação (`20478`) é `Texto/Corpo`
-(`8:12`, 14/20, duas linhas, 40 de altura), e o `TrocarPin.svelte` usava 13/18 (36). O
+(`8:12`, 14/20, duas linhas, 40 de altura), e o `ChangePin.svelte` usava 13/18 (36). O
 app passou a 14/20; o diálogo mede 558, como o `20471`. O FigCraft não mudou nesse ponto.
 
 ## Fase 54k — rodapé do Diálogo de nível (design)
@@ -1315,10 +1315,10 @@ do original não tinha mudado (`a6d1c8fa…` → `e52f15bf…`). Os botões do r
 `Diálogo de nível` voltam a seguir o `Botão` `263` (altura `controle/padrao`
 `VariableID:47`, 44): o override `size` (altura em `controle/md` `6:141`, 40) saiu por
 `component.resetOverride`. O `paddingTop` de 4 (`espaco/4` `6:129`) fica, como no
-`DialogoDeNivel.svelte`: rodapé de 48, diálogo 4 px mais alto (Escolher 648, PIN e PIN
+`LevelDialog.svelte`: rodapé de 48, diálogo 4 px mais alto (Escolher 648, PIN e PIN
 errado 412), igual ao app medido no Chrome headless (Escolher em y 76, PIN em y 194;
 rodapé em y 575/339 relativo ao diálogo, botões 4 px abaixo). As três instâncias herdam
-sem override. PNG em `docs/mission/evidence/fase-54k/`.
+sem override. PNG em `docs/mission/arquivo/m1/evidence/fase-54k/`.
 
 | Item | Id | Rodapé (48) | Botões (44) |
 | --- | --- | --- | --- |
@@ -1329,5 +1329,29 @@ sem override. PNG em `docs/mission/evidence/fase-54k/`.
 | `Nível de acesso / PIN` (instância `6314`, herda) | `5994` | `6364` | `6365`, `6369` |
 | `Nível de acesso / PIN errado` (instância `6693`, herda) | `6373` | `6743` | `6744`, `6748` |
 
-O comentário do `TrocarPin.svelte` passou a citar o frame `20193` (instância `20471` do
+O comentário do `ChangePin.svelte` passou a citar o frame `20193` (instância `20471` do
 `Diálogo de troca` › `Tipo=PIN` `19979`).
+
+## Missão 2, Fase 59: nomes externos novos nos textos e caminhos novos
+
+Os caminhos de arquivo citados neste documento passaram para os nomes da missão 2
+(`app/src/screens/`, `app/src/lib/components/`, `app/src/lib/style/`, `app/design/icons/`,
+`dev/fixtures/entries.json`, evidências da missão 1 em `docs/mission/arquivo/m1/evidence/`)
+e os modos da ponte de teste para `--fake-daemon <modo>` (`full`, `no-vault`,
+`locked-with-request`, `approval`…; `&screen=`). Os nomes de node, de componente, de
+variable e de estilo do `Ward.figcraft` não mudam.
+
+Textos que citam um nome externo acompanham o app (Fase 55: "some do ward list"; Fase 53:
+variáveis entregues). Trocados pelo FigCraft headless no `Ward.figcraft` (sha256 antes
+`e52f15bf…`, depois `026cd7f7…`; cópia de antes fora do repositório, no scratchpad da
+sessão):
+
+| O quê | Antes | Depois | Ids |
+| --- | --- | --- | --- |
+| explicação do nível bloqueado | "…some do ward lista…" | "…some do ward list…" | `Cartão de nível` › `Nível=bloqueado` `19011` (texto `19017`); `Opção de nível` `910`/`920` (textos `919`, `930`); `998` (Design System, outra opção bloqueada); telas `5965` e `19581` (`Credenciais / Bloqueada` `19359`) |
+| anexos | `WARD_ARQUIVO_<NOME>`, `WARD_ARQUIVO_*` | `WARD_FILE_<NOME>`, `WARD_FILE_*` | componente `Anexo` `6849` (descrição e padrão de `Detalhe`; texto `6860`); propriedades `Descrição`/`Detalhe` das instâncias de `Título de seção` e `Anexo` nos formulários (27, entre `7292` e `22690`) |
+| servidor e ftp/sftp | `WARD_PROTOCOLO`, `WARD_ARQUIVO_CHAVE` | `WARD_PROTOCOL`, `WARD_FILE_KEY` | `Título de seção` `11108` (texto `11111`) e `15027` (texto `15030`) |
+
+Conferido no `document.json` do arquivo salvo e reaberto: nenhum `ward lista`,
+`WARD_ARQUIVO` nem `WARD_PROTOCOLO`. PNG (export da CLI) em
+`docs/mission/evidence/fase-59/` (`19011`, `920`, `19359`, `13459`).

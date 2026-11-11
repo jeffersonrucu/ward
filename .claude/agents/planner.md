@@ -60,10 +60,10 @@ então Z". Cubra:
   conteúdo esperado com credenciais falsas).
 - **Máscara**: segredo na saída, quebrado entre pedaços, em URL-encoded, base64 e
   `DATABASE_URL`.
-- **Níveis e aprovação**: bloqueado some do `ward lista`; com aprovação abre a
+- **Níveis e aprovação**: bloqueado some do `ward list`; com aprovação abre a
   janela; livre não abre; os 4 botões (iguais em todos os ambientes); expirar e
   fechar negam; prazo de 1 h; mudar nível exige PIN; 5 erros travam.
-- **Travar**: bloqueio de tela, suspensão, 4 h sem uso, `ward travar`; travado →
+- **Travar**: bloqueio de tela, suspensão, 4 h sem uso, `ward lock`; travado →
   pedido espera o destrave por até 2 min.
 - **Integração real**: `ward run` em Postgres de teste, `ward ssh` em SSH de
   teste (senha e chave), `ward login`/`ward playwright` no WordPress de teste,

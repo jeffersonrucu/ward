@@ -17,7 +17,7 @@ volta.
   criado no app (primeiro uso: senha mestra e PIN) e o kit de emergência está
   impresso, com a senha mestra anotada à mão.
 - Destrave o Ward pelo app. No terminal, use sempre o caminho completo,
-  `/usr/local/bin/ward destravar`, nunca o `ward` que o `PATH` acha: um programa malicioso
+  `/usr/local/bin/ward unlock`, nunca o `ward` que o `PATH` acha: um programa malicioso
   rodando como você pode pôr um `ward` falso antes no `PATH` (em `~/.local/bin`, por
   exemplo), que mostra o mesmo pedido e guarda a senha mestra. O caminho completo pula
   o `PATH`, mas não um `~/.bashrc` ou `~/.zshrc` adulterado (escopo › "Fora do modelo
@@ -75,7 +75,7 @@ ou para o gerenciador do Chrome.
 
 ### Conferir
 
-- `ward lista` mostra cada entrada não bloqueada com nome, tipo, grupo e ambiente,
+- `ward list` mostra cada entrada não bloqueada com nome, tipo, grupo e ambiente,
   sem nenhum segredo. Conte e compare com o número de entradas de trabalho do
   KeePassXC.
 - Use uma entrada de cada tipo, por exemplo `ward run <entrada-banco> -- psql -c
@@ -505,7 +505,7 @@ valor.
 - `ls ~/.claude/skills` tem `ward` e não tem `cofre`.
 - `command -v cofre-lista cofre-run cofre-ssh cofre-abrir` não imprime nada.
 - As regras novas aparecem em "Deny" no `/permissions` do Claude Code.
-- Num pedido como "liste as credenciais do Ward", o Claude usa `ward lista`.
+- Num pedido como "liste as credenciais do Ward", o Claude usa `ward list`.
 
 ### Voltar atrás
 
@@ -537,7 +537,7 @@ volta sozinho: a volta é reinstalar e abrir o `.kdbx` guardado.
 
 - `command -v keepassxc` não imprime nada.
 - `busctl --user status org.freedesktop.secrets` continua com `Comm=gnome-keyring-d`;
-  o Chrome abre com as senhas; `ssh -T git@github.com` funciona; `ward lista` e um
+  o Chrome abre com as senhas; `ssh -T git@github.com` funciona; `ward list` e um
   `ward ssh <entrada> hostname` funcionam.
 
 ### Voltar atrás
