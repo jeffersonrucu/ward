@@ -14,8 +14,8 @@ ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/env.sh
 . "$ROOT/dev/env.sh"
 # rustup's cargo, at the end of PATH (like the Makefile).
-export PATH="/usr/bin:/bin:$CASA_PASSWD/.cargo/bin"
-CARGO_BIN="$CASA_PASSWD/.cargo/bin/cargo"
+export PATH="/usr/bin:/bin:$PASSWD_HOME/.cargo/bin"
+CARGO_BIN="$PASSWD_HOME/.cargo/bin/cargo"
 MAKE=(/usr/bin/make -s --no-print-directory -C "$ROOT")
 
 VAULT="$ROOT/.dev/test-vault.ward"

@@ -1,163 +1,164 @@
 #!/bin/bash -p
-# `make test-chrome-policy` (Fase 51a; V9.5, V9.6; achado crítico da auditoria do M9):
-# a política do Chrome que o `install.sh` gera (a mesma do `.deb`, que usa o mesmo
-# staging) desliga os manifestos de native messaging do perfil do usuário
-# (`NativeMessagingUserLevelHosts: false`), com o Chrome real.
+# `make test-chrome-policy` (Phase 51a; V9.5, V9.6; critical finding of the M9 audit):
+# the Chrome policy that `install.sh` generates (the same as the `.deb`'s, which uses the
+# same staging) turns off the native messaging manifests of the user's profile
+# (`NativeMessagingUserLevelHosts: false`), with the real Chrome.
 #
-# O Chrome lê /etc/opt/chrome; aqui ele roda num bwrap em que /etc/opt é um tmpfs e
-# /etc/opt/chrome é uma pasta deste teste em `.dev/chrome-policy.*` (nada do sistema
-# muda, nenhum sudo). Perfil, HOME e manifestos do usuário também ficam nela; o perfil
-# real do Chrome e `~/.config/google-chrome/` nunca são tocados.
+# Chrome reads /etc/opt/chrome; here it runs in a bwrap where /etc/opt is a tmpfs and
+# /etc/opt/chrome is a folder of this test in `.dev/chrome-policy.*` (nothing of the
+# system changes, no sudo). Profile, HOME and the user's manifests stay in it too; the
+# real Chrome profile and `~/.config/google-chrome/` are never touched.
 #
-# Quatro rodadas (`dev/tests/chrome_policy.py`, a partir dos scripts da auditoria),
-# mais a 2b (Fase 44e: a `chrome://policy` lida em execução, com e sem a política):
-#   1. precedência sem política (controle): o host do perfil é chamado (o ataque vale;
-#      prova que o teste enxerga o ataque);
-#   2. precedência com o `ward.json` gerado: o host do perfil NÃO é chamado e o do
-#      sistema é;
-#   3. o ataque inteiro da auditoria sem política (controle, fora do bwrap: o host não
-#      tem /etc/opt/chrome; com ela, a rodada é pulada): o host do perfil faz exec do
-#      `ward-nm` de teste e tira senhas do `wardd` de teste (`WARD_DEV_EXTENSAO=chrome`);
-#      os logs do daemon e do Chrome sem padrão de `.dev/variations.txt`;
-#   4. o mesmo ataque com o `ward.json` gerado, no bwrap: o host do atacante nem roda,
-#      o do sistema roda e nada sai.
+# Four rounds (`dev/tests/chrome_policy.py`, from the audit's scripts), plus 2b (Phase
+# 44e: `chrome://policy` read at run time, with and without the policy):
+#   1. precedence without a policy (control): the profile's host is called (the attack
+#      works; proves the test sees the attack);
+#   2. precedence with the generated `ward.json`: the profile's host is NOT called and
+#      the system's is;
+#   3. the whole audit attack without a policy (control, outside the bwrap: the host has
+#      no /etc/opt/chrome; with one, the round is skipped): the profile's host does an
+#      exec of the test `ward-nm` and takes passwords from the test `wardd`
+#      (`WARD_DEV_EXTENSAO=chrome`); the daemon and Chrome logs without a pattern of
+#      `.dev/variations.txt`;
+#   4. the same attack with the generated `ward.json`, in the bwrap: the attacker's host
+#      does not even run, the system's runs and nothing comes out.
 #
-# Fase 44c (D9): as entradas `login` do cofre de teste são `http://localhost`, e o
-# `preencher` em `http` agora espera a confirmação da origem na janela. No controle da
-# rodada 3 a janela de teste (`wardd-aprovador-teste`) confirma tudo, como um usuário que
-# confirma sem olhar: o ataque continua reproduzindo (RA10). A política também desliga o
-# gerenciador de senhas do Chrome e a checagem de vazamento (conferido no `ward.json`).
+# Phase 44c (D9): the `login` entries of the test vault are `http://localhost`, and
+# `preencher` over `http` now waits for the origin confirmation in the window. In the
+# control of round 3 the test window (`wardd-aprovador-teste`) confirms everything, like
+# a user who confirms without looking: the attack still reproduces (RA10). The policy
+# also turns off Chrome's password manager and the leak check (verified in `ward.json`).
 #
-# Uso: chrome-policy.sh <wardd test-mode> <ward-nm test-mode> <ward> <wardd> <ward-nm> <ward-app>
-#      <wardd-aprovador-teste>
-#      (do 3º ao 6º sem `test-mode`, para o `install.sh` gerar a política).
-# Precisa de bwrap, openssl, `make dev-vault`, `make dev-variations` e do Chrome em
-# /opt/google/chrome; fora do `make check`.
+# Usage: chrome-policy.sh <wardd test-mode> <ward-nm test-mode> <ward> <wardd> <ward-nm> <ward-app>
+#        <wardd-aprovador-teste>
+#        (the 3rd to the 6th without `test-mode`, for `install.sh` to generate the policy).
+# Needs bwrap, openssl, `make dev-vault`, `make dev-variations` and Chrome in
+# /opt/google/chrome; out of `make check`.
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
-RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
+ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/env.sh
-. "$RAIZ/dev/env.sh"
+. "$ROOT/dev/env.sh"
 unset MAKEFLAGS MAKELEVEL MFLAGS
-cd "$RAIZ"
+cd "$ROOT"
 
-uso="uso: chrome-policy.sh <wardd-teste> <ward-nm-teste> <ward> <wardd> <ward-nm> <ward-app> <wardd-aprovador-teste>"
-[ $# -eq 7 ] || { echo "$uso" >&2; exit 2; }
-abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$RAIZ" "$1" ;; esac; }
-WARDD_T="$(abs "$1")" NM_T="$(abs "$2")" APROVADOR="$(abs "$7")"
+usage="uso: chrome-policy.sh <wardd-teste> <ward-nm-teste> <ward> <wardd> <ward-nm> <ward-app> <wardd-aprovador-teste>"
+[ $# -eq 7 ] || { echo "$usage" >&2; exit 2; }
+abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$ROOT" "$1" ;; esac; }
+WARDD_T="$(abs "$1")" NM_T="$(abs "$2")" APPROVER="$(abs "$7")"
 B_WARD="$(abs "$3")" B_WARDD="$(abs "$4")" B_NM="$(abs "$5")" B_APP="$(abs "$6")"
-for b in "$WARDD_T" "$NM_T" "$B_WARD" "$B_WARDD" "$B_NM" "$B_APP" "$APROVADOR"; do
+for b in "$WARDD_T" "$NM_T" "$B_WARD" "$B_WARDD" "$B_NM" "$B_APP" "$APPROVER"; do
     [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }
 done
 CHROME=/opt/google/chrome/chrome
 [ -x "$CHROME" ] || { echo "falta o Chrome em $CHROME" >&2; exit 1; }
 for p in bwrap openssl; do command -v "$p" >/dev/null || { echo "falta o programa: $p" >&2; exit 1; }; done
-COFRE="$RAIZ/.dev/test-vault.ward"
-LISTA="$RAIZ/.dev/variations.txt"
-[ -f "$COFRE" ] && [ ! -L "$COFRE" ] || { echo "falta o cofre de teste: rode 'make dev-vault'" >&2; exit 1; }
-[ -s "$LISTA" ] && [ ! -L "$LISTA" ] || { echo "falta a lista: rode 'make dev-variations'" >&2; exit 1; }
+VAULT="$ROOT/.dev/test-vault.ward"
+PATTERN_LIST="$ROOT/.dev/variations.txt"
+[ -f "$VAULT" ] && [ ! -L "$VAULT" ] || { echo "falta o cofre de teste: rode 'make dev-vault'" >&2; exit 1; }
+[ -s "$PATTERN_LIST" ] && [ ! -L "$PATTERN_LIST" ] || { echo "falta a lista: rode 'make dev-variations'" >&2; exit 1; }
 RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 case "$RUNTIME" in /*) ;; *) echo "XDG_RUNTIME_DIR não é absoluto" >&2; exit 1 ;; esac
 
 umask 077
-mkdir -p -m 0700 "$RAIZ/.dev"
-TRAB="$(mktemp -d "$RAIZ/.dev/chrome-policy.XXXXXX")"
-trap 'rm -rf -- "$TRAB"' EXIT
-mkdir -m 0700 "$TRAB/etc-chrome"
+mkdir -p -m 0700 "$ROOT/.dev"
+WORK_DIR="$(mktemp -d "$ROOT/.dev/chrome-policy.XXXXXX")"
+trap 'rm -rf -- "$WORK_DIR"' EXIT
+mkdir -m 0700 "$WORK_DIR/etc-chrome"
 
-falhas=0
+failures=0
 ok() { echo "ok: $*"; }
-falhou() { echo "FALHOU: $*"; falhas=$((falhas + 1)); }
+failed() { echo "FALHOU: $*"; failures=$((failures + 1)); }
 
-# A política de verdade: o `install.sh` com DESTDIR (staging, como o `make deb`).
-CRX="$TRAB/ward.crx"
-ID="$(/usr/bin/python3 -I "$RAIZ/dev/tests/fake_crx.py" "$CRX")"
-/usr/bin/make -s -C "$RAIZ" install DESTDIR="$TRAB/raiz" EXTENSION_ID="$ID" EXTENSION_CRX="$CRX" \
+# The real policy: `install.sh` with DESTDIR (staging, like `make deb`).
+CRX="$WORK_DIR/ward.crx"
+ID="$(/usr/bin/python3 -I "$ROOT/dev/tests/fake_crx.py" "$CRX")"
+/usr/bin/make -s -C "$ROOT" install DESTDIR="$WORK_DIR/root" EXTENSION_ID="$ID" EXTENSION_CRX="$CRX" \
     BIN_WARD="$B_WARD" BIN_WARDD="$B_WARDD" BIN_NM="$B_NM" BIN_APP="$B_APP" WARD_UID= >/dev/null
-POLITICA="$TRAB/raiz/etc/opt/chrome/policies/managed/ward.json"
-r="$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("NativeMessagingUserLevelHosts"))' "$POLITICA")"
+POLICY="$WORK_DIR/root/etc/opt/chrome/policies/managed/ward.json"
+r="$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("NativeMessagingUserLevelHosts"))' "$POLICY")"
 [ "$r" = False ] && ok "a política gerada pelo install.sh tem NativeMessagingUserLevelHosts false" ||
-    falhou "a política gerada não desliga os manifestos do usuário ($r)"
-# Fase 44c: o gerenciador de senhas do Chrome e a checagem de vazamento desligados.
-for nome in PasswordManagerEnabled PasswordLeakDetectionEnabled; do
-    r="$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]))' "$POLITICA" "$nome")"
-    [ "$r" = False ] && ok "a política gerada pelo install.sh tem $nome false" ||
-        falhou "a política gerada não desliga $nome ($r)"
+    failed "a política gerada não desliga os manifestos do usuário ($r)"
+# Phase 44c: Chrome's password manager and the leak check turned off.
+for name in PasswordManagerEnabled PasswordLeakDetectionEnabled; do
+    r="$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]))' "$POLICY" "$name")"
+    [ "$r" = False ] && ok "a política gerada pelo install.sh tem $name false" ||
+        failed "a política gerada não desliga $name ($r)"
 done
-# Chave da extensão de teste (só para o id; descartada no fim).
-openssl genrsa -out "$TRAB/k.pem" 2048 2>/dev/null
+# Key of the test extension (only for the id; discarded at the end).
+openssl genrsa -out "$WORK_DIR/k.pem" 2048 2>/dev/null
 
-rodada() {
-    env -i HOME="$TRAB" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="$RUNTIME" \
-        bwrap --dev-bind / / --tmpfs /etc/opt --bind "$TRAB/etc-chrome" /etc/opt/chrome \
-        --die-with-parent -- /usr/bin/python3 -I -B "$RAIZ/dev/tests/chrome_policy.py" "$RAIZ" "$TRAB" "$@"
+run_round() {
+    env -i HOME="$WORK_DIR" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="$RUNTIME" \
+        bwrap --dev-bind / / --tmpfs /etc/opt --bind "$WORK_DIR/etc-chrome" /etc/opt/chrome \
+        --die-with-parent -- /usr/bin/python3 -I -B "$ROOT/dev/tests/chrome_policy.py" "$ROOT" "$WORK_DIR" "$@"
 }
-campo() { /usr/bin/python3 -I -c 'import json,sys; print(json.loads(sys.argv[1]).get(sys.argv[2]))' "$1" "$2"; }
+field() { /usr/bin/python3 -I -c 'import json,sys; print(json.loads(sys.argv[1]).get(sys.argv[2]))' "$1" "$2"; }
 
 echo "==> 1. precedência sem política (controle)"
-r="$(rodada precedencia -)" || falhou "rodada 1 saiu ≠ 0"
+r="$(run_round precedencia -)" || failed "rodada 1 saiu ≠ 0"
 echo "    $r"
-[ "$(campo "$r" usuario)" = True ] && ok "sem a política, o manifesto plantado no perfil vence (o ataque da auditoria)" ||
-    falhou "controle: o host do perfil não foi chamado; o teste não enxerga o ataque"
+[ "$(field "$r" usuario)" = True ] && ok "sem a política, o manifesto plantado no perfil vence (o ataque da auditoria)" ||
+    failed "controle: o host do perfil não foi chamado; o teste não enxerga o ataque"
 
 echo "==> 2. precedência com a política do Ward"
-r="$(rodada precedencia "$POLITICA")" || falhou "rodada 2 saiu ≠ 0"
+r="$(run_round precedencia "$POLICY")" || failed "rodada 2 saiu ≠ 0"
 echo "    $r"
-[ "$(campo "$r" usuario)" = False ] && ok "com a política, o manifesto plantado no perfil não é chamado" ||
-    falhou "com a política, o host do perfil foi chamado"
-[ "$(campo "$r" sistema)" = True ] && ok "com a política, o manifesto do sistema é chamado" ||
-    falhou "com a política, o host do sistema não foi chamado"
+[ "$(field "$r" usuario)" = False ] && ok "com a política, o manifesto plantado no perfil não é chamado" ||
+    failed "com a política, o host do perfil foi chamado"
+[ "$(field "$r" sistema)" = True ] && ok "com a política, o manifesto do sistema é chamado" ||
+    failed "com a política, o host do sistema não foi chamado"
 
-# Fase 44e: o que o Chrome aplica de verdade, lido na `chrome://policy` em execução (o
-# JSON gerado só diz o que foi escrito). Sem a política (controle), a página mostra
-# "Not set." e a leitura enxerga a diferença.
+# Phase 44e: what Chrome really applies, read from `chrome://policy` at run time (the
+# generated JSON only says what was written). Without the policy (control), the page
+# shows "Not set." and the reading sees the difference.
 echo "==> 2b. chrome://policy em execução"
-r="$(rodada pagina -)" || falhou "rodada 2b (controle) saiu ≠ 0"
+r="$(run_round pagina -)" || failed "rodada 2b (controle) saiu ≠ 0"
 echo "    sem política: $r"
-r2="$(rodada pagina "$POLITICA")" || falhou "rodada 2b saiu ≠ 0"
+r2="$(run_round pagina "$POLICY")" || failed "rodada 2b saiu ≠ 0"
 echo "    com a política: $r2"
-for nome in NativeMessagingUserLevelHosts PasswordManagerEnabled PasswordLeakDetectionEnabled; do
-    sem="$(/usr/bin/python3 -I -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]]["valor"])' "$r" "$nome")"
-    com="$(/usr/bin/python3 -I -c 'import json,sys; d=json.loads(sys.argv[1])[sys.argv[2]]; print(d["valor"], d["ok"])' "$r2" "$nome")"
-    [ "$sem" = "Not set." ] && ok "controle: sem a política, chrome://policy mostra $nome sem valor" ||
-        falhou "controle: sem a política, chrome://policy mostra $nome = $sem"
-    [ "$com" = "false True" ] && ok "chrome://policy mostra $nome = false, obrigatória, da máquina, OK" ||
-        falhou "chrome://policy não aplica $nome ($com)"
+for name in NativeMessagingUserLevelHosts PasswordManagerEnabled PasswordLeakDetectionEnabled; do
+    without="$(/usr/bin/python3 -I -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]]["valor"])' "$r" "$name")"
+    with="$(/usr/bin/python3 -I -c 'import json,sys; d=json.loads(sys.argv[1])[sys.argv[2]]; print(d["valor"], d["ok"])' "$r2" "$name")"
+    [ "$without" = "Not set." ] && ok "controle: sem a política, chrome://policy mostra $name sem valor" ||
+        failed "controle: sem a política, chrome://policy mostra $name = $without"
+    [ "$with" = "false True" ] && ok "chrome://policy mostra $name = false, obrigatória, da máquina, OK" ||
+        failed "chrome://policy não aplica $name ($with)"
 done
 
 echo "==> 3. ataque da auditoria sem política (controle, fora do bwrap)"
-r="$(env -i HOME="$TRAB" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="$RUNTIME" \
-    /usr/bin/python3 -I -B "$RAIZ/dev/tests/chrome_policy.py" "$RAIZ" "$TRAB" roubo - "$WARDD_T" "$NM_T" "$APROVADOR")" ||
-    falhou "rodada 3 saiu ≠ 0"
+r="$(env -i HOME="$WORK_DIR" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="$RUNTIME" \
+    /usr/bin/python3 -I -B "$ROOT/dev/tests/chrome_policy.py" "$ROOT" "$WORK_DIR" roubo - "$WARDD_T" "$NM_T" "$APPROVER")" ||
+    failed "rodada 3 saiu ≠ 0"
 echo "    $r"
-if [ "$(campo "$r" pulado)" != None ]; then
-    echo "pulado: rodada 3 ($(campo "$r" pulado))"
+if [ "$(field "$r" pulado)" != None ]; then
+    echo "pulado: rodada 3 ($(field "$r" pulado))"
 else
-    [ "$(campo "$r" atacante_rodou)" = True ] && [ "$(campo "$r" com_segredo)" != 0 ] &&
+    [ "$(field "$r" atacante_rodou)" = True ] && [ "$(field "$r" com_segredo)" != 0 ] &&
         ok "sem a política, o host do atacante faz exec do ward-nm e tira senhas (controle)" ||
-        falhou "controle: o ataque da auditoria não reproduziu"
-    for f in "$TRAB/roubo-sem-politica/wardd.log" "$TRAB/roubo-sem-politica/chrome.log" \
-        "$TRAB/roubo-sem-politica/logs/wardd-aprovador-teste.log"; do
-        if [ -f "$f" ] && grep -qaF -f "$LISTA" -- "$f"; then
-            falhou "padrão de .dev/variations.txt em ${f#"$TRAB"/}"
+        failed "controle: o ataque da auditoria não reproduziu"
+    for f in "$WORK_DIR/roubo-sem-politica/wardd.log" "$WORK_DIR/roubo-sem-politica/chrome.log" \
+        "$WORK_DIR/roubo-sem-politica/logs/wardd-aprovador-teste.log"; do
+        if [ -f "$f" ] && grep -qaF -f "$PATTERN_LIST" -- "$f"; then
+            failed "padrão de .dev/variations.txt em ${f#"$WORK_DIR"/}"
         else
-            ok "${f#"$TRAB"/} sem padrão de .dev/variations.txt"
+            ok "${f#"$WORK_DIR"/} sem padrão de .dev/variations.txt"
         fi
     done
 fi
 
 echo "==> 4. ataque da auditoria com a política do Ward"
-r="$(rodada roubo "$POLITICA" "$WARDD_T" "$NM_T")" || falhou "rodada 4 saiu ≠ 0"
+r="$(run_round roubo "$POLICY" "$WARDD_T" "$NM_T")" || failed "rodada 4 saiu ≠ 0"
 echo "    $r"
-[ "$(campo "$r" atacante_rodou)" = False ] && ok "com a política, o host do atacante (no perfil) nem roda" ||
-    falhou "com a política, o host do atacante rodou"
-[ "$(campo "$r" sistema_rodou)" = True ] && ok "com a política, o Chrome abre o host do sistema" ||
-    falhou "com a política, o host do sistema não rodou"
-[ "$(campo "$r" com_segredo)" = 0 ] && ok "com a política, nenhuma senha sai" || falhou "com a política, saiu senha"
+[ "$(field "$r" atacante_rodou)" = False ] && ok "com a política, o host do atacante (no perfil) nem roda" ||
+    failed "com a política, o host do atacante rodou"
+[ "$(field "$r" sistema_rodou)" = True ] && ok "com a política, o Chrome abre o host do sistema" ||
+    failed "com a política, o host do sistema não rodou"
+[ "$(field "$r" com_segredo)" = 0 ] && ok "com a política, nenhuma senha sai" || failed "com a política, saiu senha"
 
-if [ "$falhas" -ne 0 ]; then
-    echo "test-chrome-policy: $falhas falha(s)"
+if [ "$failures" -ne 0 ]; then
+    echo "test-chrome-policy: $failures falha(s)"
     exit 1
 fi
 echo "test-chrome-policy: tudo ok"

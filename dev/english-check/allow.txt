@@ -14,6 +14,7 @@ dev/fixtures/*/gama-generico generico entry name of the test vault (user data)
 dev/fixtures/*/gama-generico/app.env falso content of a test vault attachment (user data, m2:V4.19)
 # Proper names in English comments.
 crates/ward-platform/src/launcher.rs frei frei0r is the name of a GStreamer plugin family, not Portuguese
+dev/tests/gst-channels.sh frei frei0r is the name of a GStreamer plugin family, not Portuguese
 # Test service names (Phase 45): they are also host names stored in the test vault entries
 # (`dev/fixtures/entries.json`, the 0.1.4 legacy fixtures) and the names of the secret files
 # in `.dev/services/`, so they stay as test data.

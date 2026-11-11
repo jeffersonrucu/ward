@@ -25,23 +25,22 @@
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
-RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
-# The root variable keeps the name common.sh expects from its caller (Phase 46 renames both sides).
+ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/services/common.sh
-. "$RAIZ/dev/services/common.sh"
+. "$ROOT/dev/services/common.sh"
 unset MAKEFLAGS MAKELEVEL MFLAGS
-cd "$RAIZ"
+cd "$ROOT"
 
 HOST_ONLY=0
 [ "${1:-}" = --host-only ] && HOST_ONLY=1
 
-NO_TM="$RAIZ/target/no-test-mode/debug"
+NO_TM="$ROOT/target/no-test-mode/debug"
 WARD="$NO_TM/ward"
 WARDD="$NO_TM/wardd"
 NM="$NO_TM/ward-nm"
 APP="$NO_TM/examples/startup-container"
 CLIENT="$NO_TM/examples/wardd-test-client"
-WARDD_TEST="$RAIZ/target/debug/wardd"
+WARDD_TEST="$ROOT/target/debug/wardd"
 for b in "$WARD" "$WARDD" "$NM" "$APP" "$CLIENT" "$WARDD_TEST"; do
     [ -x "$b" ] || { echo "binário não encontrado: $b (rode pelo 'make test-deb')" >&2; exit 1; }
 done
@@ -49,8 +48,8 @@ for p in dpkg-deb make; do
     command -v "$p" >/dev/null 2>&1 || { echo "falta o programa: $p" >&2; exit 1; }
 done
 
-mkdir -p -m 0700 "$RAIZ/.dev"
-TMP="$(mktemp -d "$RAIZ/.dev/test-deb.XXXXXX")"
+mkdir -p -m 0700 "$ROOT/.dev"
+TMP="$(mktemp -d "$ROOT/.dev/test-deb.XXXXXX")"
 CONTAINER_NAME="ward-deb-$$"
 trap 'docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true; rm -rf -- "$TMP"' EXIT
 
@@ -62,14 +61,14 @@ verify() {
 }
 
 CRX="$TMP/ward.crx"
-ID="$(/usr/bin/python3 -I "$RAIZ/dev/tests/fake_crx.py" "$CRX")"
+ID="$(/usr/bin/python3 -I "$ROOT/dev/tests/fake_crx.py" "$CRX")"
 [[ "$ID" =~ ^[a-p]{32}$ ]] || { echo "fake_crx.py não deu um id" >&2; exit 1; }
 
 # `make deb`; extra arguments override the defaults.
 mk() {
     local d="$1"
     shift
-    /usr/bin/make -s -C "$RAIZ" deb DEB_DIR="$d" EXTENSION_ID="$ID" EXTENSION_CRX="$CRX" \
+    /usr/bin/make -s -C "$ROOT" deb DEB_DIR="$d" EXTENSION_ID="$ID" EXTENSION_CRX="$CRX" \
         BIN_WARD="$WARD" BIN_WARDD="$WARDD" BIN_NM="$NM" BIN_APP="$APP" "$@"
 }
 
@@ -84,7 +83,7 @@ verify "make deb imprime o sha256" "$r" "$(sha256sum "$DEB" | cut -d' ' -f1)"
 listing="$(dpkg-deb -c "$DEB")"
 paths="$(awk '{print $6}' <<<"$listing" | sed -e 's#^\./##' -e 's#/$##' | grep -v '^$' | sort)"
 staging="$(cd "$D/raiz" && find . -mindepth 1 -printf '%P\n' | sort)"
-tree="$(awk '!/^#/ && NF >= 5 {print $5}' "$RAIZ/install/tree.txt" | sort)"
+tree="$(awk '!/^#/ && NF >= 5 {print $5}' "$ROOT/install/tree.txt" | sort)"
 [ "$paths" = "$staging" ] && ok "V9.9: dpkg -c tem a mesma lista do staging" || {
     diff <(printf '%s\n' "$staging") <(printf '%s\n' "$paths") || true
     fail "V9.9: lista do pacote ≠ staging"
@@ -124,7 +123,7 @@ grep -q '^avisar_manifestos_de_usuario()' "$TMP/control/postinst" && ok "postins
 grep -q '^avisar_core_pattern()' "$TMP/control/postinst" && grep -q '^        avisar_core_pattern$' "$TMP/control/postinst" &&
     ok "postinst avisa de core_pattern fora do apport/systemd-coredump (Fase 51c)" || fail "postinst sem avisar_core_pattern"
 verify "Fase 51c: pacote com a lista do apport (WebKitWebProcess)" "$(cat "$X/etc/apport/report-ignore/ward")" "/webkit2gtk-4.1/WebKitWebProcess"
-cmp -s "$RAIZ/install/coredump.conf.d/ward.conf" "$X/etc/systemd/coredump.conf.d/ward.conf" &&
+cmp -s "$ROOT/install/coredump.conf.d/ward.conf" "$X/etc/systemd/coredump.conf.d/ward.conf" &&
     ok "Fase 51c: pacote com o drop-in do systemd-coredump" || fail "Fase 51c: drop-in do systemd-coredump fora do pacote"
 for s in preinst postinst prerm postrm; do
     verify "$s sem marca de modelo" "$(grep -c '#@' "$TMP/control/$s" || true)" "0"
@@ -147,18 +146,18 @@ refusal() {
     verify "$label: nenhum .deb" "$(no_deb "$d")" "sem deb"
 }
 refusal "V9.2: wardd com test-mode" "modo-teste" "$TMP/r1" BIN_WARDD="$WARDD_TEST"
-other_id="$(/usr/bin/python3 -I "$RAIZ/dev/tests/fake_crx.py" "$TMP/other.crx")"
+other_id="$(/usr/bin/python3 -I "$ROOT/dev/tests/fake_crx.py" "$TMP/other.crx")"
 refusal "EXTENSION_ID de outra extensão" "não de EXTENSION_ID" "$TMP/r2" EXTENSION_ID="$other_id"
 refusal "EXTENSION_ID vazio" "EXTENSION_ID" "$TMP/r3" EXTENSION_ID=
 mkdir -p "$TMP/real-r4"
 ln -s "$TMP/real-r4" "$TMP/r4"
 refusal "DEB_DIR por link" "link simbólico" "$TMP/r4"
 verify "DEB_DIR por link: nada no alvo" "$(ls -A "$TMP/real-r4")" ""
-r="$(cd "$TMP" && /usr/bin/make -s -C "$RAIZ" deb DEB_DIR=relativo EXTENSION_ID="$ID" EXTENSION_CRX="$CRX" \
+r="$(cd "$TMP" && /usr/bin/make -s -C "$ROOT" deb DEB_DIR=relativo EXTENSION_ID="$ID" EXTENSION_CRX="$CRX" \
     BIN_WARD="$WARD" BIN_WARDD="$WARDD" BIN_NM="$NM" BIN_APP="$APP" 2>&1; echo "saiu=$?")"
 verify "DEB_DIR relativo: recusado" "$r" "caminho absoluto"
 [[ "$r" != *"saiu=0"* ]] && ok "DEB_DIR relativo: não sai 0" || fail "DEB_DIR relativo saiu 0"
-[ ! -e "$RAIZ/relativo" ] || fail "DEB_DIR relativo criou $RAIZ/relativo"
+[ ! -e "$ROOT/relativo" ] || fail "DEB_DIR relativo criou $ROOT/relativo"
 
 echo "==> 1c. make extension-crx: chave errada, chave aberta e chave por link são recusadas"
 if [ -x /opt/google/chrome/chrome ] && command -v openssl >/dev/null 2>&1; then
@@ -168,7 +167,7 @@ if [ -x /opt/google/chrome/chrome ] && command -v openssl >/dev/null 2>&1; then
     (umask 077 && openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$E/other.pem" 2>/dev/null)
     crx() {
         env -i PATH=/usr/bin:/bin EXTENSAO_DIST="$E/dist" CRX_SAIDA="$E/out/ward.crx" "$@" \
-            "$RAIZ/install/pack-extension.sh" 2>&1
+            "$ROOT/install/pack-extension.sh" 2>&1
     }
     r="$(crx EXTENSION_KEY="$E/other.pem"; echo "saiu=$?")"
     verify "extension-crx: outra chave (outro id) recusada" "$r" "não do ID_EXTENSAO"
@@ -199,19 +198,19 @@ command -v docker >/dev/null 2>&1 || { echo "falta o programa: docker" >&2; exit
 C="$TMP/container"
 mkdir -m 0755 "$C" "$C/bin"
 install -m 0644 "$DEB" "$C/ward.deb"
-install -m 0644 "$RAIZ/install/tree.txt" "$C/tree.txt"
+install -m 0644 "$ROOT/install/tree.txt" "$C/tree.txt"
 install -m 0755 "$CLIENT" "$C/bin/cliente"
 printf '%s\n' "$ID" >"$C/id"
 chmod 0644 "$C/id"
 
 IMAGE="ward-teste/deb-systemd:1"
-docker build --quiet -t "$IMAGE" -f "$RAIZ/dev/container-deb/Dockerfile" "$RAIZ/dev/container-units" >/dev/null
+docker build --quiet -t "$IMAGE" -f "$ROOT/dev/container-deb/Dockerfile" "$ROOT/dev/container-units" >/dev/null
 docker run -d --name "$CONTAINER_NAME" --network none --pull never \
     --tmpfs /run --tmpfs /run/lock --tmpfs /tmp \
     --cgroupns=private --cap-add SYS_ADMIN --cap-add SYS_PTRACE --security-opt apparmor=unconfined \
     --ulimit memlock=-1:-1 \
     -v "$C:/opt/teste:ro" \
-    -v "$RAIZ/dev/container-deb/inside.sh:/opt/inside.sh:ro" \
+    -v "$ROOT/dev/container-deb/inside.sh:/opt/inside.sh:ro" \
     "$IMAGE" >/dev/null
 code=0
 docker exec "$CONTAINER_NAME" /bin/bash -p /opt/inside.sh || code=$?

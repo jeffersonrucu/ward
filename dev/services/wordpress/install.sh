@@ -1,18 +1,18 @@
 #!/bin/sh
-# Instala o WordPress de teste (8081) e sincroniza wp_admin e wp_editor com as
-# fixtures (senhas de D15 lidas de /run/ward/). Senhas entram pelo stdin com
-# `--prompt`, nunca em argv. Roda no serviço `wpcli` e sai.
+# Installs the test WordPress (8081) and syncs wp_admin and wp_editor with the
+# fixtures (D15 passwords read from /run/ward/). Passwords go in through stdin with
+# `--prompt`, never in argv. Runs in the `wpcli` service and exits.
 set -eu
 cd /var/www/html
 
 echo "wpcli: esperando o WordPress e o banco"
 i=0
-# Conexão conferida pelo mysqli do PHP; a senha é lida do arquivo, não vai em argv.
-banco_pronto() {
+# Connection checked by PHP's mysqli; the password is read from the file, it does not go in argv.
+db_ready() {
     php -r '$s = trim(file_get_contents("/run/ward/mariadb-wp"));
         $m = @mysqli_connect("mariadb", "wp", $s, "wordpress"); exit($m ? 0 : 1);' 2>/dev/null
 }
-until [ -f wp-config.php ] && banco_pronto; do
+until [ -f wp-config.php ] && db_ready; do
     i=$((i + 1))
     [ "$i" -le 90 ] || { echo "wpcli: WordPress/banco não ficou pronto" >&2; exit 1; }
     sleep 2

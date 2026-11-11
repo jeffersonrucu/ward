@@ -1,66 +1,67 @@
-# Funções comuns de dev/services/verify.sh e dev/tests/attacks-services.sh.
-# Uso: `. dev/services/common.sh` (com RAIZ definido).
+# Shared functions of dev/services/verify.sh and dev/tests/attacks-services.sh.
+# Usage: `. dev/services/common.sh` (with ROOT set).
 #
-# Clientes de teste isolados (R19): `env -i` com HOME falso em .dev/services/, ssh com
-# `-F /dev/null`, known_hosts próprio, sem agente e sem as identidades padrão (só a
-# chave pedida com -i). Senha e passphrase sempre por `sshpass -f <arquivo>`: nunca em
-# argv nem no ambiente.
+# Isolated test clients (R19): `env -i` with a fake HOME in .dev/services/, ssh with
+# `-F /dev/null`, its own known_hosts, no agent and none of the default identities (only
+# the key asked for with -i). Password and passphrase always through `sshpass -f <file>`:
+# never in argv nor in the environment.
 
-# PATH fixo, git sem config do usuário (dev/env.sh).
+# Fixed PATH, git without the user's config (dev/env.sh).
 # shellcheck source=dev/env.sh
-. "$RAIZ/dev/env.sh"
+. "$ROOT/dev/env.sh"
 
-DS="$RAIZ/.dev/services"
-SEG="$DS/secrets"
+SERVICES_DIR="$ROOT/.dev/services"
+SECRETS_DIR="$SERVICES_DIR/secrets"
 
-# Docker sem nada do usuário (Fase 12b). O docker lê `~/.docker/config.json` (credential
-# helpers, que ele executa, e `cliPluginsExtraDirs`), carrega plugins de
-# `~/.docker/cli-plugins` (um `docker-compose` plantado ali rodaria no lugar do
-# compose) e segue DOCKER_HOST/DOCKER_CONTEXT para outro daemon. Aqui:
-# - DOCKER_CONFIG aponta para `.dev/docker/`, recriado vazio (só `{}`) a cada script:
-#   nada plantado lá dentro (plugin, contexto, builder do buildx) sobrevive;
-# - DOCKER_*, COMPOSE_*, BUILDX_* e BUILDKIT_* herdados saem do ambiente (o compose
-#   usa o socket padrão e o projeto do `dev/compose.yml`).
+# Docker with nothing from the user (Phase 12b). docker reads `~/.docker/config.json`
+# (credential helpers, which it executes, and `cliPluginsExtraDirs`), loads plugins from
+# `~/.docker/cli-plugins` (a `docker-compose` planted there would run in place of
+# compose) and follows DOCKER_HOST/DOCKER_CONTEXT to another daemon. Here:
+# - DOCKER_CONFIG points to `.dev/docker/`, recreated empty (only `{}`) by every script:
+#   nothing planted inside it (plugin, context, buildx builder) survives;
+# - inherited DOCKER_*, COMPOSE_*, BUILDX_* and BUILDKIT_* leave the environment (compose
+#   uses the default socket and the project of `dev/compose.yml`).
 while IFS= read -r _var; do unset "$_var"; done \
     < <(compgen -e | grep -E '^(DOCKER_|COMPOSE_|BUILDX_|BUILDKIT_)' || true)
 unset _var
-DOCKER_VAZIO="$RAIZ/.dev/docker"
-rm -rf -- "$DOCKER_VAZIO"
-mkdir -p -m 0700 -- "$RAIZ/.dev"
-mkdir -m 0700 -- "$DOCKER_VAZIO"
-printf '{}\n' >"$DOCKER_VAZIO/config.json"
-chmod 0600 "$DOCKER_VAZIO/config.json"
-export DOCKER_CONFIG="$DOCKER_VAZIO"
-COMPOSE=(docker compose -f "$RAIZ/dev/compose.yml")
-IMAGEM_PG="postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab"
+DOCKER_EMPTY="$ROOT/.dev/docker"
+rm -rf -- "$DOCKER_EMPTY"
+mkdir -p -m 0700 -- "$ROOT/.dev"
+mkdir -m 0700 -- "$DOCKER_EMPTY"
+printf '{}\n' >"$DOCKER_EMPTY/config.json"
+chmod 0600 "$DOCKER_EMPTY/config.json"
+export DOCKER_CONFIG="$DOCKER_EMPTY"
+COMPOSE=(docker compose -f "$ROOT/dev/compose.yml")
+PG_IMAGE="postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab"
 
-exigir() {
+require() {
     local p
     for p in "$@"; do
         command -v "$p" >/dev/null 2>&1 || { echo "falta o programa: $p" >&2; exit 1; }
     done
-    [ -f "$DS/known_hosts" ] || { echo "rode antes: make dev-services" >&2; exit 1; }
+    [ -f "$SERVICES_DIR/known_hosts" ] || { echo "rode antes: make dev-services" >&2; exit 1; }
 }
 
-# Ambiente mínimo dos clientes: nada do usuário (sem agente, sem HOME real).
-# O curl procura o .curlrc também no home do passwd quando não acha no $HOME: todo
-# `cliente curl` começa com `-q` (tem de ser o primeiro argumento), que não lê nenhum.
-cliente() {
-    /usr/bin/env -i PATH=/usr/bin:/bin HOME="$DS/client-home" LANG=C.UTF-8 "$@"
+# Minimal environment of the clients: nothing from the user (no agent, no real HOME).
+# curl also looks for .curlrc in the passwd home when it does not find one in $HOME:
+# every `client curl` starts with `-q` (it has to be the first argument), which reads none.
+client() {
+    /usr/bin/env -i PATH=/usr/bin:/bin HOME="$SERVICES_DIR/client-home" LANG=C.UTF-8 "$@"
 }
 
-# Opções de todo cliente ssh de teste. `montar_opcoes_ssh <known_hosts>` troca o
-# known_hosts (o teste de chave de host trocada usa uma cópia antiga).
+# Options of every test ssh client. `build_ssh_options <known_hosts>` swaps the
+# known_hosts (the swapped host key test uses an old copy).
 #
-# O ssh acha as identidades e certificados padrão pelo home do passwd (getpwuid), não
-# por $HOME: sem `IdentityFile=none`, todo cliente sem `-i` (e o salto do ProxyCommand)
-# abria as chaves padrão do usuário real. `IdentityFile=none` tira as padrão (o `-i`
-# continua valendo). `CertificateFile=/dev/null` fixa a lista de certificados num
-# caminho absoluto: o OpenSSH 9.6 não trata `CertificateFile=none` como "nenhum" e
-# abria um arquivo `none` relativo ao diretório atual. `dev/tests/real-home.sh` prova
-# sob strace, com o home coberto por tmpfs, que nenhum caminho do home é aberto.
-montar_opcoes_ssh() {
-    OPCOES_SSH=(
+# ssh finds the default identities and certificates through the passwd home (getpwuid),
+# not through $HOME: without `IdentityFile=none`, every client without `-i` (and the
+# jump of the ProxyCommand) opened the real user's default keys. `IdentityFile=none`
+# removes the default ones (`-i` still applies). `CertificateFile=/dev/null` pins the
+# certificate list to an absolute path: OpenSSH 9.6 does not treat `CertificateFile=none`
+# as "none" and opened a file `none` relative to the current directory.
+# `dev/tests/real-home.sh` proves under strace, with the home covered by tmpfs, that no
+# home path is opened.
+build_ssh_options() {
+    SSH_OPTIONS=(
         -F /dev/null
         -o IdentityFile=none
         -o CertificateFile=/dev/null
@@ -75,58 +76,59 @@ montar_opcoes_ssh() {
         -o LogLevel=ERROR
     )
 }
-montar_opcoes_ssh "$DS/known_hosts"
+build_ssh_options "$SERVICES_DIR/known_hosts"
 
-# ssh_senha <arquivo-senha> <porta> <usuario> [comando...]
-ssh_senha() {
-    local arq="$1" porta="$2" usuario="$3"
+# ssh_password <password-file> <port> <user> [command...]
+ssh_password() {
+    local file="$1" port="$2" user="$3"
     shift 3
-    cliente sshpass -f "$arq" ssh "${OPCOES_SSH[@]}" \
+    client sshpass -f "$file" ssh "${SSH_OPTIONS[@]}" \
         -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive \
-        -o NumberOfPasswordPrompts=1 -p "$porta" "$usuario@127.0.0.1" "$@"
+        -o NumberOfPasswordPrompts=1 -p "$port" "$user@127.0.0.1" "$@"
 }
 
-# ssh_chave <porta> <usuario> [comando...] (chave do deploy, passphrase por sshpass -f)
-ssh_chave() {
-    local porta="$1" usuario="$2"
+# ssh_key <port> <user> [command...] (deploy key, passphrase through sshpass -f)
+ssh_key() {
+    local port="$1" user="$2"
     shift 2
-    cliente sshpass -f "$SEG/chave-passphrase" -P passphrase ssh "${OPCOES_SSH[@]}" \
+    client sshpass -f "$SECRETS_DIR/chave-passphrase" -P passphrase ssh "${SSH_OPTIONS[@]}" \
         -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
-        -i "$DS/keys/acme-deploy_ed25519" -p "$porta" "$usuario@127.0.0.1" "$@"
+        -i "$SERVICES_DIR/keys/acme-deploy_ed25519" -p "$port" "$user@127.0.0.1" "$@"
 }
 
-# ssh_interno [comando...]: deploy@ssh-interno por ProxyCommand pelo salto (2224).
-ssh_interno() {
-    local salto
-    printf -v salto 'sshpass -f %q ssh' "$SEG/ssh-salto"
+# ssh_internal [command...]: deploy on the internal host, by ProxyCommand through the jump (2224).
+ssh_internal() {
+    local jump
+    printf -v jump 'sshpass -f %q ssh' "$SECRETS_DIR/ssh-salto"
     local o
-    for o in "${OPCOES_SSH[@]}"; do printf -v salto '%s %q' "$salto" "$o"; done
-    salto+=" -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -p 2224 -W %h:%p salto@127.0.0.1"
-    cliente sshpass -f "$SEG/chave-passphrase" -P passphrase ssh "${OPCOES_SSH[@]}" \
+    for o in "${SSH_OPTIONS[@]}"; do printf -v jump '%s %q' "$jump" "$o"; done
+    jump+=" -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -p 2224 -W %h:%p salto@127.0.0.1"
+    client sshpass -f "$SECRETS_DIR/chave-passphrase" -P passphrase ssh "${SSH_OPTIONS[@]}" \
         -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
-        -o ProxyCommand="$salto" \
-        -i "$DS/keys/acme-deploy_ed25519" deploy@ssh-interno "$@"
+        -o ProxyCommand="$jump" \
+        -i "$SERVICES_DIR/keys/acme-deploy_ed25519" deploy@ssh-interno "$@"
 }
 
-# psql_app <sql>: psql da imagem do postgres na rede do host, senha pelo ambiente
-# (`-e PGPASSWORD` sem valor: o docker lê do ambiente, não vai em argv).
+# psql_app <sql>: psql of the postgres image on the host network, password through the
+# environment (`-e PGPASSWORD` without a value: docker reads it from the environment, it
+# does not go in argv).
 psql_app() {
-    PGPASSWORD="$(cat "$SEG/pg-app")" docker run --rm --network host -e PGPASSWORD \
-        "$IMAGEM_PG" psql -h 127.0.0.1 -p 55432 -U app -d app_teste -tAc "$1"
+    PGPASSWORD="$(cat "$SECRETS_DIR/pg-app")" docker run --rm --network host -e PGPASSWORD \
+        "$PG_IMAGE" psql -h 127.0.0.1 -p 55432 -U app -d app_teste -tAc "$1"
 }
 
-# wp_login <usuario> <arquivo-senha>: imprime os cabeçalhos da resposta do wp-login.php.
+# wp_login <user> <password-file>: prints the response headers of wp-login.php.
 wp_login() {
-    local usuario="$1" arq="$2"
-    cliente curl -q -sS -o /dev/null -D - --max-time 15 \
+    local user="$1" file="$2"
+    client curl -q -sS -o /dev/null -D - --max-time 15 \
         -b 'wordpress_test_cookie=WP%20Cookie%20check' \
-        --data-urlencode "log=$usuario" --data-urlencode "pwd@$arq" \
+        --data-urlencode "log=$user" --data-urlencode "pwd@$file" \
         --data-urlencode 'testcookie=1' \
         http://localhost:8081/wp-login.php
 }
 
-# Espera o wpcli terminar (instala o WordPress e cria os usuários).
-esperar_wordpress() {
+# Waits for wpcli to finish (installs WordPress and creates the users).
+wait_wordpress() {
     local i
     for i in $(seq 1 90); do
         case "$("${COMPOSE[@]}" ps -a --format '{{.State}} {{.ExitCode}}' wpcli 2>/dev/null)" in

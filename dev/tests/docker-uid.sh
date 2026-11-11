@@ -1,39 +1,39 @@
 #!/bin/bash -p
-# `make test-docker-uid` (Fase 22; D49; V3.2, S3).
+# `make test-docker-uid` (Phase 22; D49; V3.2, S3).
 #
-# Outro uid no socket do `wardd` precisa de root para existir (um uid 4242, e o mesmo uid
-# com CAP_DAC_OVERRIDE, que passa pela permissão 0700/0600 do diretório e do socket).
-# Por isso roda num contêiner `ubuntu:24.04` descartável, sem rede: nada de sudo, nada no
-# /etc nem no /run do host. O contêiner só monta, somente leitura, uma pasta temporária
-# de `.dev/` com o `wardd` de teste (feature `test-mode`) e o cliente mínimo
-# (`wardd-test-client`), mais o script de dentro. Fica fora do `make check` (exige
-# Docker). Uso: dev/tests/docker-uid.sh <wardd> <wardd-test-client>
+# Another uid on the `wardd` socket needs root to exist (a uid 4242, and the same uid
+# with CAP_DAC_OVERRIDE, which gets past the 0700/0600 permission of the directory and
+# the socket). So it runs in a disposable `ubuntu:24.04` container without network: no
+# sudo, nothing in the host's /etc or /run. The container only mounts, read-only, a
+# temporary folder of `.dev/` with the test `wardd` (feature `test-mode`) and the minimal
+# client (`wardd-test-client`), plus the inside script. Stays out of `make check`
+# (requires Docker). Usage: dev/tests/docker-uid.sh <wardd> <wardd-test-client>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
-RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
+ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/services/common.sh
-. "$RAIZ/dev/services/common.sh"
+. "$ROOT/dev/services/common.sh"
 
-# A mesma imagem (pela digest) do `make test-docker-platform`.
-IMAGEM="ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
+# The same image (by digest) as `make test-docker-platform`.
+IMAGE="ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
 WARDD="${1:?uso: docker-uid.sh <wardd> <wardd-test-client>}"
-CLIENTE="${2:?uso: docker-uid.sh <wardd> <wardd-test-client>}"
-for b in "$WARDD" "$CLIENTE"; do
+CLIENT="${2:?uso: docker-uid.sh <wardd> <wardd-test-client>}"
+for b in "$WARDD" "$CLIENT"; do
     [ -x "$b" ] || { echo "binário não encontrado: $b" >&2; exit 1; }
 done
 command -v docker >/dev/null 2>&1 || { echo "falta o programa: docker" >&2; exit 1; }
 
-mkdir -p -m 0700 "$RAIZ/.dev"
-TMP="$(mktemp -d "$RAIZ/.dev/container-uid.XXXXXX")"
+mkdir -p -m 0700 "$ROOT/.dev"
+TMP="$(mktemp -d "$ROOT/.dev/container-uid.XXXXXX")"
 trap 'rm -rf -- "$TMP"' EXIT
 chmod 0755 "$TMP"
 install -m 0755 "$WARDD" "$TMP/wardd"
-install -m 0755 "$CLIENTE" "$TMP/cliente"
+install -m 0755 "$CLIENT" "$TMP/cliente"
 
-docker image inspect "$IMAGEM" >/dev/null 2>&1 || docker pull --quiet "$IMAGEM" >/dev/null
+docker image inspect "$IMAGE" >/dev/null 2>&1 || docker pull --quiet "$IMAGE" >/dev/null
 
 docker run --rm --network none --pull never \
     -v "$TMP:/opt/teste:ro" \
-    -v "$RAIZ/dev/container-uid/inside.sh:/opt/inside.sh:ro" \
-    "$IMAGEM" /bin/bash -p /opt/inside.sh
+    -v "$ROOT/dev/container-uid/inside.sh:/opt/inside.sh:ro" \
+    "$IMAGE" /bin/bash -p /opt/inside.sh

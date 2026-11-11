@@ -1263,6 +1263,30 @@ passwd, no Python) → `PASSWD_HOME`, `fase` (etapa do teste) → `stage`, `escr
 `CASA_PASSWD` de `env.sh` ficam para a Fase 46 (os scripts que leem `common.sh` fazem
 `RAIZ="$ROOT"` antes do `.`).
 
+Contrato de `dev/env.sh` e `dev/services/common.sh` (Fase 46; quem carrega define `ROOT`
+antes do `.`, e os `RAIZ="$ROOT"` saíram): `RAIZ` → `ROOT`, `CASA_PASSWD` → `PASSWD_HOME`,
+`DS` → `SERVICES_DIR`, `SEG` → `SECRETS_DIR`, `DOCKER_VAZIO` → `DOCKER_EMPTY`, `IMAGEM_PG` →
+`PG_IMAGE`, `OPCOES_SSH` → `SSH_OPTIONS`; funções `exigir` → `require`, `cliente` → `client`,
+`montar_opcoes_ssh` → `build_ssh_options`, `ssh_senha` → `ssh_password`, `ssh_chave` →
+`ssh_key`, `ssh_interno` → `ssh_internal`, `esperar_wordpress` → `wait_wordpress`
+(`psql_app`, `wp_login`, `COMPOSE` ficam). Resto de `dev/` (Fase 46), pela seção 2 e como
+nas Fases 40–45: no `daemon.sh`, `subir`/`parar` → `start`/`stop_daemon`, `pid_vivo` →
+`live_pid`, `MARCA_APP` → `APP_MARK`, `NIVEL_LOG` → `LOG_LEVEL`, `UID_ATUAL` → `CURRENT_UID`,
+`PASTA_SOCKET` (local) → `SOCKET_DIR`; `COFRE` → `VAULT`, `ESTADO` → `STATE`, `TRAB` →
+`WORK_DIR`, `IMAGEM` → `IMAGE`, `CLIENTE` → `CLIENT`, `APROVADOR` → `APPROVER`, `FALSO` →
+`FAKE`, `SONDA` → `PROBE`, `GUARDA` (cópia do cofre) → `BACKUP`, `ABERTAS` → `OPENED`,
+`rodada` → `run_round`, `rodar` (etapa) → `run_stage`; nos serviços SSH, `definir_senha` →
+`set_password`, `so_chave` → `key_only`, `autorizar_chave` → `authorize_key`,
+`banco_pronto` → `db_ready`; no `pg_select.py`, `Conexao` → `Connection`, `sal`/`salgada` →
+`salt`/`salted`, `chave_cliente` → `client_key`, `guardada` → `stored_key`, `prova` →
+`proof`, `assinatura` → `signature`; no `terminal-test.py`, `mestre`/`escravo` →
+`master`/`slave`, `varrer_proc` → `scan_proc`; no `bidi_icu.py`, `faixas_*` → `*_ranges`.
+Ficam (literais de outras fases ou dados): `terminal-teste.*` e os modos do
+`terminal-test.py`, `aprovador.modo`/`confirmar`, `--adulterado`/`--versao` do
+`fake_crx.py`, os cenários e chaves JSON do `chrome-policy.sh` com o `chrome_policy.py`, a
+pasta `tracos` do `ssh-home.sh`, os caminhos dos contêineres e dos serviços SSH
+(`/etc/ssh/autorizadas`, `senha-*`, `ward-ssh-entrada`), `WARD_*` (Fase 56).
+
 ### Evidência dos scripts (DT1; Fase 5)
 
 `docs/mission/evidence/fase-NN/` → `docs/mission/evidence/<suíte>/`, pelo alvo novo:
