@@ -33,7 +33,7 @@ use ward_core::limits;
 use crate::secret::Secret;
 
 /// Form fields that accept "Load from file".
-pub const LOADABLE_FIELDS: &[&str] = &["chave_privada"];
+pub const LOADABLE_FIELDS: &[&str] = &["private_key"];
 
 /// Largest file accepted: the `ward-core` limit of a text secret.
 pub const MAX_KEY: usize = limits::MAX_SECRET;

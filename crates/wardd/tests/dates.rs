@@ -49,9 +49,9 @@ fn create(dir: &Dir, clock: &WallClock) -> Daemon {
     let r = request(
         &d,
         Role::App,
-        "criar_cofre",
+        "create_vault",
         &format!(
-            r#"{{"senha":"{}","pin":"{}"}}"#,
+            r#"{{"password":"{}","pin":"{}"}}"#,
             b64(common::PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
@@ -61,12 +61,7 @@ fn create(dir: &Dir, clock: &WallClock) -> Daemon {
 }
 
 fn detail(d: &Daemon, name: &str) -> EntryDetail {
-    match request(
-        d,
-        Role::App,
-        "detalhe",
-        &format!(r#"{{"entrada":"{name}"}}"#),
-    ) {
+    match request(d, Role::App, "detail", &format!(r#"{{"entry":"{name}"}}"#)) {
         Response::Detail(x) => x,
         other => panic!("{other:?}"),
     }
@@ -78,13 +73,13 @@ fn dates(d: &Daemon, name: &str) -> (Option<u64>, Option<u64>) {
 }
 
 fn save(d: &Daemon, data: &str) {
-    let r = request(d, Role::App, "salvar_entrada", data);
+    let r = request(d, Role::App, "save_entry", data);
     assert!(ok(&r), "{r:?}");
 }
 
 /// `login(name)` editing `previous`.
 fn edit(previous: &str, name: &str, password: &str) -> String {
-    login(name, password).replacen('{', &format!(r#"{{"anterior":"{previous}","#), 1)
+    login(name, password).replacen('{', &format!(r#"{{"previous":"{previous}","#), 1)
 }
 
 /// V3.41: new → both; editing and the level change → only the modification; a clock that
@@ -104,12 +99,12 @@ fn v3_41_dates_from_the_daemon_clock() {
     assert_eq!(dates(&d, "t-datas"), (Some(T0), Some(T0 + DAY)));
 
     clock.set(T0 + 2 * DAY);
-    assert!(ok(&set_level(&d, Role::App, "t-datas", "livre", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-datas", "free", PIN)));
     assert_eq!(dates(&d, "t-datas"), (Some(T0), Some(T0 + 2 * DAY)));
 
     // A wrong PIN changes nothing, not even the date.
     clock.set(T0 + 3 * DAY);
-    let r = set_level(&d, Role::App, "t-datas", "bloqueado", common::WRONG_PIN);
+    let r = set_level(&d, Role::App, "t-datas", "blocked", common::WRONG_PIN);
     assert_eq!(error(&r), Some(ResponseError::WrongPin));
     assert_eq!(dates(&d, "t-datas"), (Some(T0), Some(T0 + 2 * DAY)));
 
@@ -156,23 +151,23 @@ fn attack_v3_41_dates_do_not_go_to_the_agent() {
     let d = create(&dir, &clock);
     save(&d, &login("t-datas", SECRETS[0]));
     for role in [Role::Agent, Role::Extension] {
-        let r = request(&d, role, "detalhe", r#"{"entrada":"t-datas"}"#);
+        let r = request(&d, role, "detail", r#"{"entry":"t-datas"}"#);
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
     }
     for role in [Role::App, Role::Agent] {
-        let r = request(&d, role, "lista", "{}");
+        let r = request(&d, role, "list", "{}");
         let q = protocol::encode_response(role, &r).unwrap();
         let s = String::from_utf8_lossy(&q);
         assert!(
-            !s.contains("criada_em") && !s.contains("alterada_em"),
+            !s.contains("created_at") && !s.contains("modified_at"),
             "{s}"
         );
         assert!(!s.contains(&T0.to_string()), "{s}");
     }
     // The app's detail frame carries the dates and does not pass the agent's reading.
-    let r = request(&d, Role::App, "detalhe", r#"{"entrada":"t-datas"}"#);
+    let r = request(&d, Role::App, "detail", r#"{"entry":"t-datas"}"#);
     let q = protocol::encode_response(Role::App, &r).unwrap();
-    assert!(String::from_utf8_lossy(&q).contains(&format!(r#""criada_em":{T0}"#)));
+    assert!(String::from_utf8_lossy(&q).contains(&format!(r#""created_at":{T0}"#)));
     assert!(decode_response(Role::Agent, &q).is_err());
     // No secret of the entry in the frame with the dates.
     for s in SECRETS {
@@ -194,33 +189,25 @@ fn attack_v3_41_date_from_the_client_refused() {
     clock.set(T0 + DAY);
     for forged in [
         edit("t-datas", "t-datas", SECRETS[1]).replacen(
-            r#""nome":"t-datas","grupo""#,
-            r#""nome":"t-datas","criada_em":1,"grupo""#,
+            r#""name":"t-datas","group""#,
+            r#""name":"t-datas","created_at":1,"group""#,
             1,
         ),
         edit("t-datas", "t-datas", SECRETS[1]).replacen(
-            r#""nome":"t-datas","grupo""#,
-            r#""nome":"t-datas","alterada_em":1,"grupo""#,
+            r#""name":"t-datas","group""#,
+            r#""name":"t-datas","modified_at":1,"group""#,
             1,
         ),
-        login("t-nova", SECRETS[1]).replacen('{', r#"{"criada_em":1,"#, 1),
-        login("t-nova", SECRETS[1]).replacen(r#""url":"#, r#""alterada_em":1,"url":"#, 1),
+        login("t-nova", SECRETS[1]).replacen('{', r#"{"created_at":1,"#, 1),
+        login("t-nova", SECRETS[1]).replacen(r#""url":"#, r#""modified_at":1,"url":"#, 1),
     ] {
         assert!(forged.contains("_em\":1"), "{forged}");
-        let r = request(&d, Role::App, "salvar_entrada", &forged);
+        let r = request(&d, Role::App, "save_entry", &forged);
         assert_eq!(error(&r), Some(ResponseError::InvalidRequest), "{forged}");
     }
     assert_eq!(dates(&d, "t-datas"), (Some(T0), Some(T0)));
     assert!(std::fs::read(&dir.paths().vault).unwrap() == before);
-    assert!(
-        error(&request(
-            &d,
-            Role::App,
-            "detalhe",
-            r#"{"entrada":"t-nova"}"#
-        ))
-        .is_some()
-    );
+    assert!(error(&request(&d, Role::App, "detail", r#"{"entry":"t-nova"}"#)).is_some());
 }
 
 /// Unreadable clock: the write goes on without a new stamp (new entry without dates,
@@ -237,7 +224,7 @@ fn unreadable_clock_writes_without_a_new_date() {
     assert_eq!(dates(&d, "t-sem"), (None, None));
     save(&d, &edit("t-com", "t-com", SECRETS[2]));
     assert_eq!(dates(&d, "t-com"), (Some(T0), Some(T0)));
-    assert!(ok(&set_level(&d, Role::App, "t-com", "livre", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-com", "free", PIN)));
     assert_eq!(dates(&d, "t-com"), (Some(T0), Some(T0)));
     clock.set(T0 + DAY);
     save(&d, &edit("t-sem", "t-sem", SECRETS[3]));
@@ -266,9 +253,9 @@ fn restore_keeps_the_dates() {
     let r = request(
         &d,
         Role::App,
-        "restaurar_backup",
+        "restore_backup",
         &format!(
-            r#"{{"versao":"{version}","senha":"{}","pin":"{}"}}"#,
+            r#"{{"version":"{version}","password":"{}","pin":"{}"}}"#,
             b64(common::PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),

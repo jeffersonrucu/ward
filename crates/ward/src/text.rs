@@ -84,25 +84,26 @@ fn json_optional(out: &mut String, s: Option<&str>) {
 }
 
 /// List as JSON (`--json`): an array with only the name, type, group, environment,
-/// project and address (URL or host) of each entry (V4.1). No level (D50), no tags and
-/// no field the list does not have.
+/// project and address (URL or host) of each entry (V4.1), with the keys and values in
+/// English (m2:DT4, m2:DT8, m2:V4.18). No level (D50), no tags and no field the list
+/// does not have.
 pub fn list_json(items: &[ListItem]) -> String {
     let mut out = String::from("[");
     for (i, item) in items.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        out.push_str("{\"nome\":");
+        out.push_str("{\"name\":");
         json_text(&mut out, &item.name);
-        out.push_str(",\"tipo\":");
+        out.push_str(",\"type\":");
         json_text(&mut out, item.kind.name());
-        out.push_str(",\"grupo\":");
+        out.push_str(",\"group\":");
         json_text(&mut out, &item.group);
-        out.push_str(",\"ambiente\":");
+        out.push_str(",\"environment\":");
         json_text(&mut out, item.environment.name());
-        out.push_str(",\"projeto\":");
+        out.push_str(",\"project\":");
         json_optional(&mut out, item.project.as_deref());
-        out.push_str(",\"endereco\":");
+        out.push_str(",\"address\":");
         json_optional(&mut out, item.address.as_deref());
         out.push('}');
     }
@@ -110,7 +111,8 @@ pub fn list_json(items: &[ListItem]) -> String {
     out
 }
 
-/// List as text: aligned table, with `-` in the empty field.
+/// List as text: aligned table, with `-` in the empty field. The type column shows the
+/// pt-BR label ("banco", "servidor"), not the stored name (m2:V4.18).
 pub fn list_table(items: &[ListItem]) -> String {
     if items.is_empty() {
         return "nenhuma entrada visível\n".to_owned();
@@ -121,7 +123,7 @@ pub fn list_table(items: &[ListItem]) -> String {
         .map(|i| {
             [
                 neutralize(&i.name),
-                i.kind.name().to_owned(),
+                i.kind.label().to_owned(),
                 neutralize(&i.group),
                 i.environment.name().to_owned(),
                 i.project
@@ -185,11 +187,17 @@ mod tests {
         let j = list_json(&[item("clientex-banco", Some("127.0.0.1"))]);
         assert_eq!(
             j,
-            "[{\"nome\":\"clientex-banco\",\"tipo\":\"banco\",\"grupo\":\"clientex\",\
-             \"ambiente\":\"stage\",\"projeto\":null,\"endereco\":\"127.0.0.1\"}]\n"
+            "[{\"name\":\"clientex-banco\",\"type\":\"database\",\"group\":\"clientex\",\
+             \"environment\":\"stage\",\"project\":null,\"address\":\"127.0.0.1\"}]\n"
         );
         assert!(!j.contains("etiqueta-x"));
-        assert!(!j.contains("nivel"));
+        assert!(!j.contains("level") && !j.contains("nivel"));
+        // m2:V4.18: no Portuguese key nor v4 value.
+        for pt in [
+            "nome", "tipo", "grupo", "ambiente", "projeto", "endereco", "banco",
+        ] {
+            assert!(!j.contains(&format!("\"{pt}\"")), "{pt}: {j}");
+        }
         assert_eq!(list_json(&[]), "[]\n");
     }
 

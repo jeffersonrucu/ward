@@ -77,7 +77,8 @@ fn fill_response() -> Response {
     }
 }
 
-const FILL: &str = r#"{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081"}}"#;
+const FILL: &str =
+    r#"{"v":2,"op":"fill","data":{"entry":"acme-wp-dev","origin":"http://localhost:8081"}}"#;
 
 #[test]
 fn operations_are_the_extensions() {
@@ -119,7 +120,7 @@ fn extension_origin() {
 fn fill_goes_through_the_daemon_and_comes_back_canonical() {
     let mut d = FakeDaemon::replying(fill_response());
     let r = handle_with(FILL, &mut d);
-    assert!(r.contains(r#""tipo":"preenchimento""#), "{r}");
+    assert!(r.contains(r#""type":"fill""#), "{r}");
     assert!(r.contains(&b64(FAKE_PASSWORD.as_bytes())));
     // The request to the daemon is the canonical form of the protocol, in the extension
     // role.
@@ -131,23 +132,23 @@ fn fill_goes_through_the_daemon_and_comes_back_canonical() {
 #[test]
 fn attack_app_and_agent_operations_do_not_reach_the_daemon() {
     for m in [
-        r#"{"v":1,"op":"revelar","dados":{"entrada":"acme-wp-dev","campo":"senha"}}"#,
-        r#"{"v":1,"op":"copiar","dados":{"entrada":"acme-wp-dev","campo":"senha"}}"#,
-        r#"{"v":1,"op":"totp","dados":{"entrada":"acme-totp-dev"}}"#,
-        r#"{"v":1,"op":"lista"}"#,
-        r#"{"v":1,"op":"detalhe","dados":{"entrada":"acme-wp-dev"}}"#,
-        r#"{"v":1,"op":"mudar_nivel","dados":{"entrada":"acme-wp-dev","nivel":"livre","pin":"MTM1Nzkw"}}"#,
-        r#"{"v":1,"op":"responder_aprovacao","dados":{}}"#,
-        r#"{"v":1,"op":"destravar","dados":{"senha":"eA=="}}"#,
-        r#"{"v":1,"op":"travar"}"#,
-        r#"{"v":1,"op":"executar","dados":{}}"#,
-        r#"{"v":1,"op":"login","dados":{"entrada":"acme-wp-dev"}}"#,
-        r#"{"v":1,"op":"emitir_token","dados":{"entrada":"acme-wp-dev"}}"#,
-        r#"{"v":1,"op":"restaurar_backup","dados":{}}"#,
+        r#"{"v":2,"op":"reveal","data":{"entry":"acme-wp-dev","field":"password"}}"#,
+        r#"{"v":2,"op":"copy","data":{"entry":"acme-wp-dev","field":"password"}}"#,
+        r#"{"v":2,"op":"totp","data":{"entry":"acme-totp-dev"}}"#,
+        r#"{"v":2,"op":"list"}"#,
+        r#"{"v":2,"op":"detail","data":{"entry":"acme-wp-dev"}}"#,
+        r#"{"v":2,"op":"set_level","data":{"entry":"acme-wp-dev","level":"free","pin":"MTM1Nzkw"}}"#,
+        r#"{"v":2,"op":"answer_approval","data":{}}"#,
+        r#"{"v":2,"op":"unlock","data":{"password":"eA=="}}"#,
+        r#"{"v":2,"op":"lock"}"#,
+        r#"{"v":2,"op":"run","data":{}}"#,
+        r#"{"v":2,"op":"login","data":{"entry":"acme-wp-dev"}}"#,
+        r#"{"v":2,"op":"issue_token","data":{"entry":"acme-wp-dev"}}"#,
+        r#"{"v":2,"op":"restore_backup","data":{}}"#,
     ] {
         let mut d = FakeDaemon::replying(fill_response());
         let r = handle_with(m, &mut d);
-        assert!(r.contains(r#""codigo":"nao_autorizado""#), "{m} -> {r}");
+        assert!(r.contains(r#""code":"unauthorized""#), "{m} -> {r}");
         assert!(d.requests.is_empty(), "{m} chegou ao daemon");
     }
 }
@@ -155,40 +156,46 @@ fn attack_app_and_agent_operations_do_not_reach_the_daemon() {
 #[test]
 fn attack_malformed_json_and_extra_fields() {
     for (m, code) in [
-        ("", "pedido_invalido"),
-        ("{", "pedido_invalido"),
-        ("null", "pedido_invalido"),
-        (r#"[1,2]"#, "pedido_invalido"),
-        (r#"{"v":1}"#, "pedido_invalido"),
-        (r#"{"v":2,"op":"estado"}"#, "versao_desconhecida"),
-        (r#"{"v":1,"op":"inventada"}"#, "operacao_desconhecida"),
-        (r#"{"v":1,"op":"estado","op":"revelar"}"#, "pedido_invalido"),
+        ("", "invalid_request"),
+        ("{", "invalid_request"),
+        ("null", "invalid_request"),
+        (r#"[1,2]"#, "invalid_request"),
+        (r#"{"v":2}"#, "invalid_request"),
+        // m2:DT8: a v1 (0.1.4) or a v3 message gets the version error.
+        (r#"{"v":1,"op":"estado"}"#, "unknown_version"),
         (
-            r#"{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081","campo":"senha"}}"#,
-            "pedido_invalido",
+            r#"{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081"}}"#,
+            "unknown_version",
+        ),
+        (r#"{"v":3,"op":"status"}"#, "unknown_version"),
+        (r#"{"v":2,"op":"inventada"}"#, "unknown_operation"),
+        (r#"{"v":2,"op":"status","op":"reveal"}"#, "invalid_request"),
+        (
+            r#"{"v":2,"op":"fill","data":{"entry":"acme-wp-dev","origin":"http://localhost:8081","field":"password"}}"#,
+            "invalid_request",
         ),
         (
-            r#"{"v":1,"op":"preencher","revelar":true,"dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081"}}"#,
-            "pedido_invalido",
+            r#"{"v":2,"op":"fill","revelar":true,"data":{"entry":"acme-wp-dev","origin":"http://localhost:8081"}}"#,
+            "invalid_request",
         ),
     ] {
         let mut d = FakeDaemon::replying(fill_response());
         let r = handle_with(m, &mut d);
-        assert!(r.contains(&format!(r#""codigo":"{code}""#)), "{m} -> {r}");
+        assert!(r.contains(&format!(r#""code":"{code}""#)), "{m} -> {r}");
         assert!(d.requests.is_empty(), "{m} chegou ao daemon");
     }
     // Origin above the URL limit.
     let m = format!(
-        r#"{{"v":1,"op":"sugerir","dados":{{"origem":"http://localhost:8081/{}"}}}}"#,
+        r#"{{"v":2,"op":"suggest","data":{{"origin":"http://localhost:8081/{}"}}}}"#,
         "a".repeat(4096)
     );
     let mut d = FakeDaemon::replying(fill_response());
-    assert!(handle_with(&m, &mut d).contains("pedido_invalido"));
+    assert!(handle_with(&m, &mut d).contains("invalid_request"));
     assert!(d.requests.is_empty());
     // Bytes that are not UTF-8.
     let mut d = FakeDaemon::replying(fill_response());
-    let r = handle(b"{\"v\":1,\"op\":\"estado\xff\"}", &mut d, &mut |_| {});
-    assert!(contains(&r, b"pedido_invalido") || contains(&r, b"operacao_desconhecida"));
+    let r = handle(b"{\"v\":2,\"op\":\"estado\xff\"}", &mut d, &mut |_| {});
+    assert!(contains(&r, b"invalid_request") || contains(&r, b"unknown_operation"));
     assert!(d.requests.is_empty());
 }
 
@@ -206,21 +213,21 @@ fn attack_daemon_response_outside_the_role_or_the_operation_does_not_go_out() {
             Response::Token(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
         ),
         (
-            r#"{"v":1,"op":"sugerir","dados":{"origem":"http://localhost:8081"}}"#,
+            r#"{"v":2,"op":"suggest","data":{"origin":"http://localhost:8081"}}"#,
             fill_response(),
         ),
-        (r#"{"v":1,"op":"estado"}"#, fill_response()),
-        (r#"{"v":1,"op":"abrir_app"}"#, fill_response()),
+        (r#"{"v":2,"op":"status"}"#, fill_response()),
+        (r#"{"v":2,"op":"open_app"}"#, fill_response()),
         (FILL, Response::List(Vec::new())),
         // Phase 43: the login wait and the login result never carry a value; only the
         // login fill gets the fill.
-        (r#"{"v":1,"op":"aguardar_login"}"#, fill_response()),
+        (r#"{"v":2,"op":"await_login"}"#, fill_response()),
         (
-            r#"{"v":1,"op":"resultado_login","dados":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","resultado":"enviado"}}"#,
+            r#"{"v":2,"op":"login_result","data":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","result":"submitted"}}"#,
             fill_response(),
         ),
         (
-            r#"{"v":1,"op":"preencher_login","dados":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origem":"http://localhost:8081"}}"#,
+            r#"{"v":2,"op":"fill_login","data":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origin":"http://localhost:8081"}}"#,
             Response::Secret(Secret::from_bytes(FAKE_PASSWORD.as_bytes().to_vec())),
         ),
         (
@@ -236,7 +243,7 @@ fn attack_daemon_response_outside_the_role_or_the_operation_does_not_go_out() {
     for (m, r) in cases {
         let mut d = FakeDaemon::replying(r);
         let s = handle_with(m, &mut d);
-        assert!(s.contains(r#""codigo":"interno""#), "{m} -> {s}");
+        assert!(s.contains(r#""code":"internal""#), "{m} -> {s}");
         assert!(!s.contains(&b64(FAKE_PASSWORD.as_bytes())), "{s}");
         assert!(!s.contains(FAKE_PASSWORD), "{s}");
     }
@@ -244,17 +251,39 @@ fn attack_daemon_response_outside_the_role_or_the_operation_does_not_go_out() {
     for raw in [
         &b"lixo"[..],
         b"{}",
-        br#"{"v":1,"tipo":"segredo","dados":{"valor":"eA=="}}"#,
+        br#"{"v":2,"type":"secret","data":{"value":"eA=="}}"#,
     ] {
         let mut d = FakeDaemon::raw(raw.to_vec());
-        assert!(handle_with(FILL, &mut d).contains("interno"));
+        assert!(handle_with(FILL, &mut d).contains("internal"));
     }
     // Daemon down.
     let mut d = FakeDaemon {
         requests: Vec::new(),
         reply: Box::new(|| Err(DaemonFailure::Unavailable)),
     };
-    assert!(handle_with(FILL, &mut d).contains(r#""codigo":"interno""#));
+    assert!(handle_with(FILL, &mut d).contains(r#""code":"internal""#));
+}
+
+/// Attack m2:DT8: a daemon that answers in the 0.1.4 protocol (v1), even with a fill
+/// with the password: the extension gets only the version error, never the frame.
+#[test]
+fn attack_m2_daemon_of_another_version_gives_only_the_version_error() {
+    let password = b64(FAKE_PASSWORD.as_bytes());
+    for raw in [
+        format!(
+            r#"{{"v":1,"tipo":"preenchimento","dados":{{"usuario":"admin","senha":"{password}"}}}}"#
+        ),
+        r#"{"v":1,"tipo":"erro","dados":{"codigo":"interno","mensagem":"erro interno"}}"#
+            .to_owned(),
+        format!(r#"{{"v":3,"type":"fill","data":{{"username":"admin","password":"{password}"}}}}"#),
+    ] {
+        let mut d = FakeDaemon::raw(raw.clone().into_bytes());
+        let s = handle_with(FILL, &mut d);
+        assert!(s.contains(r#""code":"unknown_version""#), "{raw} -> {s}");
+        assert!(!s.contains(&password) && !s.contains(FAKE_PASSWORD), "{s}");
+        assert!(!s.contains("admin"), "{s}");
+        assert_eq!(d.requests.len(), 1);
+    }
 }
 
 fn frame(body: &[u8]) -> Vec<u8> {
@@ -277,17 +306,17 @@ fn messages(mut output: &[u8]) -> Vec<String> {
 fn state_without_the_extension_role_becomes_unauthorized() {
     for role in [Role::Agent, Role::App] {
         let mut d = FakeDaemon::raw(
-            format!(r#"{{"v":1,"tipo":"estado","dados":{{"travado":false,"cofre_existe":true,"papel":"{}"}}}}"#, role.name())
+            format!(r#"{{"v":2,"type":"status","data":{{"locked":false,"vault_exists":true,"role":"{}"}}}}"#, role.name())
                 .into_bytes(),
         );
-        let r = handle_with(r#"{"v":1,"op":"estado"}"#, &mut d);
-        assert!(r.contains(r#""codigo":"nao_autorizado""#), "{r}");
+        let r = handle_with(r#"{"v":2,"op":"status"}"#, &mut d);
+        assert!(r.contains(r#""code":"unauthorized""#), "{r}");
     }
 }
 
 #[test]
 fn loop_many_messages_and_normal_end() {
-    let mut input = frame(br#"{"v":1,"op":"estado"}"#);
+    let mut input = frame(br#"{"v":2,"op":"status"}"#);
     input.extend(frame(FILL.as_bytes()));
     let mut d = FakeDaemon::replying(Response::Status {
         locked: false,
@@ -298,9 +327,9 @@ fn loop_many_messages_and_normal_end() {
     serve(&mut &input[..], &mut output, &mut d, &mut |_| {}).unwrap();
     let m = messages(&output);
     assert_eq!(m.len(), 2);
-    assert!(m[0].contains(r#""tipo":"estado""#));
+    assert!(m[0].contains(r#""type":"status""#));
     // A state response does not fit as the response to a fill.
-    assert!(m[1].contains(r#""codigo":"interno""#));
+    assert!(m[1].contains(r#""code":"internal""#));
 }
 
 #[test]
@@ -313,7 +342,7 @@ fn attack_message_over_the_limit_empty_or_truncated() {
     let mut output = Vec::new();
     let r = serve(&mut &input[..], &mut output, &mut d, &mut |_| {});
     assert_eq!(r, Err(MessageError::TooLarge));
-    assert!(messages(&output)[0].contains("quadro_invalido"));
+    assert!(messages(&output)[0].contains("invalid_frame"));
     assert!(d.requests.is_empty());
 
     // 4 GiB declared.
@@ -345,7 +374,7 @@ fn attack_message_over_the_limit_empty_or_truncated() {
     let input = frame(&vec![b' '; MAX_MESSAGE_IN]);
     let mut output = Vec::new();
     serve(&mut &input[..], &mut output, &mut d, &mut |_| {}).unwrap();
-    assert!(messages(&output)[0].contains("pedido_invalido"));
+    assert!(messages(&output)[0].contains("invalid_request"));
 }
 
 #[test]

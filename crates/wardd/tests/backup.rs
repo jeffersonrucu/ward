@@ -45,9 +45,9 @@ fn restore(d: &Daemon, version: &str, password: &str, pin: &str) -> Response {
     request(
         d,
         Role::App,
-        "restaurar_backup",
+        "restore_backup",
         &format!(
-            r#"{{"versao":"{version}","senha":"{}","pin":"{}"}}"#,
+            r#"{{"version":"{version}","password":"{}","pin":"{}"}}"#,
             b64(password.as_bytes()),
             b64(pin.as_bytes())
         ),
@@ -55,7 +55,7 @@ fn restore(d: &Daemon, version: &str, password: &str, pin: &str) -> Response {
 }
 
 fn list_names(d: &Daemon) -> Vec<String> {
-    match request(d, Role::App, "lista", "{}") {
+    match request(d, Role::App, "list", "{}") {
         Response::List(l) => l.into_iter().map(|i| i.name).collect(),
         other => panic!("{other:?}"),
     }
@@ -65,8 +65,8 @@ fn lock_timeout(d: &Daemon, minutes: u32) {
     let r = request(
         d,
         Role::App,
-        "tempo_trava",
-        &format!(r#"{{"minutos":{minutes}}}"#),
+        "lock_timeout",
+        &format!(r#"{{"minutes":{minutes}}}"#),
     );
     assert!(ok(&r), "{r:?}");
 }
@@ -128,9 +128,9 @@ fn v7_8_agent_and_extension_do_not_restore() {
         let r = request(
             &d,
             role,
-            "restaurar_backup",
+            "restore_backup",
             &format!(
-                r#"{{"versao":"{target}","senha":"{}","pin":"{}"}}"#,
+                r#"{{"version":"{target}","password":"{}","pin":"{}"}}"#,
                 b64(PASSWORD.as_bytes()),
                 b64(PIN.as_bytes())
             ),
@@ -193,12 +193,7 @@ fn v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback() {
     let entries_n = list_names(&d);
 
     // Two writes: a new entry and the lock timeout.
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &login("t-nova", SECRETS[0]),
-    );
+    let r = request(&d, Role::App, "save_entry", &login("t-nova", SECRETS[0]));
     assert!(ok(&r), "{r:?}");
     lock_timeout(&d, 30);
     assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 2);
@@ -432,9 +427,9 @@ fn restore_asks_for_the_version_password() {
     let r = request(
         &d,
         Role::App,
-        "trocar_senha",
+        "change_password",
         &format!(
-            r#"{{"atual":"{}","nova":"{}"}}"#,
+            r#"{{"current":"{}","new":"{}"}}"#,
             b64(PASSWORD.as_bytes()),
             b64(new_password.as_bytes())
         ),
@@ -555,13 +550,13 @@ fn restore_keeps_the_current_lock_timeout_and_external_backup() {
     let r = request(
         &d,
         Role::App,
-        "definir_backup_externo",
-        r#"{"ligado":true,"uuid":"ABCD-1234"}"#,
+        "set_external_backup",
+        r#"{"enabled":true,"uuid":"ABCD-1234"}"#,
     );
     assert!(ok(&r), "{r:?}");
     assert!(ok(&restore(&d, &version, PASSWORD, PIN)));
     assert_eq!(list_names(&d), entries);
-    match request(&d, Role::App, "configuracao", "{}") {
+    match request(&d, Role::App, "config", "{}") {
         Response::Config {
             lock_minutes,
             external_backup,
@@ -573,7 +568,7 @@ fn restore_keeps_the_current_lock_timeout_and_external_backup() {
         }
         r => panic!("{r:?}"),
     }
-    match request(&d, Role::App, "backup_externo", "{}") {
+    match request(&d, Role::App, "external_backup", "{}") {
         Response::ExternalBackup { enabled, uuid } => {
             assert!(enabled);
             assert_eq!(uuid.as_deref(), Some("ABCD-1234"));
@@ -595,7 +590,7 @@ fn restore_keeps_the_current_lock_timeout_and_external_backup() {
 fn unsafe_backups_folder_shows_in_the_settings() {
     let dir = Dir::new("bk-aviso");
     let (d, _) = test_vault(&dir);
-    let local = |d: &Daemon| match request(d, Role::App, "configuracao", "{}") {
+    let local = |d: &Daemon| match request(d, Role::App, "config", "{}") {
         Response::Config {
             local_backup: backup_local,
             ..
@@ -616,7 +611,7 @@ fn unsafe_backups_folder_shows_in_the_settings() {
     fs::rename(backup_dir(&dir), dir.0.join("verdadeira")).unwrap();
     symlink(&other, backup_dir(&dir)).unwrap();
     assert!(!local(&d));
-    let bytes = encoded(Role::App, &request(&d, Role::App, "configuracao", "{}"));
+    let bytes = encoded(Role::App, &request(&d, Role::App, "config", "{}"));
     assert!(!contains(&bytes, dir.0.to_string_lossy().as_bytes()));
 }
 

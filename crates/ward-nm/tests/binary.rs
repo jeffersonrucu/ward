@@ -46,7 +46,7 @@ fn frame(body: &[u8]) -> Vec<u8> {
 
 #[test]
 fn attack_arguments_out_of_form_exit_with_nothing_on_stdout() {
-    let m = frame(br#"{"v":1,"op":"estado"}"#);
+    let m = frame(br#"{"v":2,"op":"status"}"#);
     for args in [
         &[][..],
         &["chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf"],
@@ -67,19 +67,19 @@ fn attack_message_too_large_and_malformed() {
     m.extend(vec![b'{'; 1000]);
     let (code, output, err) = run_host(&[ORIGIN], &m);
     assert_eq!(code, Some(1));
-    assert!(String::from_utf8_lossy(&output).contains("quadro_invalido"));
+    assert!(String::from_utf8_lossy(&output).contains("invalid_frame"));
     assert!(!err.contains('{'), "stderr com conteúdo: {err}");
 
     // Malformed JSON and an app operation: protocol error, and the loop goes on.
     let mut m = frame(b"{nao e json");
     m.extend(frame(
-        br#"{"v":1,"op":"revelar","dados":{"entrada":"acme-wp-dev","campo":"senha"}}"#,
+        br#"{"v":2,"op":"reveal","data":{"entry":"acme-wp-dev","field":"password"}}"#,
     ));
     let (code, output, err) = run_host(&[ORIGIN], &m);
     assert_eq!(code, Some(0));
     let s = String::from_utf8_lossy(&output);
     assert!(
-        s.contains("pedido_invalido") && s.contains("nao_autorizado"),
+        s.contains("invalid_request") && s.contains("unauthorized"),
         "{s}"
     );
     assert!(!err.contains("acme-wp-dev"), "stderr com conteúdo: {err}");
@@ -87,9 +87,12 @@ fn attack_message_too_large_and_malformed() {
 
 #[test]
 fn no_daemon_answers_internal() {
-    let m = frame(br#"{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081"}}"#);
+    let m = frame(
+        br#"{"v":2,"op":"fill","data":{"entry":"acme-wp-dev","origin":"http://localhost:8081"}}"#,
+    );
     let (code, output, err) = run_host(&[ORIGIN], &m);
     assert_eq!(code, Some(0));
-    assert!(String::from_utf8_lossy(&output).contains(r#""codigo":"interno""#));
+    let s = String::from_utf8_lossy(&output).into_owned();
+    assert!(s.contains(r#""code":"internal""#), "{s}");
     assert!(err.contains("daemon indisponível"), "{err}");
 }

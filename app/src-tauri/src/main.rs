@@ -1180,7 +1180,7 @@ mod tests {
             &main,
             "copiar_campo",
             "https://example.com",
-            serde_json::json!({"entrada":"acme-pg-dev","campo":"senha"}),
+            serde_json::json!({"entrada":"acme-pg-dev","campo":"password"}),
         );
         assert!(
             r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
@@ -1263,7 +1263,7 @@ mod tests {
             "anterior": null,
             "formulario": {"tipo": "login", "nome": "x", "grupo": "g", "ambiente": "dev",
                 "projeto": "", "tags": [], "campos": {}, "segredos": {}, "extras": []},
-            "entrada": "acme-wp-dev", "campo": "senha", "id": 0
+            "entrada": "acme-wp-dev", "campo": "password", "id": 0
         });
         for command in [
             "revelar_campo",
@@ -1293,7 +1293,7 @@ mod tests {
         let forged = serde_json::json!({
             "formulario": {"tipo": "login", "nome": "x", "grupo": "g", "ambiente": "dev",
                 "projeto": "", "tags": [], "campos": {}, "segredos": {}, "extras": [],
-                "nivel": "livre"}
+                "nivel": "free"}
         });
         let r = call(&main, "salvar_credencial", ORIGIN, forged);
         assert!(
@@ -1315,7 +1315,7 @@ mod tests {
             .build()
             .unwrap();
         let request =
-            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "bloqueado", "pin": "135790"});
+            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "blocked", "pin": "135790"});
         let r = call(&other, "mudar_nivel", ORIGIN, request.clone());
         assert!(
             r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
@@ -1334,7 +1334,7 @@ mod tests {
             serde_json::Value::Null,
         ] {
             let body =
-                serde_json::json!({"entrada": "acme-pg-dev", "nivel": "bloqueado", "pin": pin});
+                serde_json::json!({"entrada": "acme-pg-dev", "nivel": "blocked", "pin": pin});
             let r = call(&main, "mudar_nivel", ORIGIN, body);
             let text = format!("{r:?}");
             assert!(
@@ -1833,7 +1833,7 @@ mod tests {
                 &approval,
                 command,
                 ORIGIN,
-                serde_json::json!({"entrada": "acme-pg-aprovacao", "campo": "senha", "nivel": "livre", "pin": "135790"}),
+                serde_json::json!({"entrada": "acme-pg-aprovacao", "campo": "password", "nivel": "free", "pin": "135790"}),
             );
             assert!(denied_by_acl(&r), "{command} na janela de aprovação: {r:?}");
         }

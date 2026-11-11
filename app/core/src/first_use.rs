@@ -315,7 +315,7 @@ mod tests {
             let q = frames.lock().unwrap();
             let create: Vec<_> = q
                 .iter()
-                .filter(|q| String::from_utf8_lossy(q).contains("\"criar_cofre\""))
+                .filter(|q| String::from_utf8_lossy(q).contains("\"create_vault\""))
                 .collect();
             assert_eq!(create.len(), 1);
             let t = String::from_utf8_lossy(create[0]);

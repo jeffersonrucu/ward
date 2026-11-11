@@ -141,14 +141,14 @@ fn run_json(name: &str, argv: &[&[u8]]) -> String {
 fn run_json_in(name: &str, argv: &[&[u8]], cwd: &[u8]) -> String {
     let argv: Vec<String> = argv.iter().map(|a| format!("\"{}\"", b64(a))).collect();
     format!(
-        r#"{{"entrada":"{name}","argv":[{}],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
+        r#"{{"entry":"{name}","argv":[{}],"cwd":"{}","stdin_kind":"null","environment":[]}}"#,
         argv.join(","),
         b64(cwd)
     )
 }
 
 fn use_entry(d: &Daemon, client: &dyn Client, name: &str) -> Result<Authorization, ResponseError> {
-    let p = req(Role::Agent, "executar", &run_json(name, &[b"true"])).unwrap();
+    let p = req(Role::Agent, "run", &run_json(name, &[b"true"])).unwrap();
     d.authorize_use(client, &p)
 }
 
@@ -169,13 +169,13 @@ fn answer(d: &Daemon, role: Role, id: u64, decision: &str, pin: Option<&str>) ->
     request(
         d,
         role,
-        "responder_aprovacao",
-        &format!(r#"{{"pedido":{id},"decisao":"{decision}"{pin}}}"#),
+        "answer_approval",
+        &format!(r#"{{"request":{id},"decision":"{decision}"{pin}}}"#),
     )
 }
 
 fn level(d: &Daemon, name: &str) -> Option<AccessLevel> {
-    match request(d, Role::App, "lista", "{}") {
+    match request(d, Role::App, "list", "{}") {
         Response::List(l) => l.into_iter().find(|i| i.name == name).and_then(|i| i.level),
         r => panic!("{r:?}"),
     }
@@ -227,7 +227,7 @@ fn v3_14_no_answer_expires_in_2_min() {
     // Answering after it expired allows nothing.
     c.clock.set(Duration::ZERO);
     assert_eq!(
-        error(&answer(&c.d, Role::App, 1, "uma_vez", Some(PIN))),
+        error(&answer(&c.d, Role::App, 1, "once", Some(PIN))),
         Some(ResponseError::Expired)
     );
 }
@@ -239,7 +239,7 @@ fn v3_14_deny_and_close_deny() {
     let c = scene("fechar");
     let rx = subscribe(&c.d, 1);
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
     let r = with_approval_window(&c, &rx, "t-aprov", |_| c.d.engine().unsubscribe(1));
@@ -253,11 +253,11 @@ fn v3_14_once_only_that_request() {
     let c = scene("uma-vez");
     let rx = subscribe(&c.d, 1);
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "once", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
 }
@@ -270,7 +270,7 @@ fn v3_14_one_hour_until_59_59_and_lock_ends_it() {
     let rx = subscribe(&c.d, 1);
     c.clock.set(Duration::from_secs(1000));
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_hora", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "one_hour", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     for t in [1001, 2000, 1000 + 3599] {
@@ -283,12 +283,12 @@ fn v3_14_one_hour_until_59_59_and_lock_ends_it() {
     assert!(rx.try_recv().is_err(), "perguntou dentro da hora");
     // Only that entry.
     let r = with_approval_window(&c, &rx, "s1", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
     c.clock.set(Duration::from_secs(1000 + 3601));
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_hora", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "one_hour", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     assert_eq!(
@@ -296,23 +296,17 @@ fn v3_14_one_hour_until_59_59_and_lock_ends_it() {
         Ok(Authorization::WithoutAsking)
     );
     // Lock and unlock: asks again.
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     assert!(ok(&unlock(&c.d, PASSWORD)));
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_hora", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "one_hour", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     // Changing the level (and back) also ends it.
-    assert!(ok(&set_level(&c.d, Role::App, "t-aprov", "livre", PIN)));
-    assert!(ok(&set_level(
-        &c.d,
-        Role::App,
-        "t-aprov",
-        "com-aprovacao",
-        PIN
-    )));
+    assert!(ok(&set_level(&c.d, Role::App, "t-aprov", "free", PIN)));
+    assert!(ok(&set_level(&c.d, Role::App, "t-aprov", "approval", PIN)));
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
 }
@@ -323,10 +317,10 @@ fn v3_14_always_leaves_free_in_the_file() {
     let c = scene("sempre");
     let rx = subscribe(&c.d, 1);
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "sempre", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "always", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(level(&c.d, "t-aprov"), Some(AccessLevel::Free));
     assert_eq!(
@@ -354,22 +348,22 @@ fn attack_49a_restore_cancels_pending_request() {
         let r = request(
             &c.d,
             Role::App,
-            "restaurar_backup",
+            "restore_backup",
             &format!(
-                r#"{{"versao":"{version}","senha":"{}","pin":"{}"}}"#,
+                r#"{{"version":"{version}","password":"{}","pin":"{}"}}"#,
                 b64(PASSWORD.as_bytes()),
                 b64(PIN.as_bytes())
             ),
         );
         assert!(ok(&r), "{r:?}");
         let result = t.join().unwrap();
-        let late = answer(&c.d, Role::App, p.id, "sempre", Some(PIN));
+        let late = answer(&c.d, Role::App, p.id, "always", Some(PIN));
         assert_eq!(error(&late), Some(ResponseError::Expired));
         result
     });
     assert_eq!(r, Err(ResponseError::Denied));
     assert_eq!(level(&c.d, "t-aprov"), Some(AccessLevel::Approval));
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(level(&c.d, "t-aprov"), Some(AccessLevel::Approval));
 }
@@ -382,7 +376,7 @@ fn attack_allow_without_valid_pin() {
     let c = scene("sem-pin");
     let rx = subscribe(&c.d, 1);
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
-        for decision in ["uma_vez", "uma_hora", "sempre"] {
+        for decision in ["once", "one_hour", "always"] {
             // No PIN: the protocol refuses the whole request.
             assert_eq!(
                 error(&answer(&c.d, Role::App, p.id, decision, None)),
@@ -394,10 +388,7 @@ fn attack_allow_without_valid_pin() {
                 Some(ResponseError::InvalidRequest)
             );
         }
-        for (i, decision) in ["uma_vez", "uma_hora", "sempre", "uma_vez"]
-            .iter()
-            .enumerate()
-        {
+        for (i, decision) in ["once", "one_hour", "always", "once"].iter().enumerate() {
             assert_eq!(
                 error(&answer(&c.d, Role::App, p.id, decision, Some(WRONG_PIN))),
                 Some(ResponseError::WrongPin),
@@ -409,7 +400,7 @@ fn attack_allow_without_valid_pin() {
             );
         }
         assert_eq!(
-            error(&answer(&c.d, Role::App, p.id, "sempre", Some(WRONG_PIN))),
+            error(&answer(&c.d, Role::App, p.id, "always", Some(WRONG_PIN))),
             Some(ResponseError::WrongPin)
         );
     });
@@ -427,7 +418,7 @@ fn attack_agent_answers_the_approval() {
     let rx = subscribe(&c.d, 1);
     let r = with_approval_window(&c, &rx, "t-aprov", |p| {
         for role in [Role::Agent, Role::Extension] {
-            for decision in ["uma_vez", "uma_hora", "sempre"] {
+            for decision in ["once", "one_hour", "always"] {
                 assert_eq!(
                     error(&answer(&c.d, role, p.id, decision, Some(PIN))),
                     Some(ResponseError::Unauthorized)
@@ -446,7 +437,7 @@ fn attack_agent_answers_the_approval() {
             );
         }
         assert!(c.d.engine().pending(p.id).is_some());
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
 }
@@ -591,34 +582,35 @@ fn attack_v3_15_hook_without_feature_or_out_of_place() {
 fn v3_16_prod_has_the_same_levels_and_buttons() {
     let c = scene("prod");
     for name in ["p-livre", "p-aprov"] {
-        let q = login(name, SECRETS[0]).replace(r#""ambiente":"dev""#, r#""ambiente":"prod""#);
-        assert!(ok(&request(&c.d, Role::App, "salvar_entrada", &q)));
+        let q =
+            login(name, SECRETS[0]).replace(r#""environment":"dev""#, r#""environment":"prod""#);
+        assert!(ok(&request(&c.d, Role::App, "save_entry", &q)));
     }
-    assert!(ok(&set_level(&c.d, Role::App, "p-livre", "livre", PIN)));
+    assert!(ok(&set_level(&c.d, Role::App, "p-livre", "free", PIN)));
     let rx = subscribe(&c.d, 1);
     assert_eq!(
         use_entry(&c.d, &NoClient, "p-livre"),
         Ok(Authorization::WithoutAsking)
     );
     assert!(rx.try_recv().is_err());
-    for decision in ["negar", "uma_vez", "uma_hora", "sempre"] {
+    for decision in ["deny", "once", "one_hour", "always"] {
         let r = with_approval_window(&c, &rx, "p-aprov", |p| {
             assert_eq!(p.environment, Environment::Prod);
             assert_eq!(p.entries, ["p-aprov"]);
-            let pin = (decision != "negar").then_some(PIN);
+            let pin = (decision != "deny").then_some(PIN);
             assert!(
                 ok(&answer(&c.d, Role::App, p.id, decision, pin)),
                 "{decision}"
             );
         });
-        if decision == "negar" {
+        if decision == "deny" {
             assert_eq!(r, Err(ResponseError::Denied));
         } else {
             assert_eq!(r, Ok(Authorization::Approved), "{decision}");
         }
-        if decision == "uma_hora" {
+        if decision == "one_hour" {
             // So that "always" still asks.
-            assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+            assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
             assert!(ok(&unlock(&c.d, PASSWORD)));
         }
     }
@@ -636,7 +628,7 @@ fn d19_combined_level() {
     let r = with_approval_window(&c, &rx, "b1", |p| {
         assert_eq!(p.entries, ["b1", "s1"]);
         assert_eq!(p.environment, Environment::Prod);
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_hora", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "one_hour", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     // The grant holds for both.
@@ -644,23 +636,23 @@ fn d19_combined_level() {
         use_entry(&c.d, &NoClient, "b1"),
         Ok(Authorization::WithoutAsking)
     );
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     assert!(ok(&unlock(&c.d, PASSWORD)));
     // b1 free, s1 with approval: asks.
-    assert!(ok(&set_level(&c.d, Role::App, "b1", "livre", PIN)));
+    assert!(ok(&set_level(&c.d, Role::App, "b1", "free", PIN)));
     let r = with_approval_window(&c, &rx, "b1", |p| {
         assert_eq!(p.entries, ["b1", "s1"]);
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
     // Both free: passes.
-    assert!(ok(&set_level(&c.d, Role::App, "s1", "livre", PIN)));
+    assert!(ok(&set_level(&c.d, Role::App, "s1", "free", PIN)));
     assert_eq!(
         use_entry(&c.d, &NoClient, "b1"),
         Ok(Authorization::WithoutAsking)
     );
     // The other one blocked: denies without opening a window.
-    assert!(ok(&set_level(&c.d, Role::App, "s1", "bloqueado", PIN)));
+    assert!(ok(&set_level(&c.d, Role::App, "s1", "blocked", PIN)));
     assert_eq!(use_entry(&c.d, &NoClient, "b1"), Err(ResponseError::Denied));
     assert!(rx.try_recv().is_err());
     // The blocked one itself is still the same as a missing one (V3.17).
@@ -669,10 +661,10 @@ fn d19_combined_level() {
         use_entry(&c.d, &NoClient, "nao-existe")
     );
     // "Always" on the combined use leaves free both that asked for approval.
-    assert!(ok(&set_level(&c.d, Role::App, "s1", "com-aprovacao", PIN)));
-    assert!(ok(&set_level(&c.d, Role::App, "b1", "com-aprovacao", PIN)));
+    assert!(ok(&set_level(&c.d, Role::App, "s1", "approval", PIN)));
+    assert!(ok(&set_level(&c.d, Role::App, "b1", "approval", PIN)));
     let r = with_approval_window(&c, &rx, "b1", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "sempre", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "always", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     assert_eq!(level(&c.d, "b1"), Some(AccessLevel::Free));
@@ -727,7 +719,7 @@ fn opened_app_receives_the_request_on_subscribe() {
         }
         let rx = subscribe(&c.d, 7);
         let p = approval_request(&rx);
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "once", Some(PIN))));
         t.join().unwrap()
     });
     assert_eq!(r, Ok(Authorization::Approved));
@@ -754,7 +746,7 @@ fn d51_command_and_chain_with_visible_escape() {
                 "t-aprov",
                 &[b"rm", "-rf /\x1b[2K\rls \u{202E}".as_bytes(), b"\xff"],
             );
-            let p = req(Role::Agent, "executar", &q).unwrap();
+            let p = req(Role::Agent, "run", &q).unwrap();
             c.d.authorize_use(&ForgedClient, &p)
         });
         let _g = ExpireOnPanic(&c.clock);
@@ -762,7 +754,7 @@ fn d51_command_and_chain_with_visible_escape() {
         assert_eq!(p.operation, Operation::Run);
         assert_eq!(p.command, r#""rm" "-rf /\x1b[2K\rls \u{202E}" "\xff""#);
         assert_eq!(p.chain, ["claude", r"ba\u{202E}hs", r"ward\x1b[2K"]);
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
         t.join().unwrap()
     });
     assert_eq!(r, Err(ResponseError::Denied));
@@ -783,7 +775,7 @@ fn f26a_working_directory_goes_to_the_window_with_visible_escape() {
                 &[b"./deploy.sh"],
                 "/tmp/atacante/\u{202E}hs.yolped\x1b[2K /home/dev".as_bytes(),
             );
-            let p = req(Role::Agent, "executar", &q).unwrap();
+            let p = req(Role::Agent, "run", &q).unwrap();
             c.d.authorize_use(&NoClient, &p)
         });
         let _g = ExpireOnPanic(&c.clock);
@@ -793,7 +785,7 @@ fn f26a_working_directory_goes_to_the_window_with_visible_escape() {
             p.directory,
             r#""/tmp/atacante/\u{202E}hs.yolped\x1b[2K /home/dev""#
         );
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
         t.join().unwrap()
     });
     assert_eq!(r, Err(ResponseError::Denied));
@@ -832,7 +824,7 @@ fn client_that_drops_cancels() {
 fn v3_18_waits_for_unlock_up_to_2_min() {
     let c = scene("destrave");
     let rx = subscribe(&c.d, 1);
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-livre"));
         assert!(matches!(
@@ -848,7 +840,7 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
     assert_eq!(r, Ok(Authorization::WithoutAsking));
 
     // Unlock and then approval: the two deadlines separately.
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-aprov"));
         assert!(matches!(
@@ -861,12 +853,12 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
         c.clock.advance(Duration::from_secs(100));
         std::thread::sleep(Duration::from_millis(100));
         assert!(c.d.engine().pending(p.id).is_some());
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "once", Some(PIN))));
         t.join().unwrap()
     });
     assert_eq!(r, Ok(Authorization::Approved));
 
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-livre"));
         assert!(matches!(
@@ -879,12 +871,12 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
     assert_eq!(r, Err(ResponseError::LockedTimedOut));
     // Through the protocol, the same answer.
     let s2 = scene_with("destrave-sem-app", Err(OpenAppError::Unavailable));
-    assert!(ok(&request(&s2.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&s2.d, Role::Agent, "lock", "{}")));
     assert_eq!(
         error(&request(
             &s2.d,
             Role::Agent,
-            "executar",
+            "run",
             &run_json("t-livre", &[b"true"])
         )),
         Some(ResponseError::Locked)
@@ -911,7 +903,7 @@ fn unlock_request(rx: &Receiver<Received>) -> UnlockRequest {
 fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
     let c = scene("destrave-39a");
     let rx = subscribe(&c.d, 1);
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     let invisible = |t: &str| t.chars().any(ward_core::display::invisible);
     let name_json = "t-livre\\u202e\\u001b[2K\\u200b\\udb40\\udc41";
     let argv: [&[u8]; 3] = [
@@ -921,7 +913,7 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
     ];
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| {
-            let p = req(Role::Agent, "executar", &run_json(name_json, &argv)).unwrap();
+            let p = req(Role::Agent, "run", &run_json(name_json, &argv)).unwrap();
             c.d.authorize_use(&NoClient, &p)
         });
         let p = unlock_request(&rx);
@@ -949,7 +941,7 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
             let p = req(
                 Role::Agent,
                 "ssh",
-                r#"{"entrada":"t-aprov","tipo_entrada":"terminal"}"#,
+                r#"{"entry":"t-aprov","stdin_kind":"terminal"}"#,
             )
             .unwrap();
             c.d.authorize_use(&NoClient, &p)
@@ -982,12 +974,12 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
 fn attack_phase_39a_empty_entry_does_not_bring_down_the_app() {
     let c = scene("destrave-vazia");
     let rx = subscribe(&c.d, 1);
-    assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
+    assert!(ok(&request(&c.d, Role::Agent, "lock", "{}")));
     assert_eq!(
         error(&request(
             &c.d,
             Role::Agent,
-            "executar",
+            "run",
             &run_json("", &[b"true"])
         )),
         Some(ResponseError::InvalidRequest)
@@ -1024,27 +1016,27 @@ fn attack_phase_39a_empty_entry_does_not_bring_down_the_app() {
 fn d57_open_app() {
     let c = scene("abrir-app");
     for role in Role::ALL {
-        assert!(ok(&request(&c.d, role, "abrir_app", "{}")), "{role:?}");
+        assert!(ok(&request(&c.d, role, "open_app", "{}")), "{role:?}");
     }
     assert_eq!(c.opener.opens.load(Ordering::SeqCst), 3);
     for data in [
         r#"{"binario":"/tmp/x"}"#,
-        r#"{"ambiente":[{"nome":"V0FZTEFORF9ESVNQTEFZ","valor":"L3RtcC9wcm94eQ=="}]}"#,
+        r#"{"environment":[{"name":"V0FZTEFORF9ESVNQTEFZ","value":"L3RtcC9wcm94eQ=="}]}"#,
         r#"{"argv":[]}"#,
     ] {
         assert_eq!(
-            error(&request(&c.d, Role::Agent, "abrir_app", data)),
+            error(&request(&c.d, Role::Agent, "open_app", data)),
             Some(ResponseError::InvalidRequest)
         );
     }
     assert_eq!(c.opener.opens.load(Ordering::SeqCst), 3);
     let s = scene_with("abrir-app-sem", Err(OpenAppError::Unavailable));
     assert_eq!(
-        error(&request(&s.d, Role::Agent, "abrir_app", "{}")),
+        error(&request(&s.d, Role::Agent, "open_app", "{}")),
         Some(ResponseError::ApprovalUnavailable)
     );
     let s = scene_with("abrir-app-ja", Err(OpenAppError::AlreadyOpen));
-    assert!(ok(&request(&s.d, Role::Agent, "abrir_app", "{}")));
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
 }
 
 /// V3.36 (D63, the classifier part): with the app group and the right parent, only the
@@ -1081,7 +1073,7 @@ fn v3_36_only_the_launcher_pid_is_app() {
 fn v3_38_status_carries_the_role() {
     let c = scene("estado-papel");
     for role in Role::ALL {
-        match request(&c.d, role, "estado", "{}") {
+        match request(&c.d, role, "status", "{}") {
             Response::Status { role: p, .. } => assert_eq!(p, role),
             r => panic!("{r:?}"),
         }
@@ -1093,10 +1085,10 @@ fn v3_38_status_carries_the_role() {
 /// The run operation with standard input of kind `kind` (`argv` = a lone `python3`).
 fn use_with_stdin(d: &Daemon, name: &str, kind: &str) -> Result<Authorization, ResponseError> {
     let q = run_json(name, &[b"python3"]).replace(
-        r#""tipo_entrada":"nula""#,
-        &format!(r#""tipo_entrada":"{kind}""#),
+        r#""stdin_kind":"null""#,
+        &format!(r#""stdin_kind":"{kind}""#),
     );
-    let p = req(Role::Agent, "executar", &q).unwrap();
+    let p = req(Role::Agent, "run", &q).unwrap();
     d.authorize_use(&NoClient, &p)
 }
 
@@ -1121,9 +1113,9 @@ fn answer_confirmed(d: &Daemon, id: u64, decision: &str, pin: &str) -> Response 
     request(
         d,
         Role::App,
-        "responder_aprovacao",
+        "answer_approval",
         &format!(
-            r#"{{"pedido":{id},"decisao":"{decision}","pin":"{}","entrada_confirmada":true}}"#,
+            r#"{{"request":{id},"decision":"{decision}","pin":"{}","confirmed_entry":true}}"#,
             b64(pin.as_bytes())
         ),
     )
@@ -1138,12 +1130,12 @@ fn answer_confirmed(d: &Daemon, id: u64, decision: &str, pin: &str) -> Response 
 fn f54b_attack_pipe_on_approval_without_the_box_does_not_pass() {
     let c = scene("f54b-pipe");
     let rx = subscribe(&c.d, 1);
-    for kind in ["pipe", "arquivo", "outra"] {
+    for kind in ["pipe", "file", "other"] {
         let r = with_window_and_stdin(&c, &rx, "t-aprov", kind, |p| {
             assert!(p.hidden_entry, "{kind}: a janela não recebeu o aviso");
             assert_eq!(p.command, "\"python3\"");
             for _ in 0..2 {
-                for decision in ["uma_vez", "uma_hora", "sempre"] {
+                for decision in ["once", "one_hour", "always"] {
                     assert_eq!(
                         error(&answer(&c.d, Role::App, p.id, decision, Some(PIN))),
                         Some(ResponseError::InvalidRequest),
@@ -1153,8 +1145,8 @@ fn f54b_attack_pipe_on_approval_without_the_box_does_not_pass() {
             }
             assert!(c.d.engine().pending(p.id).is_some(), "{kind}");
             // "Confirm" (no PIN) does not decide such a request either.
-            assert!(error(&answer(&c.d, Role::App, p.id, "confirmar", None)).is_some());
-            assert!(ok(&answer_confirmed(&c.d, p.id, "uma_vez", PIN)));
+            assert!(error(&answer(&c.d, Role::App, p.id, "confirm", None)).is_some());
+            assert!(ok(&answer_confirmed(&c.d, p.id, "once", PIN)));
         });
         assert_eq!(r, Ok(Authorization::Approved), "{kind}");
     }
@@ -1162,16 +1154,16 @@ fn f54b_attack_pipe_on_approval_without_the_box_does_not_pass() {
     assert!(!c.d.is_locked());
     // Deny still needs neither PIN nor box.
     let r = with_window_and_stdin(&c, &rx, "t-aprov", "pipe", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
     // The box does not override the PIN: wrong is still wrong.
     let r = with_window_and_stdin(&c, &rx, "t-aprov", "pipe", |p| {
         assert_eq!(
-            error(&answer_confirmed(&c.d, p.id, "uma_vez", "000000")),
+            error(&answer_confirmed(&c.d, p.id, "once", "000000")),
             Some(ResponseError::WrongPin)
         );
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
 }
@@ -1183,15 +1175,15 @@ fn f54b_attack_pipe_on_approval_without_the_box_does_not_pass() {
 fn f54b_terminal_and_null_pass_as_before() {
     let c = scene("f54b-tty");
     let rx = subscribe(&c.d, 1);
-    for kind in ["terminal", "nula"] {
+    for kind in ["terminal", "null"] {
         let r = with_window_and_stdin(&c, &rx, "t-aprov", kind, |p| {
             assert!(!p.hidden_entry, "{kind}");
             assert_eq!(
-                error(&answer_confirmed(&c.d, p.id, "uma_vez", PIN)),
+                error(&answer_confirmed(&c.d, p.id, "once", PIN)),
                 Some(ResponseError::InvalidRequest),
                 "{kind}"
             );
-            assert!(ok(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))));
+            assert!(ok(&answer(&c.d, Role::App, p.id, "once", Some(PIN))));
         });
         assert_eq!(r, Ok(Authorization::Approved), "{kind}");
     }
@@ -1205,7 +1197,7 @@ fn f54b_1_hour_grant_does_not_cover_pipe() {
     let c = scene("f54b-hora");
     let rx = subscribe(&c.d, 1);
     let r = with_window_and_stdin(&c, &rx, "t-aprov", "terminal", |p| {
-        assert!(ok(&answer(&c.d, Role::App, p.id, "uma_hora", Some(PIN))));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "one_hour", Some(PIN))));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     assert_eq!(
@@ -1213,16 +1205,16 @@ fn f54b_1_hour_grant_does_not_cover_pipe() {
         Ok(Authorization::WithoutAsking)
     );
     assert_eq!(
-        use_with_stdin(&c.d, "t-aprov", "nula"),
+        use_with_stdin(&c.d, "t-aprov", "null"),
         Ok(Authorization::WithoutAsking)
     );
     let r = with_window_and_stdin(&c, &rx, "t-aprov", "pipe", |p| {
         assert!(p.hidden_entry);
         assert_eq!(
-            error(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))),
+            error(&answer(&c.d, Role::App, p.id, "once", Some(PIN))),
             Some(ResponseError::InvalidRequest)
         );
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
     // Free: the agent can already read the secret (scope › level), so nothing changes.
@@ -1232,16 +1224,16 @@ fn f54b_1_hour_grant_does_not_cover_pipe() {
     );
     assert!(rx.try_recv().is_err());
     // Combined: b1 + s1, both with approval.
-    let r = with_window_and_stdin(&c, &rx, "b1", "arquivo", |p| {
+    let r = with_window_and_stdin(&c, &rx, "b1", "file", |p| {
         assert_eq!(p.entries, ["b1", "s1"]);
         assert!(p.hidden_entry);
-        assert!(ok(&answer_confirmed(&c.d, p.id, "uma_hora", PIN)));
+        assert!(ok(&answer_confirmed(&c.d, p.id, "one_hour", PIN)));
     });
     assert_eq!(r, Ok(Authorization::Approved));
     // The grant given with the box checked does not cover the next pipe either.
     let r = with_window_and_stdin(&c, &rx, "b1", "pipe", |p| {
         assert!(p.hidden_entry);
-        assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
+        assert!(ok(&answer(&c.d, Role::App, p.id, "deny", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
     assert_eq!(
@@ -1257,12 +1249,7 @@ fn f54b_ssh_with_pipe_warns() {
     let rx = subscribe(&c.d, 1);
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| {
-            let p = req(
-                Role::Agent,
-                "ssh",
-                r#"{"entrada":"s1","tipo_entrada":"pipe"}"#,
-            )
-            .unwrap();
+            let p = req(Role::Agent, "ssh", r#"{"entry":"s1","stdin_kind":"pipe"}"#).unwrap();
             c.d.authorize_use(&NoClient, &p)
         });
         let _g = ExpireOnPanic(&c.clock);
@@ -1270,10 +1257,10 @@ fn f54b_ssh_with_pipe_warns() {
         assert_eq!(p.operation, Operation::Ssh);
         assert!(p.hidden_entry);
         assert_eq!(
-            error(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))),
+            error(&answer(&c.d, Role::App, p.id, "once", Some(PIN))),
             Some(ResponseError::InvalidRequest)
         );
-        assert!(ok(&answer_confirmed(&c.d, p.id, "uma_vez", PIN)));
+        assert!(ok(&answer_confirmed(&c.d, p.id, "once", PIN)));
         t.join().unwrap()
     });
     assert_eq!(r, Ok(Authorization::Approved));

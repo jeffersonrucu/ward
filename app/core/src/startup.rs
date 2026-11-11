@@ -347,12 +347,12 @@ mod tests {
             );
             drop(d);
             // Only the status: no screen request afterwards.
-            assert_eq!(h.join().unwrap(), ["estado"]);
+            assert_eq!(h.join().unwrap(), ["status"]);
         }
         let (mut d, h) = daemon_giving(Role::App);
         assert!(check_role(&mut d, Ok(())).is_ok());
         drop(d);
-        assert_eq!(h.join().unwrap(), ["estado"]);
+        assert_eq!(h.join().unwrap(), ["status"]);
     }
 
     #[test]
@@ -366,7 +366,7 @@ mod tests {
             Err(StartupError::Parent(ParentMismatch::NotDaemon))
         ));
         drop(d);
-        assert_eq!(h.join().unwrap(), ["estado", "abrir_app"]);
+        assert_eq!(h.join().unwrap(), ["status", "open_app"]);
     }
 
     #[test]
@@ -377,7 +377,7 @@ mod tests {
         let (mut d, h) = daemon_giving(Role::Agent);
         assert!(matches!(request_instance(&mut d), StartupError::Delegated));
         drop(d);
-        assert_eq!(h.join().unwrap(), ["abrir_app"]);
+        assert_eq!(h.join().unwrap(), ["open_app"]);
     }
 
     #[test]

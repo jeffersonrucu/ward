@@ -265,7 +265,7 @@ check "V9.7 /run/ward root:root 0755" "$(stat -c '%U:%G %a' /run/ward)" "root:ro
 check "V9.7 /run/ward/$UID_T root:root 0755" "$(stat -c '%U:%G %a' "/run/ward/$UID_T")" "root:root 755"
 check "V9.7 socket do uid, 0600" "$(stat -c '%u %a %F' "$SOCK")" "$UID_T 600 socket"
 r="$(as_1000 "$T/bin/cliente" "$SOCK" estado)"
-check "V9.7 a primeira conexão sobe o wardd instalado pelo .deb" "$r" "resposta: estado"
+check "V9.7 a primeira conexão sobe o wardd instalado pelo .deb" "$r" "resposta: status"
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 check "V9.7 wardd roda com o uid" "$(awk '/^Uid:/{print $2,$3,$4,$5}' "/proc/$pid/status")" "$UID_T $UID_T $UID_T $UID_T"
 check "D57 wardd sem no_new_privs" "$(awk '/^NoNewPrivs:/{print $2}' "/proc/$pid/status")" "0"
@@ -281,7 +281,7 @@ check "reinstalar: ward-app continua root:ward-app 2755" "$(stat -c '%U:%G %a' /
 check "reinstalar: ward-nm continua root:ward-nm 2755" "$(stat -c '%U:%G %a' /usr/local/lib/ward/ward-nm)" "root:ward-nm 2755"
 check "reinstalar: socket ativo" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
 r="$(as_1000 "$T/bin/cliente" "$SOCK" estado)"
-check "reinstalar: o wardd responde" "$r" "resposta: estado"
+check "reinstalar: o wardd responde" "$r" "resposta: status"
 # Without SUDO_UID or WARD_UID (app store/PackageKit): turns on the socket of each human
 # user (uid in the login.defs range, with a login shell) and of nobody else.
 systemctl disable --now "wardd@$UID_T.socket" "wardd@$UID_T.service" >/dev/null 2>&1 || true
@@ -296,7 +296,7 @@ for u in 1500 999 65534 0; do
     lacks "sem SUDO_UID: wardd@$u.socket não ligado" "$(systemctl is-enabled "wardd@$u.socket" 2>&1 || true)" "enabled"
 done
 r="$(as_1000 "$T/bin/cliente" "$SOCK" estado)"
-check "sem SUDO_UID: o wardd responde" "$r" "resposta: estado"
+check "sem SUDO_UID: o wardd responde" "$r" "resposta: status"
 userdel semshell
 userdel sistema
 # An invalid WARD_UID turns nothing on.

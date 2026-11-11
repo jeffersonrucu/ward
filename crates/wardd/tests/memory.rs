@@ -146,21 +146,21 @@ fn v3_8_lock_zeroes_the_key_and_the_secrets_before_freeing() {
     let findings = searching(|| {
         assert!(ok(&unlock(&d, PASSWORD)));
         assert!(!d.is_locked());
-        let _ = request(&d, Role::Agent, "lista", "{}");
-        let _ = request(&d, Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
-        assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
+        let _ = request(&d, Role::Agent, "list", "{}");
+        let _ = request(&d, Role::App, "detail", r#"{"entry":"t-aprov"}"#);
+        assert!(ok(&set_level(&d, Role::App, "t-aprov", "free", PIN)));
         assert!(ok(&request(
             &d,
             Role::App,
-            "salvar_entrada",
+            "save_entry",
             &login("t-memoria", SECRETS[3])
         )));
-        let _ = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
+        let _ = set_level(&d, Role::App, "t-aprov", "free", WRONG_PIN);
         // V3.8: locking releases the open vault and the entries.
         d.lock();
         assert!(d.is_locked());
         assert_eq!(
-            error(&request(&d, Role::App, "lista", "{}")),
+            error(&request(&d, Role::App, "list", "{}")),
             Some(ward_core::protocol::ResponseError::Locked)
         );
     });

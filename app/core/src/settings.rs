@@ -400,7 +400,7 @@ mod tests {
             let set = |p: &str| {
                 s.set_level(
                     "acme-pg-dev",
-                    "bloqueado",
+                    "blocked",
                     crate::level::Pin::new(p.into()).unwrap(),
                 )
             };
@@ -412,7 +412,7 @@ mod tests {
             let changes: Vec<_> = q
                 .iter()
                 .map(|q| String::from_utf8_lossy(q).into_owned())
-                .filter(|q| q.contains("\"trocar_pin\""))
+                .filter(|q| q.contains("\"change_pin\""))
                 .collect();
             assert_eq!(changes.len(), 2);
             assert!(changes.iter().all(|t| !t.contains("confirmacao")));

@@ -83,24 +83,24 @@ struct Scene {
 }
 
 fn save(d: &Daemon, json: &str) {
-    let r = request(d, Role::App, "salvar_entrada", json);
+    let r = request(d, Role::App, "save_entry", json);
     assert!(ok(&r), "{r:?}");
 }
 
 fn server_json(name: &str, user: &str, auth_fields: &str, extra: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"stage","tipo":"servidor","campos":{{"host":"127.0.0.1","porta":"2222","usuario":"{user}",{auth_fields}{extra}}}}}}}"#
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"stage","type":"server","fields":{{"host":"127.0.0.1","port":"2222","username":"{user}",{auth_fields}{extra}}}}}}}"#
     )
 }
 
 fn sftp_json(name: &str, protocol: &str, auth_fields: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"dev","tipo":"ftp-sftp","campos":{{"protocolo":"{protocol}","host":"127.0.0.1","porta":"2222","usuario":"sftpuser",{auth_fields}}}}}}}"#
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"dev","type":"ftp-sftp","fields":{{"protocol":"{protocol}","host":"127.0.0.1","port":"2222","username":"sftpuser",{auth_fields}}}}}}}"#
     )
 }
 
 fn password_auth() -> String {
-    format!(r#""senha":"{}""#, b64(SSH_PASSWORD.as_bytes()))
+    format!(r#""password":"{}""#, b64(SSH_PASSWORD.as_bytes()))
 }
 
 /// New Ed25519 key with a random passphrase (nothing fixed in the repository).
@@ -162,7 +162,7 @@ fn scene(label: &str) -> Scene {
         .with_temp_root(rt.0.clone());
     let (key, pp) = generate_key(&dir.0);
     let key_auth = format!(
-        r#""chave_privada":"{}","passphrase":"{}""#,
+        r#""private_key":"{}","passphrase":"{}""#,
         b64(&key),
         b64(pp.as_bytes())
     );
@@ -179,19 +179,14 @@ fn scene(label: &str) -> Scene {
             "s-salto",
             "deploy",
             &password_auth(),
-            r#","salto":"s-livre""#,
+            r#","jump":"s-livre""#,
         ),
     );
     // Phase 28: jump with a key on the main host, jump with a key on the intermediate,
     // jump that needs approval or is blocked (D19) and the database tunnel.
     save(
         &d,
-        &server_json(
-            "s-salto-chave",
-            "deploy",
-            &key_auth,
-            r#","salto":"s-livre""#,
-        ),
+        &server_json("s-salto-chave", "deploy", &key_auth, r#","jump":"s-livre""#),
     );
     save(
         &d,
@@ -199,7 +194,7 @@ fn scene(label: &str) -> Scene {
             "s-via-chave",
             "deploy",
             &password_auth(),
-            r#","salto":"s-chave""#,
+            r#","jump":"s-chave""#,
         ),
     );
     save(
@@ -208,7 +203,7 @@ fn scene(label: &str) -> Scene {
             "s-salto-aprov",
             "deploy",
             &password_auth(),
-            r#","salto":"s-outro""#,
+            r#","jump":"s-outro""#,
         ),
     );
     save(
@@ -217,13 +212,13 @@ fn scene(label: &str) -> Scene {
             "s-salto-bloq",
             "deploy",
             &password_auth(),
-            r#","salto":"s-bloq""#,
+            r#","jump":"s-bloq""#,
         ),
     );
     save(
         &d,
         &format!(
-            r#"{{"entrada":{{"nome":"b-tunel","grupo":"clientex","ambiente":"stage","tipo":"banco","campos":{{"motor":"postgres","host":"db.interno","porta":"5432","base":"app","usuario":"app","senha":"{}","tunel":"s-livre"}}}}}}"#,
+            r#"{{"entry":{{"name":"b-tunel","group":"clientex","environment":"stage","type":"database","fields":{{"engine":"postgres","host":"db.interno","port":"5432","db_name":"app","username":"app","password":"{}","tunnel":"s-livre"}}}}}}"#,
             b64(DB_PASSWORD.as_bytes())
         ),
     );
@@ -243,9 +238,9 @@ fn scene(label: &str) -> Scene {
         "f-sftp-chave",
         "f-ftp",
     ] {
-        assert!(ok(&set_level(&d, Role::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Role::App, n, "free", PIN)));
     }
-    assert!(ok(&set_level(&d, Role::App, "s-bloq", "bloqueado", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "s-bloq", "blocked", PIN)));
     Scene {
         d: Arc::new(d),
         dir,

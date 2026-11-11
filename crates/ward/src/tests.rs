@@ -630,15 +630,18 @@ mod with_fake_daemon {
         assert_eq!(t.run(&["lista", "--json"]), EXIT_OK, "{}", t.err());
         assert_eq!(
             t.out(),
-            "[{\"nome\":\"acme-wp-dev\",\"tipo\":\"login\",\"grupo\":\"acme\",\"ambiente\":\"dev\",\
-             \"projeto\":\"site\",\"endereco\":\"http://127.0.0.1:8081\"},\
-             {\"nome\":\"gama-nota\",\"tipo\":\"nota-segura\",\"grupo\":\"acme\",\"ambiente\":\"dev\",\
-             \"projeto\":\"site\",\"endereco\":null}]\n"
+            "[{\"name\":\"acme-wp-dev\",\"type\":\"login\",\"group\":\"acme\",\"environment\":\"dev\",\
+             \"project\":\"site\",\"address\":\"http://127.0.0.1:8081\"},\
+             {\"name\":\"gama-nota\",\"type\":\"secure-note\",\"group\":\"acme\",\"environment\":\"dev\",\
+             \"project\":\"site\",\"address\":null}]\n"
         );
         let mut t = test_env(&dir);
         assert_eq!(t.run(&["lista"]), EXIT_OK);
         assert!(t.out().starts_with("NOME "));
         assert!(t.out().contains("acme-wp-dev"));
+        // m2:V4.18: the table shows the pt-BR label, not the stored name.
+        assert!(t.out().contains("nota segura"), "{}", t.out());
+        assert!(!t.out().contains("secure-note"), "{}", t.out());
         assert_eq!(t.events, ["conectar"]);
     }
 
@@ -654,7 +657,7 @@ mod with_fake_daemon {
         assert_eq!(t.run(&["lista"]), EXIT_ERROR);
         assert!(t.err().starts_with("ward: travado"), "{}", t.err());
         assert!(t.out.is_empty());
-        assert_eq!(v.lock().unwrap().operations, ["travar", "lista"]);
+        assert_eq!(v.lock().unwrap().operations, ["lock", "list"]);
     }
 
     /// Order of the unlock: server checked, state, harden, password, reverify, unlock.
@@ -668,7 +671,7 @@ mod with_fake_daemon {
         assert_eq!(t.out(), "cofre destravado\n");
         assert_eq!(t.events, ["conectar", "endurecer", "ler_senha"]);
         let v = v.lock().unwrap();
-        assert_eq!(v.operations, ["estado", "destravar"]);
+        assert_eq!(v.operations, ["status", "unlock"]);
         assert_eq!(v.passwords, [PASSWORD.as_bytes()]);
         drop(v);
 
@@ -719,7 +722,7 @@ mod with_fake_daemon {
         assert_eq!(t.run(&["destravar"]), EXIT_ERROR);
         assert!(t.err().contains("servidor não é o wardd"), "{}", t.err());
         let v = v.lock().unwrap();
-        assert_eq!(v.operations, ["estado"]);
+        assert_eq!(v.operations, ["status"]);
         assert!(v.passwords.is_empty());
         assert!(!String::from_utf8_lossy(&v.bytes).contains("ZmFsc28tbWVzdHJh"));
     }
@@ -729,9 +732,9 @@ mod with_fake_daemon {
     #[test]
     fn attack_response_with_credential_or_level_refused() {
         for body in [
-            r#"{"v":1,"tipo":"segredo","dados":{"valor":"ZmFsc28tUEc6czNuaGEvMDFAIw=="}}"#,
-            r#"{"v":1,"tipo":"lista","dados":{"itens":[{"nome":"a","tipo":"login","grupo":"g","ambiente":"dev","tags":[],"nivel":"livre","endereco":"http://x"}]}}"#,
-            r#"{"v":1,"tipo":"preenchimento","dados":{"usuario":"u","senha":"ZmFsc28="}}"#,
+            r#"{"v":2,"type":"secret","data":{"value":"ZmFsc28tUEc6czNuaGEvMDFAIw=="}}"#,
+            r#"{"v":2,"type":"list","data":{"items":[{"name":"a","type":"login","group":"g","environment":"dev","tags":[],"level":"free","address":"http://x"}]}}"#,
+            r#"{"v":2,"type":"fill","data":{"username":"u","password":"ZmFsc28="}}"#,
             r#"{"v":2,"tipo":"ok"}"#,
         ] {
             let dir = TestDir::new();
@@ -742,6 +745,77 @@ mod with_fake_daemon {
             assert_eq!(t.err(), "ward: resposta inválida do daemon\n");
             assert!(t.out.is_empty());
         }
+    }
+
+    /// Attack m2:V4.16 (S5, m2:DT8): a server that answers in another protocol version
+    /// (the 0.1.4 daemon, v1; a future one, v3). The CLI stops at the state response with
+    /// the version message: it neither hardens nor reads the password, and the server
+    /// only ever sees the state request (no byte of the password).
+    #[test]
+    fn attack_m2_v4_16_server_of_another_version_stops_before_the_password() {
+        use crate::client::MSG_INCOMPATIBLE_VERSION;
+        use crate::commands::EXIT_RUN_ERROR;
+        for status in [
+            r#"{"v":1,"tipo":"estado","dados":{"travado":true,"cofre_existe":true,"papel":"agente"}}"#,
+            r#"{"v":1,"tipo":"erro","dados":{"codigo":"versao_desconhecida","mensagem":"versão desconhecida"}}"#,
+            r#"{"v":3,"type":"status","data":{"locked":true,"vault_exists":true,"role":"agent"}}"#,
+        ] {
+            let dir = TestDir::new();
+            let body = status.as_bytes().to_vec();
+            let seen = fake_server(&dir, Some(Arc::new(move |_: &Request| body.clone())));
+            for (cmd, code) in [
+                (&["destravar"][..], EXIT_ERROR),
+                (&["lista", "--json"], EXIT_ERROR),
+                (&["run", "acme-pg-dev", "--", "true"], EXIT_RUN_ERROR),
+            ] {
+                let mut t = test_env(&dir);
+                assert_eq!(t.run(cmd), code, "{cmd:?} {status}");
+                assert_eq!(
+                    t.err(),
+                    format!("ward: {MSG_INCOMPATIBLE_VERSION}\n"),
+                    "{cmd:?} {status}"
+                );
+                assert!(t.out.is_empty());
+                assert!(
+                    !t.events.contains(&"endurecer") && !t.events.contains(&"ler_senha"),
+                    "{cmd:?}: {:?}",
+                    t.events
+                );
+            }
+            let v = seen.lock().unwrap();
+            // `destravar` and `run` ask for the state; the list asks for the list.
+            assert_eq!(v.operations, ["status", "list", "status"], "{status}");
+            assert!(v.passwords.is_empty());
+            assert!(!String::from_utf8_lossy(&v.bytes).contains("ZmFsc28tbWVzdHJh"));
+            assert!(!contains_bytes(&v.bytes, PASSWORD.as_bytes()));
+        }
+    }
+
+    /// m2:V4.16: the 0.2.0 daemon's own `unknown_version` error (a v2 frame) also stops
+    /// the unlock before the password, with the protocol's fixed message.
+    #[test]
+    fn m2_v4_16_unknown_version_error_stops_before_the_password() {
+        let dir = TestDir::new();
+        let seen = fake_server(
+            &dir,
+            Some(Arc::new(|_: &Request| {
+                encode(&Response::Error(ResponseError::UnknownVersion))
+            })),
+        );
+        let mut t = test_env(&dir);
+        assert_eq!(t.run(&["destravar"]), EXIT_ERROR);
+        assert_eq!(
+            t.err(),
+            "ward: versão do protocolo incompatível: atualize o Ward\n"
+        );
+        assert_eq!(t.events, ["conectar"]);
+        let v = seen.lock().unwrap();
+        assert_eq!(v.operations, ["status"]);
+        assert!(v.passwords.is_empty());
+    }
+
+    fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
     }
 }
 

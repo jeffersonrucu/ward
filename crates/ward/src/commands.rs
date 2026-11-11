@@ -5,7 +5,8 @@
 //! 1. connects and checks the server; refused, it exits without reading the password and
 //!    without sending anything;
 //! 2. asks for the state (no secret); already unlocked or no vault, it exits without
-//!    reading;
+//!    reading; a daemon of another protocol version (m2:DT8) stops it here, with the
+//!    version message and without reading the password (m2:V4.16);
 //! 3. hardens the process (non-dumpable, no core) and only then reads the password from
 //!    the terminal;
 //! 4. checks the server again on the same socket and only then sends the password.

@@ -62,20 +62,20 @@ def ler(n):
         b += p
     return b
 def pedir(op, dados):
-    q = json.dumps({"v": 1, "op": op, "dados": dados}).encode()
+    q = json.dumps({"v": 2, "op": op, "data": dados}).encode()
     s.sendall(struct.pack(">I", len(q)) + q)
     return ler(struct.unpack(">I", ler(4))[0]).decode()
-print("estado -", pedir("estado", {}))
+print("estado -", pedir("status", {}))
 if sys.argv[2] == "destravar":
     senha = sys.stdin.readline().strip()
-    print("destravar -", pedir("destravar", {"senha": senha}))
-for op in ("revelar", "copiar"):
+    print("destravar -", pedir("unlock", {"password": senha}))
+for op in ("reveal", "copy"):
     for e in ("acme-pg-dev", "gama-bloqueada"):
-        print(op, e, pedir(op, {"entrada": e, "campo": "senha"}))
-    print(op, "gama-generico", pedir(op, {"entrada": "gama-generico", "extra": "CHAVE_LICENCA"}))
+        print(op, e, pedir(op, {"entry": e, "field": "password"}))
+    print(op, "gama-generico", pedir(op, {"entry": "gama-generico", "extra": "CHAVE_LICENCA"}))
 for e in ("acme-totp-dev", "gama-bloqueada"):
-    print("totp", e, pedir("totp", {"entrada": e}))
-print("lista -", pedir("lista", {}))
+    print("totp", e, pedir("totp", {"entry": e}))
+print("lista -", pedir("list", {}))
 "#;
 
 struct SocketDir(PathBuf);
@@ -235,18 +235,18 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
         let output = python_client(&sock.0, unlock, name);
         let lines: Vec<&str> = output.lines().collect();
         assert!(
-            lines[0].contains(r#""papel":"agente""#),
+            lines[0].contains(r#""role":"agent""#),
             "{name}: {}",
             lines[0]
         );
         if unlock {
             assert!(lines[1].starts_with("destravar - "));
-            assert!(lines[1].contains(r#""tipo":"ok""#), "{}", lines[1]);
+            assert!(lines[1].contains(r#""type":"ok""#), "{}", lines[1]);
         }
         let attacks: Vec<&&str> = lines
             .iter()
             .filter(|l| {
-                ["revelar ", "copiar ", "totp "]
+                ["reveal ", "copy ", "totp "]
                     .iter()
                     .any(|p| l.starts_with(p))
             })
@@ -262,11 +262,11 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
         }
         let list = lines.iter().find(|l| l.starts_with("lista - ")).unwrap();
         // The agent that unlocked gets the list; the other one, already unlocked too.
-        assert!(list.contains(r#""tipo":"lista""#), "{list}");
+        assert!(list.contains(r#""type":"list""#), "{list}");
         for forbidden in [
-            r#""resumo""#,
-            r#""nivel""#,
-            r#""usuario""#,
+            r#""summary""#,
+            r#""level""#,
+            r#""username""#,
             "gama-bloqueada",
         ] {
             assert!(
@@ -281,7 +281,7 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
     let mut c = UnixStream::connect(&socket).unwrap();
     c.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
     assert!(matches!(
-        send(&mut c, r#"{"v":1,"op":"abrir_app","dados":{}}"#),
+        send(&mut c, r#"{"v":2,"op":"open_app","data":{}}"#),
         Response::Ok
     ));
     let app_output = dev.join("logs/wardd-app-teste.log");
@@ -289,15 +289,15 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
     let text = read(&app_output);
     for line in [
         "papel=app",
-        "revelar=segredo",
+        "revelar=secret",
         "revelar_pg=igual",
         "revelar_bloqueada=igual",
         "copiar_pg=igual",
         "totp=igual",
-        "campo_inexistente=campo_inexistente",
+        "campo_inexistente=field_not_found",
         "lista=resumo",
         "travar=ok",
-        "revelar_travado=travado",
+        "revelar_travado=locked",
     ] {
         assert!(text.lines().any(|l| l == line), "falta {line:?}:\n{text}");
     }
@@ -307,13 +307,13 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
     let daemon = read(&log);
     no_secret(&daemon, "log do daemon");
     for line in [
-        "wardd: revelar acme-pg-dev senha",
-        "wardd: revelar gama-bloqueada senha",
-        "wardd: copiar acme-pg-dev senha",
+        "wardd: reveal acme-pg-dev password",
+        "wardd: reveal gama-bloqueada password",
+        "wardd: copy acme-pg-dev password",
         "wardd: totp acme-totp-dev",
     ] {
         assert!(daemon.lines().any(|l| l == line), "falta {line:?} no log");
     }
     // No value revealed through the agent or to the extension.
-    assert!(!daemon.contains("revelar gama-generico"));
+    assert!(!daemon.contains("reveal gama-generico"));
 }

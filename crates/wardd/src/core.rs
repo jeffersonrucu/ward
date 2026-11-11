@@ -1194,7 +1194,7 @@ impl Daemon {
             .iter()
             .find(|e| e.name() == name)
             .ok_or(ResponseError::EntryNotFound)?;
-        let seed = Target::Field("totp_semente".to_owned())
+        let seed = Target::Field("totp_seed".to_owned())
             .secret_in(e)
             .ok_or(ResponseError::FieldNotFound)?;
         let now = self.clock.unix_seconds().ok_or(ResponseError::Internal)?;

@@ -35,7 +35,7 @@ impl Clock for FixedClock {
 
 fn with_totp(name: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}","totp_semente":"{}"}},"extras":[{{"nome":"CHAVE","segredo":true,"valor":"{}"}},{{"nome":"REGIAO","segredo":false,"valor":"{}"}}]}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"dev","type":"login","fields":{{"url":"https://clientex.invalid/login","username":"admin","password":"{}","totp_seed":"{}"}},"extras":[{{"name":"CHAVE","secret":true,"value":"{}"}},{{"name":"REGIAO","secret":false,"value":"{}"}}]}}}}"#,
         b64(SECRETS[0].as_bytes()),
         b64(SEED.as_bytes()),
         b64(EXTRA.as_bytes()),
@@ -50,9 +50,9 @@ fn vault(dir: &Dir, unix: Option<u64>) -> Daemon {
     let create = request(
         &d,
         Role::App,
-        "criar_cofre",
+        "create_vault",
         &format!(
-            r#"{{"senha":"{}","pin":"{}"}}"#,
+            r#"{{"password":"{}","pin":"{}"}}"#,
             b64(common::PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
@@ -64,17 +64,17 @@ fn vault(dir: &Dir, unix: Option<u64>) -> Daemon {
         common::server("s1"),
         with_totp("t-totp"),
     ] {
-        let r = request(&d, Role::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "save_entry", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-bloq", "t-totp"] {
-        assert!(ok(&common::set_level(&d, Role::App, n, "bloqueado", PIN)));
+        assert!(ok(&common::set_level(&d, Role::App, n, "blocked", PIN)));
     }
     d
 }
 
 fn field_target(c: &str) -> String {
-    format!(r#""campo":"{c}""#)
+    format!(r#""field":"{c}""#)
 }
 
 fn value(r: &Response) -> Vec<u8> {
@@ -85,14 +85,14 @@ fn value(r: &Response) -> Vec<u8> {
 }
 
 fn value_request(entry: &str, target: &str) -> String {
-    format!(r#"{{"entrada":"{entry}",{target}}}"#)
+    format!(r#"{{"entry":"{entry}",{target}}}"#)
 }
 
 #[test]
 fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
     let dir = Dir::new("valor-app");
     let d = vault(&dir, Some(59));
-    for op in ["revelar", "copiar"] {
+    for op in ["reveal", "copy"] {
         // Approval and blocked: the app gets the value, without a PIN in the request
         // (the protocol does not even accept one) and without a window (no approval
         // engine turned on).
@@ -100,14 +100,14 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
             &d,
             Role::App,
             op,
-            &value_request("t-aprov", &field_target("senha")),
+            &value_request("t-aprov", &field_target("password")),
         );
         assert_eq!(value(&r), SECRETS[0].as_bytes(), "{op}");
         let r = request(
             &d,
             Role::App,
             op,
-            &value_request("t-bloq", &field_target("senha")),
+            &value_request("t-bloq", &field_target("password")),
         );
         assert_eq!(value(&r), SECRETS[3].as_bytes(), "{op}");
         // The TOTP seed and the secret extra are secrets of the entry too.
@@ -115,7 +115,7 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
             &d,
             Role::App,
             op,
-            &value_request("t-totp", &field_target("totp_semente")),
+            &value_request("t-totp", &field_target("totp_seed")),
         );
         assert_eq!(value(&r), SEED.as_bytes());
         let r = request(
@@ -129,15 +129,15 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
             &d,
             Role::App,
             op,
-            &value_request("s1", &field_target("senha")),
+            &value_request("s1", &field_target("password")),
         );
         assert_eq!(value(&r), SECRETS[1].as_bytes());
 
         // Field the type does not have, plain extra, extra that does not exist: "field
         // does not exist"; entry that does not exist: "entry does not exist".
         for (entry, target) in [
-            ("t-aprov", field_target("chave_privada")),
-            ("t-aprov", field_target("totp_semente")),
+            ("t-aprov", field_target("private_key")),
+            ("t-aprov", field_target("totp_seed")),
             ("t-aprov", field_target("token")),
             ("s1", field_target("passphrase")),
             ("t-totp", r#""extra":"REGIAO""#.to_owned()),
@@ -154,7 +154,7 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
             &d,
             Role::App,
             op,
-            &value_request("nao-existe", &field_target("senha")),
+            &value_request("nao-existe", &field_target("password")),
         );
         assert_eq!(error(&r), Some(ResponseError::EntryNotFound));
     }
@@ -163,8 +163,8 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
     let r = request(
         &d,
         Role::App,
-        "revelar",
-        &value_request("t-aprov", &field_target("senha")),
+        "reveal",
+        &value_request("t-aprov", &field_target("password")),
     );
     assert!(protocol::encode_response(Role::App, &r).is_ok());
     assert!(protocol::encode_response(Role::Agent, &r).is_err());
@@ -172,16 +172,16 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
 
     // Locked: "locked", without a value.
     d.lock();
-    for op in ["revelar", "copiar"] {
+    for op in ["reveal", "copy"] {
         let r = request(
             &d,
             Role::App,
             op,
-            &value_request("t-aprov", &field_target("senha")),
+            &value_request("t-aprov", &field_target("password")),
         );
         assert_eq!(error(&r), Some(ResponseError::Locked), "{op}");
     }
-    let r = request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
+    let r = request(&d, Role::App, "totp", r#"{"entry":"t-totp"}"#);
     assert_eq!(error(&r), Some(ResponseError::Locked));
 }
 
@@ -193,7 +193,7 @@ fn v3_39_app_totp_by_the_daemon_clock() {
     let expected = Totp::from_seed(&ward_core::entry::Secret::from_text(SEED.into()))
         .unwrap()
         .code_at(59);
-    match request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#) {
+    match request(&d, Role::App, "totp", r#"{"entry":"t-totp"}"#) {
         Response::TotpCode { code, remaining } => {
             assert_eq!(code.as_str(), expected.code());
             assert_eq!(code.len(), 6);
@@ -202,15 +202,15 @@ fn v3_39_app_totp_by_the_daemon_clock() {
         other => panic!("esperava código: {:?}", other.kind()),
     }
     // No seed: "field does not exist"; no entry: "entry does not exist".
-    let r = request(&d, Role::App, "totp", r#"{"entrada":"t-aprov"}"#);
+    let r = request(&d, Role::App, "totp", r#"{"entry":"t-aprov"}"#);
     assert_eq!(error(&r), Some(ResponseError::FieldNotFound));
-    let r = request(&d, Role::App, "totp", r#"{"entrada":"nao-existe"}"#);
+    let r = request(&d, Role::App, "totp", r#"{"entry":"nao-existe"}"#);
     assert_eq!(error(&r), Some(ResponseError::EntryNotFound));
 
     // Unreadable wall clock: error, never a code (fails closed).
     let dir2 = Dir::new("totp-sem-relogio");
     let d2 = vault(&dir2, None);
-    let r = request(&d2, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
+    let r = request(&d2, Role::App, "totp", r#"{"entry":"t-totp"}"#);
     assert_eq!(error(&r), Some(ResponseError::Internal));
 }
 
@@ -219,17 +219,20 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
     let dir = Dir::new("valor-agente");
     let d = vault(&dir, Some(59));
     let requests = [
-        ("revelar", value_request("t-aprov", &field_target("senha"))),
-        ("revelar", value_request("t-bloq", &field_target("senha"))),
-        ("copiar", value_request("t-aprov", &field_target("senha"))),
-        ("copiar", value_request("t-bloq", &field_target("senha"))),
-        ("totp", r#"{"entrada":"t-totp"}"#.to_owned()),
+        (
+            "reveal",
+            value_request("t-aprov", &field_target("password")),
+        ),
+        ("reveal", value_request("t-bloq", &field_target("password"))),
+        ("copy", value_request("t-aprov", &field_target("password"))),
+        ("copy", value_request("t-bloq", &field_target("password"))),
+        ("totp", r#"{"entry":"t-totp"}"#.to_owned()),
         // With a PIN in the request (the agent that thinks the PIN would open it): the
         // same.
         (
-            "revelar",
+            "reveal",
             format!(
-                r#"{{"entrada":"t-aprov","campo":"senha","pin":"{}"}}"#,
+                r#"{{"entry":"t-aprov","field":"password","pin":"{}"}}"#,
                 b64(PIN.as_bytes())
             ),
         ),
@@ -254,11 +257,11 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
         for p in [
             Request::Reveal {
                 entry: "t-aprov".into(),
-                target: Target::Field("senha".into()),
+                target: Target::Field("password".into()),
             },
             Request::Copy {
                 entry: "t-bloq".into(),
-                target: Target::Field("senha".into()),
+                target: Target::Field("password".into()),
             },
             Request::Totp {
                 entry: "t-totp".into(),
@@ -273,8 +276,8 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
     let r = request(
         &d,
         Role::App,
-        "revelar",
-        &value_request("t-aprov", &field_target("senha")),
+        "reveal",
+        &value_request("t-aprov", &field_target("password")),
     );
     assert_eq!(value(&r), SECRETS[0].as_bytes());
 }
@@ -283,7 +286,7 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
 fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
     let dir = Dir::new("lista-resumo");
     let d = vault(&dir, Some(59));
-    let Response::List(items) = request(&d, Role::App, "lista", "{}") else {
+    let Response::List(items) = request(&d, Role::App, "list", "{}") else {
         panic!("não é lista")
     };
     assert_eq!(items.len(), 4);
@@ -291,11 +294,11 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
     let r = t.summary.as_ref().unwrap();
     assert!(
         r.fields
-            .contains(&("usuario".to_owned(), "admin".to_owned()))
+            .contains(&("username".to_owned(), "admin".to_owned()))
     );
     assert_eq!(
         r.secrets,
-        vec!["senha".to_owned(), "totp_semente".to_owned()]
+        vec!["password".to_owned(), "totp_seed".to_owned()]
     );
     assert_eq!((r.extras, r.attachments), (2, 0));
     let q = common::encoded(Role::App, &Response::List(items));
@@ -307,7 +310,7 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
         assert!(!common::contains(&q, b64(s.as_bytes()).as_bytes()));
     }
     // Agent: the non-blocked ones, without level, summary or user.
-    let r = request(&d, Role::Agent, "lista", "{}");
+    let r = request(&d, Role::Agent, "list", "{}");
     let q = common::encoded(Role::Agent, &r);
     let Response::List(items) = r else {
         panic!("não é lista")
@@ -319,7 +322,12 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
             .iter()
             .all(|i| i.level.is_none() && i.summary.is_none())
     );
-    for needle in [&b"\"resumo\""[..], b"\"nivel\"", b"\"usuario\"", b"deploy"] {
+    for needle in [
+        &b"\"summary\""[..],
+        b"\"level\"",
+        b"\"username\"",
+        b"deploy",
+    ] {
         assert!(!common::contains(&q, needle));
     }
 }

@@ -64,7 +64,7 @@ fn send(s: &mut UnixStream, json: &str) {
 }
 
 fn request(s: &mut UnixStream, op: &str, data: &str) -> Response {
-    send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
+    send(s, &format!(r#"{{"v":2,"op":"{op}","data":{data}}}"#));
     let mut n = [0u8; 4];
     s.read_exact(&mut n).unwrap();
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
@@ -154,7 +154,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
 
     // Any client (this test): agent.
     assert!(matches!(
-        request(&mut c, "estado", "{}"),
+        request(&mut c, "status", "{}"),
         Response::Status {
             role: Role::Agent,
             ..
@@ -164,18 +164,18 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     // nothing opens.
     let app_output = dev.join("logs/wardd-app-teste.log");
     for data in [
-        r#"{"caminho":"/usr/bin/sh"}"#,
+        r#"{"path":"/usr/bin/sh"}"#,
         r#"{"argumentos":["-c","id"]}"#,
-        r#"{"ambiente":{"LD_PRELOAD":"/tmp/x.so"}}"#,
+        r#"{"environment":{"LD_PRELOAD":"/tmp/x.so"}}"#,
     ] {
-        let r = request(&mut c, "abrir_app", data);
+        let r = request(&mut c, "open_app", data);
         assert!(matches!(r, Response::Error(_)), "{data}: {r:?}");
     }
     std::thread::sleep(Duration::from_millis(300));
     assert!(!app_output.exists(), "abrir_app com campo abriu o app");
 
     // Without a field: opens `WARD_DEV_APP`, which gets the app role.
-    assert!(matches!(request(&mut c, "abrir_app", "{}"), Response::Ok));
+    assert!(matches!(request(&mut c, "open_app", "{}"), Response::Ok));
     wait_for(|| read(&app_output).contains("revelar="), "a saída do app");
     let text = read(&app_output);
     assert!(text.contains("papel=app\n"), "{text}");
@@ -201,7 +201,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     for b in [&app, &copy] {
         let output = by_hand(b, &sock.0);
         assert!(
-            output.contains("papel=agente\n"),
+            output.contains("papel=agent\n"),
             "{}: {output}",
             b.display()
         );
@@ -213,8 +213,8 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     }
     let r = request(
         &mut c,
-        "revelar",
-        r#"{"entrada":"acme-pg-dev","alvo":{"campo":"senha"}}"#,
+        "reveal",
+        r#"{"entry":"acme-pg-dev","alvo":{"field":"password"}}"#,
     );
     assert!(
         matches!(r, Response::Error(ResponseError::Unauthorized)),
@@ -222,7 +222,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     );
 
     // The app exited: opened again, it is app again (the new pid is the launcher's).
-    assert!(matches!(request(&mut c, "abrir_app", "{}"), Response::Ok));
+    assert!(matches!(request(&mut c, "open_app", "{}"), Response::Ok));
     wait_for(
         || read(&app_output).matches("papel=app\n").count() == 2,
         "a segunda abertura",

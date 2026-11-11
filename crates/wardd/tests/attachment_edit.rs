@@ -15,10 +15,10 @@ const ATTACHMENT_B: &[u8] = b"FALSO_B=falso-anexo-39b-b\n";
 fn generic(name: &str, attachments: &[(&str, &[u8])]) -> String {
     let attachments: Vec<String> = attachments
         .iter()
-        .map(|(n, c)| format!(r#"{{"nome":"{n}","conteudo":"{}"}}"#, b64(c)))
+        .map(|(n, c)| format!(r#"{{"name":"{n}","content":"{}"}}"#, b64(c)))
         .collect();
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"stage","tipo":"generico","extras":[{{"nome":"REGIAO","valor":"{}","segredo":false}}],"anexos":[{}]}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"stage","type":"generic","extras":[{{"name":"REGIAO","value":"{}","secret":false}}],"attachments":[{}]}}}}"#,
         b64(b"r-01"),
         attachments.join(",")
     )
@@ -30,7 +30,7 @@ fn edit(previous: &str, keep: &[&str], new: &[(&str, &[u8])]) -> String {
     generic(previous, new).replacen(
         '{',
         &format!(
-            r#"{{"anterior":"{previous}","manter_anexos":[{}],"#,
+            r#"{{"previous":"{previous}","keep_attachments":[{}],"#,
             keep.join(",")
         ),
         1,
@@ -66,7 +66,7 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
     let r = request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &generic("g1", &[("a.env", ATTACHMENT_A)]),
     );
     assert!(ok(&r), "{r:?}");
@@ -75,7 +75,7 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
     let r = request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &edit("g1", &["a.env"], &[("b.env", ATTACHMENT_B)]),
     );
     assert!(ok(&r), "{r:?}");
@@ -86,7 +86,7 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
             ("b.env".to_owned(), ATTACHMENT_B.to_vec())
         ]
     );
-    let det = request(&d, Role::App, "detalhe", r#"{"entrada":"g1"}"#);
+    let det = request(&d, Role::App, "detail", r#"{"entry":"g1"}"#);
     let Response::Detail(x) = &det else {
         panic!("{det:?}")
     };
@@ -98,8 +98,8 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
 
     // Rename keeping both: the content goes along.
     let rename =
-        edit("g1", &["b.env", "a.env"], &[]).replacen(r#""nome":"g1""#, r#""nome":"g2""#, 1);
-    let r = request(&d, Role::App, "salvar_entrada", &rename);
+        edit("g1", &["b.env", "a.env"], &[]).replacen(r#""name":"g1""#, r#""name":"g2""#, 1);
+    let r = request(&d, Role::App, "save_entry", &rename);
     assert!(ok(&r), "{r:?}");
     assert_eq!(
         attachments_on_disk(&dir, "g2"),
@@ -110,19 +110,14 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
     );
 
     // Remove: what is not in the keep list goes away.
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &edit("g2", &["a.env"], &[]),
-    );
+    let r = request(&d, Role::App, "save_entry", &edit("g2", &["a.env"], &[]));
     assert!(ok(&r), "{r:?}");
     assert_eq!(
         attachments_on_disk(&dir, "g2"),
         [("a.env".to_owned(), ATTACHMENT_A.to_vec())]
     );
     // Without the keep list (the request from before Phase 39b): all go away.
-    let r = request(&d, Role::App, "salvar_entrada", &edit("g2", &[], &[]));
+    let r = request(&d, Role::App, "save_entry", &edit("g2", &[], &[]));
     assert!(ok(&r), "{r:?}");
     assert!(attachments_on_disk(&dir, "g2").is_empty());
 }
@@ -138,30 +133,25 @@ fn v5_12_attack_forged_keep_attachments() {
         generic("g1", &[("a.env", ATTACHMENT_A)]),
         generic("g2", &[("b.env", ATTACHMENT_B)]),
     ] {
-        assert!(ok(&request(&d, Role::App, "salvar_entrada", &q)));
+        assert!(ok(&request(&d, Role::App, "save_entry", &q)));
     }
     let large = vec![b'x'; 200 * 1024];
     assert!(ok(&request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &generic("g3", &[("grande.bin", &large)])
     )));
     let before = on_disk(&dir).len();
 
     // The attachment of `g2` cannot be reached by editing `g1`.
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &edit("g1", &["b.env"], &[]),
-    );
+    let r = request(&d, Role::App, "save_entry", &edit("g1", &["b.env"], &[]));
     assert_eq!(error(&r), Some(ResponseError::InvalidRequest), "{r:?}");
     // Not even with a path.
     let r = request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &edit("g1", &["../g2/b.env"], &[]),
     );
     assert_eq!(error(&r), Some(ResponseError::InvalidRequest), "{r:?}");
@@ -169,17 +159,17 @@ fn v5_12_attack_forged_keep_attachments() {
     let r = request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &edit("nao-existe", &["a.env"], &[]),
     );
     assert_eq!(error(&r), Some(ResponseError::EntryNotFound), "{r:?}");
     // New entry "copying" the attachment of `g1`: reading the request refuses it.
-    let new = generic("g9", &[]).replacen('{', r#"{"manter_anexos":["a.env"],"#, 1);
-    let r = request(&d, Role::App, "salvar_entrada", &new);
+    let new = generic("g9", &[]).replacen('{', r#"{"keep_attachments":["a.env"],"#, 1);
+    let r = request(&d, Role::App, "save_entry", &new);
     assert_eq!(error(&r), Some(ResponseError::InvalidRequest), "{r:?}");
     // Agent and extension do not have the operation.
     for role in [Role::Agent, Role::Extension] {
-        let r = request(&d, role, "salvar_entrada", &edit("g1", &["a.env"], &[]));
+        let r = request(&d, role, "save_entry", &edit("g1", &["a.env"], &[]));
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
     }
     // 200 KiB kept + 60 KiB new go over the sum: validation error.
@@ -187,7 +177,7 @@ fn v5_12_attack_forged_keep_attachments() {
     let r = request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &edit("g3", &["grande.bin"], &[("mais.bin", &new60)]),
     );
     assert!(
@@ -198,7 +188,7 @@ fn v5_12_attack_forged_keep_attachments() {
     let r = request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &edit("g1", &["a.env"], &[("a.env", ATTACHMENT_B)]),
     );
     assert!(

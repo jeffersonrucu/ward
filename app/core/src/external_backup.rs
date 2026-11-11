@@ -217,23 +217,23 @@ mod tests {
             }
         }
         let item = |body: &str| {
-            format!(r#"{{"v":1,"tipo":"pendrives","dados":{{"itens":[{body}]}}}}"#).into_bytes()
+            format!(r#"{{"v":2,"type":"usb_drives","data":{{"items":[{body}]}}}}"#).into_bytes()
         };
-        let ok = item(r#"{"uuid":"7C1E-42A9","rotulo":"WARD","montado":true}"#);
+        let ok = item(r#"{"uuid":"7C1E-42A9","label":"WARD","mounted":true}"#);
         assert_eq!(client::usb_drives(&mut Response1(ok)).unwrap().len(), 1);
         let many = (0..=ward_core::protocol::MAX_USB_DRIVES)
-            .map(|i| format!(r#"{{"uuid":"{i:04X}","rotulo":"x","montado":true}}"#))
+            .map(|i| format!(r#"{{"uuid":"{i:04X}","label":"x","mounted":true}}"#))
             .collect::<Vec<_>>()
             .join(",");
         for bad in [
-            item(r#"{"uuid":"7C1E-42A9","rotulo":"WARD\u001b[2J","montado":true}"#),
-            item(r#"{"uuid":"7C1E-42A9","rotulo":"A\nB","montado":true}"#),
+            item(r#"{"uuid":"7C1E-42A9","label":"WARD\u001b[2J","mounted":true}"#),
+            item(r#"{"uuid":"7C1E-42A9","label":"A\nB","mounted":true}"#),
             item(
-                r#"{"uuid":"7C1E-42A9","rotulo":"WARD","montado":true,"montagem":"/media/u/WARD"}"#,
+                r#"{"uuid":"7C1E-42A9","label":"WARD","mounted":true,"montagem":"/media/u/WARD"}"#,
             ),
-            item(r#"{"uuid":"../etc","rotulo":"WARD","montado":true}"#),
+            item(r#"{"uuid":"../etc","label":"WARD","mounted":true}"#),
             item(&format!(
-                r#"{{"uuid":"7C1E-42A9","rotulo":"{}","montado":true}}"#,
+                r#"{{"uuid":"7C1E-42A9","label":"{}","mounted":true}}"#,
                 "a".repeat(ward_core::protocol::MAX_LABEL + 1)
             )),
             item(&many),
@@ -296,7 +296,7 @@ mod tests {
             e.1.lock()
                 .unwrap()
                 .iter()
-                .filter(|q| String::from_utf8_lossy(q).contains("\"definir_backup_externo\""))
+                .filter(|q| String::from_utf8_lossy(q).contains("\"set_external_backup\""))
                 .count()
         }
 
@@ -437,7 +437,7 @@ mod tests {
             let (s, e) = service(FakeDaemon::full());
             // Five wrong PINs lock the fake (S9).
             for _ in 0..5 {
-                let _ = s.set_level("acme-pg-dev", "livre", Pin::new("0000".into()).unwrap());
+                let _ = s.set_level("acme-pg-dev", "free", Pin::new("0000".into()).unwrap());
             }
             assert_eq!(s.external_backup(), Err(AppError::Locked));
             assert_eq!(s.list_usb_drives(), Err(AppError::Locked));

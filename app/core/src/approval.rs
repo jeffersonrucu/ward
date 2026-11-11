@@ -408,7 +408,7 @@ mod tests {
             request: p,
             remaining: 90,
             blocked: false,
-            kinds: Some(vec![Some("banco")]),
+            kinds: Some(vec![Some("database")]),
         };
         let e = display(&a);
         for c in e
@@ -431,7 +431,7 @@ mod tests {
         // Order and content: taking the escapes out, the original visible command is left.
         assert!(e.command.starts_with("\"sh\" \"-c\" \"echo <img"));
         assert_eq!(e.chain, ["claude\\u{202E}", "ba\\u{2192}sh", "ward run"]);
-        assert_eq!(e.entries[0].kind, Some("banco"));
+        assert_eq!(e.entries[0].kind, Some("database"));
         assert_eq!(e.status, "pendente");
         // The entry name also goes through D51 (the daemon already refuses it, but the
         // window does not trust it).
@@ -511,7 +511,7 @@ mod tests {
             request: request(1, "\"ls\"", &["claude"]),
             remaining: 90,
             blocked: false,
-            kinds: Some(vec![Some("banco")]),
+            kinds: Some(vec![Some("database")]),
         });
         let v = serde_json::to_value(&e).unwrap();
         let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
@@ -534,7 +534,7 @@ mod tests {
             ]
         );
         assert_eq!(v["entradas"][0]["nome"], "acme-pg-aprovacao");
-        assert_eq!(v["entradas"][0]["tipo"], "banco");
+        assert_eq!(v["entradas"][0]["tipo"], "database");
         let r = serde_json::to_string(&ApprovalResult {
             result: "respondido",
             has_other: false,
@@ -607,8 +607,8 @@ mod service_tests {
     fn deny_without_pin_and_allow_once_with_pin() {
         let (s, f) = setup(&[request(1, "\"ls\"", &["claude"]), request(2, "\"ls\"", &[])]);
         let e = s.approval_request().unwrap().unwrap();
-        assert_eq!((e.id, e.environment, e.operation), (1, "stage", "executar"));
-        assert_eq!(e.entries[0].kind, Some("banco"));
+        assert_eq!((e.id, e.environment, e.operation), (1, "stage", "run"));
+        assert_eq!(e.entries[0].kind, Some("database"));
         let r = s.answer_approval(1, "negar", None, false).unwrap();
         assert_eq!((r.result, r.has_other), ("respondido", true));
         assert_eq!(pending_in_daemon(&f), [2]);

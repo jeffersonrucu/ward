@@ -166,25 +166,25 @@ pub fn form_kind(name: &str) -> Option<EntryType> {
 /// Text fields and secrets of each type, with the protocol ids.
 pub fn fields_of_kind(kind: EntryType) -> (&'static [&'static str], &'static [&'static str]) {
     match kind {
-        EntryType::Login => (&["url", "usuario"], &["senha", "totp_semente"]),
-        EntryType::Api => (&["url", "variavel"], &["token"]),
+        EntryType::Login => (&["url", "username"], &["password", "totp_seed"]),
+        EntryType::Api => (&["url", "variable"], &["token"]),
         EntryType::Aws => (
-            &["access_key_id", "regiao", "role_arn"],
+            &["access_key_id", "region", "role_arn"],
             &["secret_access_key", "session_token"],
         ),
-        EntryType::Smtp => (&["host", "porta", "usuario", "seguranca"], &["senha"]),
-        EntryType::SecureNote => (&[], &["texto"]),
+        EntryType::Smtp => (&["host", "port", "username", "security"], &["password"]),
+        EntryType::SecureNote => (&[], &["text"]),
         EntryType::Database => (
-            &["motor", "host", "porta", "base", "usuario", "tunel"],
-            &["senha"],
+            &["engine", "host", "port", "db_name", "username", "tunnel"],
+            &["password"],
         ),
         EntryType::Server => (
-            &["host", "porta", "usuario", "salto"],
-            &["senha", "chave_privada", "passphrase"],
+            &["host", "port", "username", "jump"],
+            &["password", "private_key", "passphrase"],
         ),
         EntryType::FtpSftp => (
-            &["protocolo", "host", "porta", "usuario"],
-            &["senha", "chave_privada", "passphrase"],
+            &["protocol", "host", "port", "username"],
+            &["password", "private_key", "passphrase"],
         ),
         EntryType::Generic => (&[], &[]),
     }
@@ -200,27 +200,27 @@ fn problem_field(name: &str) -> &'static str {
         "projeto" => "projeto",
         "tags" => "tags",
         "url" => "url",
-        "usuário" => "usuario",
-        "senha" => "senha",
-        "semente TOTP" => "totp_semente",
+        "usuário" => "username",
+        "senha" => "password",
+        "semente TOTP" => "totp_seed",
         "token" => "token",
-        "variável" => "variavel",
+        "variável" => "variable",
         "access key ID" => "access_key_id",
         "secret access key" => "secret_access_key",
-        "região" => "regiao",
+        "região" => "region",
         "role ARN" => "role_arn",
         "session token" => "session_token",
         "host" => "host",
-        "porta" => "porta",
-        "segurança" => "seguranca",
-        "texto" => "texto",
+        "porta" => "port",
+        "segurança" => "security",
+        "texto" => "text",
         "campos extras" => "extras",
-        "motor" => "motor",
-        "base" => "base",
-        "túnel SSH" => "tunel",
-        "servidor de salto" => "salto",
-        "protocolo" => "protocolo",
-        "chave privada" => "chave_privada",
+        "motor" => "engine",
+        "base" => "db_name",
+        "túnel SSH" => "tunnel",
+        "servidor de salto" => "jump",
+        "protocolo" => "protocol",
+        "chave privada" => "private_key",
         "passphrase" => "passphrase",
         "autenticação" => "autenticacao",
         "anexos" => "anexos",
@@ -432,32 +432,32 @@ pub fn build(
     let mut take = |id: &str| f.fields.remove(id).unwrap_or_default();
     let (url, username, variable, access, region, arn, host, port, security) = (
         take("url"),
-        take("usuario"),
-        take("variavel"),
+        take("username"),
+        take("variable"),
         take("access_key_id"),
-        take("regiao"),
+        take("region"),
         take("role_arn"),
         take("host"),
-        take("porta"),
-        take("seguranca"),
+        take("port"),
+        take("security"),
     );
     let (engine, db_name, tunnel, jump, protocol) = (
-        take("motor"),
-        take("base"),
-        take("tunel"),
-        take("salto"),
-        take("protocolo"),
+        take("engine"),
+        take("db_name"),
+        take("tunnel"),
+        take("jump"),
+        take("protocol"),
     );
     let mut secret = |id: &'static str| -> Result<BuiltSecret, Missing> {
         let value = f.secrets.remove(id).unwrap_or(SecretValue::Empty);
         Ok(match value {
             SecretValue::Empty => None,
             SecretValue::New(t) if t.0.is_empty() => None,
-            SecretValue::New(t) if id == "totp_semente" => match normalize_seed(&t.0) {
+            SecretValue::New(t) if id == "totp_seed" => match normalize_seed(&t.0) {
                 Ok(s) => Some(CoreSecret::from_bytes(s.as_bytes().to_vec())),
                 Err(reason) => {
                     errors.push(FieldError {
-                        field: "totp_semente",
+                        field: "totp_seed",
                         position: None,
                         reason: reason.to_owned(),
                     });
@@ -479,8 +479,8 @@ pub fn build(
         EntryType::Login => DataDraft::Login {
             url,
             username,
-            password: secret("senha")?,
-            totp_seed: secret("totp_semente")?,
+            password: secret("password")?,
+            totp_seed: secret("totp_seed")?,
         },
         EntryType::Api => DataDraft::Api {
             url,
@@ -498,11 +498,11 @@ pub fn build(
             host,
             port,
             username,
-            password: secret("senha")?,
+            password: secret("password")?,
             security,
         },
         EntryType::SecureNote => DataDraft::SecureNote {
-            text: secret("texto")?,
+            text: secret("text")?,
         },
         EntryType::Database => DataDraft::Database {
             engine,
@@ -510,15 +510,15 @@ pub fn build(
             port,
             db_name,
             username,
-            password: secret("senha")?,
+            password: secret("password")?,
             tunnel,
         },
         EntryType::Server => DataDraft::Server {
             host,
             port,
             username,
-            password: secret("senha")?,
-            private_key: secret("chave_privada")?,
+            password: secret("password")?,
+            private_key: secret("private_key")?,
             passphrase: secret("passphrase")?,
             jump,
         },
@@ -527,8 +527,8 @@ pub fn build(
             host,
             port,
             username,
-            password: secret("senha")?,
-            private_key: secret("chave_privada")?,
+            password: secret("password")?,
+            private_key: secret("private_key")?,
             passphrase: secret("passphrase")?,
         },
         EntryType::Generic => DataDraft::Generic,
@@ -781,7 +781,7 @@ mod tests {
             p("nome", &"x".repeat(500)),
             p("url", "linha\nnova"),
         ]);
-        assert_eq!(e[0].field, "senha");
+        assert_eq!(e[0].field, "password");
         assert_eq!(e[0].reason, "obrigatório");
         assert_eq!(e[1].field, "formulario");
         assert_eq!(e[2].reason, "inválido");
@@ -808,7 +808,7 @@ mod tests {
         assert_eq!(e[0].field, "anexos");
         assert_eq!(e[0].reason, TOO_LARGE_FOR_MASK);
         assert_eq!(e[1].field, "formulario");
-        assert_eq!(e[2].field, "tunel");
+        assert_eq!(e[2].field, "tunnel");
         assert_eq!(e[3].field, "autenticacao");
     }
 
@@ -816,7 +816,7 @@ mod tests {
     fn attack_debug_of_the_secret_text_does_not_show_the_value() {
         let f: Form = serde_json::from_str(
             r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],
-                "campos":{},"segredos":{"senha":{"novo":"falso-segredo-123"}},"extras":[
+                "campos":{},"segredos":{"password":{"novo":"falso-segredo-123"}},"extras":[
                 {"nome":"A","segredo":true,"valor":{"novo":"falso-extra-456"}}]}"#,
         )
         .unwrap();
@@ -829,9 +829,9 @@ mod tests {
     fn attack_form_with_unknown_key_is_refused() {
         for json in [
             r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[],"nivel":"livre"}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"senha":{"revelar":"x"}},"extras":[]}"#,
+            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":{"revelar":"x"}},"extras":[]}"#,
             r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[{"nome":"A","segredo":true,"valor":{"novo":"v"},"x":1}]}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"senha":{"novo":5}},"extras":[]}"#,
+            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":{"novo":5}},"extras":[]}"#,
         ] {
             assert!(serde_json::from_str::<Form>(json).is_err(), "{json}");
         }
@@ -841,13 +841,13 @@ mod tests {
     /// keys and values are read and written, the new Rust names are not.
     #[test]
     fn attack_new_rust_names_are_not_wire_names() {
-        let ok = r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"senha":"vazio","totp_semente":"gerada"},"extras":[{"nome":"A","segredo":true,"valor":{"manter":"A"}}],"anexos":[1],"anexos_mantidos":["a"]}"#;
+        let ok = r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":"vazio","totp_seed":"gerada"},"extras":[{"nome":"A","segredo":true,"valor":{"manter":"A"}}],"anexos":[1],"anexos_mantidos":["a"]}"#;
         let f: Form = serde_json::from_str(ok).unwrap();
         assert_eq!((f.kind.as_str(), f.attachments.len()), ("login", 1));
         for json in [
             r#"{"kind":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[]}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"senha":"empty"},"extras":[]}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"senha":{"new":"v"}},"extras":[]}"#,
+            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":"empty"},"extras":[]}"#,
+            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":{"new":"v"}},"extras":[]}"#,
         ] {
             assert!(serde_json::from_str::<Form>(json).is_err(), "{json}");
         }

@@ -88,7 +88,7 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 /// D65 b and c against the test vault: what the app gets, compared without printing.
 fn app_values(s: &mut UnixStream) {
     let entries = test_vault::test_vault_entries();
-    let password = || Target::Field("senha".into());
+    let password = || Target::Field("password".into());
     for (label, reveal, name) in [
         ("revelar_pg", true, "acme-pg-dev"),
         ("revelar_bloqueada", true, "gama-bloqueada"),
@@ -114,7 +114,7 @@ fn app_values(s: &mut UnixStream) {
     let seed = expected(
         &entries,
         "acme-totp-dev",
-        &Target::Field("totp_semente".into()),
+        &Target::Field("totp_seed".into()),
     )
     .map(|v| wc::entry::Secret::from_bytes(v.to_vec()));
     let local = || {
@@ -152,7 +152,7 @@ fn app_values(s: &mut UnixStream) {
         s,
         &Request::Reveal {
             entry: "acme-pg-dev".into(),
-            target: Target::Field("chave_privada".into()),
+            target: Target::Field("private_key".into()),
         },
     );
     println!(
@@ -241,7 +241,7 @@ fn main() -> ExitCode {
         &mut s,
         &Request::Reveal {
             entry: "acme-pg-dev".into(),
-            target: Target::Field("senha".into()),
+            target: Target::Field("password".into()),
         },
     );
     println!("revelar={}", r.as_deref().map(describe).unwrap_or_default());

@@ -130,7 +130,7 @@ fn version_names(dir: &Path) -> Vec<String> {
 }
 
 fn list_names(d: &Daemon) -> Vec<String> {
-    match request(d, Role::App, "lista", "{}") {
+    match request(d, Role::App, "list", "{}") {
         Response::List(l) => l.into_iter().map(|i| i.name).collect(),
         other => panic!("{other:?}"),
     }
@@ -147,8 +147,8 @@ fn lock_timeout(d: &Daemon, minutes: u32) -> Response {
     request(
         d,
         Role::App,
-        "tempo_trava",
-        &format!(r#"{{"minutos":{minutes}}}"#),
+        "lock_timeout",
+        &format!(r#"{{"minutes":{minutes}}}"#),
     )
 }
 
@@ -156,9 +156,9 @@ fn restore(d: &Daemon, version: &str) -> Response {
     request(
         d,
         Role::App,
-        "restaurar_backup",
+        "restore_backup",
         &format!(
-            r#"{{"versao":"{version}","senha":"{}","pin":"{}"}}"#,
+            r#"{{"version":"{version}","password":"{}","pin":"{}"}}"#,
             b64(PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
@@ -310,13 +310,13 @@ fn v4_1_wrong_password_on_the_v4_writes_no_vault() {
     let id = identity(&c.vault);
     let listed = names_in(&dir.0);
     let (d, _) = daemon_at(c.clone());
-    let wrong = format!(r#"{{"senha":"{}"}}"#, b64(b"falso-errada-ward-02"));
-    let r = request(&d, Role::App, "destravar", &wrong);
+    let wrong = format!(r#"{{"password":"{}"}}"#, b64(b"falso-errada-ward-02"));
+    let r = request(&d, Role::App, "unlock", &wrong);
     assert_eq!(error(&r), Some(ResponseError::WrongPassword));
     assert_eq!(identity(&c.vault), id);
     assert!(fs::read(&c.state).unwrap() == STATE_014);
     assert_eq!(names_in(&dir.0), listed);
-    let r = request(&d, Role::Agent, "destravar", &wrong);
+    let r = request(&d, Role::Agent, "unlock", &wrong);
     assert_eq!(error(&r), Some(ResponseError::WrongPassword));
     assert_eq!(identity(&c.vault), id);
     assert_eq!(
@@ -362,7 +362,7 @@ fn v4_3_write_failure_keeps_the_v4_and_answers_the_error() {
     assert_eq!(state_text(&c), v2_text(3, 4));
     // The list answers locked: nothing of the v4 stayed open.
     assert_eq!(
-        error(&request(&d, Role::App, "lista", "{}")),
+        error(&request(&d, Role::App, "list", "{}")),
         Some(ResponseError::Locked)
     );
 
@@ -610,8 +610,8 @@ fn v4_10_usb_drive_rotation_counts_v4_and_v5() {
     let r = request(
         &d,
         Role::App,
-        "definir_backup_externo",
-        &format!(r#"{{"ligado":true,"uuid":"{UUID}"}}"#),
+        "set_external_backup",
+        &format!(r#"{{"enabled":true,"uuid":"{UUID}"}}"#),
     );
     assert!(ok(&r), "{r:?}");
     let copied = d.sync_external(&source).unwrap().unwrap();
