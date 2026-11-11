@@ -1,0 +1,109 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+dev/tests/socket-attacks.sh target/debug/wardd "10000"
+wardd de teste só deste script: pid 1865927, socket /run/user/1000/ward-socket-attacks-1865915-8VIpW2/wardd.sock
+==> V3.4: quadros ruins e 10000 conexões caladas
+ok    antes: cliente normal atendido em 0.00 s
+ok    tamanho de 2 MiB: erro:invalid_frame
+ok    tamanho 0xFFFFFFFF (negativo em i32): erro:invalid_frame
+ok    tamanho negativo com corpo: erro:invalid_frame
+ok    tamanho 0: erro:invalid_frame
+ok    JSON inválido: erro:invalid_request
+ok    JSON sem versão nem op: erro:invalid_request
+ok    UTF-8 inválido: erro:invalid_request
+ok    versão errada: erro:unknown_version
+ok    quadro v1 (0.1.x): erro:unknown_version
+ok    operação desconhecida: erro:unknown_operation
+ok    quadro cortado: fechado
+ok    daemon vivo depois dos quadros ruins
+ok    depois dos quadros ruins: cliente normal atendido em 0.00 s
+info  10000 conexões caladas abertas em 0.2 s (0 connect falhou)
+ok    com 10000 conexões caladas: cliente normal atendido em 0.10 s
+ok    das 10000 caladas, 63 seguem abertas (até 129)
+ok    daemon vivo depois da enxurrada
+ok    depois da enxurrada: cliente normal atendido em 0.00 s
+socket_ataque: V3.4 ok
+==> V3.3: matriz operação × entrada × campo (agente)
+info  lista do agente: 21 entradas; matriz com 23
+info  4751 pedidos
+info  answer_approval          unauthorized × 138
+info  await_login              unauthorized × 138
+info  backups                  unauthorized × 138
+info  change_password          unauthorized × 138
+info  change_pin               unauthorized × 138
+info  config                   unauthorized × 138
+info  copy                     unauthorized × 138
+info  create_vault             unauthorized × 138
+info  detail                   unauthorized × 138
+info  external_backup          unauthorized × 138
+info  fill                     unauthorized × 138
+info  fill_login               unauthorized × 138
+info  issue_token              unauthorized × 138
+info  list                     invalid_request × 92
+info  list                     list × 46
+info  lock_timeout             unauthorized × 138
+info  login                    invalid_request × 138
+info  login_result             unauthorized × 138
+info  open_app                 invalid_request × 92
+info  open_app                 ok × 46
+info  playwright               invalid_request × 138
+info  remove_entry             unauthorized × 138
+info  resize                   invalid_request × 138
+info  restore_backup           unauthorized × 138
+info  reveal                   unauthorized × 138
+info  run                      invalid_request × 138
+info  run(env)                 approval_unavailable × 5
+info  run(env)                 entry_not_found × 2
+info  run(env)                 exit × 15
+info  run(env)                 type_without_delivery × 1
+info  save_entry               unauthorized × 138
+info  save_login               unauthorized × 138
+info  set_external_backup      unauthorized × 138
+info  set_level                unauthorized × 138
+info  ssh                      invalid_request × 138
+info  status                   invalid_request × 92
+info  status                   status × 46
+info  stdin                    invalid_request × 138
+info  suggest                  unauthorized × 138
+info  totp                     unauthorized × 138
+info  usb_drives               unauthorized × 138
+info  v1 abrir_app             unknown_version × 1
+info  v1 aguardar_login        unknown_version × 1
+info  v1 backup_externo        unknown_version × 1
+info  v1 backups               unknown_version × 1
+info  v1 configuracao          unknown_version × 1
+info  v1 copiar                unknown_version × 1
+info  v1 criar_cofre           unknown_version × 1
+info  v1 definir_backup_externo unknown_version × 1
+info  v1 destravar             unknown_version × 1
+info  v1 detalhe               unknown_version × 1
+info  v1 emitir_token          unknown_version × 1
+info  v1 entrada_padrao        unknown_version × 1
+info  v1 estado                unknown_version × 1
+info  v1 executar              unknown_version × 1
+info  v1 janela                unknown_version × 1
+info  v1 lista                 unknown_version × 1
+info  v1 login                 unknown_version × 1
+info  v1 mudar_nivel           unknown_version × 1
+info  v1 pendrives             unknown_version × 1
+info  v1 playwright            unknown_version × 1
+info  v1 preencher             unknown_version × 1
+info  v1 preencher_login       unknown_version × 1
+info  v1 remover_entrada       unknown_version × 1
+info  v1 responder_aprovacao   unknown_version × 1
+info  v1 restaurar_backup      unknown_version × 1
+info  v1 resultado_login       unknown_version × 1
+info  v1 revelar               unknown_version × 1
+info  v1 salvar_entrada        unknown_version × 1
+info  v1 salvar_login          unknown_version × 1
+info  v1 ssh                   unknown_version × 1
+info  v1 sugerir               unknown_version × 1
+info  v1 tempo_trava           unknown_version × 1
+info  v1 totp                  unknown_version × 1
+info  v1 travar                unknown_version × 1
+info  v1 trocar_pin            unknown_version × 1
+info  v1 trocar_senha          unknown_version × 1
+socket_matriz: V3.3 ok (4751 pedidos, nenhum segredo, app/extensão não autorizado)
+==> log do daemon (RUST_LOG=trace) sem segredo
+ok    log do daemon (4833 linhas) sem padrão de .dev/variations.txt
+test-socket-attacks: V3.3 e V3.4 ok

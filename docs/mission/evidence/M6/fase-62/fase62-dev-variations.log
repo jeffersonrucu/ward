@@ -1,0 +1,4 @@
+/usr/bin/python3 -I -B dev/services/generate.py
+dev-services: pronto em .dev/services/
+/usr/bin/python3 -I -B dev/variations.py --output "$WARD_DEV_OUTPUT"
+dev-variations: gravado .dev/variations.txt (0600) com 288 padrões; uso: grep -F -f .dev/variations.txt

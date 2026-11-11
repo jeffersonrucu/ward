@@ -1,0 +1,22 @@
+info  unlock: ok
+ok    V4.14 run com 'entrada': invalid_request, executou=False, segredo=False
+ok    V4.14 run com 'entrada_padrao': invalid_request, executou=False, segredo=False
+ok    V4.14 run com 'tipo_entrada': invalid_request, executou=False, segredo=False
+ok    V4.14 run com 'confirmacao_pipe': invalid_request, executou=False, segredo=False
+ok    V4.14 run com 'nivel': invalid_request, executou=False, segredo=False
+ok    V4.14 run com campo extra desconhecido: invalid_request, executou=False, segredo=False
+ok    V4.14 envelope com campo extra: invalid_request, executou=False, segredo=False
+ok    V4.14 envelope 'dados' no lugar de 'data': invalid_request, executou=False, segredo=False
+ok    V4.14 run sem stdin_kind (não vira terminal): invalid_request, executou=False, segredo=False
+ok    V4.14 run com stdin_kind 'nula' (v1): invalid_request, executou=False, segredo=False
+ok    V4.14 run com stdin_kind 'arquivo' (v1): invalid_request, executou=False, segredo=False
+ok    V4.14 operação antiga 'executar': unknown_operation, executou=False, segredo=False
+ok    V4.14 operação antiga 'revelar': unknown_operation, executou=False, segredo=False
+ok    V4.14 operação antiga 'destravar': unknown_operation, executou=False, segredo=False
+ok    V4.14 operação antiga 'lista': unknown_operation, executou=False, segredo=False
+ok    V4.14 operação antiga 'travar': unknown_operation, executou=False, segredo=False
+ok    V4.14 operação antiga 'estado': unknown_operation, executou=False, segredo=False
+ok    V4.14 operação antiga 'copiar': unknown_operation, executou=False, segredo=False
+ok    V4.14 operação antiga 'definir_nivel': unknown_operation, executou=False, segredo=False
+ok    controle: run v2 correto executa (exit)
+0 falha(s)

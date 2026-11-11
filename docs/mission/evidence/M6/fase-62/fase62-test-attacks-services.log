@@ -1,0 +1,80 @@
+dev/tests/attacks-services.sh
+ok    ssh_password (2222, deploy) não abre nada do home real
+ok    ssh_password com senha errada (2224) não abre nada do home real
+ok    ssh_key (2223, -i) não abre nada do home real
+ok    ssh_internal (ProxyCommand pelo salto) não abre nada do home real
+ok    ssh -v sem credencial (2223) não abre nada do home real
+ok    ssh -W (túnel até o postgres) não abre nada do home real
+ok    sftp do sftpuser não abre nada do home real
+ok    ssh-keygen -y da chave do deploy não abre nada do home real
+ok    ssh-keygen -t ed25519 -f (como no generate.py) não abre nada do home real
+ok    curl no wp-login não abre nada do home real
+ok    git check-ignore (sem config do usuário) não abre nada do home real
+ok    docker compose ps (DOCKER_CONFIG vazio) não abre nada do home real
+ok    docker run do psql_app não abre nada do home real
+ok    dev/tests/pg_select.py (cliente Postgres da Fase 28) não abre nada do home real
+ok    mutação acusada: sem IdentityFile=none (abre as chaves padrão)
+ok    mutação acusada: CertificateFile=none no lugar de /dev/null (abre ./none)
+ok    mutação acusada: sem IdentityFile=none e sem CertificateFile=/dev/null (abre os -cert.pub)
+ok    mutação acusada: sem -F /dev/null (lê a config do usuário)
+ok    mutação acusada: sem UserKnownHostsFile próprio (lê o known_hosts do usuário)
+ok    CertificateFile=/dev/null tira os *-cert.pub do home mesmo sem IdentityFile=none
+ok    controle: git sem o isolamento é acusado
+ok    controle: docker sem DOCKER_CONFIG é acusado
+ok    controle: curl sem -q é acusado
+
+Nenhum cliente de teste abre caminho do home real.
+ok    controle: plugin docker-compose plantado no DOCKER_CONFIG roda sem o isolamento
+ok    compose.sh com DOCKER_CONFIG/DOCKER_HOST/COMPOSE_*/PATH/BASH_ENV hostis acha o postgres e não roda nada plantado
+ok    make dev-services-status com o mesmo ambiente hostil lista os serviços de verdade
+ok    plugin plantado em .dev/docker/cli-plugins é apagado antes de usar o docker
+ok    portas publicadas só em 127.0.0.1 (8 portas)
+ok    nenhuma porta responde pelo IP de rede 192.168.0.188
+ok    ssh-interno não responde do host (IPs: 172.24.0.2 )
+ok    ssh-chave 2223 só oferece publickey
+ok    ssh-senha 2222 só oferece password
+ok    ssh-chave 2223 recusa a senha do deploy
+ok    ssh-senha 2222 recusa senha errada
+ok    ssh-salto 2224 recusa senha errada
+ok    root recusado em 2222 (com a senha do deploy)
+ok    root recusado em 2224 (com a senha do salto)
+ok    deploy não entra em 2222 com a senha do salto
+ok    sftpuser não executa comando (só sftp)
+ok    sftpuser: forcecommand internal-sftp, chroot e sem encaminhamento
+ok    sftpuser não abre túnel até o postgres
+ok    deploy@2222 abre túnel até postgres:5432 (V4.29)
+ok    deploy@2222 não abre túnel fora de postgres:5432
+ok    salto não abre túnel fora de ssh-interno:22
+ok    salto abre túnel até ssh-interno:22
+ok    wordpress recusa senha errada
+ok    wp_admin não entra com a senha do wp_editor
+ok    totp aceita senha e código certos
+ok    totp recusa código errado
+ok    totp recusa código vazio
+ok    totp recusa código de 5 min à frente
+ok    totp recusa senha errada com código certo
+ok    totp recusa a senha de outra conta
+ok    totp recusa corpo de 20 KB (413)
+ok    phish grava o POST em /registro/posts.log
+ok    posts.log é 0600
+ok    phish não grava corpo acima do limite
+ok    redir manda até POST para o phish
+ok    nenhum segredo no inspect, argv ou logs dos 11 contêineres nem no compose config
+ok    diretórios 0700, chaves e senhas de SSH 0600, nada gravável por outros
+ok    chave do deploy é cifrada (abrir sem passphrase falha)
+ok    .dev/services/ fica fora do git
+ok    sem .dev/services/ o compose recusa criar o contêiner
+ok    e não criou .dev/ vazio no lugar
+ok    host desconhecido recusado (StrictHostKeyChecking=yes, sem TOFU)
+ok    chave de host trocada recusada com aviso (V4.28)
+ok    com o known_hosts novo o ssh-senha volta a entrar
+
+Todos os ataques foram barrados.
+dev/tests/home-decoys.sh
+ok    dev/services/verify.sh inteiro não abre nenhuma isca do home
+ok    dev/tests/attacks-services.sh inteiro não abre nenhuma isca do home
+ok    controle: sem o isolamento a isca .ssh/id_ed25519 é aberta (as iscas funcionam)
+ok    controle: sem o isolamento a isca .gitconfig é aberta (as iscas funcionam)
+ok    controle: sem o isolamento a isca .docker/config.json é aberta (as iscas funcionam)
+
+Os scripts de serviço não abrem nada do home real.

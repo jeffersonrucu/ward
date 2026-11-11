@@ -1,0 +1,61 @@
+
+## V6.6 ward run acme-pg-dev -- pg_select.py 'select 1' (sem psql no host; cliente pg_select.py)
+1
+exit=0
+
+## V6.6 ward run acme-pg-tunel -- pg_select.py 'select 1'
+1
+exit=0
+
+## V6.6 ward ssh acme-ssh-senha-stage -- true
+exit=0
+
+## V6.6 ward ssh acme-ssh-chave-prod -- true
+exit=0
+
+## V6.6 ward ssh acme-ssh-interno -- true
+exit=0
+
+## V6.6 ward ssh acme-ssh-interno -- hostname (salto)
+ssh-interno
+exit=0
+
+## V2.5 máscara: PGPASSWORD inteiro, em dois write, URL-encoded, base64 e DATABASE_URL
+••••
+••••
+••••
+••••
+••••
+exit=0
+
+## V4.20 anexo 0600 em <rt>tmp/ e apagado no fim (gama-generico, acme-ssh-chave-prod)
+600 jeffersonoliveira
+exit=0
+caminho em <rt>/ward/tmp/: NÃO (/run/user/1000/ward-test/tmp/s1857643-8/app.env)
+anexo apagado depois do fim: sim
+600 jeffersonoliveira
+exit=7
+chave apagada depois de exit 7: sim
+exit=137
+anexo apagado depois de SIGKILL: sim
+
+## V6.7 ward list sem gama-bloqueada
+0
+(0 = não aparece)
+0
+(0 = não aparece no --json)
+
+## V6.7 ward run gama-bloqueada -- true
+ward: entrada inexistente
+exit=125
+
+## V6.7 ward run inexistente-ward -- true (comparação)
+ward: entrada inexistente
+exit=125
+
+## V6.7 ward run acme-pg-dev -- true (livre: não abre aprovação)
+exit=0
+
+## V6.7 ward run acme-pg-aprovacao -- true (sem ponte: aprovação indisponível)
+ward: aprovação indisponível
+exit=125
