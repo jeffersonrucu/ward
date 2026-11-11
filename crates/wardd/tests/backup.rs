@@ -423,7 +423,7 @@ fn restore_asks_for_the_version_password() {
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
     let old = backups(&d)[0].clone();
-    let new_password = "falso-mestra-ward-05";
+    let new_password = "falso-passphrase-01";
     let r = request(
         &d,
         Role::App,

@@ -3,6 +3,14 @@
 //! exists here; what is checked is that nothing goes out on stdout besides the error
 //! responses of the protocol.
 
+// m2:Phase 54a: without `test-mode` the binaries this test runs are the release ones,
+// which only know the system socket (`/run/ward/<uid>/wardd.sock`, the installed
+// daemon). The build fails, loudly, instead of a test reaching it.
+#[cfg(not(feature = "test-mode"))]
+compile_error!(
+    "este teste exige a feature test-mode (cargo test --all-features ou --features test-mode): sem ela os binários do teste são os de release, que só conhecem o socket do sistema"
+);
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};

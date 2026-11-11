@@ -108,7 +108,7 @@ fn attack_agent_and_extension_neither_read_nor_change_the_settings() {
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
         let r = change_pin(&d, role, PIN, "2468");
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
-        let r = change_password(&d, role, PASSWORD, "falso-nova-mestra-02");
+        let r = change_password(&d, role, PASSWORD, "falso-aws-secret-01");
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
     }
     assert_eq!(settings(&d), (DEFAULT_LOCK_MINUTES, false));
@@ -458,6 +458,6 @@ fn f55_attack_fifo_in_place_of_the_vault_does_not_hold_the_password_change() {
     if d.is_locked() {
         assert!(ok(&unlock(&d, PASSWORD)));
     }
-    let r = change_password(&d, Role::App, PASSWORD, "falso-nova-mestra-55");
+    let r = change_password(&d, Role::App, PASSWORD, "falso-licenca-01");
     assert!(ok(&r), "{r:?}");
 }

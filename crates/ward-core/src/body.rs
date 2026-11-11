@@ -60,7 +60,9 @@
 //!   each length against what is left and against the limits of [`crate::limits`]
 //!   (including the sum of the attachments of each entry, D29), type, level, name order
 //!   and leftover bytes. The second one builds the configuration and each entry through
-//!   [`Draft::validate`], applies the stored level through [`Entry::set_level`] and
+//!   the same rules as [`Draft::validate`] (except the extra and attachment names that
+//!   only 0.2.0 reserves, accepted so a vault of 0.1.x still opens; m2 Phase 54b),
+//!   applies the stored level through [`Entry::set_level`] and
 //!   checks the whole vault through [`Entry::verify_in_vault`]. Any failure refuses the
 //!   whole body with [`BodyError::Invalid`], with no user value (S13); a vault is never
 //!   opened halfway.
@@ -1084,7 +1086,7 @@ fn build_data(kind: EntryType, d: &[&[u8]; MAX_DATA_FIELDS]) -> Result<DataDraft
     })
 }
 
-/// 2nd pass of an entry: draft → [`Draft::validate`] → stored level.
+/// 2nd pass of an entry: draft → `Draft::validate_stored` → stored level.
 fn build(b: &RawEntry<'_>) -> Result<Entry, BodyError> {
     let mut tags = Vec::with_capacity(b.tags.n);
     let mut l = Reader { rest: b.tags.bytes };
@@ -1124,7 +1126,7 @@ fn build(b: &RawEntry<'_>) -> Result<Entry, BodyError> {
         extras,
         attachments,
     };
-    let mut entry = draft.validate().map_err(|_| BodyError::Invalid)?;
+    let mut entry = draft.validate_stored().map_err(|_| BodyError::Invalid)?;
     if entry.kind() != b.kind {
         return Err(BodyError::Invalid);
     }

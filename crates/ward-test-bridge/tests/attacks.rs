@@ -1,5 +1,12 @@
 //! Attacks on the test bridge (D7, S11): each one must fail.
-#![cfg(feature = "test-mode")]
+
+// m2:Phase 54a: without `test-mode` the binaries this test runs are the release ones,
+// which only know the system socket (`/run/ward/<uid>/wardd.sock`, the installed
+// daemon). The build fails, loudly, instead of a test reaching it.
+#[cfg(not(feature = "test-mode"))]
+compile_error!(
+    "este teste exige a feature test-mode (cargo test --all-features ou --features test-mode): sem ela os binários do teste são os de release, que só conhecem o socket do sistema"
+);
 
 use std::fs;
 use std::io::{Read, Write};
@@ -688,7 +695,7 @@ fn attack_load_key_through_the_bridge() {
     let base = dist("chave53a");
     let folder = base.join("chave");
     fs::create_dir_all(&folder).unwrap();
-    let key_body = "ZmFsc28tY2hhdmUtcG9udGUtNTNh";
+    let key_body = "ZmFsc28tV1Atc2VuaGEtMDE=";
     let label = ["OPENSSH", " PRIVATE", " KEY"].concat();
     let key = format!("-----BEGIN {label}-----\n{key_body}\n-----END {label}-----\n");
     fs::write(folder.join("deploy_ed25519"), &key).unwrap();

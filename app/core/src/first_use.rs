@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn attack_errors_and_debug_do_not_show_value() {
-        let n = new_vault(PASSWORD, "falso-mestra-ward-02", "13579a", "13579a");
+        let n = new_vault(PASSWORD, "falso-WP-senha-01", "13579a", "13579a");
         let text = format!("{n:?} {:?}", n.errors());
         for needle in ["falso", "mestra", "13579"] {
             assert!(!text.contains(needle), "{text}");

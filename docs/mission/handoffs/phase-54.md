@@ -118,6 +118,14 @@
 - O app `dev/tests/app_e2e.py`/`revealed_selection.py` só usam ids de elemento e nomes
   de tela, que não mudaram; não rodados (precisam de daemon).
 
+- Merge com o master (54a/54b): conflito em `crates/ward-test-bridge/tests/attacks.rs`
+  resolvido mantendo a guarda `compile_error!` sem `test-mode` e os valores de D15. Com
+  a chave em inglês (`"password"`), o gitleaks acusa as senhas erradas fora de D15
+  (`falso-mestra-ward-00`/`-02`), que com a chave `"senha"` passavam; trocadas por
+  `falso-WP-senha-01` (D15, errada para o cofre). Árvore e índice do gitleaks limpos; o
+  histórico ainda tem 12 achados, todos de commits anteriores do master (nenhum deste
+  branch).
+
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |

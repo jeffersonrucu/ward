@@ -7,6 +7,14 @@
 //! fake values; the socket (and the `<rt>`) lives in a directory of this test only in
 //! `/run/user/<uid>/`.
 
+// m2:Phase 54a: without `test-mode` the binaries this test runs are the release ones,
+// which only know the system socket (`/run/ward/<uid>/wardd.sock`, the installed
+// daemon). The build fails, loudly, instead of a test reaching it.
+#[cfg(not(feature = "test-mode"))]
+compile_error!(
+    "este teste exige a feature test-mode (cargo test --all-features ou --features test-mode): sem ela os binários do teste são os de release, que só conhecem o socket do sistema"
+);
+
 mod common;
 
 use std::fs;

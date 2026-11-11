@@ -321,7 +321,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   `#[serde(rename = "<antigo>")]`; lista do `strings` do V5.6 (missão 1) com os nomes
   novos. `frozen.txt` vazio e apagado. Compilação: `make compile`. — V4.22, V4.23, V4.24
 
-- [ ] Fase 54a — Correção (achados da Fase 51): (1) `crates/ward-nm/tests/binary.rs` › `no_daemon_answers_internal`, rodado com
+- [x] Fase 54a — Correção (achados da Fase 51): (1) `crates/ward-nm/tests/binary.rs` › `no_daemon_answers_internal`, rodado com
   `cargo test -p ward -p ward-nm -p ward-test-bridge`, compilou o `ward-nm` sem `test-mode` e alcançou o `wardd` 0.1.4
   instalado na máquina pelo socket do sistema (pedido `fill` sem segredo, recusado). Nenhum teste pode alcançar o socket do
   sistema: todo teste que fala com um daemon exige `test-mode` (falha alta sem ele, nunca cai no socket real) e um socket
@@ -331,7 +331,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   Fase 50): segredo de teste novo é gerado em `.dev/` ou é um valor de D15; o handoff não leva o valor; nada de padrão
   genérico na allowlist. — S1, S3, V2.1
 
-- [ ] Fase 54b — Nomes reservados na leitura (achado da Fase 53; decisão do usuário 2026-11-11: aceitar na leitura). Um
+- [x] Fase 54b — Nomes reservados na leitura (achado da Fase 53; decisão do usuário 2026-11-11: aceitar na leitura). Um
   cofre v4 ou v5 com extra `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*` (ou `PROTOCOL` em ftp/sftp) ou anexo `key` em
   server/ftp/sftp abre e migra; o nome reservado só é recusado ao salvar a entrada (`Draft::validate` no caminho de
   gravação), e a entrega continua recusando nome repetido na conferência final (nenhuma variável entregue é trocada
@@ -374,7 +374,7 @@ Contrato: V5.1–V5.11. Sequencial.
   comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
   `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
   de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
-- [ ] Fase 59 — (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
+- [ ] Fase 59 — (achado da Fase 54b: `docs/instalacao.md` avisa que, depois de atualizar, extras `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`/`PROTOCOL` e anexo `key` vindos da 0.1.x têm de ser renomeados no app: até lá o `ward run` dessa entrada só dá erro genérico, e o motivo fica no log do daemon) (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
   tipos, caminhos; o histórico das decisões fica), `docs/instalacao.md` (atualização
   0.1.x → 0.2.0, volta pelo backup v4, DT7), `docs/migracao.md` (comandos novos;
   `make test-migration-guide` com as expectativas novas), caminhos de arquivo em
@@ -396,7 +396,7 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
   versão 0.2.0 (DT19); comparação dos literais com `strings-0.1.4.txt` e lista da
   diferença no handoff; procura dos nomes antigos (V6.2). Compilação: `make compile`. —
   V6.1, V6.2, V6.3
-- [ ] Fase 61 — (achado da Fase 50: gitleaks acusa `"falso-mestra-ward-03"` em `crates/ward-core/src/backup/tests.rs:369`, fora da allowlist de D15) Bateria A (estática e unitária): `make check`, `make app-check`,
+- [ ] Fase 61 — (achado das Fases 50 e 54a: a árvore está limpa no gitleaks, mas o `gitleaks git` acusa 12 valores falsos de teste no histórico — commits `1ae5610`, `0c09209`, `c0d849e`, `81960fb`, `541720e`, `1b2820b`, lista no handoff da 54a; o usuário decide reescrever, ignorar por fingerprint ou aceitar; roda também `make test-system-socket`) Bateria A (estática e unitária): `make check`, `make app-check`,
   `make test-no-test-mode`, `make test-skill`, `make test-migration-guide`,
   `make dev-vault` + `dev-variations` + `test-dev-vault`,
   `make test-attacks-foundation`, testes de fio no commit do fim do M3 (V2.2),

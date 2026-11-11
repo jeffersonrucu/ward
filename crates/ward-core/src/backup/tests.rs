@@ -366,7 +366,7 @@ fn password_change_goes_to_the_backup_with_the_new_password() {
         .unwrap()
         .backup
         .unwrap();
-    let new_password = "falso-mestra-ward-03";
+    let new_password = "falso-SSH-senha-01";
     let (new, g) = {
         let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
         change_password_with_backup(
