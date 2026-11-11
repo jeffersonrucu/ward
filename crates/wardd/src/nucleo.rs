@@ -138,7 +138,7 @@ pub(crate) struct Aberto {
     pub(crate) liberacoes: HashMap<String, Duration>,
     /// Tokens do "Conectar" ainda não usados (D3, Fase 27): somem ao travar, junto com
     /// o `Aberto`.
-    pub(crate) tokens: Vec<crate::ssh::TokenConectar>,
+    pub(crate) tokens: Vec<crate::ssh::ConnectToken>,
     /// Identidade do arquivo depois da última leitura ou gravação. `None`: não deu para
     /// ler depois de gravar, e a próxima gravação recusa como "mudou".
     identidade: Option<Identidade>,
@@ -286,7 +286,7 @@ pub struct Daemon {
     vez_externo: Mutex<()>,
     /// `ssh`, `sshpass` e `sftp` do `ward ssh` (Fase 27): os do sistema, por caminho
     /// absoluto (sem busca no `PATH`).
-    programas_ssh: crate::ssh::ProgramasSsh,
+    programas_ssh: crate::ssh::SshPrograms,
     /// O Chrome do `ward playwright` (Fase 44): o instalado, por caminho absoluto.
     chrome: PathBuf,
     /// Pedidos do `ward login` à extensão (Fase 43).
@@ -547,7 +547,7 @@ impl Daemon {
             pendrives: None,
             cutucao: OnceLock::new(),
             vez_externo: Mutex::new(()),
-            programas_ssh: crate::ssh::ProgramasSsh::do_sistema(),
+            programas_ssh: crate::ssh::SshPrograms::from_system(),
             chrome: PathBuf::from(crate::playwright::CHROME),
             logins: crate::login::Logins::default(),
         }
@@ -619,7 +619,7 @@ impl Daemon {
     /// com a feature `test-hooks`, que liga o `test-mode` (V3.15, V9.2).
     #[cfg(feature = "test-hooks")]
     #[doc(hidden)]
-    pub fn com_programas_ssh(mut self, p: crate::ssh::ProgramasSsh) -> Self {
+    pub fn com_programas_ssh(mut self, p: crate::ssh::SshPrograms) -> Self {
         self.programas_ssh = p;
         self
     }
@@ -653,7 +653,7 @@ impl Daemon {
         &self.chrome
     }
 
-    pub(crate) fn programas_ssh(&self) -> &crate::ssh::ProgramasSsh {
+    pub(crate) fn programas_ssh(&self) -> &crate::ssh::SshPrograms {
         &self.programas_ssh
     }
 
@@ -880,7 +880,7 @@ impl Daemon {
                 self.restaurar_backup(&versao, &senha, &pin)
             }
             // D3 (Fase 27): token de uso único do "Conectar", só para o app.
-            Pedido::EmitirToken { entrada } => self.emitir_token(papel, &entrada),
+            Pedido::EmitirToken { entrada } => self.issue_token(papel, &entrada),
             // Fase 40 (D9): sugerir e preencher pela origem da aba, só para a extensão.
             Pedido::Sugerir { origem } => self.sugerir(papel, &origem),
             // Fase 44c: numa origem `http`, só depois da confirmação na janela.

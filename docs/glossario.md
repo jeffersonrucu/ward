@@ -2280,6 +2280,55 @@ prefixo `ward-ponte-teste:` das mensagens, o `USAGE` (antes `USO`) e as opções
 `ward_app_core` (`Servico`, `ErroApp`, `Comando`, os métodos dos traits…) mudam nas Fases
 30–34.
 
+Fase 21 (`wardd`: `execution`, `ssh_agent`, `ssh`, `ssh_tests`): módulos `execucao`/
+`agente_ssh`/`ssh_testes` → `execution`/`ssh_agent`/`ssh_tests` (`mod testes` → `tests`).
+`execution`: `Temporarios { pasta, arquivos }` → `TempFiles { dir, files }` (`criar`/
+`gravar` → `create`/`write`), `Arquivo` (privado) → `SessionFile`, `pasta_temporarios`
+→ `temp_dir`, `PASTA_TEMPORARIOS` → `TEMP_DIR`, `zerar` → `zero`, `limpar_temporarios`
+→ `clean_temp_files` (o mesmo inglês do `atomic_write`; o homônimo do `wardd/externo.rs`
+é outro e fica para a fase dele); `Preparo` → `Preparation` (campos `comando`/`mascara`/
+`temporarios`/`ponte`/`agente`/`trava`/`entrada_nula` → `command`/`mask`/`temp_files`/
+`bridge`/`agent`/`lock`/`null_stdin`); `MorreNaTrava { sessoes, travas, inicial }` →
+`DiesOnLock { sessions, locks, initial }` (`travou` → `locked`); `AgentePreparado` →
+`PreparedAgent` (`filho_do_filho` → `child_of_child`); `RecursosRun` → `RunResources`,
+`ContextoTunel` → `TunnelContext`; `Forma { Locale, Terminal, Fuso, Sinal }` → `Shape {
+Locale, Terminal, Timezone, Flag }` ("sinal" aqui é a variável-bandeira `NO_COLOR`, não
+sinal de processo); `ENTRAM_DA_CLI` → `FROM_CLI`, `PATH_DO_COMANDO` → `COMMAND_PATH`,
+`DO_DAEMON` → `FROM_DAEMON`, `MAX_VALOR_DA_LISTA` → `MAX_LIST_VALUE`, `LOTE` → `BATCH`,
+`FILA_ENTRADA` → `STDIN_QUEUE`, `PRAZO_RESTO_DA_SAIDA` → `REST_OF_OUTPUT_DEADLINE`,
+`PASSO_LEITURA_MS` → `READ_STEP_MS`; `Conta { usuario, home }` → `Account { user, home }`
+(`do_passwd` → `from_passwd`); `ajustar_locale` → `adjust_locale`, `entra_da_cli` →
+`enters_from_cli`, `valor_aceito` → `value_accepted`, `montar_ambiente` →
+`build_environment`, `ler_lote` → `read_batch`, `ler_saida` → `read_output`,
+`escrever_entrada` → `write_stdin`, `ler_da_cli` → `read_from_cli`, `por_na_fila` →
+`enqueue`, `aviso_do_fim` → `end_notice`, `Lancado` → `Launched`, `sessao`/`sessao_com`
+→ `session`/`session_with`, `Daemon::preparar_execucao` → `prepare_run`; `Cli::enviar`/
+`enviar_saida` → `send`/`send_output`. `ssh_agent`: `AgenteSsh { pasta, escuta, chave }`
+→ `SshAgent { path, listener, key }` (`criar`/`publica`/`iniciar` → `create`/
+`public_key`/`start`), `Rodando` → `Running`, `Permitido { pid, filho_do_filho }` →
+`Allowed { pid, child_of_child }`, `ErroAgente` → `AgentError` com `ChaveInvalida` →
+`InvalidKey`, `AlgoritmoNaoSuportado` → `UnsupportedAlgorithm`, `Sistema` → `System`
+(`Passphrase` fica); `Chave` (privado) → `Key` (`ler`/`publica_em_texto`/`assinar` →
+`read`/`public_as_text`/`sign`); `NOME_SOCKET`/`NOME_PUBLICA`/`PREFIXO_PASTA` →
+`SOCKET_NAME`/`PUBLIC_NAME`/`DIR_PREFIX`; `limpar_pastas` → `clean_dirs`, `laco` →
+`serve_loop`, `atender` → `serve`, `par_permitido(_pid)` → `peer_allowed(_pid)` (`preso`
+→ `held`), `responder_mensagem` → `answer_message`. "Assinar" aqui é assinatura
+criptográfica → `sign`/`signature` (não `subscribe`, que é o sentido do D-Bus).
+`ssh`: `ProgramasSsh` → `SshPrograms` (`do_sistema` → `from_system`), `TokenConectar
+{ valor, entrada, ate }` → `ConnectToken { value, entry, until }`, `PRAZO_TOKEN` →
+`TOKEN_DEADLINE`, `PATH_FILHO` → `CHILD_PATH`; `Destino { host, porta, usuario }` →
+`Destination { host, port, username }`; `Autent { Senha, Chave { agente, publica } }` →
+`SshAuth { Password, Key { agent, public_key } }`; `Programa { Ssh { comando }, Sftp,
+Encaminhar { host, porta } }` → `Program { Ssh { command }, Sftp, Forward { host, port }
+}`; `Cred { Senha, Chave { chave, passphrase } }` → `Cred { Password, Key { key,
+passphrase } }`; `montar_argv(_com_alias)` → `build_argv(_with_alias)`,
+`alias_do_destino` → `destination_alias`, `usuario_ok` → `username_ok`, `host_simples`
+→ `simple_host`, `cred_de` → `cred_from`, `intermediario` → `intermediate`,
+`conferir_tipo` → `verify_kind`, `Daemon::emitir_token`/`usar_token`/`preparar_ssh` →
+`issue_token`/`use_token`/`prepare_ssh`. Os nomes que vêm de `nucleo`, `aprovacao`,
+`ponte`, `log` (Fases 19, 20 e 22) e do `ward-core` (`entrega`, `mascara`, `protocolo`,
+Fases 15–17) ficam como estão até as fases deles.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:
