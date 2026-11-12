@@ -1,6 +1,6 @@
 {
   "productName": "Ward",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "identifier": "local.ward.app",
   "build": {
     "frontendDist": "../dist"
@@ -29,7 +29,7 @@
       "assetProtocol": {
         "enable": false
       },
-      "capabilities": ["principal", "aprovacao"]
+      "capabilities": ["main", "approval"]
     }
   },
   "bundle": {

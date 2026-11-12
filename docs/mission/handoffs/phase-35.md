@@ -1,191 +1,197 @@
-# Fase 35 — Nível de acesso com PIN (UI)
+# Fase 35 — (UI) Base do `app/src`
 
 ## Implementado
-- **Nenhuma operação nova no protocolo.** A fase usa `mudar_nivel`, que já existe em
-  `ward_core::protocolo` (só papel app, com PIN).
-- **`app/nucleo/src/nivel.rs` (novo):**
-  - `Pin`: o PIN que vem da interface, guardado em `Zeroizing<String>`. Não tem `Clone`,
-    `Display` nem `Serialize`, e o `Debug` mostra `Pin(••••)`;
-  - o `Deserialize` já recusa o que não é PIN (de 4 a 6 dígitos ASCII, os mesmos
-    `MIN/MAX_DIGITOS_PIN` do `ward_core::limites`). O erro tem texto fixo, "PIN fora do
-    formato". Um número no lugar do texto também cai nesse erro fixo (`deserialize_any`
-    + `visit_u64`/`i64`/`f64`), e não no erro padrão do serde, que ecoaria o valor;
-  - `nivel_de_nome` aceita só `livre`, `com-aprovacao` e `bloqueado`;
-  - `NivelMudado { entrada, nivel }` é a resposta, sem PIN.
-- **`cliente::mudar_nivel`:** monta o pedido com o PIN num `Segredo` do núcleo (que zera)
-  e devolve `()` só na resposta `ok`. `ErroResposta::PinIncorreto` passa a ser
-  `ErroApp::PinIncorreto` (código `pin-incorreto`, mensagem fixa "PIN incorreto. Nada
-  foi alterado.").
-- **`daemon_falso` (só `modo-teste`/testes):** responde `mudar_nivel` com a mesma regra do
-  `wardd`:
-  - o PIN é conferido no hash Argon2id da configuração do cofre de teste
-    (`cofre_teste::configuracao_de_teste`), em tempo constante pela biblioteca;
-  - o PIN é conferido antes da entrada;
-  - o acerto zera a contagem;
-  - o 5º erro seguido trava. Depois disso `estado` responde `travado: true` e o resto
-    responde "travado" (`MAX_ERROS_PIN = 5`, o mesmo valor do `wardd`).
-- **`servico::mudar_nivel(entrada, nivel, Pin)`:** confere o nome (`validar_nome_entrada`)
-  e o nível antes do daemon. Por isso um pedido forjado não conta como erro de PIN.
-- **Comando `mudar_nivel`:** entrou em `comandos.rs`, em `capabilities/principal.json`
-  (`allow-mudar-nivel`), em `ponte/comandos.js`, no `generate_handler!` do Tauri
-  (argumento `pin: Pin`) e no despacho da ponte de teste. Na ponte, o PIN sai do mapa
-  JSON por `remove` (fica com a posse, sem copiar) e vira `Pin`.
-- **Interface:**
-  - `CartaoDeNivel.svelte` (set `18998`) substitui o cartão solto do detalhe de
-    Credenciais;
-  - `OpcaoDeNivel.svelte` (set `909`) usa `<input type="radio">` de verdade;
-  - `DialogoDeNivel.svelte` (set `967`) é um `<dialog>` nativo com as etapas Escolher,
-    PIN e PIN errado:
-    - os três níveis aparecem sempre, inclusive em prod;
-    - o nível atual vem marcado, e "Continuar" fica desabilitado até a escolha mudar;
-    - "De … para …", `Campo PIN` e a nota "5 erros de PIN seguidos travam o cofre.";
-    - com PIN errado, aparece o erro no campo e a nota em aviso "O nível continua …";
-  - `niveis.js` guarda os textos dos níveis tirados do FigCraft;
-  - `CampoPin.svelte`: dígito cheio com `borda/padrao` e erro com `perigo/texto`, como
-    as instâncias `1055`/`1106`;
-  - `Credenciais.svelte`: "Mudar nível" abre o diálogo. Ao mudar, recarrega a lista e o
-    detalhe e mostra o Toast "Nível de acesso alterado.". Ctrl+K não age com o diálogo
-    aberto. A prop nova `ontravado` avisa o `App.svelte`, que sai da casca e consulta o
-    estado de novo.
-- **5º erro:** depois de cada `pin-incorreto`, o diálogo consulta `estado_do_cofre`. Se o
-  cofre travou (ou não houver resposta), chama `ontravado`. O mesmo vale se o daemon
-  responder `travado`.
-- **QA no Chrome:** Playwright Python headless, 1280×800, ponte com `--daemon-falso
-  cheio`. As 37 checagens deram `true` (`docs/mission/evidence/fase-35/qa.json`):
-  - os três cartões;
-  - os três níveis em prod;
-  - PIN errado mostra o erro, o campo fica vazio e o nível não muda;
-  - fechar não muda nada;
-  - o PIN certo muda o nível (livre, bloqueado, com aprovação);
-  - 4 erros e 1 acerto não travam;
-  - o 5º erro seguido trava;
-  - nada no DOM, nos `value`, no storage, no cookie, na URL nem no console.
 
-  As capturas ficam ao lado do PNG dos frames `5615`, `5994`, `6373` e do componente
-  `18998`.
+Troca 1:1 pelo `docs/glossario.md` (seções 4 e 14, mais as entradas novas desta fase),
+sem mudar comportamento nem texto visível em pt-BR.
+
+- **Pastas** (`git mv`): `app/src/telas` → `screens`, `lib/componentes` → `lib/components`,
+  `lib/estilo` → `lib/style`, `lib/ponte` → `lib/bridge`, `lib/teste` → `lib/test`.
+- **Arquivos**: `ponte/comandos.js` → `bridge/commands.js`, `ponte/ponte-teste.js` →
+  `bridge/test-bridge.js`, `teste/Vitrine.svelte` → `test/Showcase.svelte`,
+  `icones.js` → `icons.js`, `tipos.js` → `types.js`, `niveis.js` → `levels.js`,
+  `ward-simbolo.svg` → `ward-symbol.svg`, `app/scripts/gerar_design.py` →
+  `generate_design.py`; os 36 componentes da tabela do glossário (`AcaoDeCampo` →
+  `FieldAction` … `TituloDeSecao` → `SectionTitle`; `Logo`, `Modal`, `Select`, `Toast`
+  ficam).
+- **Ícones** (`app/design/icons/*.svg`, chaves de `ICONS`): `alerta` → `alert`, `busca` →
+  `search`, `cadeado` → `lock`, `chave` → `key`, `chevron-baixo/direita` →
+  `chevron-down/right`, `clipe` → `paperclip`, `copiar` → `copy`, `engrenagem` → `gear`,
+  `erro` → `error`, `fechar` → `close`, `filtro` → `filter`, `gerador` → `generator`,
+  `mais` → `plus`, `olho(-fechado)` → `eye(-closed)`, `relogio` → `clock`, `sucesso` →
+  `success`, `tipo-*` → `type-*` (`tipo-banco` → `type-database`, `tipo-generico` →
+  `type-generic`, `tipo-nota` → `type-note`, `tipo-servidor` → `type-server`); `check`
+  fica. Todos os usos no app e em `extension/popup.js` (chaves montadas incluídas: os
+  ícones de tipo saem agora de `types.js`, `TYPES[k].icon`).
+- **Bandeja**: `app/src-tauri/icons/bandeja-{destravado,travado}-32.png` →
+  `tray-{unlocked,locked}-32.png`, com o `include_image!` do `app/src-tauri/src/main.rs`.
+- **Gerador de tokens** reescrito em inglês: `TOKEN_NAMES` (pt → en de cada variable),
+  `COLLECTION_NAMES`/`MODE_NAMES` (comentários de seção e modos do tom do ícone), saída
+  `src/lib/style/tokens.css` e `src/lib/components/icons.js` (`ICONS`). `tokens.css` e
+  `icons.js` regenerados; V3.6 conferido por script: os tokens antigos com os nomes
+  trocados pelo mapa são iguais aos novos, valor a valor (sem comentários).
+- **Tokens CSS**: 244 propriedades custom e as 15 classes globais renomeadas (seção 14 do
+  glossário) em `app/src/**`, `extension/popup.css`, `popup.js` e `popup.html`;
+  `data-tom-icone` → `data-icon-tone`; locais do `Slider` `--progresso`/`--ponto` →
+  `--progress`/`--point`.
+- **Componentes** (`lib/components/*`): identificadores, props, classes locais, ids
+  estáticos e comentários em inglês (mapa de props no glossário, seção 4). Módulos:
+  `TYPES`/`entryType()` com `{ label, icon }`; `ACCESS_LEVELS`/`LEVEL_ORDER`/
+  `accessLevel()` com `{ label, lower, icon, card, option }`; as chaves do fio (`'banco'`,
+  `'com-aprovacao'`…) ficam, entre aspas.
+- **`bidi.js`**: `partesBidi` → `bidiParts`, partes `{ text, rtl }`; a regex RTL
+  ficou byte a byte igual (conferido).
+- **`main.js`, `App.svelte`, `base.css`**: imports, identificadores, classes (`.casca` →
+  `.shell`, `.janela` → `.window`, `.painel` → `.panel`, `.estado` → `.status`) e
+  comentários.
+- **Usos nas telas, no App e na Showcase** (por script com leitor de tags que respeita
+  chaves, revisado): nomes das tags, imports, props, `bind:`, valores de `variant`/`kind`/
+  `tone`, snippets `rodape`/`controle`/`descricao`/`acao` → `footer`/`control`/
+  `description`/`action`, `:global(.botao|.campo|.destaque)` → `.button|.field|.highlight`.
+  Objetos de opção do `Select` `{ valor, rotulo }` → `{ value, label }` (em
+  `formulario.js`, `configuracoes.js`, `Credenciais.svelte`, `Formulario.svelte`,
+  `Showcase.svelte`, com o `.find((x) => x.value === …)` de `formulario.js`). O
+  `FiltersDialog` recebe/devolve `{ group, kind, environment }`; `Credenciais.svelte`
+  converte para o objeto de filtros dela (`grupo`/`tipo`/`ambiente`), que fica para a
+  Fase 36.
+- **Exports da ponte** puxados para cá para a base ficar limpa (só o nome exportado e
+  os usos): `chamar` → `call`, `ouvirAvisos` → `listenNotices`, `telaPedida` →
+  `requestedScreen`. O resto de `lib/bridge/*` (identificadores e comentários) é da
+  Fase 38.
+- **Props das telas que o `App` usa**, por desestruturação com alias (o corpo das telas
+  fica para as Fases 36–38): `Credenciais`/`Configuracoes` `ontravado` → `onlocked`,
+  `Destravar` `pedido`/`ondestravado`/`onerro` → `request`/`onunlocked`/`onerror`,
+  `PrimeiroUso` `oncriado` → `oncreated`. No `App`, os imports das telas usam o nome
+  novo (`Settings`, `Credentials`, `Unlock`, `PasswordGenerator`, `ApprovalWindow`,
+  `FirstUse`) apontando para o arquivo antigo, que a fase de cada tela renomeia.
+- **Fora do `app/src`**: `dev/extension/build.py` (caminhos de `tokens.css`, `icons.js`,
+  `ward-symbol.svg`; `dist/icons.js`), `extension/popup.js` (`ICONS` de `./icons.js`),
+  `app/core/tests/configuracao_tauri.rs` (caminhos `src/screens/…`,
+  `src/lib/bridge/commands.js`), `dev/tests/bidi.mjs` (`bidiParts`, `.text`),
+  `dev/tests/revealed_selection.py` (`.revealed`, `.field`, `dataset.value`),
+  `dev/tests/app-dist.py` e `app-release.sh` (marcas `test-bridge` e `Showcase` junto
+  com as antigas), `CLAUDE.md` (caminho do `tokens.css`).
+- **Glossário**: módulos de `lib/components`/`lib/bridge`, tabela dos ícones, props,
+  eventos, snippets, valores e atributos `data-*` dos componentes, e a regra de citar o
+  node do FigCraft pelo id nos comentários.
+
+### Literais alterados (PRD regra 5; todos são nomes)
+
+- Caminhos de import (`./lib/components/…`, `../bridge/index.js`, `./icons.js`…).
+- Nomes de ícone (acima) e valores de prop: `variant` `primary/secondary/danger/ghost`,
+  `kind` do Toast `success/error/warning`, `kind` do Highlight
+  `neutral/warning/info/danger/prod`, `tone` `on-color/strong/disabled/brand/danger/
+  warning/success`.
+- Ids e prefixos de id gerados pelos componentes: `modal-titulo` → `modal-title`,
+  `filtros-titulo` → `filters-title`, `nivel-titulo` → `level-title`,
+  `popover-gerador-titulo` → `generator-popover-title`, `popover-senha/tamanho/
+  minusculas/maiusculas/digitos/simbolos` → `popover-password/length/lowercase/
+  uppercase/digits/symbols`, `filtro-grupo/tipo/ambiente` → `filter-group/kind/
+  environment`, `config-pendrive` → `config-usb-drive`, `opcao-nivel-` →
+  `level-option-`, sufixos `-ajuda`/`-rotulo`/`-opcoes`/`-opcao-`/`-explicacao` →
+  `-help`/`-label`/`-options`/`-option-`/`-explanation`. Nenhum é lido fora do
+  componente (conferido em `app/src`, `dev/`, `extension/`).
+- Atributos `data-*` dos componentes: `data-teste` → `data-test`, `data-forca` →
+  `data-strength`, `data-etapa` → `data-step`, `data-nivel` → `data-level`,
+  `data-anexo` → `data-attachment`, `data-tipo` → `data-type`, `data-valor` →
+  `data-value`. Os valores vindos do fio (`'fraca'`, `'pin-errado'`, `'simbolos'`…)
+  ficam.
+- Ficaram de propósito: `'nivel-pin'` (id do campo PIN no diálogo de nível),
+  `name="nivel-de-acesso"`/`'versao'` (nome de grupo de rádio), os ids de tela
+  (`'credenciais'`, `'gerador'`, `'configuracoes'`, `'aprovacao'`: `&tela=` da URL de
+  teste e o rótulo da janela), comandos Tauri, códigos de erro e campos do fio.
+
+### Entradas novas de `dev/english-check/frozen.txt` (todas Fase 54)
+
+- `app/src/App.svelte`: `estado`, `pedido`, `restante`, `entrada`, `operacao`, `comando`,
+  `mensagem`.
+- `app/src/lib/components/GeneratorPopover.svelte`: `tamanho`, `minusculas`,
+  `maiusculas`, `digitos`, `simbolos`, `forca`, `valor`, `campo`, `mensagem`.
+- `app/src/lib/components/LevelDialog.svelte`: `entrada`, `nivel`, `nome`, `tipo`,
+  `ambiente`, `codigo`, `mensagem`, `estado`.
 
 ## Segurança
-- **Invariantes tocadas:**
-  - **S9 / V5.15:**
-    - mudar o nível pede o PIN;
-    - com PIN errado, o nível não muda e a resposta não diz quantas tentativas faltam;
-    - o 5º erro seguido trava (no daemon falso, com a regra do `wardd`; no real, a
-      contagem é do `wardd`).
-  - **Formato antes do daemon:** um PIN fora do formato, um nível inventado ou um nome
-    inválido são recusados antes de chegar ao daemon e não contam como erro de PIN.
-  - **PIN em memória:**
-    - no Rust, fica em `Pin` (`Zeroizing`) e em `ward_core::entrada::Segredo` no pedido;
-      o quadro sai de `codificar_pedido` como `Zeroizing`;
-    - nenhuma resposta e nenhum erro o carregam, e nada o escreve em log;
-    - na tela, o PIN fica só no estado local do diálogo e sai dele antes da resposta (o
-      campo volta vazio) e ao fechar ou voltar;
-    - nada vai para `localStorage`, URL ou estado global.
-  - **S1:** toda entrada do comando é tratada como não confiável (nome, nível e PIN).
-  - **ACL:** `mudar_nivel` só passa na janela `principal`, com a origem local.
-- **Testes de ataque:**
-  - `app/nucleo/src/nivel.rs`:
-    - `ataque_pin_fora_do_formato_e_recusado_sem_eco`
-    - `ataque_debug_do_pin_nao_mostra_o_valor`
-    - `nivel_so_pelos_tres_nomes_do_protocolo`
-  - `app/nucleo/src/servico.rs`:
-    - `ataque_pin_errado_nao_muda_e_o_quinto_erro_trava` (4 erros + 1 acerto zera; 5º
-      trava; travado, nem o PIN certo muda)
-    - `ataque_nome_ou_nivel_forjado_nem_chega_ao_daemon`
-    - `ataque_resposta_e_erro_do_mudar_nivel_sem_pin`
-    - `mudar_nivel_com_pin_e_os_tres_niveis_tambem_em_prod`
-  - `crates/ward-ponte-teste/tests/ataques.rs` › `ataque_mudar_nivel_pela_ponte`
-  - `app/src-tauri/src/main.rs` › `ataque_mudar_nivel_so_na_janela_certa_e_pin_no_formato`
-    (outra janela, origem remota, PIN `12`/`1357901`/`13579a`/número/nulo recusados na
-    leitura, sem eco)
-  - QA no Chrome (`qa.json`): `sem_pin_nem_segredo:*`, `armazenamento_vazio`,
-    `url_sem_token_nem_pin`, `pin_fora_das_urls`, `console_sem_pin`,
-    `so_pedidos_locais`.
-- **Dependências novas:** nenhuma. O Playwright do QA roda fora do repositório, no
-  scratchpad.
+
+- Invariantes: S2/S11/S12 (valor revelado só no `::before` por `data-value`, cópia e
+  seleção canceladas, máscara sem tamanho real) e S9 (PIN só no estado local do
+  `LevelDialog`, limpo antes da resposta) mantidas: só nomes e comentários mudaram; a
+  lógica de `SecretField`, `PasswordField`, `PinField`, `LevelDialog` e
+  `GeneratorPopover` é a mesma linha a linha. A ponte segue recusando comando fora de
+  `COMANDOS`; nenhum segredo entra em estado global, armazenamento ou URL.
+- S11 do pacote: `app-dist.py` e `app-release.sh` agora procuram `test-bridge` e
+  `Showcase` além das marcas antigas (o pacote de teste tem de ter o `test-bridge`).
+- Testes de ataque: nenhum novo (fase de nomes); `revealed_selection.py` (ataque à
+  seleção do valor revelado) acompanha os nomes novos.
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **Tela `Destravar / Padrão` (Fase 31):** o V5.15 pede que o 5º erro leve a ela. Hoje a
-  casca sai e o App mostra o esqueleto "O cofre está travado.", o estado que existe
-  antes da 31. Quando a 31 chegar, ela entra no lugar desse esqueleto, e o
-  `ontravado` → `consultar()` já leva para lá.
-- **Daemon real:** o transporte do app é da 23a. Até lá, só o daemon falso responde.
+
+- Identificadores e comentários das telas (`screens/*`), da ponte (`lib/bridge/*`, exceto
+  os 3 exports) e da `Showcase`: Fases 36–38 (o plano os põe lá). Os usos de componentes
+  nelas já estão com os nomes novos.
+- Nomes de comandos Tauri, campos de resposta e chaves de mensagem: congelados até a
+  Fase 54 (`frozen.txt`).
+- `extension/popup.js`/`popup.css` além de tokens e ícones: Fase 39.
 
 ## Comandos executados
+
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `cargo test -p ward-app-nucleo -p ward-ponte-teste --all-features`: a 1ª rodada falhou no eco do número no erro do `Pin` (corrigido com `deserialize_any`) | 101, depois 0 |
-| `make app-front` | 0 |
-| ponte `--daemon-falso cheio` + Playwright (`qa35.py`, Chrome headless, 1280×800): as 2 primeiras rodadas falharam no seletor do roteiro (`dialog` pegava o de filtros) | 0 |
-| `make fmt` e `cargo fmt` em `app/src-tauri` | 0 |
-| `make check`: a 1ª rodada falhou num `needless_borrow` do clippy em `ataques.rs`, corrigido | 2, depois 0 |
-| `make app-check` com o `PKG_CONFIG_PATH` do scratchpad (R32): fmt, clippy, ACL (7 testes, com o `ataque_mudar_nivel_so_na_janela_certa_e_pin_no_formato`), audit, deny e release com a checagem de strings | 0 |
-| `make app-front` (final) | 0 |
+| `python3 app/scripts/generate_design.py` (tokens e ícones regenerados) | 0 |
+| conferência V3.6 (tokens antigos com nomes mapeados = novos) | 0 |
+| `python3 dev/english_check.py --literals` antigo × novo (só nomes mudaram) | 0 |
+| `make english-check PATHS="app/src/lib/components app/src/lib/style app/src/lib/bidi.js app/src/main.js app/src/App.svelte app/scripts app/design"` | 0 (0 achados) |
+| `make compile` (cargo check do workspace e do `app/src-tauri`, `npm ci`, `vite build`, `syntax_check.py`: 0 erro) | 0 |
+| `npm run build:teste` (o `dist-teste` tem `test-bridge-*.js` e `Showcase-*.js`) | 0 |
+| `python3 dev/tests/app-dist.py` (conferência rápida das marcas novas; não é a suíte) | 0 |
+| `node dev/tests/bidi.mjs` (conferência rápida de `bidiParts`) | 0 |
 
-## Merge com o master (Fases 34 e 23a)
-- Os conflitos foram resolvidos mantendo os dois lados: `escolher_anexo`,
-  `remover_anexo` e `conectar` (34) ao lado de `mudar_nivel`, na lista de comandos, na
-  capability, no `comandos.js` (mesma ordem do Rust), no Tauri e na ponte;
-  `ErroApp::PinIncorreto` junto dos erros da 34; os testes das duas fases em
-  `servico.rs`; a seção da 34 antes da 35 em `design-nodes.md`.
-- Depois do merge: os testes do núcleo e da ponte, `make app-front` e o QA do diálogo
-  de nível pela ponte passaram de novo (sem falha no `qa.json`).
-- A primeira rodada do `make app-check` depois do merge saiu 2: o teste do master
-  `ataque_comandos_proprios_so_na_janela_e_origem_certas` (`app/src-tauri/src/main.rs`)
-  supõe que não há daemon e recebeu `{"estado":"travado"}` de um `wardd` de teste de
-  outro worker em `/run/user/1000/ward-teste/wardd.sock`. O caminho sai do euid, não
-  do `XDG_RUNTIME_DIR`, então não dá para isolar por variável. Com aquele daemon já
-  parado, a segunda rodada saiu 0. Problema: o teste depende do ambiente e quebra
-  quando alguém roda `make dev-daemon` ao mesmo tempo.
+O `vite build` mostra 10 avisos `state_referenced_locally` em
+`screens/Formulario.svelte` (linhas 70–81), que já existiam antes desta fase.
 
 ## Problemas descobertos
-- **Fase 31:** o "5º erro leva ao `Destravar / Padrão`" depende dela (veja "Ficou de
-  fora").
-- **PIN no JS:** uma string de JS não zera. O PIN sai do estado do diálogo antes da
-  resposta, mas a cópia no motor do JS (e no corpo do IPC/HTTP) fica até o coletor de
-  lixo. É inevitável na webview, e é o mesmo caso do valor digitado no formulário da 33.
-- **PIN errado no design (6373):** o frame mostra os dígitos ainda preenchidos. O app
-  esvazia o campo (só o contorno de erro fica), para não segurar o PIN errado.
-- **Erro de leitura do Tauri:** um PIN fora do formato volta como texto do Tauri (não
-  `{codigo, mensagem}`), e a ponte JS o mostra como "falha". A interface nunca manda
-  esse formato (o `CampoPin` só aceita dígitos e o botão pede 4 ou mais).
-- **Duas vias para o cartão de nível:** o `NIVEIS` de `telas/credenciais.js` continua
-  usado pelo `Formulario.svelte` (cartões dos formulários, ainda frames soltos no
-  design, handoff 37a). Os textos do `Cartão de nível` estão em `niveis.js`. Uma fase
-  que troque os cartões dos formulários por instâncias pode juntar as duas.
-- **Contagem:** o cofre de teste agora tem 22 entradas (D59 `delta-api-simbolos`); os
-  frames dizem 21. A tela mostra a contagem real.
-- **Console do QA:** um 404, do `favicon.ico` (o mesmo das fases 32 e 33).
+
+- O glossário dizia que os comentários citam o nome do node do FigCraft como está lá; o
+  checador acusa esses nomes (pt-BR). Os comentários citam o id e uma descrição em
+  inglês; a regra foi registrada no glossário. O orchestrator decide se fica assim.
+- `crates/ward-test-bridge/src/http.rs:392` cita `ponte-teste.js` › `ouvirAvisos` e
+  `app/src-tauri/src/main.rs` (comentário perto da linha 862) cita
+  `--primitiva-neutro-950`: são da trilha R; não mexi para não conflitar.
+- Risco de conflito no merge com a trilha R em `app/src-tauri/src/main.rs` (linhas do
+  `include_image!`), `app/core/tests/configuracao_tauri.rs` (caminhos) e
+  `dev/english-check/frozen.txt` (entradas acrescentadas no fim).
+- `revealed_selection.py` e as suítes de app/extensão não rodaram (regra da missão);
+  ficam para o Milestone 6.
 
 ## Arquivos criados/alterados
+
 | Arquivo | Ação |
 | --- | --- |
-| `app/nucleo/src/nivel.rs` | criado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/nucleo/src/erro.rs` | alterado |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/src-tauri/capabilities/principal.json` | alterado |
+| `app/src/telas/*` → `app/src/screens/*` (20 arquivos) | renomeado e alterado (usos) |
+| `app/src/lib/componentes/*` → `app/src/lib/components/*` (36 `.svelte`, `icons.js`, `types.js`, `levels.js`, `ward-symbol.svg`) | renomeado e reescrito |
+| `app/src/lib/estilo/{tokens,base}.css` → `app/src/lib/style/` | renomeado e alterado |
+| `app/src/lib/ponte/{index,comandos,ponte-teste}.js` → `app/src/lib/bridge/{index,commands,test-bridge}.js` | renomeado e alterado |
+| `app/src/lib/teste/Vitrine.svelte` → `app/src/lib/test/Showcase.svelte` | renomeado e alterado |
+| `app/src/App.svelte`, `app/src/main.js`, `app/src/lib/bidi.js` | alterado |
+| `app/scripts/gerar_design.py` → `app/scripts/generate_design.py` | renomeado e reescrito |
+| `app/design/icons/*.svg` (27) | renomeado |
+| `app/src-tauri/icons/bandeja-*-32.png` → `tray-*-32.png` | renomeado |
 | `app/src-tauri/src/main.rs` | alterado |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `app/src/lib/componentes/CartaoDeNivel.svelte` | criado |
-| `app/src/lib/componentes/OpcaoDeNivel.svelte` | criado |
-| `app/src/lib/componentes/DialogoDeNivel.svelte` | criado |
-| `app/src/lib/componentes/niveis.js` | criado |
-| `app/src/lib/componentes/CampoPin.svelte` | alterado |
-| `app/src/telas/Credenciais.svelte` | alterado |
-| `app/src/App.svelte` | alterado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/tests/ataques.rs` | alterado |
-| `docs/mission/design-nodes.md` | alterado (seção Fase 35) |
-| `docs/mission/evidence/fase-35/` (9 capturas do app, 4 PNG do design, `qa.json`) | criado |
+| `app/core/tests/configuracao_tauri.rs` | alterado |
+| `extension/popup.css`, `extension/popup.js` | alterado |
+| `dev/extension/build.py` | alterado |
+| `dev/tests/app-dist.py`, `dev/tests/app-release.sh`, `dev/tests/bidi.mjs`, `dev/tests/revealed_selection.py` | alterado |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/glossario.md`, `CLAUDE.md` | alterado |
 | `docs/mission/handoffs/phase-35.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [x] (UI/DESIGN) Conferido contra o FigCraft (cópia; o original não foi tocado, sha256 igual antes e depois)
-- [x] Ficou dentro do escopo da fase
+
+- [x] `make compile` rodado (a missão 2 não roda `make check` por fase; PRD regra 6)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto nesta fase)
+- [x] Teste de ataque para cada (SEG) tocado (nenhuma lógica de segurança mudou; o teste
+  existente de V5 acompanha os nomes)
+- [x] (UI) Conferido contra o FigCraft: medidas e cores vêm dos mesmos tokens (V3.6 por
+  script); nenhuma medida mudou
+- [x] Ficou dentro do escopo da fase (exceções: 3 exports da ponte e 4 props de telas,
+  para a base ficar limpa; ver acima)

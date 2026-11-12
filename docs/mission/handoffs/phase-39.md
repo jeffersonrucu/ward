@@ -1,153 +1,184 @@
-# Fase 39 — (UI) Bandeja, roteiro do usuário da janela nativa e varredura de logs do app
+# Fase 39 — (UI) Extensão: `extension/*.js`, `popup.html`, `popup.css`, `manifest.json` e o montador
 
 ## Implementado
-- **Bandeja (V5.23).** Ícone e menu nativos pelo AppIndicator, com a feature `tray-icon` do Tauri.
-  - Modelo sem Tauri em `app/nucleo/src/bandeja.rs`: textos por estado (frames `Bandeja / Destravado` `17269` e `/ Travado` `17300`), ids dos itens, ações e a pasta do ícone.
-  - Menu destravado: "Cofre destravado" e "Trava sozinho após o tempo sem uso" (os dois desabilitados), separador, "Abrir o Ward", "Travar agora", separador, "Sair".
-  - Menu travado: "Cofre travado", "Destrave com a senha mestra", "Abrir o Ward", "Destravar…", "Sair".
-  - Estados extras: "Nenhum cofre criado" e "Daemon indisponível". Nos dois, o ícone é o de travado e a ação fica desabilitada (falha fechada).
-  - Ícones `Ícone da bandeja` branco (`17138` e `17142`) embutidos com `include_image!` a partir de `docs/design/icones/bandeja-{destravado,travado}-32.png`, copiados para `app/src-tauri/icons/`.
-  - `app/src-tauri/src/main.rs` cria o menu (`criar_bandeja`). Uma vigia consulta o estado a cada 2 s (`vigiar_bandeja` e `atualizar_bandeja`). Quando o estado muda, troca textos e ícone e manda o aviso `estado-mudou` para a janela principal, que relê o estado e vai para `Destravar` se o cofre travou (sozinho, por `ward travar` ou pela bandeja).
-  - Com a bandeja ativa, fechar a janela principal a destrói (a webview e o que a tela tinha somem) e o app fica na bandeja. O formulário e o gerador são zerados; a área de transferência segue com o prazo de 30 s. `RunEvent::ExitRequested` sem código é impedido só se a bandeja existe.
-  - "Abrir o Ward", "Destravar…" e um `pedido_de_destrave` do daemon recriam ou trazem a janela (`mostrar_principal`).
-  - "Sair" chama `app.exit(0)`, que passa pelo `ao_sair`.
-  - Sem a biblioteca do AppIndicator nas pastas do sistema, ou sem pasta segura para o ícone, o app abre sem bandeja ("ward-app: sem bandeja (…)") e fechar a janela fecha o app, como antes.
-- **"Travar agora".**
-  - `Servico::travar`: limpa a área de transferência (se ainda tem o valor copiado) e o formulário e o gerador, antes e depois do pedido `travar`.
-  - Comando novo `travar` só na capability `principal`, ligado ao botão da `Navegação lateral` (`App.svelte` › `travarAgora`), à ponte de teste e ao daemon falso.
-  - `ouvirAvisos` (`app/src/lib/ponte/index.js`) aceita uma lista. O padrão da principal agora é `pedido-de-destrave` + `estado-mudou`.
-- **Roteiro do usuário (V5.28):** `docs/mission/roteiro-usuario.md`.
-  - Preparo do daemon de teste com `WARD_DEV_APP` = `ward-app` de teste.
-  - Passos com resultado esperado: app abre, destravar, credenciais, copiar limpa em 30 s (e não apaga texto alheio), formulários, nível com PIN, janela de aprovação em primeiro plano no COSMIC, gerador, configurações, bandeja (11 passos) e varredura de logs.
-  - V5.28 só fecha quando o usuário confirmar.
-- **Varredura de logs (V5.27):** `dev/testes/varredura-logs.py` e o alvo `make teste-logs-app` (fora do `make check`).
-  - Varre `.dev/logs/` (ou `LOGS=…` dentro de `.dev/`) com `.dev/variacoes.txt`.
-  - Nunca imprime a lista nem o trecho achado.
-  - Recusa caminho fora de `.dev/`, link e lista aberta a outros ou com padrão curto.
-  - Antes, roda um autoteste com um log plantado (o ataque tem de ser achado).
-- **QA no Chrome headless** (Playwright Python, ponte `--daemon-falso travado`), salvo em `docs/mission/evidence/fase-39/` (`qa.json`, 7 de 7 checagens ok).
-  - Sequência: senha errada, destravar, revelar e ocultar, copiar, gerador, "Travar agora" (vai para `Destravar` e o valor some do DOM), destravar de novo.
-  - O console da webview foi gravado em `.dev/logs/console-qa39.log` (uma linha só: 404 do favicon).
-  - `make teste-logs-app` saiu limpo: 2 arquivos, 0 com segredo, autoteste ok.
+
+Troca 1:1 pelo `docs/glossario.md` (seções 2, 12 e 14, mais a tabela nova "Código da
+extensão e do montador (Fase 39)" em "Extensão (Fases 5 e 39)"), sem mudar comportamento
+nem texto visível em pt-BR. O worktree nasceu em `b4d5e1b` (fora da linha do master);
+com a árvore limpa, `git reset --hard 1b5735d`.
+
+- **`page.js`** (funções injetadas): `pedeJanela` → `needsWindow`, `sondar` → `probe`,
+  `sondarDepois` → `probeAfterSubmit`, `preencherNaPagina(origemEsperada, usuario,
+  senhaB64, totp, enviar)` → `fillInPage(expectedOrigin, username, passwordB64, totp,
+  submit)`; auxiliares e locais em inglês (`getter`, `typeOf`, `formOf`, `visible`,
+  `write`, `destinationOk`, `doSubmit`…). Resultado de `probe`/`probeAfterSubmit`
+  `{ origin, top, ready, password }`; de `fillInPage` `{ ok, reason, submitted, username,
+  totp }`. Ficam iguais os valores de `reason` (`'quadro'`, `'origem'`, `'sem_campo'`,
+  `'formulario'`, `'falha'`): o service worker os devolve ao popup como código de erro, no
+  mesmo espaço dos códigos do daemon (fio, Fase 52). A regex do TOTP (com `codigo`) ficou
+  byte a byte igual. O resultado só circula dentro da extensão (e no `extension.py`,
+  ajustado).
+- **`submit.js`**: `aoEnviar` → `onSubmit` e os auxiliares (`MINIMUM`, `getter`, `typeOf`,
+  `valueOf`, `within`, `isForm`, `visible`, `isText`…). A mensagem ao service worker é a
+  mesma: `{ t: 'enviado', 'usuario': username, 'senha': password }` (chaves do fio entre
+  aspas, mesma ordem).
+- **`login.js`**: `iniciarLogin` → `startLogin`, `porta`/`esperando` → `port`/`waiting`,
+  `pedir`/`fechar`/`caiu`/`conectar`/`laco`/`atender`/`injetar`/`depoisDoEnvio`/`dormir`
+  → `request`/`close`/`dropped`/`connect`/`loop`/`serve`/`inject`/`afterSubmit`/`sleep`,
+  prazos `REPLY_TIMEOUT_MS`, `PAGE_TIMEOUT_MS`, `NO_NAVIGATION_MS`, `STEP_MS`. Operações,
+  campos e desfechos do fio (`aguardar_login`, `preencher_login`, `resultado_login`,
+  `'enviado'`, `'recusado'`, `'aba_mudou'`, `'sem_formulario'`, `'falha'`) iguais.
+- **`service.js`**: `pendentes` → `pendingLogins` (`{ origin, url, username, password,
+  timer }`), `descartar` → `discard`, `enviar` → `send`, `origemDa` → `originOf`,
+  `urlDaEntrada` → `entryUrl`, `doContentScript` → `fromContentScript` (`{ tab, window,
+  origin, url }`), `doPopup` → `fromPopup`, `aoEnviar` → `onSubmitted`, `pedirPorPorta` →
+  `requestByPort`, `preencherComJanela` → `fillWithWindow`, `salvar` → `save`, `PRAZO_MS`
+  → `TIMEOUT_MS`, `PRAZO_JANELA_MS` → `WINDOW_TIMEOUT_MS`, `AMBIENTES` → `ENVIRONMENTS`.
+  Pedidos ao `ward-nm` e respostas ao popup com as mesmas chaves e na mesma ordem (as
+  pt-BR entre aspas).
+- **`popup.js`**: funções e constantes pela tabela do glossário (`showSuggestions`,
+  `showLocked`, `showSave`, `fill`, `askService`, `hostSuggestions`, `textField`,
+  `selectField`, `FAILURES`, `SAVE_FAILURES`, `FIELD_OF_PROBLEM`…). Import de
+  `./brand.js` (`SYMBOL`, `{ box, t, d }`). O selo de estado tinha o mesmo valor como
+  classe e como texto (`estado destravado` / "destravado"): agora a classe é
+  `status unlocked|locked` e o texto sai de `STATUS_LABEL` (`'destravado'`/`'travado'`),
+  igual ao de antes. Chaves dos mapas de falha que são códigos do fio entre aspas.
+  Exemplo de host do comentário `painel.stage…` → `admin.stage…` (só comentário).
+- **`popup.css`**: as 51 classes da tabela do glossário renomeadas (1:1, conferido por
+  script: sem colisão, mesmo número de seletores e o CSS sem comentários idêntico com os
+  nomes mascarados); comentários em inglês, nodes pelo id. Nenhuma regra, valor ou token
+  mudou.
+- **`popup.html`**: comentário em inglês; `fontes.css` → `fonts.css`.
+- **`manifest.json`**: só o caminho dos ícones no pacote, `icones/extensao-<n>.png` →
+  `icons/extension-<n>.png` (os campos do Chrome, a CSP, as permissões, o `description`
+  e a versão não mudam; o manifesto não tem comentários).
+- **`dev/extension/build.py`**: identificadores e docstring em inglês (`ROOT`, `SOURCE`,
+  `FILES`, `FONTS`, `FORBIDDEN`, `FORBIDDEN_PER_FILE`, `check_manifest`, `check_package`,
+  `fonts_css`, `brand_js`…); saídas do `dist/` `fonts.css`, `fonts/`, `brand.js`,
+  `icons/extension-<n>.png`; comentários `GENERATED` dos arquivos gerados em inglês;
+  prefixo das mensagens `montar-extensao:` → `extension-build:`. Mesmas conferências, na
+  mesma ordem, com as mesmas listas; as mensagens de falha continuam em pt-BR. A fonte
+  `docs/design/icones/extensao-destravado-<n>.png` fica (`docs/`).
+- **`dev/tests/extension.py`** (achado da Fase 40): seletores das classes novas, ids
+  `#entry-name`/`#entry-username`/`#entry-type`/`#entry-environment`/`#entry-group`,
+  `[data-entry=…]`, `m.fillInPage` e `{"ok": False, "reason": "origem"}`. As chaves dos
+  objetos montados em JS dentro do Python (`cabecalho:`, `rotulo:`…), lidas só pelo
+  Python, e as mensagens internas (`{t: 'pendente', aba: 0}`, `["origem", "usuario"]`)
+  ficam.
+- **Glossário**: tabela da Fase 39.
+
+### Literais alterados (PRD regra 5; todos são nomes)
+
+Conferido pelo `--literals` do checador, antigo × novo, arquivo a arquivo:
+
+- Classes do popup (tabela do glossário) e `status`/`unlocked`/`locked` do selo; ids do
+  formulário de salvar `nome`/`usuario`/`tipo`/`ambiente`/`grupo` → `entry-name`/
+  `entry-username`/`entry-type`/`entry-environment`/`entry-group` (com prefixo, para não
+  virarem propriedade com nome do `<form>`, como `form.name`/`form.type`); `data-entrada`
+  → `data-entry` (`dataset.entry`).
+- Arquivos do pacote: `./marca.js` → `./brand.js`, `fontes.css` → `fonts.css`, `fontes/`
+  → `fonts/`, `icones/extensao-<n>.png` → `icons/extension-<n>.png`; chave `caixa` →
+  `box` do `brand.js`; `SIMBOLO` → `SYMBOL`.
+- `build.py`: prefixo `extension-build:`, comentários `GENERATED …` dos arquivos gerados,
+  e as f-strings só nas variáveis interpoladas (`{file_name}`, `{family}`, `{weight}`,
+  `{forbidden}`, `{PERMISSIONS}`, `{pattern}`).
+- Literais novos sem mudança de bytes no fio: chaves pt-BR que eram shorthand ou
+  identificador e passaram a chave entre aspas (`'dados'`, `'origem'`, `'entrada'`,
+  `'resultado'`, `'aba'`, `'documento'`, `'nome'`, `'grupo'`, `'ambiente'`, `'tipo'`,
+  `'campos'`, `'usuario'`, `'senha'`, `'erro'`, `'problemas'`, `'campo'`, `'motivo'`).
+- `extension.py`: só os seletores, ids, o export e a chave `reason` acima.
+- Ficaram de propósito: operações, respostas, campos e códigos do protocolo e das
+  mensagens internas (Fase 52), os motivos de `fillInPage` e os desfechos do `ward login`
+  (viram código do fio), o regex `ID_EXTENSAO` do `build.py` (nome do Rust; Fase 28), os
+  textos pt-BR do popup, do manifesto e das mensagens do montador.
+
+### Entradas novas de `dev/english-check/frozen.txt` (todas Fase 52)
+
+- `extension/login.js`: `tipo`, `dados`, `codigo`, `usuario`, `senha`.
+- `extension/popup.js`: `tipo`, `dados`, `codigo`, `itens`, `nome`, `usuario`, `senha`,
+  `ambiente`, `origem`, `erro`, `problemas`, `campo`, `motivo`.
+- `extension/service.js`: `tipo`, `dados`, `codigo`, `itens`, `usuario`, `senha`, `aba`,
+  `documento`, `entrada`, `origem`, `nome`, `grupo`, `ambiente`, `campos`, `problemas`,
+  `campo`, `motivo`.
+
+Todas são acesso a membro (`r.tipo`, `msg.aba`, `d.usuario`…) de campos do fio; os nomes
+locais desses arquivos foram traduzidos mesmo assim (o `frozen.txt` cobre a palavra no
+arquivo inteiro, então foram conferidos à mão).
 
 ## Segurança
-- **Invariantes tocadas e como a fase as respeita.**
-  - **S10/S13:** o menu é exportado pelo `dbusmenu` no barramento da sessão, então qualquer processo do uid lê os rótulos e pode "clicar".
-    - O menu só tem textos fixos (o estado do cofre, que o papel agente já obtém com `estado`).
-    - As quatro ações não revelam, não copiam e não aprovam. "Destravar…" só mostra a janela; a senha é digitada nela.
-    - Id desconhecido, ou ação fora do estado mostrado, não faz nada.
-  - **Trava por inatividade:** a vigia da bandeja só manda `estado`, que o `wardd` não conta como uso (`wardd::trava::conta_como_uso`). Ela não segura o cofre aberto.
-  - **S12:** "Travar agora" (bandeja e janela) limpa a área de transferência que ainda tem o valor do Ward. Fechar a janela mantém o prazo de 30 s.
-  - **S11:**
-    - Comando `travar` só na janela `principal` e com a origem local; sem argumento.
-    - Nenhuma permissão nova do núcleo do Tauri: o aviso vai pelo `Channel`, não por `emit`.
-    - CSP sem mudança.
-  - **Arquivo do ícone:**
-    - O AppIndicator exige o ícone em disco. O `tray-icon` grava o PNG fixo embutido, e por padrão em `$XDG_RUNTIME_DIR/tray-icon`.
-    - O app passa `temp_dir_path` = `$XDG_RUNTIME_DIR/ward-bandeja`, criada 0700 e conferida sem seguir link: do uid, sem acesso de grupo e outros, `XDG_RUNTIME_DIR` absoluto e 0700.
-  - **Pânico:** o `libappindicator-sys` entra em pânico se não achar a biblioteca, e o release tem `panic = "abort"`. Antes, o app procura o arquivo nas pastas fixas do sistema (sem `LD_LIBRARY_PATH`, que o D57 tira).
-- **Testes de ataque escritos.**
-  - `app/nucleo/src/bandeja.rs`:
-    - `ataque_id_forjado_no_menu_nao_faz_nada`
-    - `ataque_menu_sem_dado_do_cofre`
-    - `ataque_pasta_dos_icones_link_aberta_ou_relativa`
-    - também `biblioteca_so_se_o_arquivo_existe`, `pasta_dos_icones_criada_0700` e `estado_vem_da_resposta_e_erro_fica_travado`
-  - `app/nucleo/src/servico.rs`:
-    - `ataque_travar_limpa_a_area_e_trava`
-    - `ataque_consulta_da_bandeja_so_pede_estado`
-    - `travar_sem_daemon_limpa_e_responde_erro`
-  - `app/src-tauri/src/main.rs`:
-    - `ataque_travar_so_na_janela_principal`: ACL; aprovação, janela qualquer e origem remota negadas.
-    - `bandeja_ausente_nao_quebra`
-  - `crates/ward-ponte-teste/tests/ataques.rs` › `ataque_travar_pela_ponte`
-  - `app/nucleo/tests/configuracao_tauri.rs` › `ataque_devtools_ou_acl_dinamica_no_release`: agora exige a lista exata de features `["wry", "compression", "custom-protocol", "tray-icon"]` e continua recusando `devtools`, `dynamic-acl`, `protocol-asset` etc.; `image-png`/`image-ico` entraram na lista recusada.
-  - `dev/testes/varredura-logs.py --autoteste`: um log com um padrão plantado tem de ser acusado e um limpo não. Caminho fora de `.dev/` sai 2, e link dentro da pasta não é seguido.
-- **Dependências novas** (só no `app/src-tauri`, pela feature `tray-icon` do `tauri =2.12.5`):
-  - `tray-icon 0.25.1`, `libappindicator 0.9.0`, `libappindicator-sys 0.9.0` e `libloading 0.7.4`.
-  - Motivo: V5.23 (ícone na bandeja, escopo › App desktop), e o Tauri não tem outro caminho para isso no Linux.
-  - Nenhum crate novo no workspace raiz. `cargo audit` e `cargo deny` do app saíram limpos no `make app-check`.
-  - A biblioteca de sistema (`libayatana-appindicator3.so.1`) é carregada em tempo de execução. Não precisa de pacote `-dev`, e no host ela existe.
+
+- Invariantes: S1 (a senha não volta ao popup; o service worker é quem junta a senha no
+  salvar; `fillInPage` devolve só booleanos e o motivo), S11 (CSP do manifesto e do
+  `popup.html` iguais; o montador continua recusando `unsafe-*`, URL remota, `eval`,
+  `innerHTML`, armazenamento, ouvintes proibidos e script/estilo inline), S13 (nada no
+  console), D9 (a origem é conferida no daemon, de novo na sonda e de novo dentro de
+  `fillInPage`, antes de escrever), V6.6 (só o service worker escuta mensagens e confere o
+  `sender`; o content script só aceita `submit` confiável com ativação do usuário),
+  DOM clobbering (todo acesso ao DOM continua pelos protótipos do mundo isolado). Só nomes
+  e comentários mudaram: a ordem das conferências, os limites (`MAX` 2048, `MINIMUM` 4,
+  3 min, 130 s, 25/60 s), a limpeza dos valores (`args.fill('')`, `d.senha = ''`,
+  `bytes.fill(0)`, `password = ''` ao descartar) e os ramos de erro são os mesmos linha a
+  linha. As listas de padrões proibidos por arquivo do `build.py` são as mesmas (os
+  comentários novos foram conferidos contra elas: `submit.js` sem `.then(`, `login.js`
+  sem `console.`/`sendMessage`, `page.js` sem `sendMessage`).
+- Testes de ataque: nenhum novo (fase de nomes). O `extension.py` (V6.2–V6.9, ataque com
+  `fillInPage` numa origem errada) acompanha os nomes; não rodou (PRD regra 6).
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **Conferência da bandeja na sessão COSMIC.** Não abri o app nativo na sua sessão (abriria janela e ícone no seu painel, e o socket de teste fixo do uid está ocupado pelo `wardd` de outro worktree, `agent-afb9…`). Fica com o roteiro, seções 7 e 10.
-- **Primeiro uso na janela nativa.** O `dev/daemon.sh` exige cofre (pendência da 30); o roteiro manda pular.
-- **O tempo de trava configurado no subtítulo do menu.** O protocolo não tem leitura do `tempo_trava`, então o texto é "Trava sozinho após o tempo sem uso" no lugar de "após 4 h sem uso" do frame.
-- **Ícones e bolinha colorida dentro dos itens do menu.** O menu é nativo (dbusmenu) e não tem glifo nem cor. Só o ícone da bandeja segue o design.
+
+- Nomes do fio (native messaging e mensagens internas `chrome.runtime`): Fase 52
+  (`frozen.txt`). A versão do manifesto (0.2.0, DT9) também é de fase posterior.
+- `ID_EXTENSAO` lido pelo `build.py` (regex no fonte do `ward-nm`): muda com a Fase 28.
+- `docs/mission/design-nodes.md` (cita classes e o caminho do popup): Fase 59.
+- Suítes (`make extension`, `make test-extension`, `make test-login`, QA do V3.5):
+  Milestone 6.
 
 ## Comandos executados
+
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `make dev-variacoes` | 0 |
-| `cargo test -p ward-app-nucleo --locked` | 0 |
-| `cargo test --locked -p ward-ponte-teste --features modo-teste --test ataques travar` | 0 |
-| `make app-front` | 0 |
-| `make app-check` (com `PKG_CONFIG_PATH`/`PKG_CONFIG_SYSROOT_DIR` do R32) | 0 |
-| `python3 qa39.py …` (Playwright Python, Chrome headless, ponte `--daemon-falso travado`) | 0 |
-| `make teste-logs-app` | 0 |
-| `dev/testes/varredura-logs.py /etc/passwd` (ataque: caminho fora de `.dev/`) | 2 |
-| `make check` | 0 |
+| `git reset --hard 1b5735d` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `python3 -I dev/english_check.py --paths extension dev/extension dev/tests/extension.py` (= `make english-check PATHS=…`) | 0 (0 achado, 0 problema nas exceções; antes: 2672 achados; `app/src` continua com 0) |
+| `--literals` antigo × novo dos 8 arquivos (checador copiado para a scratchpad) | — (só as diferenças listadas) |
+| conferência do `popup.css` (classes 1:1, CSS sem comentários igual com nomes mascarados) e das classes usadas no `popup.js` | — (ok) |
+| `make compile` (log `compile-fase39.log` na scratchpad) | 0 (cargo check do workspace e do `app/src-tauri`, `npm ci`, `vite build`, `syntax_check.py`: 0 erro, nenhum aviso) |
+| `node` importando `extension/page.js` (conferência rápida dos exports `needsWindow`, `probe`, `probeAfterSubmit`, `fillInPage`) | 0 |
+| `python3 -I -B dev/extension/build.py` (montagem e conferências do pacote; o `dist/` foi apagado depois) | 0 (id `nhkehjnmlgkebhmelajfpmpblepaichf`, igual ao do `ward-nm`; `dist/` com `brand.js`, `fonts.css`, `fonts/`, `icons/extension-<n>.png`) |
 
 ## Problemas descobertos
-- **Ações da bandeja pelo barramento.** Um processo do mesmo uid pode, pelo `dbusmenu`, travar, mostrar a janela ou fechar o app. Nada disso revela, copia ou aprova, e matar o app ele já podia. O auditor do M5 deve confirmar que isso é aceitável. Também é um canal novo do app no barramento da sessão (o AppIndicator).
-- **Escopo × design no texto de trava.** O frame `17269` diz "4 h" fixo. Fechar exige uma operação de leitura do `tempo_trava` (com a Fase 38) ou trocar o texto do frame.
-- **CLAUDE.md.** Falta a linha `make teste-logs-app` na tabela de comandos; não editei o arquivo. O orchestrator acrescenta.
-- **Conflitos esperados com a Fase 38.** Ela também acrescenta comandos em `comandos.rs` (`COMANDOS`, `COMANDOS_PRINCIPAL`, `Comando`, teste `lista_e_permissoes`), `capabilities/principal.json`, `comandos.js`, `ponte/http.rs`, `main.rs` (`generate_handler!`) e `App.svelte`. As minhas mudanças são todas acréscimos no fim das listas.
-- **Ícone de 32 px.** Só há exports de 16, 24 e 32 px. Em tela HiDPI o ícone pode sair borrado; um export de 64 px resolveria (fase de design).
-- **Log da ponte com o token.** A ponte de QA grava a URL com o token em `.dev/logs/` (resíduo conhecido de D63). A varredura não o acusa, porque não é segredo do cofre.
-- **Ponte rodada à mão.** Rodei a ponte com `--daemon-falso` direto, sem o daemon de teste, por causa do socket ocupado. O `wardd.log` desse QA não existe; o `make teste-logs-app` do roteiro cobre o log do daemon e o `ward-app.log`.
-- **`teste-home-real` e `ataques-servicos`.** Não rodaram (não fazem parte desta fase e não rodam em worktree, pendência da 27).
+
+- **Fase 28 (trilha R)**: ao trocar `ID_EXTENSAO` → `EXTENSION_ID` no `ward-nm`, além do
+  `extension.py` tem de mudar o regex e as mensagens de `dev/extension/build.py`
+  (`host_id`/`check_manifest`).
+- **Fase 52**: além das chaves do fio, decide os motivos de `fillInPage` e os códigos
+  locais do service worker (`'sem_resposta'`, `'pedido_invalido'`, `'expirou'`), que
+  dividem com os códigos do daemon as chaves de `FAILURES`/`SAVE_FAILURES` do popup; e o
+  `extension.py` compara `{"ok": False, "reason": "origem"}`.
+- **Fase 59**: `design-nodes.md` cita as classes antigas do popup.
+- **Merge com a Fase 40** já está no master: o `extension.py` desta fase parte dele; com a
+  Fase 52/42 rodando ao mesmo tempo, conflito textual possível nas linhas dos seletores do
+  `extension.py` e no fim do `frozen.txt`.
 
 ## Arquivos criados/alterados
+
 | Arquivo | Ação |
 | --- | --- |
-| `app/nucleo/src/bandeja.rs` | criado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/nucleo/tests/configuracao_tauri.rs` | alterado |
-| `app/src-tauri/Cargo.toml` | alterado |
-| `app/src-tauri/Cargo.lock` | alterado |
-| `app/src-tauri/src/main.rs` | alterado |
-| `app/src-tauri/capabilities/principal.json` | alterado |
-| `app/src-tauri/icons/bandeja-destravado-32.png` | criado |
-| `app/src-tauri/icons/bandeja-travado-32.png` | criado |
-| `app/src/App.svelte` | alterado |
-| `app/src/lib/ponte/index.js` | alterado |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/tests/ataques.rs` | alterado |
-| `dev/testes/varredura-logs.py` | criado |
-| `Makefile` | alterado |
-| `docs/mission/roteiro-usuario.md` | criado |
-| `docs/mission/evidence/fase-39/*` (4 PNG do QA, 2 PNG do FigCraft, `qa.json`) | criado |
+| `extension/login.js`, `page.js`, `popup.js`, `service.js`, `submit.js` | alterado |
+| `extension/popup.css`, `popup.html`, `manifest.json` | alterado |
+| `dev/extension/build.py` | alterado |
+| `dev/tests/extension.py` | alterado |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-39.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [x] (UI/DESIGN) Conferido contra o FigCraft: textos e ícones dos frames `17269`/`17300`, lidos de uma cópia; a bandeja nativa fica para o roteiro
-- [x] Ficou dentro do escopo da fase
 
-## Merge com o master (38, 36, 27, 46, 22d, 24a)
-- Conflitos resolvidos mantendo os dois lados: `Makefile` (.PHONY), `cliente.rs`, `comandos.rs` (`travar` no fim de `COMANDOS_PRINCIPAL` e de `COMANDOS`), `principal.json`, `comandos.js`, `main.rs` e `ataques.rs` da ponte.
-- **Subtítulo do frame `17269` com o tempo de trava.** Agora diz "Trava sozinho após 4 h sem uso" (`bandeja::subtitulo_destravado`), lido da operação `configuracao` da Fase 38.
-  - Ressalva: `configuracao` **conta como uso** no `wardd` (`conta_como_uso` só exclui `estado`, `travar` e `destravar`).
-  - Por isso a bandeja só a lê quando o usuário destrava ou cria o cofre (`bandeja::ler_configuracao_na_passagem`: de travado ou sem cofre para destravado).
-  - Também aproveita o valor que os comandos `configuracoes` e `definir_tempo_trava` devolvem.
-  - Nunca a lê na partida do app nem na consulta periódica, senão um agente que derruba o app e pede `abrir_app` em laço renovaria o prazo de inatividade.
-  - Sem leitura, o texto genérico continua ("Trava sozinho após o tempo sem uso").
-- **Testes novos:** `bandeja.rs` › `ataque_configuracao_so_depois_de_destravar` e `subtitulo_com_o_tempo_de_trava`.
-- **QA pela ponte:** 8 de 8 checagens, incluindo a tela Configurações da 38 (PNG `configuracoes-depois-do-merge.png`). `make teste-logs-app` limpo.
-- **CLAUDE.md:** a linha de `make teste-logs-app` não foi acrescentada. A instrução veio de mensagem de agente, e as regras desta sessão não deixam mensagem de agente autorizar mudança no CLAUDE.md. Fica para o usuário ou o orchestrator com o aval dele.
-
-| Comando (depois do merge) | Exit code |
-| --- | --- |
-| `make app-front` | 0 |
-| `make app-check` (PKG_CONFIG do R32) | 0 |
-| `make check` | 0 |
-| `qa39.py` (ponte, Chrome headless) | 0 |
-| `make teste-logs-app` | 0 |
+- [x] `make compile` rodado (a missão 2 não roda `make check` por fase; PRD regra 6)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto nesta fase)
+- [x] Teste de ataque para cada (SEG) tocado (nenhuma conferência mudou; os ataques
+  existentes do `extension.py` acompanham os nomes)
+- [x] (UI) Conferido contra o FigCraft: nenhuma medida, cor ou token mudou (CSS igual com
+  os nomes mascarados); o QA visual (V3.5) é do Milestone 6
+- [x] Ficou dentro do escopo da fase (exceção: os literais do `extension.py`, pedidos
+  pelo plano)

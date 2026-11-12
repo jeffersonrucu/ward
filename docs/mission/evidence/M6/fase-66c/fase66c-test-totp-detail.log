@@ -1,0 +1,38 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+PATH="<home>/.nvm/versions/node/v26.13.0/bin:/usr/bin:/bin" "<home>/.nvm/versions/node/v26.13.0/bin/node" dev/tests/credentials_totp.mjs
+ok   the seed id is the protocol one
+ok   detail of a login with TOTP draws only the password
+ok   login with TOTP shows the code
+ok   entry without a seed: no code, secrets as they are
+ok   no detail (none selected or locked): nothing
+ok   detailSecrets does not change the detail (the form still sees the seed)
+ok   attack: the detail never asks to reveal or copy the seed
+ok   the other fields of the detail still go
+credentials_totp: 8 ok
+PW_PYTHONPATH="<repo>/.dev/pw-lib/site" /usr/bin/python3 -I -B dev/tests/totp_detail.py target/debug/ward-test-bridge app/dist-teste
+ok   Chrome isolado e sem nenhuma extensão (guarda da Fase 65a)
+ok   acme-totp-dev: código de 6 dígitos em dois grupos
+ok   acme-totp-dev: rótulo Código TOTP
+ok   acme-totp-dev: sem o rótulo da semente no detalhe
+ok   acme-totp-dev: o código veio do comando do código TOTP
+ok   acme-totp-dev: contagem anda
+ok   acme-totp-dev: Copiar chama copiar o código TOTP
+ok   acme-totp-dev: página sem a semente depois de todos os botões
+ok   acme-wp-dev: código de 6 dígitos em dois grupos
+ok   acme-wp-dev: rótulo Código TOTP
+ok   acme-wp-dev: sem o rótulo da semente no detalhe
+ok   acme-wp-dev: o código veio do comando do código TOTP
+ok   acme-wp-dev: contagem anda
+ok   acme-wp-dev: Copiar chama copiar o código TOTP
+ok   acme-wp-dev: página sem a semente depois de todos os botões
+ok   acme-pg-dev: sem código TOTP
+ok   acme-pg-dev: nenhum pedido de código TOTP
+ok   ataque: nenhum pedido do detalhe nomeia a semente
+ok   ataque: nenhuma resposta ao detalhe traz a semente
+ok   controle: a semente aparece no formulário de edição
+ok   controle: o detector acha a semente revelada no formulário (pedido e resposta)
+ok   controle: o detector acha a semente na página do formulário
+ok   de volta ao detalhe: página sem a semente
+ok   de volta ao detalhe: sem o rótulo da semente
+totp-detail: 0 falha(s)

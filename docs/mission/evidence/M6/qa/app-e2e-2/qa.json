@@ -1,0 +1,87 @@
+[
+ {
+  "checagem": "Chrome sem nenhuma extensão (guarda da Fase 65a)",
+  "ok": true,
+  "detalhe": "0 alvo(s) de extensão"
+ },
+ {
+  "checagem": "V3.3 destravar: foco inicial no campo da senha mestra",
+  "ok": true,
+  "detalhe": "{'id': 'master-password', 'tag': 'input', 'name': '', 'visible': True}"
+ },
+ {
+  "checagem": "V3.4 destravar-padrao: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 destravar: 'Senha mestra incorreta.'",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 destravar-senha-errada: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 destravar: o foco volta ao campo depois do erro",
+  "ok": true,
+  "detalhe": "{'id': 'master-password', 'tag': 'input', 'name': '', 'visible': True}"
+ },
+ {
+  "checagem": "passo sem exceção",
+  "ok": false,
+  "detalhe": "TimeoutError: Page.wait_for_selector: Timeout 60000ms exceeded.\nCall log:\n  - waiting for locator(\"[data-entry]\") to be visible\n"
+ },
+ {
+  "checagem": "V3.2 primeiro-uso: a ponte com o daemon falso deu a URL",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 primeiro uso: 'Criar seu cofre'",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 primeiro-uso: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 credenciais-vazia: a ponte com o daemon falso deu a URL",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 credenciais vazia: o convite para a primeira entrada",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 credenciais-vazia: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 escolher-pendrive: a ponte com o daemon falso deu a URL",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 escolher pendrive: diálogo aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 escolher-pendrive: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc fecha escolher pendrive",
+  "ok": true,
+  "detalhe": ""
+ }
+]

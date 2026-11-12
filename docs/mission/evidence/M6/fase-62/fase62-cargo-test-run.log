@@ -1,0 +1,19 @@
+   Compiling wardd v0.2.0 (<repo>/crates/wardd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.55s
+     Running tests/run.rs (target/debug/deps/run-47de9528a4a67298)
+
+running 11 tests
+test ra1_record_child_environ_readable_by_same_uid ... ok
+test v4_15_cli_that_drops_and_killed_daemon ... ok
+test f26a_attack_cli_environment_does_not_change_the_command ... ok
+test f54b_attack_null_stdin_with_data_kills_the_command ... ok
+test d52_oversized_request_refused_by_daemon ... ok
+test v4_21_locked_waits_for_cli_unlock ... ok
+test v4_delivery_mask_code_and_refusals ... ok
+test f54b_attack_piped_script_on_approval ... ok
+test f28g_attack_single_large_write_does_not_show_password_start ... ok
+test f55_attack_descendant_outside_group_dies_at_end_and_on_lock ... ok
+test f54_attack_ward_run_dies_on_lock ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.34s
+

@@ -1,190 +1,118 @@
-# Fase 54b — Entrada padrão na aprovação
+# Fase 54b — Nomes reservados na leitura
 
 ## Implementado
-- **Protocolo** (`ward-core`): novo `TipoEntradaPadrao` (`terminal`, `nula`, `pipe`,
-  `arquivo`, `outra`; `oculta()` = não terminal nem nula). Campo **obrigatório**
-  `tipo_entrada` em `executar` e `ssh`. `PedidoDeAprovacao.entrada_oculta` (lógico
-  obrigatório, só em executar/ssh e nunca numa confirmação de origem).
-  `ResponderAprovacao.entrada_confirmada` (ausente = falso, só `true` aceito como
-  valor lógico; só com decisão que pede PIN).
-- **CLI** (`crates/ward/src/comandos.rs`): `tipo_da_entrada_padrao()` faz `fstat` de
-  uma cópia do fd 0 e classifica: fd fechado ou `/dev/null` (char 1:3) = nula, tty =
-  terminal, FIFO/socket = pipe, arquivo regular = arquivo, resto (`/dev/zero`) =
-  outra. `ward run` e `ward ssh` mandam o tipo; com `nula` a CLI não lê nada da
-  entrada. Mensagem de travado: `` `/usr/local/bin/ward destravar` `` (da 54a).
-- **Daemon** (`wardd`):
-  - `uso.rs`: o pedido "com aprovação" com entrada oculta vai à janela com
-    `entrada_oculta`; um "Permitir" sem `entrada_confirmada` (ou com ela num pedido
-    sem entrada oculta) é `pedido_invalido`, antes do PIN (não conta falha) e o pedido
-    segue pendente. A liberação de 1 hora não cobre entrada oculta. Entrada livre:
-    sem mudança.
-  - `execucao.rs`/`ssh.rs`: `nula` é cumprida. Sem pty, a entrada do filho fecha no
-    lançamento; um `entrada_padrao` com dados mata o grupo (137), sem o dado chegar.
-    Log `depurar!` só com o nome do tipo (para a suíte da CLI).
-  - `aprovacao.rs`: `e_entrada_oculta(id)`.
-  - `aprovador-teste`: modo `uma_vez_ciente <PIN>`; o log ganha ` entrada_oculta=1`
-    só quando verdadeiro.
-- **App**:
-  - `app/nucleo` (`servico.rs`, `cliente.rs`, `aprovacao.rs`, `daemon_falso.rs`,
-    `comandos.rs`): `responder_aprovacao(id, decisao, pin, ciente)`. O serviço recusa
-    `ciente` sem PIN e, com PIN, `ciente` diferente de `entrada_oculta`. O daemon falso
-    confere igual ao `wardd` e tem o modo simulado `aprovacao-entrada`.
-  - `app/src-tauri/src/main.rs`: o comando aceita `ciente: Option<bool>`.
-  - `ward-ponte-teste`: `ciente` lógico só com PIN; o modo `aprovacao-entrada` está no USO.
-  - `JanelaAprovacao.svelte` e `aprovacao.js`: com `entrada_oculta` a janela mostra
-    `Destaque` aviso ("O comando recebe dados pela entrada padrão, que esta janela não
-    mostra. …") e `Interruptor` `aprovacao-entrada` ("Sei o que vai pela entrada padrão
-    e permito mesmo assim"). Os três "Permitir" ficam desabilitados até ele ser ligado.
-    A caixa desliga a cada pedido novo, e a resposta leva `ciente`. Conferido no
-    Chrome headless pela ponte (`--daemon-falso aprovacao-entrada`, `&tela=aprovacao`):
-    "Permitir uma vez" fica desabilitado com o PIN digitado e a caixa desligada,
-    habilita com ela ligada e responde. Screenshots em
-    `docs/mission/evidence/fase-54b/`.
-- **Skill**:
-  - `skill/settings-deny.json` ganha `Bash(*ward*run*<*)`, `Bash(*<*ward*run*)` e
-    `Bash(*|*ward*run*)`. O `<<<` já existia.
-  - `skill/ward/SKILL.md`: "Nada pela entrada padrão do `ward run`", com o script como
-    arquivo no argv; nota no sftp.
-  - `skill/README.md`: a regra nova e o limite do modelo por subcomando.
-  - `dev/testes/skill.py`: 11 ataques novos em `ATAQUES_BASH`, cobrindo `<`, `0<`,
-    `<` antes do `ward`, here-doc, `<<<` e `<(…)`. A lista nova `ATAQUES_BASH_INTEIRO`
-    tem 5 casos de pipe, exigidos só no comando inteiro. O autoteste tira cada regra
-    nova. Ataque `od` sem `<`, para a regra de `od` seguir provada sozinha.
-- **Docs**: o PRD ganha D68 (decisão e mecanismo) e RA11 (proposta: "terminal" não é
-  conferível). No contrato, V4.22 passa a exigir a dica `/usr/local/bin/ward destravar`,
-  e entram V4.39 e V4.40 (SEG, desmarcadas para o validador).
-- **Suítes Python**: `dev/testes/cli.py` confere a dica do V4.22 e o tipo que a CLI real
-  manda (`/dev/null`, pipe, arquivo, `/dev/zero`, pty), pelo log `trace` do daemon de
-  teste. `dev/testes/socket_matriz.py` manda `tipo_entrada`.
+- `crates/ward-core/src/entry/validation.rs`: `Draft::validate` passa a ser
+  `validate_from(Origin::Save)`; novo `Draft::validate_stored` (`pub(crate)`, só o leitor do
+  corpo chama) com `Origin::Read`. Na leitura, e só nela, são aceitos os nomes que a 0.2.0
+  reserva e a 0.1.x deixava livres (m2:DT11): extra `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`
+  (em qualquer tipo) e `PROTOCOL` em ftp/sftp; anexo `KEY` em server e ftp/sftp. O resto
+  das regras é igual nos dois caminhos: os nomes que a 0.1.x já reservava (`URL`, `USER`,
+  `PASS`, `TOTP`, `HOST`, `PORT`, `PASSPHRASE`, `TOKEN`) e os nomes repetidos continuam
+  recusados também na leitura. Funções `reserved_extra`/`reserved_attachment` (a regra da
+  gravação, sem mudança) e `has_reserved_name(entry)`.
+- `crates/ward-core/src/body.rs`: o 2º passe usa `validate_stored`. Um cofre v4 ou v5 com
+  esses nomes abre, e o v4 é regravado como v5 com os mesmos bytes do v5 equivalente (migra).
+- `crates/ward-core/src/delivery.rs`: nova `DeliveryError::ReservedName`. O `build` recusa a
+  entrada inteira **antes de qualquer chamada a `Resources`** (sem arquivo temporário da chave
+  ou de anexo, sem TOTP, sem túnel) quando algum extra ou anexo tem nome reservado pela regra
+  da gravação. A conferência final (`check`) ficou como estava: recusa nome repetido, `LD_*`,
+  nome fora do formato e byte nulo.
+- `crates/ward-core/src/mask.rs`: `stored_entry_cost` (`pub(crate)`) para a leitura: a entrada
+  com nome reservado (entrega recusada) conta só a própria entrada no orçamento D29, que é o
+  que `ward ssh`, o túnel e o salto montam; `entry_cost` (gravação) segue recusando com
+  `NoDelivery`.
+- `crates/ward-core/src/entry.rs`: reexporta `has_reserved_name` no crate.
+- No `wardd`, nada muda: o `execution.rs` já trata qualquer erro de entrega que não seja
+  `TypeWithoutDelivery` como `DeliveryFailed` (log com o texto fixo, sem valor). A edição
+  (`core.rs`) chama `Draft::validate`, então salvar a entrada sem renomear é recusado com
+  "vira uma variável que o tipo já entrega" no campo.
 
 ## Segurança
-- **Invariantes tocadas**:
-  - S9: quem decide é o daemon. A caixa da janela é só a interface, e o `wardd` recusa
-    a resposta sem `entrada_confirmada`.
-  - S1: papéis sem mudança. `entrada_confirmada` só vale no `responder_aprovacao` do
-    papel app.
-  - S4 e S6: o log tem só o nome do tipo, nunca o conteúdo da entrada. Os testes
-    conferem que o script e os segredos não aparecem no log.
-- **Testes de ataque escritos**:
-  - `crates/wardd/tests/run.rs`:
-    - `f54b_ataque_script_por_pipe_na_aprovacao` roda de ponta a ponta com o
-      `wardd-aprovador-teste` aberto pelo daemon. O script do `python3` por pipe e os
-      comandos para o `sh` por pipe e por arquivo dão `pedido_invalido`, nada roda e
-      nada sai. Com `uma_vez_ciente` roda. Com terminal, "Permitir uma vez" passa como
-      antes.
-    - `f54b_ataque_entrada_nula_com_dado_mata_o_comando`.
-  - `crates/wardd/tests/aprovacao.rs`:
-    - `f54b_ataque_pipe_na_aprovacao_sem_a_caixa_nao_passa`
-    - `f54b_terminal_e_nula_passam_como_antes`
-    - `f54b_liberacao_de_1_hora_nao_cobre_pipe`
-    - `f54b_ssh_com_pipe_avisa`
-  - `crates/ward-core/src/protocolo/testes.rs`:
-    - `ataque_tipo_da_entrada_padrao_fora_do_formato`
-    - asserções novas em `ataque_pedido_de_aprovacao_com_origem_fora_da_forma`
-  - `app/nucleo/src/aprovacao.rs`: `ataque_entrada_oculta_so_com_a_caixa` (interface
-    forjada; o daemon falso também recusa).
-  - `crates/ward/src/testes.rs`:
-    - `f54b_tipo_da_entrada_padrao_pelo_fstat`
-    - `f54b_run_e_ssh_mandam_o_tipo_e_nula_nao_le`
-  - `dev/testes/skill.py`: 16 ataques de deny e 3 do autoteste.
-- **Dependências novas**: nenhuma.
+- S1 (m2:V4.19): nenhum extra nem anexo troca ou imita uma variável entregue. Fui além da
+  conferência final: a entrega recusa a entrada mesmo quando o nome reservado não colide
+  (extra `FILE_X` sem anexo `x`; anexo `key` num server com senha, que se passaria por
+  `WARD_FILE_KEY`), e recusa antes de criar qualquer arquivo temporário (S2). O `check` final
+  continua recusando nome repetido.
+- S6/S13 (m2:V4.1): a leitura continua recusando o corpo inteiro com o erro genérico em
+  qualquer outra violação; a folga é uma lista fechada de nomes, só no caminho de leitura.
+  A gravação (`validate`) não mudou.
+- S8/S13: nenhum valor novo em `Debug`/`Display`; o texto do erro novo é fixo.
+- Testes de ataque (todos rodados e passando):
+  - `body/tests.rs` › `m2_54b_names_reserved_since_v5_open_and_migrate`: 12 casos (cada nome
+    reservado, `File-Key`, `file_app_env` igual ao anexo `app.env`, vários de uma vez,
+    `PROTOCOL` e anexo `key` no sftp, anexo `key`/`KEY` no server com chave e com senha, nota)
+    em v4 e v5: abre, migra com os bytes do v5, a entrega é `ReservedName` com 0 chamadas a
+    recursos, e as outras entradas não têm nome reservado.
+  - `body/tests.rs` › `m2_54b_other_reserved_names_still_refused_on_read`: nomes já
+    reservados na 0.1.x e repetidos (extra e anexo) recusados na leitura, v4 e v5, sem valor
+    no erro.
+  - `entry/tests.rs` › `m2_54b_reserved_since_v5_accepted_on_read_refused_on_save`: aceito em
+    `validate_stored`, recusado em `validate` com o motivo no campo; os estritos e os
+    repetidos recusados nos dois; extra vazio recusado na leitura.
+  - `delivery/tests.rs` › `attack_m2_54b_stored_reserved_name_does_not_replace_a_variable`:
+    16 entradas lidas (login, banco com extra secreto, sftp, server com chave, server com
+    senha, genérico com `FILE_APP_ENV` + anexo `app.env`): `ReservedName`, 0 recursos, erro
+    sem valor, `entry_cost` = `NoDelivery` e `stored_entry_cost` ok.
+  - `delivery/tests.rs` › `m2_54b_saved_entries_have_no_reserved_name`: nenhuma entrada
+    aceita na gravação é afetada.
+  - Mutação conferida: com o `body.rs` de volta ao `validate`, o teste de abrir/migrar falha;
+    sem a guarda do `build`, os três testes de ataque falham.
+- Dependências novas: nenhuma.
+- Segredos de teste: só valores de D15 (`falso-…`) e textos não secretos
+  (`valor-de-teste`, `conteudo-de-teste`); gitleaks no diff: nada.
 
 ## Ficou de fora
-- **Frame no FigCraft** para a janela com o aviso e o interruptor. A Fase 54d edita o
-  arquivo em paralelo e a ordem foi não mexer nele. A tela usa só componentes que já
-  existem (`Destaque` aviso, `Interruptor`), e o texto está marcado no código como "sem
-  frame no FigCraft ainda".
-- **`make app-check`** (build de release do Tauri) não rodou: o disco estava com cerca
-  de 4,5 GB livres, e só existe o target debug do app. No `app/src-tauri` em debug,
-  `clippy -D warnings`, `cargo test` (21 passaram) e `fmt --check` passaram. O núcleo
-  (`ward-app-nucleo`, 186 testes) e o `make app-front` também passaram.
-- **`psql` real**: não há `psql` no host. O ataque por pipe usa `sh` como leitor de
-  comandos pela entrada (a decisão não olha o argv). O `teste-cli` roda sem a ponte,
-  então o "com aprovação" responde "aprovação indisponível" de qualquer forma.
+- Suítes que falam com daemon (regra 6): `crates/wardd/tests/run.rs`, `dev/tests/cli.py`.
+  O `ward run` da entrada foi provado no `ward-core` (`delivery::build`), que é o que o
+  `wardd` chama.
+- Mensagem própria para o usuário: o `ward run` dessa entrada responde `DeliveryFailed`
+  (genérico). Ver Problemas.
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `cargo test -p wardd --all-features --test run f54b` | 0 |
-| `cargo test -p wardd --all-features --test aprovacao` | 0 |
-| `cargo test -p ward-app-nucleo --all-features` | 0 |
-| `cargo test -p ward` / `-p ward-core` | 0 |
-| `make app-front` | 0 |
-| QA Playwright Python headless (`ward-ponte-teste --daemon-falso aprovacao-entrada`, Chrome `/opt/google/chrome`) | 0 |
-| `make check` | 0 |
-| `make teste-skill` | 0 |
-| `make dev-servicos-subir`; `make dev-daemon WARD_DEV_APP=` (socket `/run/user/1000/ward-54b`) | 0 |
-| `WARD_DEV_SOCKET_DIR=/run/user/1000/ward-54b make teste-cli` (0 falhas; V4.22 e os 5 tipos da 54b ok) | 0 |
-| `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo fmt --check` em `app/src-tauri` (debug) | 0 |
-| `make dev-daemon-parar`, `make dev-servicos-parar` | 0 |
-| `git checkout -- docs/mission/evidence/fase-4[123]` | 0 |
+| `cargo test --locked -p ward-core --lib -- body:: entry:: delivery:: mask::` | 0 (153 testes) |
+| `cargo test --locked -p ward-core --lib -- m2_54b` (mutações, revertidas) | 101 (esperado) |
+| `cargo clippy --locked -p ward-core -p wardd --all-targets -- -D warnings` | 0 |
+| `cargo fmt --all --check` | 0 |
+| `make compile` (log `.dev/logs/fase54b-compile.log`) | 0 |
+| `make english-check` (log `.dev/logs/fase54b-english-check.log`) | 0 (0 achado) |
+| `gitleaks detect --no-git` no diff da fase | 0 |
+
+`make check` não rodado: o `cargo test` do workspace tem testes que falam com daemon
+(regra 6 e Fase 54a).
 
 ## Problemas descobertos
-- **RA11 (proposta, aguarda o usuário)**: `tipo_entrada: terminal` é declarado pelo
-  cliente do mesmo uid. Escapam do aviso um cliente de socket que mente e um agente que
-  cria um pty (`script -c`, `pty.spawn`) e escreve o script nele. A fase fecha o caso da
-  auditoria e o erro sem má intenção, mas não o agente que mira o Ward. Alternativa:
-  avisar em toda entrada que não seja `nula`, tty incluído.
-- **Deny por subcomando**: se o Claude Code olhar cada subcomando, `printf … | ward
-  run …` vira dois comandos inocentes. Nenhuma regra por texto pega isso; quem barra é
-  o daemon. Está documentado em `skill/README.md`.
-- **`docs/escopo.md` › "Janela de aprovação"** não fala da entrada padrão. D68 está no
-  PRD, e o escopo não foi editado (é fonte de verdade do usuário). Falta uma linha ali.
-- **Design**: falta o frame `Aprovação / entrada padrão` (aviso e interruptor) na
-  Layout do FigCraft. Fica para uma fase de DESIGN depois da 54d.
-- `docs/mission/handoffs/phase-54.md` já estava modificado no checkout antes desta fase
-  e não foi tocado por ela.
-- Disco: `target/debug/incremental` foi apagado (permitido). Restam cerca de 4 GB livres.
+- `body/tests.rs` › `v2_31_forged_fields` estava quebrado desde a Fase 53 (caso "anexo do
+  servidor chamado chave": `chave` deixou de ser reservado e o corpo passou a abrir; a 53
+  rodou só `delivery::`/`entry::`). Troquei o caso por um extra `HOST` no server, que segue
+  recusado na leitura.
+- Decisão de segurança além do pedido: a entrega recusa qualquer entrada com nome reservado
+  pela regra da gravação, mesmo sem colisão de fato (ver Segurança). Só alcança entradas lidas
+  de um cofre 0.1.x; depois de renomear o extra/anexo no app, a entrega volta.
+- O usuário não fica sabendo o motivo: o `ward run` responde o erro genérico de entrega e o
+  log do daemon diz "campo extra ou anexo com nome reservado". Sugiro, na Fase 59/66
+  (`docs/instalacao.md`, roteiro de atualização), avisar que extras chamados `ENTRY`, `GROUP`,
+  `ENVIRONMENT`, `FILE`/`FILE_*`, `PROTOCOL` (ftp/sftp) e anexos `key` (server/ftp/sftp) têm de
+  ser renomeados no app; ou um código de erro próprio no protocolo (fora desta fase).
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-core/src/protocolo.rs` | alterado |
-| `crates/ward-core/src/protocolo/pedido.rs` | alterado |
-| `crates/ward-core/src/protocolo/resposta.rs` | alterado |
-| `crates/ward-core/src/protocolo/testes.rs` | alterado |
-| `crates/ward/src/comandos.rs` | alterado |
-| `crates/ward/src/testes.rs` | alterado |
-| `crates/wardd/src/aprovacao.rs` | alterado |
-| `crates/wardd/src/uso.rs` | alterado |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/src/servidor.rs` | alterado |
-| `crates/wardd/src/execucao.rs` | alterado |
-| `crates/wardd/src/ssh.rs` | alterado |
-| `crates/wardd/aprovador-teste/main.rs` | alterado |
-| `crates/wardd/tests/aprovacao.rs` | alterado |
-| `crates/wardd/tests/run.rs` | alterado |
-| `crates/wardd/tests/nucleo.rs` | alterado |
-| `crates/wardd/tests/socket.rs` | alterado |
-| `crates/wardd/tests/ssh.rs` | alterado |
-| `crates/wardd/tests/trava.rs` | alterado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/src/main.rs` | alterado |
-| `app/nucleo/src/aprovacao.rs` | alterado |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/daemon.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/src-tauri/src/main.rs` | alterado |
-| `app/src/telas/JanelaAprovacao.svelte` | alterado |
-| `app/src/telas/aprovacao.js` | alterado |
-| `skill/settings-deny.json` | alterado |
-| `skill/ward/SKILL.md` | alterado |
-| `skill/README.md` | alterado |
-| `dev/testes/skill.py` | alterado |
-| `dev/testes/cli.py` | alterado |
-| `dev/testes/socket_matriz.py` | alterado |
-| `docs/mission/prd.md` | alterado |
-| `docs/mission/validation-contract.md` | alterado |
-| `docs/mission/evidence/fase-54b/aprovacao-entrada-desmarcada.png` | criado |
-| `docs/mission/evidence/fase-54b/aprovacao-entrada-marcada.png` | criado |
+| `crates/ward-core/src/body.rs` | alterado |
+| `crates/ward-core/src/body/tests.rs` | alterado |
+| `crates/ward-core/src/delivery.rs` | alterado |
+| `crates/ward-core/src/delivery/tests.rs` | alterado |
+| `crates/ward-core/src/entry.rs` | alterado |
+| `crates/ward-core/src/entry/tests.rs` | alterado |
+| `crates/ward-core/src/entry/validation.rs` | alterado |
+| `crates/ward-core/src/mask.rs` | alterado |
 | `docs/mission/handoffs/phase-54b.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
+- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): não (regra 6); fmt,
+  clippy, `make compile`, `make english-check` e os testes de unidade do `ward-core` rodados
 - [x] Só cofre de teste e credenciais falsas usados
 - [x] Teste de ataque para cada (SEG) tocado
-- [ ] (UI/DESIGN) Conferido contra o FigCraft: não há frame para o estado novo (ver
-  Problemas). Conferido no Chrome com os componentes da Design System.
+- [ ] (UI/DESIGN) Conferido contra o FigCraft: não se aplica
 - [x] Ficou dentro do escopo da fase

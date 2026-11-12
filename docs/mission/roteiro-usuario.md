@@ -1,181 +1,234 @@
-# Roteiro do usuário: janela nativa do app (M5)
+# Roteiro do usuário — atualizar para a 0.2.0
 
-Este roteiro cobre o que só dá para conferir na janela de verdade, na sua sessão COSMIC
-(Wayland): a janela abre, a aprovação aparece na frente, a bandeja funciona e o copiar
-limpa em 30 s (V5.28). O QA automático roda no Chrome headless, pela ponte de teste, e
-não alcança nada disso.
+Roteiro das Fases 66, 66a e 66b (missão 2; V6.12, V6.13). Quem roda é você, na sua máquina.
+A missão não roda `sudo`, não instala nada, não mexe no `~/.claude` e não toca no cofre
+real.
 
-Use só o cofre de teste e os valores falsos. Senha mestra `falso-mestra-ward-01`, PIN
-`135790`. Nada daqui toca no cofre real, no KeePassXC, no `~/.ssh` ou no `~/.aws`.
+A 0.2.0 traduziu o código para o inglês. As telas e os textos continuam os mesmos. O
+que muda para você (subcomandos, variáveis do `ward run`, `ward list --json`, caminhos
+instalados e nomes reservados) está em `docs/instalacao.md` › "Atualizar da 0.1.x para
+a 0.2.0". Leia essa seção antes. Este roteiro é o caminho curto, com os artefatos já
+prontos.
 
-A senha mestra só é digitada na janela do app neste roteiro. A CLI de teste vai sempre
-pelo caminho `target/debug/ward`, nunca pelo `ward` que o `PATH` acha. Com o Ward
-instalado, o destrave no terminal é por `/usr/local/bin/ward destravar`, com o caminho
-completo: um `ward` falso antes no `PATH` mostraria o mesmo pedido e guardaria a senha
-(RA8, escopo › "Fora do modelo de ameaça").
+A 0.2.0 inclui a correção da 0.1.5 (Fase 66a): abrir o Ward pelo menu de aplicativos
+com o app já na bandeja mostra a janela. Onde este roteiro diz 0.1.x, vale para a 0.1.4
+e a 0.1.5 (a máquina tem a 0.1.5; `dpkg-query -W ward`).
 
-Marque cada passo com `[x]` quando o resultado for o esperado. Se algo divergir, anote
-o número do passo e o que apareceu.
+## Artefatos
 
-## 0. Preparar (uma vez)
+Ficam em `target/release-0.2.0/` do checkout principal (fora do git), refeitos pela
+última vez na Fase 66b (correções dos validadores do M6 e metainfo com a 0.1.5 e a
+0.2.0). Os sha256 estão na tabela abaixo, no handoff da Fase 66b
+(`docs/mission/handoffs/phase-66b.md`) e em `target/release-0.2.0/SHA256SUMS`. Os das
+Fases 66 e 66a não valem mais.
 
-Rode tudo da raiz do repositório.
+| Artefato | sha256 |
+| --- | --- |
+| `ward_0.2.0_amd64.deb` | `1b7adb945c29a83baeee3a86f6267ae49be825eea713cfb9bd90903781161667` |
+| `ward.crx` | `ad931ba0739de4b72635f37a20dc0aefe71be818f6e94e20f807327c17b8106b` |
+| `bin/ward` | `994f8d29eaabe5e1eae5b6bdabd925eae9f2736621759c735cb6e4bc886bd70b` |
+| `bin/wardd` | `0f85fe58941c7f89e007405f8e2164bc1e3104373ed4c30d4fa1172f27e419e5` |
+| `bin/ward-nm` | `c073f81c88cae15bff34b3491772e9f5b1048543822b2b2c78ebef324cd76e97` |
+| `bin/ward-app` | `ceaff36dc21f1b5bbcf80b21d737eeea3cbd51042deef085232131cd5c8445df` |
+| `ward-install-0.2.0.tar` | `a64fbc686db4ec4f0379d053136c628be0b15e4ad7cf3cb617abdabf4a227209` |
 
-1. `make dev-cofre` e `make dev-variacoes`.
-   - Esperado: o cofre de teste lista as 22 entradas e `.dev/variacoes.txt` é gravado (0600).
-2. `make app-front`.
-   - Esperado: sai 0.
-3. Compile o app de teste:
-   `cd app/src-tauri && ~/.cargo/bin/cargo build --locked --features modo-teste && cd -`
-   - Precisa de `libwebkit2gtk-4.1-dev`. Sem ela, use o `PKG_CONFIG_PATH` do R32.
-4. Se outro daemon de teste estiver no ar, pare antes: `make dev-daemon-parar`.
-5. Suba o daemon de teste com o app nativo:
-   `make dev-daemon WARD_DEV_APP=$PWD/app/src-tauri/target/debug/ward-app`
-   - Esperado: "daemon de teste no ar".
-6. Compile a CLI de teste:
-   `~/.cargo/bin/cargo build --locked -p ward --features modo-teste --bin ward`
+| Arquivo | O que é |
+| --- | --- |
+| `ward_0.2.0_amd64.deb` | pacote para `sudo apt install`/`sudo dpkg -i` |
+| `ward.crx` | extensão do Chrome 0.2.0, id `nhkehjnmlgkebhmelajfpmpblepaichf` (o de sempre) |
+| `bin/ward`, `bin/wardd`, `bin/ward-nm`, `bin/ward-app` | binários de release, para o caminho `sudo make install` |
+| `ward-install-0.2.0.tar` | o instalador do `make install` (`Makefile`, `install/` com o `tree.txt`, ícones), para rodar de uma pasta do root (3b) |
 
-## 1. O app abre
+O `ward-install-0.2.0.tar` é reprodutível: `git archive --format=tar
+a01b39e1d6435660000149418d1e664f17730996 Makefile install docs/design/logo` dá o mesmo
+sha256.
 
-1. [ ] Abra o app: `python3 -I -B dev/abrir-app.py /run/user/$(id -u)/ward-teste/wardd.sock`
-   - Esperado: a janela "Ward" abre em 1280×800, tema escuro, na tela `Destravar` ("Cofre travado").
-2. [ ] Abra de novo com o mesmo comando, com a janela aberta.
-   - Esperado: não abre uma segunda janela.
+Use **o mesmo meio** com que instalou a 0.1.x (`.deb` ou `make install`). Não misture.
+Esta máquina tem a 0.1.5 pelo `.deb` (`dpkg-query -W ward`): o seu caminho é o 3a.
 
-## 2. Primeiro uso
+## 1. Copie a pasta do cofre (antes de tudo)
 
-O daemon de teste exige um cofre (pendência da Fase 30), então o primeiro uso nativo
-ainda não roda. Confira no Chrome, pela ponte, quando a pendência fechar. Pule esta
-seção por enquanto.
+Na primeira vez que a 0.2.0 destrava, o cofre é regravado no formato novo, e a 0.1.x
+não o abre mais. A cópia é o seu caminho de volta. Pare o daemon (o cofre trava) e
+copie a pasta inteira, com o `estado` e os backups:
 
-## 3. Destravar
+```sh
+sudo systemctl stop "wardd@$(id -u).socket" "wardd@$(id -u).service"
+install -d -m 0700 ~/ward-copia-0.1.x
+cp -a ~/.local/share/ward/. ~/ward-copia-0.1.x/
+ls -l ~/ward-copia-0.1.x/          # cofre.ward, estado e backups/
+```
 
-1. [ ] Digite uma senha errada qualquer e confirme.
-   - Esperado: mensagem de senha incorreta, campo vazio e o cofre continua travado.
-2. [ ] Digite `falso-mestra-ward-01` e confirme.
-   - Esperado: a tela `Credenciais` aparece, com a navegação lateral à esquerda.
-3. [ ] No terminal: `target/debug/ward lista`.
-   - Esperado: lista as entradas, sem nenhuma senha.
+A cópia é cifrada pela senha mestra, como o cofre. Não a ponha em `/tmp` nem em nuvem.
 
-## 4. Credenciais e copiar
+Antes de seguir, procure nos campos extras e anexos das suas entradas os nomes
+reservados da 0.2.0 (`ENTRY`, `GROUP`, `ENVIRONMENT`, `FILE`, `FILE_…`; `PROTOCOL` em
+`ftp-sftp`; anexo `key` em `servidor`/`ftp-sftp`). Detalhe em `docs/instalacao.md`.
 
-1. [ ] Busque por `acme` e filtre por tipo e por ambiente.
-   - Esperado: a lista filtra e os grupos continuam agrupados.
-2. [ ] Abra `acme-pg-dev` e clique em revelar a senha.
-   - Esperado: o valor aparece. Ao clicar em ocultar, some.
-3. [ ] Clique em copiar a senha e cole num editor qualquer.
-   - Esperado: cola o valor falso.
-4. [ ] Espere 30 s e cole de novo.
-   - Esperado: não cola mais nada. A área de transferência foi limpa.
-5. [ ] Copie de novo, copie outro texto qualquer por cima antes dos 30 s e espere passar o prazo.
-   - Esperado: o seu texto continua lá. O Ward só apaga o que ele mesmo copiou.
-6. [ ] (Fase 39f) Copie a senha de novo e, num terminal, rode
-   `ls -d /tmp/wl-copy-buffer-* 2>/dev/null; pgrep -a wl-copy` antes de colar.
-   - Esperado: nada aparece. O app serve o valor da memória dele, sem `wl-copy` nem
-     arquivo em `/tmp`. Colar ainda funciona.
-7. [ ] (Fase 39f) Copie a senha e, antes dos 30 s, trave o cofre por fora:
-   `target/debug/ward travar` num terminal. Espere uns 3 s e cole.
-   - Esperado: não cola mais nada. A trava vista pela bandeja limpou a área na hora.
-8. [ ] (Fase 39f) Copie a senha e feche o app pelo "Sair" da bandeja. Cole.
-   - Esperado: não cola mais nada.
-9. [ ] (Fase 39g) Revele a senha e tente selecioná-la com o mouse (arrastar, clique
-   triplo), depois Ctrl+A e Ctrl+C. Cole com o botão do meio num editor e com Ctrl+V.
-   - Esperado: o valor nunca aparece selecionado e nenhuma das duas colagens traz a
-     senha. Só o botão copiar põe a senha na área de transferência.
+## 2. Confira os artefatos
 
-## 5. Formulários
+```sh
+cd ~/projetos/cofre/target/release-0.2.0
+sha256sum -c SHA256SUMS                 # todos "OK", e os mesmos da tabela acima (Fase 66b)
+dpkg-deb -f ward_0.2.0_amd64.deb Package Version Depends
+# Package: ward / Version: 0.2.0 / Depends: sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
+./bin/ward --version                    # ward 0.2.0
+```
 
-1. [ ] Em "Nova credencial", escolha `login`, preencha os campos com valores falsos e salve.
-   - Esperado: a entrada nova aparece na lista.
-2. [ ] Abra `acme-wp-dev` e confira o código TOTP: ele muda a cada 30 s e copia.
-3. [ ] Abra um `servidor` com aprovação (`acme-ssh-salto`) e clique em "Conectar".
-   - Esperado: abre o terminal padrão já conectado (precisa dos serviços de teste no ar). Anote qual terminal abriu.
-4. [ ] Num formulário, clique em "Adicionar arquivo".
-   - Esperado: abre o diálogo do sistema. Anexar acima de 256 KiB mostra o aviso.
+## 3. Instale por cima da 0.1.x
 
-## 6. Nível de acesso com PIN
+Sem desinstalar antes. A instalação para todo `wardd@*` antes de trocar os binários e
+religa os sockets no fim.
 
-1. [ ] Em `acme-pg-dev`, mude o nível para "com aprovação".
-   - Esperado: o app pede o PIN. Com `135790` o nível muda.
-2. [ ] Repita com um PIN errado.
-   - Esperado: mensagem de PIN errado e o nível não muda.
-3. [ ] Volte o nível de `acme-pg-dev` para "livre".
+### 3a. Pelo `.deb` (se a 0.1.x veio pelo `.deb`)
 
-## 7. Janela de aprovação em primeiro plano (COSMIC/Wayland)
+Copie o pacote para uma pasta do root **antes** de conferir e instalar, para nada do
+seu usuário trocá-lo no meio:
 
-1. [ ] Deixe o app destravado e ponha outra janela na frente (o terminal, por exemplo). No terminal, rode:
-   `target/debug/ward run acme-pg-aprovacao -- true`
-   - Esperado: a janela "Pedido de aprovação · Ward" aparece **na frente** de todas, com o foco em "Negar".
-   - Se ela abrir atrás, ou só piscar na barra, anote. É o ponto que mais importa no COSMIC.
-2. [ ] Aperte Enter sem digitar o PIN.
-   - Esperado: nada é permitido.
-3. [ ] Aperte Esc.
-   - Esperado: nega, e o `ward run` termina com "negado".
-4. [ ] Rode o mesmo `ward run`, digite `135790` e clique em "Permitir uma vez".
-   - Esperado: o comando roda e termina.
-5. [ ] Rode de novo e feche a janela pelo X.
-   - Esperado: nega.
-6. [ ] Rode de novo e não responda.
-   - Esperado: o aviso de expirando aparece perto do fim, e em 2 min o pedido é negado.
+```sh
+sudo install -d -m 0700 -o root -g root /root/ward
+sudo install -m 0644 -o root -g root ~/projetos/cofre/target/release-0.2.0/ward_0.2.0_amd64.deb /root/ward/
+sudo sha256sum /root/ward/ward_0.2.0_amd64.deb      # o mesmo do SHA256SUMS
+sudo dpkg-deb -c /root/ward/ward_0.2.0_amd64.deb    # 61 linhas (o ./ e 60 caminhos), root/root, sem 's'
+sudo dpkg-deb -I /root/ward/ward_0.2.0_amd64.deb preinst | less   # leia antes de rodar
+sudo dpkg -i /root/ward/ward_0.2.0_amd64.deb
+```
 
-## 8. Gerador de senha
+### 3b. Ou por `sudo make install` (só se a 0.1.x veio pelo `make install`)
 
-1. [ ] Abra "Gerador de senha", mude o tamanho (de 8 a 64) e desligue os símbolos.
-   - Esperado: a força acompanha.
-2. [ ] Clique em "Gerar de novo", revele e copie.
-   - Esperado: o valor cola e some em 30 s, como no passo 4.4.
+**Nunca rode `sudo make install` de dentro do checkout** (`~/projetos/cofre`): ele é do
+seu usuário, e qualquer programa seu pode trocar o `Makefile` ou o `install/install.sh`
+entre a sua conferência e o `sudo`; o root roda o que estiver lá (auditoria de segurança
+do M6, Fase 66b). Como no `.deb`, copie para uma pasta do root o instalador
+(`ward-install-0.2.0.tar`), os binários e o pacote da extensão, confira lá e rode de lá:
 
-## 9. Configurações
+```sh
+R=~/projetos/cofre/target/release-0.2.0
+sudo install -d -m 0700 -o root -g root /root/ward-src /root/ward-src/bin
+sudo install -m 0644 -o root -g root $R/ward-install-0.2.0.tar $R/ward.crx /root/ward-src/
+sudo install -m 0755 -o root -g root $R/bin/ward $R/bin/wardd $R/bin/ward-nm $R/bin/ward-app /root/ward-src/bin/
+sudo sha256sum /root/ward-src/ward-install-0.2.0.tar /root/ward-src/ward.crx /root/ward-src/bin/*
+#   os mesmos da tabela "Artefatos" acima
+sudo tar -x --no-same-owner -f /root/ward-src/ward-install-0.2.0.tar -C /root/ward-src
+sudo less /root/ward-src/install/install.sh        # leia antes de rodar
+sudo make -C /root/ward-src install EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf \
+    EXTENSION_CRX=/root/ward-src/ward.crx \
+    BIN_WARD=/root/ward-src/bin/ward BIN_WARDD=/root/ward-src/bin/wardd \
+    BIN_NM=/root/ward-src/bin/ward-nm BIN_APP=/root/ward-src/bin/ward-app
+```
 
-1. [ ] Abra "Configurações".
-   - Esperado: trocar o PIN pede o PIN atual; trocar a senha mestra pede a atual; o tempo de trava mostra 4 h; o backup externo aparece desligado.
-   - Se a tela ainda disser "Esta tela ainda não existe", a Fase 38 não entrou: pule.
+Guarde `/root/ward-src`: desinstalar é `sudo make -C /root/ward-src uninstall`, nunca do
+checkout.
 
-## 10. Bandeja (V5.23)
+### 3c. Conferir a instalação
 
-1. [ ] Olhe a área de status do painel do COSMIC.
-   - Esperado: aparece o ícone do Ward (escudo cheio), com o cofre destravado.
-   - Se não aparecer, confira se o applet "Área de status" (Status Area) está no painel e anote.
-2. [ ] Clique no ícone.
-   - Esperado: menu com "Cofre destravado", "Trava sozinho após o tempo sem uso" (os dois apagados), "Abrir o Ward", "Travar agora" e "Sair".
-3. [ ] Clique em "Travar agora" (pelo menu da bandeja).
-   - Esperado: em até 2 s a janela vai para `Destravar` e o ícone troca para o de travado (escudo em contorno).
-   - Esperado também: `target/debug/ward lista` responde "travado".
-4. [ ] Clique no ícone de novo.
-   - Esperado: menu com "Cofre travado", "Destrave com a senha mestra", "Abrir o Ward", "Destravar…" e "Sair".
-5. [ ] Feche a janela principal pelo X.
-   - Esperado: a janela some, o ícone continua na bandeja e o processo `ward-app` continua vivo.
-6. [ ] No menu da bandeja, clique em "Destravar…".
-   - Esperado: a janela volta na tela `Destravar`. Destrave com a senha de teste.
-7. [ ] Feche a janela de novo e, no menu, clique em "Abrir o Ward".
-   - Esperado: a janela volta.
-8. [ ] Com o cofre destravado, rode no terminal `target/debug/ward travar`.
-   - Esperado: em até 2 s o ícone e o menu mudam para travado, e a janela vai para `Destravar`.
-9. [ ] Feche a janela, deixe o cofre travado e rode `target/debug/ward run acme-pg-dev -- true`.
-   - Esperado: a janela principal volta sozinha pedindo a senha (pedido do agente). Destrave e o comando segue.
-10. [ ] Use "Travar agora" da navegação lateral (dentro da janela).
-    - Esperado: vai para `Destravar` e o ícone da bandeja muda para travado.
-11. [ ] No menu da bandeja, clique em "Sair".
-    - Esperado: o app fecha e o ícone some da bandeja.
+```sh
+dpkg-query -W ward                                   # ward 0.2.0 (só no caminho do .deb)
+/usr/local/bin/ward --version                        # ward 0.2.0
+ls /usr/local/share/ward/                            # extension/, sem extensao/
+ls /usr/local/lib/ward/                              # created-groups, sem grupos-criados
+systemctl is-active "wardd@$(id -u).socket"          # active
+```
 
-## 11. Varredura de logs (V5.27)
+## 4. Primeiro destrave = migração
 
-1. [ ] Depois de tudo, rode `make teste-logs-app`.
-   - Esperado: o autoteste passa e todo arquivo de `.dev/logs/` (`wardd.log`, `ward-app.log` e o resto) sai como "limpo", "0 com segredo".
-2. [ ] Opcional: abra o inspetor da janela (o app de teste tem devtools) e confira que o console não mostra nenhuma senha. Isso cobre o console da webview.
+Destrave pelo app (menu de aplicativos › Ward) ou, num terminal seu (fora do Claude
+Code), **sempre pelo caminho completo**:
 
-## 11a. Canais do WebKitGTK (V5.32, Fase 39c)
+```sh
+/usr/local/bin/ward unlock
+```
 
-Precisa do `libwebkit2gtk-4.1-dev` instalado. Abre uma janela do app por uns 20 s.
+É aqui que o cofre migra para o formato novo. A senha mestra é a mesma. Nada a fazer
+além de destravar.
 
-1. [ ] `make app-front` e depois `make teste-webkit-real`.
-   - Esperado: sai 0 ("V5.32 ok"). As iscas de frei0r, LADSPA, libvisual, LV2 e CUDA não carregam, e nenhum processo abre `~/.nv/nvidia-application-profiles-rc`, `~/.mfx_trace`, `/dev/shm/GFX_MEDIA_TRACE` nem `/dev/shm/cuda_injection_path_shm` (D67).
-   - Se aparecer "aviso - o WebKit avisou elemento do GStreamer ausente", anote o nome do elemento: a lista `GST_PLUGIN_LOADING_WHITELIST` pode precisar dele.
-   - A janela do app de teste tem de desenhar normal durante os 20 s.
-2. [ ] Opcional (controle): `make teste-webkit-real SEM_39C=1`.
-   - Esperado: sai 1, com as iscas carregando. Mostra o ataque que as duas variáveis fecham.
+## 5. Confira as entradas
 
-## 12. Encerrar
+```sh
+ward list                    # as mesmas entradas de antes, com os rótulos em português
+ward list --json | head      # chaves em inglês (name, type, group, environment…)
+ls -l ~/.local/share/ward/   # cofre.ward (mesmo nome), estado e backups/ com uma versão nova
+```
 
-1. `make dev-daemon-parar`.
-2. Responda ao orchestrator com os passos que falharam, ou com "roteiro confirmado".
+No app, abra algumas entradas e confira campos, anexos, níveis e a configuração (tempo
+de trava, backup externo). O PIN é o mesmo.
+
+## 6. Atualize a skill e o deny no `~/.claude`
+
+Você faz isto à mão, a partir de `skill/` do checkout principal (`skill/README.md` ›
+"Atualizar da 0.1.x para a 0.2.0"):
+
+1. Copie a pasta `skill/ward/` por cima de `~/.claude/skills/ward/`:
+
+   ```sh
+   cp -a ~/projetos/cofre/skill/ward/. ~/.claude/skills/ward/
+   ```
+
+2. Acrescente à lista `permissions.deny` do `~/.claude/settings.json` as regras de
+   `skill/settings-deny.json` que ainda não estão lá. Não substitua o arquivo. As regras
+   antigas (`*ward*destravar*` e afins) podem ficar.
+3. No Claude Code, `/permissions` mostra as regras novas em "Deny" (por exemplo as de
+   `unlock`).
+
+## 7. Confira o app, a bandeja e a aprovação
+
+1. **Janela nativa.** Abra o Ward pelo menu de aplicativos. A janela é a mesma da 0.1.x:
+   barra de título escura com minimizar, maximizar e fechar, as mesmas telas e textos.
+   Feche a janela (o Ward fica na bandeja) e abra o Ward **de novo pelo menu de
+   aplicativos**: a janela principal volta (correção da 0.1.5, Fase 66a). Repita com a
+   janela minimizada: ela volta e ganha o foco.
+2. **Bandeja.** Feche a janela: o Ward fica na bandeja. O menu da bandeja diz "Cofre
+   destravado" e tem **Travar agora** e **Sair**. Clique em **Travar agora**: o cofre
+   trava e a bandeja passa a dizer "Cofre travado". Destrave de novo (passo 4).
+3. **Aprovação.** Rode um `ward run` de uma entrada com nível de aprovação, por
+   exemplo `ward run <entrada-com-aprovacao> -- true`. A janela de aprovação abre com a
+   entrada, o ambiente em destaque, o comando e a cadeia de processos, e os 4 botões
+   **Negar**, **Permitir uma vez**, **Permitir por 1 hora** e **Permitir sempre**.
+   Permitir pede o PIN. Negue uma vez e permita outra para ver os dois lados.
+4. **Código TOTP no detalhe (novo).** Abra uma entrada com TOTP. No detalhe, no lugar
+   da antiga "Semente TOTP", aparece **Código TOTP**: o código atual em dois grupos de 3
+   dígitos, a contagem até o próximo e o botão **Copiar**. A semente não aparece mais no
+   detalhe; ela fica só no formulário de edição (Editar), com revelar e trocar.
+5. **Extensão.** Feche e abra o Chrome. Em `chrome://extensions` a extensão Ward está na
+   0.2.0 (mesmo id). Até o Chrome atualizar, a extensão 0.1.x não preenche nada; isso é
+   esperado.
+
+Se algo aqui não bater com a 0.1.x, não use a 0.2.0 no dia a dia: volte pelo passo 9 e
+avise.
+
+## 8. Depois de uns dias
+
+Quando tiver certeza de que não vai voltar, apague a cópia:
+
+```sh
+rm -rf ~/ward-copia-0.1.x
+```
+
+## 9. Como voltar para a 0.1.x (pela cópia do passo 1)
+
+Não há volta automática: a 0.1.x não abre o cofre migrado. O que você mudou no cofre
+depois de atualizar (entradas novas, senhas trocadas) se perde e tem de ser refeito à
+mão.
+
+1. Reinstale a 0.1.x pelo mesmo meio de antes: o `.deb` da 0.1.x copiado para
+   `/root/ward` e `sudo dpkg -i` de lá (como no 3a), ou o `make install` da tag dela
+   rodado de uma cópia em `/root` (como no 3b), nunca de dentro de um clone. Pelo `.deb`, o mais seguro é
+   `sudo dpkg -r ward` antes (o cofre fica intacto) e depois `sudo dpkg -i` da 0.1.x; o
+   downgrade direto não foi conferido pela missão.
+2. Pare o daemon, guarde o cofre migrado à parte (não apague) e reponha a cópia:
+
+   ```sh
+   sudo systemctl stop "wardd@$(id -u).socket" "wardd@$(id -u).service"
+   mv ~/.local/share/ward ~/ward-migrado-0.2.0
+   install -d -m 0700 ~/.local/share/ward
+   cp -a ~/ward-copia-0.1.x/. ~/.local/share/ward/
+   sudo systemctl start "wardd@$(id -u).socket"
+   ```
+
+3. Destrave a 0.1.x pelo caminho completo (na 0.1.x o subcomando ainda é
+   `/usr/local/bin/ward destravar`) e confira as entradas.
+4. Volte a skill e o deny do `~/.claude` para os da 0.1.x (a skill da 0.2.0 usa
+   `ward list`, que a 0.1.x não conhece).
+
+Sem a cópia do passo 1, o caminho de volta não está conferido (veja
+`docs/instalacao.md` › "Voltar para a 0.1.x").

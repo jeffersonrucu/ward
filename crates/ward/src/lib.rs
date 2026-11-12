@@ -1,38 +1,38 @@
-//! CLI do Ward: cliente do `wardd` pelo socket local, sempre no papel agente (D3). Não
-//! existe comando que devolva segredo (S1): a CLI só lista, trava e destrava.
+//! Ward CLI: client of `wardd` over the local socket, always in the agent role (D3). No
+//! command returns a secret (S1): the CLI only lists, locks and unlocks.
 //!
-//! - Toda conexão confere o servidor antes do primeiro byte ([`cliente`], D46, S5).
-//! - A senha mestra do `destravar` vem só do terminal, nunca de argv nem de stdin (S3),
-//!   e fica em tipos que zeram (S8).
-//! - Textos do cofre saem neutralizados ([`texto`]).
-//! - Mensagens em português, sem repetir argumento nem conteúdo de quadro.
+//! - Every connection checks the server before the first byte ([`client`], D46, S5).
+//! - The master password of the unlock comes only from the terminal, never from argv
+//!   nor stdin (S3), and stays in types that zero themselves (S8).
+//! - Texts from the vault go out neutralized ([`text`]).
+//! - Messages in Portuguese, never repeating an argument nor frame content.
 
 #![forbid(unsafe_code)]
 
 pub mod args;
-pub mod cliente;
-pub mod comandos;
-pub mod texto;
+pub mod client;
+pub mod commands;
+pub mod text;
 
 #[cfg(test)]
-mod testes;
+mod tests;
 
 use std::ffi::OsString;
 
-use args::{AJUDA, ErroUso};
-use comandos::{Entorno, SAIDA_USO};
+use args::{HELP, UsageError};
+use commands::{EXIT_USAGE, Env};
 
-/// Interpreta os argumentos (sem o nome do programa) e roda o comando.
-pub fn principal(args: impl IntoIterator<Item = OsString>, e: &mut dyn Entorno) -> u8 {
-    match args::interpretar(args) {
-        Ok(cmd) => comandos::executar(cmd, e),
-        Err(ErroUso::SemComando) => {
-            let _ = e.erro().write_all(AJUDA.as_bytes());
-            SAIDA_USO
+/// Parses the arguments (without the program name) and runs the command.
+pub fn main(args: impl IntoIterator<Item = OsString>, e: &mut dyn Env) -> u8 {
+    match args::parse(args) {
+        Ok(cmd) => commands::execute(cmd, e),
+        Err(UsageError::NoCommand) => {
+            let _ = e.stderr().write_all(HELP.as_bytes());
+            EXIT_USAGE
         }
         Err(u) => {
-            let _ = writeln!(e.erro(), "ward: {}; veja `ward --help`", u.mensagem());
-            SAIDA_USO
+            let _ = writeln!(e.stderr(), "ward: {}; veja `ward --help`", u.message());
+            EXIT_USAGE
         }
     }
 }

@@ -1,191 +1,185 @@
-# Fase 8 — (DESIGN) Gerador de senha, Configurações, Restaurar backup e Kit de emergência
+# Fase 8 — `ward-platform`: `sys`, `process`, `descendants`, `memory` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- Trabalhei no app FigCraft aberto (`mcp__figcraft-app__*`), no arquivo
-  `/home/jeffersonoliveira/documentos/Ward.figcraft`, sem abrir outro arquivo e sem usar
-  comandos que dependem da seleção (sempre com `ids` explícitos e sem `page.select`). Os
-  workers das Fases 5 e 6 estavam no mesmo documento ao mesmo tempo. Antes de começar, li
-  a skill `figcraft`, o PRD, o plano, o contrato, o `design-nodes.md`, os handoffs 4a–4g
-  e a referência-alvo (só como estilo). Fiz 12 `save_file` no mesmo caminho.
-- **Seção nova na Design System:** `Seção / Gerador e configurações` (`9453`, x = 5600,
-  y = 0), com fundo `fundo/sutil`, raio `raio/painel`, padding `espaco/32` e gap
-  `espaco/16`. Os componentes ficam todos nela:
-  - `Controle deslizante` (set `12604`), variante `Posição` = 25% `9896`, 50% `12605` e
-    75% `12609`. É uma grade de 3 colunas (`preenchido`, alça de 20, `restante`) com
-    trilhas `fr`, para a proporção valer em qualquer largura. As cores vêm de
-    `primaria/padrao`, `superficie/hover` e `texto/primario`, com a borda da alça em
-    `borda/foco`/`linha/grossa`. O raio é `raio/pilula`; a altura, `icone/md` e
-    `espaco/6`.
-  - `Linha de opção` (set `10379`), variante `Controle` = interruptor `10368`, botão
-    `10380` e select `10825`. Propriedades: `Título`, `Descrição` e `Mostrar descrição`.
-    O `Interruptor`, o `Botão` secundário ("Trocar") e o `Select` (sem rótulo e com
-    largura `largura/select-filtro`) estão expostos para a instância. É um cartão
-    `superficie/padrao` com borda `borda/sutil`, raio `raio/item`, padding `espaco/20` e
-    gap `espaco/16`.
-  - `Item de versão` (set `11264`), `Estado` = padrão `11243` e selecionado `11265`.
-    Propriedades: `Data`, `Detalhe` e `Quando`. Tem rádio de 20 (`icone/md`, borda
-    `borda/forte`; no selecionado, `borda/foco` e ponto `primaria/padrao`). O
-    selecionado usa `superficie/selecionada` com borda `borda/foco`. Padding `espaco/16`.
-  - `Popover do gerador` (`11671`), com largura `largura/dialogo`, `superficie/elevada`,
-    `Sombra/Flutuante`, raio `raio/cartao` e padding `espaco/20`. Traz o título com
-    fechar, a prévia em `Campo secreto` oculto ("Senha gerada"), o tamanho com o
-    controle deslizante, quatro interruptores (minúsculas, maiúsculas, dígitos e
-    símbolos), "Gerar de novo" (fantasma, ícone gerador) e "Usar esta senha" (primário).
-    O "Copiar" fica no próprio `Campo secreto`.
-  - `Diálogo de restauração` (set `13033`), `Etapa` = versões `12631` e confirmar
-    `13034`. Usa `largura/dialogo-largo`, `raio/janela`, `Sombra/Modal` e
-    `superficie/elevada`.
-    - **Versões:** 5 `Item de versão` datados (um vem do pendrive), legenda "Mostrando 5
-      de 30 versões…", Cancelar e Continuar.
-    - **Confirmar:** a versão escolhida, o `Campo` foco "Senha mestra desta versão"
-      (mascarado, com cadeado e a nota "O PIN não serve aqui") e um aviso em
-      `aviso/sutil` dizendo que o atual vira backup e que passam a valer a senha e o PIN
-      da versão. Termina com Voltar e "Restaurar esta versão".
-- **Variables novas** (todas com o code syntax WEB):
-  - Em `Cores` (modo único `Escuro`): `impressao/papel` (`VariableID:85` → `neutro/0`),
-    `impressao/texto` (`86` → `neutro/950`), `impressao/texto-secundario` (`87` →
-    `neutro/600`) e `impressao/linha` (`88` → `neutro/400`). São só para a folha
-    impressa.
-  - Em `Largura`: `pagina/a4-largura` = 794 (`89`) e `pagina/a4-altura` = 1123 (`90`),
-    que é o A4 em 96 dpi.
-  - Agora são 212 variables.
-- **Oito frames no Layout** (página `2796`, modo `Escuro` herdado da página), na grade da
-  minha área: linha y = 10400 (x 0, 1360, 2720, 4080) e linha y = 11400 (x 0, 1360,
-  2720).
+- **Arquivos** (`git mv`, glossário seção 4): `processo.rs` → `process.rs`,
+  `descendentes.rs` → `descendants.rs`, `memoria.rs` → `memory.rs` (`sys.rs` fica). Módulos
+  em `lib.rs`: `process`, `descendants`, `memory`. `mod testes` → `mod tests` nos três que
+  têm testes.
+- **Comentários** dos quatro arquivos em inglês, inclusive os `// SAFETY:` ("Fase N" →
+  "Phase N"; IDs da missão 1 sem prefixo). Locais, parâmetros, itens privados e nomes de
+  teste em inglês.
+- **Renomes** (antigo → novo), com todos os usos ajustados no repositório:
+  - `sys.rs` (só `pub(crate)`, todos chamados como `sys::…`): `erro_os` → `os_error`,
+    `pidfd_vivo` → `pidfd_alive`, `renameat_sem_sobrescrever` → `renameat_no_replace`,
+    `listar_pasta` → `list_dir`, `desligar_dumpable` → `disable_dumpable`,
+    `valor_dumpable` → `dumpable_value`, `zerar_rlimit_core` → `zero_rlimit_core`,
+    `travar_toda_memoria` → `lock_all_memory`, `tamanho_pagina` → `page_size`,
+    `mapear_anonimo` → `map_anonymous`, `desmapear` → `unmap`, `aconselhar` → `advise`,
+    `FD_ATIVACAO`(`_TOMADO`) → `ACTIVATION_FD`(`_TAKEN`), `duplicar_fd_ativacao` →
+    `dup_activation_fd`, `fechar_fd_ativacao` → `close_activation_fd`,
+    `por_no_fd_ativacao` → `put_on_activation_fd`, `largar_grupo_efetivo` →
+    `release_effective_group`, `tem_cloexec` → `has_cloexec`, `abrir_pty` → `open_pty`,
+    `definir_janela` → `set_window_size`, `ler_janela` → `read_window_size`, `modo_cru`
+    → `make_raw`, `tirar_cloexec` → `clear_cloexec`, `esperar_fechamento` →
+    `wait_for_close`, `fechamento` → `is_closed`, `home_do_uid` → `uid_home`,
+    `conta_do_uid` → `uid_account`, `fechar_fds_no_exec` → `close_fds_on_exec`,
+    `herdar_so_no_exec` → `inherit_only_on_exec`, `tomar_socket_herdado` →
+    `take_inherited_socket`, `relogio_boot` → `boot_clock`, `CAPACIDADE_PIPE_SAIDA` →
+    `OUTPUT_PIPE_CAPACITY` (pública, reexportada por `child`), `ampliar_pipe` →
+    `widen_pipe`, `capacidade_pipe` → `pipe_capacity`, `acima_de(_2)` → `above(_2)`,
+    `dev_null_acima_de_4` → `dev_null_above_4`, `PRIMEIRO_FD_LIVRE_DEPURACAO` →
+    `FIRST_FREE_DEBUG_FD`, `PreparoExec { caminhos, … }` → `ExecPreparation { paths, … }`,
+    `Stdio::Depuracao` → `Stdio::DebugPipe`, `PontasPai` → `ParentEnds` (`Pipes { stdin,
+    stdout, stderr }`, `Pty`, `DebugPipe { commands, responses }`), `FilhoCru { pid,
+    pontas }` → `RawChild { pid, ends }`, `ErroExec` → `ExecError` (`System`, `Child {
+    step, errno }`), `ETAPA_*` → `STEP_PREPARATION`/`STEP_DIRECTORY`/`STEP_EXEC`,
+    `filho_depois_do_fork` → `child_after_fork`, `esperar_sem_colher` →
+    `wait_without_collecting`, `colher` → `collect`, `esperar_leitura` → `wait_readable`,
+    `matar_grupo` → `kill_group`, `parar_grupo` → `stop_group`, `sinal_grupo` →
+    `signal_group`, `virar_subreaper` → `become_subreaper`, `pid_e_sessao` →
+    `pid_and_session`, `pidfd_sinal` → `pidfd_signal`, `colher_se_saiu` →
+    `collect_if_exited`.
+  - `process.rs`: `Recusa` → `Refusal` (variantes: `UidMismatch`, `ProcessVanished`,
+    `NoAccess`, `Read`, `ExeNotAllowed`, `ExeSwapped`, `UntrustedInstall`, `Debugger`,
+    `LdVariable`, `LargeEnvironment`, `UntrustedLibrary`, `ParentNotAllowed`,
+    `CommonGroup`, `KernelPolicy`, `AppParentNotAllowed`); `MAX_AMBIENTE` →
+    `MAX_ENVIRONMENT`, `MAX_MAPAS` → `MAX_MAPS`, `MAX_CADEIA` → `MAX_CHAIN`,
+    `MAX_NOME_CADEIA` → `MAX_CHAIN_NAME`; `BinarioPermitido` → `AllowedBinary` (`new`,
+    `path`); `CaminhoInvalido` (a struct deste arquivo) → `InvalidPath`;
+    `CredenciaisPar` → `PeerCredentials`; `ProcessoPar` → `PeerProcess` (`from_socket`,
+    `credentials`, `identify`, `parent_pid`, `verify_parent`, `classify`,
+    `classify_test_app`, `classify_test_extension_host`, `reverify_no_debugger`, `chain`);
+    `ClassePar` → `PeerClass` (`App`, `ExtensionHost`, `Common { reason }`);
+    `ElementoCadeia { pid, nome }` → `ChainElement { pid, name }`; `cadeia_de_processos`
+    → `process_chain`; `nome_ld_para_log` → `ld_name_for_log`, `ler_tracer_pid` →
+    `read_tracer_pid`, `caminho_absoluto_simples` → `simple_absolute_path`,
+    `conferir_arquivo_do_root` → `verify_root_file`; privados (`Alvo` → `Target`, `Vista`
+    → `View`, `Mapa` → `MapLine`, `identificar_imagem` → `identify_image`…).
+  - `descendants.rs`: `virar_subreaper` → `become_subreaper`, `e_subreaper` →
+    `is_subreaper`, `registro` → `record`, `Relatorio { mortos, sobraram }` → `Report {
+    killed, remaining }`, `matar_sessao` → `kill_session`, `matar_orfaos` →
+    `kill_orphans`; privados `LIDERES` → `LEADERS`, `MAX_RODADAS` → `MAX_ROUNDS`,
+    `PRAZO_MORTE` → `KILL_DEADLINE`, `Proc { inicio, zumbi }` → `{ start, zombie }`,
+    `alvos` → `targets`, `sinal_conferido` → `verified_signal`, `colher_orfaos` →
+    `collect_orphans`…
+  - `memory.rs`: `MAX_BUFFER_TRAVADO` → `MAX_LOCKED_BUFFER`, `BufferTravado` →
+    `LockedBuffer` (`new`, `zero`; campos `start`, `mapped`), `travar_regiao` →
+    `lock_region`.
+- **Usos ajustados** (só os usos; locais dos arquivos de outras fases mantidos, com
+  `Common { reason: motivo }` na desestruturação): `ward-platform` (`child`, `launcher`,
+  `lib`, `app`, `clock`, `conectar`, `endurecimento`, `papel`, `pasta`, `servidor`,
+  `socket`, `terminal`, `testing`, `examples/{container,pai-chrome}.rs`,
+  `tests/{comum/mod,identificacao,socket,subreaper}.rs`), `wardd` (`main`, `servidor`,
+  `nucleo`, `execucao`, `lancamento`, `agente_ssh`, `tests/aprovacao.rs`), `ward`
+  (`cliente.rs`), `ward-nm` (`main.rs`), `app/core` (`partida.rs`,
+  `examples/partida-conteiner.rs`).
+- **Scripts que leem os nomes** (mesma fase, PRD regra 4):
+  - `dev/container-platform/inside.sh`: as saídas por `Debug` do exemplo do contêiner
+    (`papel=agente motivo=CommonGroup`/`AppParentNotAllowed`/`ParentNotAllowed`).
+  - `dev/tests/nm.py`: `pai=ParentNotAllowed` (saída por `Debug` do `pai-chrome`) e o texto
+    `verify_parent`.
+  - `dev/tests/no-test-mode.sh` (V3.37): as marcas procuradas no `wardd` de release
+    passam a `classify_test_app classify_test_extension_host`.
+  - Comentários/textos: `dev/tests/nm.sh`, `Makefile` e `CLAUDE.md` (`verify_parent`).
+- **Glossário**: parágrafo novo na seção 15 com as variantes fixadas nesta fase
+  (`Refusal`, `PeerClass`, `ExecError`, `ParentEnds`, `Stdio::DebugPipe`, `Report`,
+  `record()`). Os tipos já estavam na tabela.
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`.
 
-| Frame | Id | Conteúdo |
-| --- | --- | --- |
-| `Gerador de senha / Avulso` | `13141` | 1280×800; nav com `Gerador de senha` ativo; painel "Opções" (`13200`): tamanho com `Controle deslizante` 25% "24 caracteres" e 4 `Linha de opção` com interruptor ligado; painel `resultado` (`13335`): "Senha gerada", `Campo secreto` oculto (`••••`), barra de força "muito forte · cerca de 150 bits", nota "Não fica no cofre… área de transferência limpa em 30 s", rodapé com "Gerar de novo" e "Copiar" |
-| `Gerador de senha / No formulário` | `14307` | cópia de `Formulário / login / Edição` (`6926`, Fase 5) com o `Campo secreto` Senha (`14622`) em `Mostrar gerar` e o `Popover do gerador` (`15135`, absoluto) aberto logo abaixo do campo |
-| `Configurações / Geral` | `15242` | nav com `Configurações` ativo; "Acesso" (`15289`): Senha mestra (Trocar), PIN de aprovação (Trocar), Tempo de trava (select "4 horas", no máximo 4 h); "Backup" (`15325`): Backup local (Restaurar), Backup externo em pendrive (**desligado**), Kit de emergência (Imprimir) e nota "Backups sempre cifrados". Não há opção de tema |
-| `Configurações / Backup externo ligado` | `16178` | o mesmo com o interruptor ligado e o cartão do pendrive escolhido (`16318`): "WARD-BACKUP", "UUID 7C1E-42A9 · conectado em /media/usuario/WARD-BACKUP", "Última cópia hoje às 14:32 · 30 versões em ward-backup/" e "Trocar" |
-| `Restaurar backup / Versões` | `16349` | Configurações sob `sobreposição` (`16457`, `fundo/sobreposicao`) com o `Diálogo de restauração` Versões (`16458`) |
-| `Restaurar backup / Confirmar` | `16512` | o mesmo, com o diálogo Confirmar (`16621`, em `16620`) |
-| `Kit de emergência / Impressão` | `16773` | A4 794×1123 (largura e altura ligadas a `pagina/a4-*`), folha branca em `impressao/*`. Traz a logo `Logo / Horizontal` (`16781`, nome em `impressao/texto`) e "Kit de emergência" com a data. Seções: "Onde está o cofre" (`~/.local/share/ward/`); "Onde estão os backups" (cópias locais em `~/.local/share/ward/backups/` e o pendrive "WARD-BACKUP · UUID 7C1E-42A9 · pasta ward-backup/"); "Senha mestra" com duas linhas **em branco** e "Escreva à mão. O Ward nunca preenche este espaço."; "Como restaurar" (4 passos). Rodapé: o PIN não aparece na folha |
-
-- **Conferência:** fiz um screenshot de cada frame em 1x e do popover, dos sets e do
-  rodapé em 1,5x e 2x. O texto não encosta na borda: as linhas e os cartões têm 20, os
-  itens 16, o diálogo e os painéis 24 e a folha 64. Rodei também uma auditoria no
-  `.figcraft` salvo (`scripts/audit8.py` no scratchpad, adaptado do da 4f e agora também
-  olhando o raio em `corners`) na seção `9453` e nos 8 frames. Deu 0 preenchimento,
-  borda, espessura, raio, gap ou padding solto e 0 texto sem text style. Só sobraram as 4
-  bordas tracejadas roxas de apresentação dos component sets, que são o mesmo padrão do
-  `Interruptor` da Fase 5. Conferi também no arquivo salvo que todos os ids abaixo
-  existem e que não há modo "Claro".
+## Literais alterados (PRD regra 5)
+- `process.rs`: só nome de captura em `format!`/`write!`: `"variável {nome} no ambiente"`
+  → `{name}` (Display de `Refusal::LdVariable`; o texto impresso é o mesmo),
+  `"/proc/{atual}/status"` → `{current}`; nos testes `"{ruim}"` → `"{bad}"` e
+  `"1-2 r-xp 0 00:01 {} {caminho}\n"` → `{path}` (2×).
+- `memory.rs`: `debug_struct("BufferTravado")` → `"LockedBuffer"` (nome do tipo no
+  `Debug`; está em `dev/fixtures/legacy/strings-0.1.4.txt`, entra na diferença do V6.3;
+  nenhum script nem log o procura).
+- `tests/subreaper.rs`: mensagens de assert `"matar_orfaos: …"` → `"kill_orphans: …"`
+  (nome da função).
+- Scripts: as saídas esperadas do `inside.sh` e do `nm.py` e as marcas do
+  `no-test-mode.sh` acima.
+- Ficaram de propósito: todos os textos `Display` de `Refusal` e `InvalidPath`, as
+  mensagens de `io::Error` do `sys.rs` ("PR_SET_DUMPABLE não ficou em 0" etc.), o rótulo
+  `motivo=` e `pai=` dos exemplos (os scripts procuram por eles) e o
+  "tamanho do buffer travado fora do limite".
+- Conferido por comparação de tokens (sem comentários, identificadores comparados por
+  posição): `sys.rs` 8 454 tokens e `descendants.rs` 2 389 com 0 diferenças fora de
+  identificadores; `process.rs` 5 523 tokens, só as 5 capturas acima; `memory.rs` 1 075,
+  só o `"LockedBuffer"`. Os mapas antigo → novo de identificador são consistentes (as
+  colisões que aparecem são só de nomes do `std`, como `read`, `new`, `path`).
 
 ## Segurança
-- Invariantes: a fase é só de design e não toca código. O desenho segue S1, R10, R23,
-  R27 e D17:
-  - **Senha gerada só mascarada:** no avulso e no popover, ela aparece só no
-    `Campo secreto` oculto (`••••`). O texto diz que ela só aparece no revelar e que
-    copiar limpa a área de transferência em 30 s. Nenhum valor gerado aparece em claro
-    nas telas.
-  - **Avulso não grava:** "Nada do que é gerado aqui fica salvo". Para guardar a senha,
-    o caminho é o gerador dentro do formulário.
-  - **Configurações:** trocar a senha mestra pede a senha atual, e trocar o PIN pede a
-    senha mestra. O PIN aparece como "aprova usos, não destrava". O tempo de trava vai
-    até 4 h no máximo, que é o teto do escopo. O backup externo vem **desligado** na
-    `Geral`. Não há opção de tema (D1).
-  - **Restaurar:** a lista mostra só metadados do arquivo (data, origem, tamanho), nunca
-    o conteúdo. A confirmação pede a senha mestra **da versão** ("O PIN não serve aqui")
-    e diz que o cofre atual é guardado como backup antes da troca (D17). Uma senha
-    errada não muda nada.
-  - **Kit:** a linha da senha mestra fica em branco, o PIN não aparece e nenhum segredo
-    é impresso (V0.15).
-- Exemplos só falsos: o pendrive "WARD-BACKUP" com UUID inventado `7C1E-42A9`, datas
-  fictícias e caminhos genéricos (`/media/usuario/…`). Não toquei em cofre, credencial,
-  `~/.ssh` ou `~/.aws`, nem no Figma.
-- Testes de ataque: não se aplicam, porque o M0 não tem asserção (SEG).
-- Dependências novas: nenhuma. Os scripts de leitura do `.figcraft` usam só a biblioteca
-  padrão do Python e ficaram no scratchpad.
+- **Invariantes tocadas e como ficaram:**
+  - S5/S1 e D5/D47/D57/D63 (identificação do par: `SO_PEERCRED`, `SO_PEERPIDFD`, papel
+    pelo egid, pai do app = daemon, pai do `ward-nm` = Chrome instalado, `TracerPid`,
+    `LD_*`, `maps`, falha fechada em agente): diff só de nomes e comentários (V2.3,
+    comparação de tokens acima).
+  - S8 (dumpable, `RLIMIT_CORE`, `mlockall`, subreaper, fim de sessão com `SIGSTOP` +
+    `SIGKILL` por `pidfd` conferido pelo início, órfãos sem dono; memória travada com
+    `MADV_DONTDUMP`/`WIPEONFORK` e `zeroize`): só nomes e comentários (V2.6, V2.7).
+  - S2/S3 (`fork_exec`: ambiente exato, sem shell, `close_range`, sessão própria,
+    `PR_SET_PDEATHSIG`): só nomes e comentários.
+  - V3.37 (`make test-no-test-mode`): as marcas do release acompanharam o rename; sem
+    isso o teste procuraria nomes que não existem e passaria sempre.
+  - `make test-docker-platform`/`make test-nm`: as saídas `Debug` esperadas acompanharam
+    as variantes novas; senão o ataque viraria um falso "falhou"/"passou".
+- **Testes de ataque**: nenhum novo (a fase só renomeia); os existentes renomeados junto
+  (ex.: `attack_process_with_u202e_in_name_reaches_chain_whole`). Não rodaram (PRD
+  regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- Telas dos fluxos "Trocar senha mestra", "Trocar PIN" e "Escolher pendrive": o contrato
-  não pede, e as linhas de Configurações só apontam para eles.
-- Estados de erro do restaurar (senha da versão errada, arquivo corrompido) e do
-  gerador (nenhum conjunto ligado): o contrato não pede.
-- Não editei `docs/mission/design-nodes.md`, como foi pedido. Os ids estão abaixo.
-
-## Ids para design-nodes
-
-Seção e componentes (página Design System `2`):
-
-| Item | Id | Variantes / filhos |
-| --- | --- | --- |
-| `Seção / Gerador e configurações` | `9453` (x 5600, y 0) | título `9890`, descrição `9891` |
-| `Controle deslizante` (set) | `12604` | Posição 25% `9896` (preenchido `9898`, alça `9899`, restante `9897`), 50% `12605`, 75% `12609` |
-| `Linha de opção` (set) | `10379` | Controle interruptor `10368` (Interruptor `10370`), botão `10380` (Botão `10384`), select `10825` (Select `10829`) |
-| `Item de versão` (set) | `11264` | padrão `11243`, selecionado `11265` |
-| `Popover do gerador` | `11671` | cabeçalho `11672`, Campo secreto `11673`, tamanho `11698`, conjuntos `11699`, rodapé `11700` |
-| `Diálogo de restauração` (set) | `13033` | Etapa versões `12631`, confirmar `13034` |
-
-Variables: `impressao/papel` `VariableID:85`, `impressao/texto` `VariableID:86`,
-`impressao/texto-secundario` `VariableID:87`, `impressao/linha` `VariableID:88` (em
-`Cores`), `pagina/a4-largura` `VariableID:89`, `pagina/a4-altura` `VariableID:90` (em
-`Largura`).
-
-Frames de tela (página Layout `2796`):
-
-| Frame | Id | Posição |
-| --- | --- | --- |
-| `Gerador de senha / Avulso` | `13141` | x 0, y 10400 |
-| `Gerador de senha / No formulário` | `14307` | x 1360, y 10400 (1280×1392) |
-| `Configurações / Geral` | `15242` | x 2720, y 10400 |
-| `Configurações / Backup externo ligado` | `16178` | x 4080, y 10400 |
-| `Restaurar backup / Versões` | `16349` | x 0, y 11400 |
-| `Restaurar backup / Confirmar` | `16512` | x 1360, y 11400 |
-| `Kit de emergência / Impressão` | `16773` | x 2720, y 11400 (794×1123) |
+- Nomes da Fase 9 que estes arquivos usam: `papel` (`Instalacao`, `PoliticaKernel`,
+  `gid_extensao`, `conferir`), por isso o checador de `process.rs` ainda acusa 10 achados
+  (todos esses nomes). Somem na Fase 9.
+- Locais dos arquivos de outras fases que desestruturam os tipos novos (ex.: `motivo` em
+  `wardd/src/servidor.rs`).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make check` | não executado: o `Makefile` só existe a partir da Fase 11 |
-| `inspect_document`, `get_node`, `screenshot` (1x, 1,5x, 2x) | ok |
-| `node.create`, `instance.create`/`setProperties`/`swap`, `component.combineVariants`/`addVariant`/`addProperty`/`exposeInstance`, `variable.create`/`set`/`update`/`bind`, `style.apply`, `edit.duplicate`/`delete`, `node.set`/`reorder` | ok |
-| `python3 -I scripts/audit8.py` (seção + 8 frames) no `.figcraft` salvo | 0 pendências (só as 4 bordas de apresentação dos sets) |
-| `save_file` (12×, mesmo caminho) | ok |
+| `git reset --hard c31e3d8` (o worktree nasceu em `5114a25`, árvore limpa) | 0 |
+| `cargo fmt --all` | 0 |
+| `make compile` | 0 |
+| `make english-check PATHS="…/descendants.rs …/memory.rs"` | 0 (0 achados) |
+| `make english-check PATHS="…/sys.rs …/process.rs …/descendants.rs …/memory.rs"` | 1 (10 achados, todos nomes da Fase 9 em `process.rs`; 0 problemas nas exceções) |
+| `make english-check PATHS="…/{launcher,child,clock,testing,lib}.rs"` (os da Fase 7) | 1 (65 achados, eram 227; os que sobram são da Fase 9) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **Kit de emergência em folha branca:** imprimir em fundo escuro gasta toner e
-  atrapalha a escrita à mão. Por isso a folha usa as variables novas `impressao/*`
-  (branco e tinta escura), dentro do modo único `Escuro` de `Cores`. Não é variante
-  clara nem tema, mas um validador literal de V0.19 pode marcar a folha. Precisa da
-  decisão do usuário. Se ele preferir, dá para trocar as `impressao/*` por aliases
-  escuros sem mexer no frame.
-- **"Tempo de trava" configurável vs. escopo:** o escopo fixa a trava em 4 h sem uso
-  (R23), e Configurações pede "tempo de trava" (R25). Desenhei um select com 4 horas e
-  "máximo 4 h", que só permite **encurtar**. Assim a opção não afrouxa a segurança. As
-  opções exatas (15 min, 1 h, 4 h?) não estão definidas nos documentos.
-- **Senha e PIN depois de restaurar:** o aviso diz que passam a valer a senha mestra e o
-  PIN da versão restaurada. É a consequência natural de D17 (o arquivo inteiro volta),
-  mas os documentos não dizem isso em lugar nenhum. Vale confirmar.
-- **Nome do arquivo do cofre** não está definido no PRD nem no escopo (só a pasta
-  `~/.local/share/ward/`). O kit mostra só a pasta.
-- **Ícone trocado no `Botão` primário não fica branco:** com `Ícone#10:34` trocado
-  (ex.: copiar), o ícone mantém a cor `icone/padrao` (cinza) em vez de
-  `icone/sobre-cor`. No `Gerador de senha / Avulso`, corrigi por override nos vetores
-  (`13457` `13791`). O ideal é corrigir no componente `Botão` (compartilhado; não alterei
-  para não mexer no trabalho das Fases 5 e 6). Sugestão: entra na 10c.
-- **Override de tamanho e posição nos filhos de instância não existe no FigCraft.** Por
-  isso o `Controle deslizante` virou um set com 3 posições, e não um único componente
-  ajustável.
-- **`Gerador de senha / No formulário` é uma cópia** de `Formulário / login / Edição`
-  (`6926`) tirada durante a Fase 5. Se a Fase 5 mudar o formulário, a cópia não acompanha.
-  Na Fase 10, vale refazer a cópia ou conferir.
-- O `Campo secreto` estreito (meia coluna, com revelar, gerar e copiar) corta a máscara
-  para "••••••". É só visual.
-- JetBrains Mono continua sem estar instalada (fallback nos valores mono do kit e do
-  tamanho), como nas fases anteriores.
+- O worktree nasceu em `5114a25` (0.1.4), não em `c31e3d8`; com a árvore limpa, fiz
+  `git reset --hard c31e3d8`.
+- **`Debug` em saída de teste**: `motivo={reason:?}` do `examples/container.rs` e
+  `pai={m:?}` do `examples/pai-chrome.rs` imprimem a variante de `Refusal`; os scripts
+  foram ajustados. O log do `wardd` usa o `Display` (pt-BR), que não mudou.
+- **Trilha S**: esta fase mexeu em `dev/container-platform/inside.sh`, `dev/tests/nm.py`,
+  `dev/tests/nm.sh`, `dev/tests/no-test-mode.sh`, uma linha do `Makefile` e do
+  `CLAUDE.md`. Se a trilha S renomear esses arquivos, o merge precisa levar as linhas
+  trocadas aqui.
+- `strings-0.1.4.txt` tem `"BufferTravado"`: o V6.3 deve aceitar a troca (nome de tipo
+  no `Debug`), como as capturas de `format!` da Fase 7.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `/home/jeffersonoliveira/documentos/Ward.figcraft` | alterado (seção `9453` com 5 componentes/sets, 6 variables, 7 telas) |
+| `crates/ward-platform/src/process.rs` (era `processo.rs`) | renomeado e alterado |
+| `crates/ward-platform/src/descendants.rs` (era `descendentes.rs`) | renomeado e alterado |
+| `crates/ward-platform/src/memory.rs` (era `memoria.rs`) | renomeado e alterado |
+| `crates/ward-platform/src/sys.rs` | alterado |
+| `crates/ward-platform/src/{lib,child,launcher,app,clock,conectar,endurecimento,papel,pasta,servidor,socket,terminal,testing}.rs` | alterado |
+| `crates/ward-platform/examples/{container,pai-chrome}.rs` | alterado |
+| `crates/ward-platform/tests/{comum/mod,identificacao,socket,subreaper}.rs` | alterado |
+| `crates/wardd/src/{agente_ssh,execucao,lancamento,main,nucleo,servidor}.rs`, `crates/wardd/tests/aprovacao.rs` | alterado |
+| `crates/ward/src/cliente.rs`, `crates/ward-nm/src/main.rs` | alterado |
+| `app/core/src/partida.rs`, `app/core/examples/partida-conteiner.rs` | alterado |
+| `dev/container-platform/inside.sh`, `dev/tests/{nm.py,nm.sh,no-test-mode.sh}` | alterado |
+| `Makefile`, `CLAUDE.md` | alterado (texto `verify_parent`) |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-8.md` | criado |
 
 ## Procedimentos
-- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): não existe antes da Fase 11
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make compile` (0) e `cargo fmt`
 - [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
-- [x] Teste de ataque para cada (SEG) tocado (nenhum (SEG) tocado)
-- [x] (UI/DESIGN) Conferido contra o FigCraft (screenshots com zoom; arquivo salvo auditado; `save_file` feito)
-- [x] Ficou dentro do escopo da fase (componentes existentes não alterados; o problema do ícone no `Botão` primário ficou registrado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes renomeados; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
+- [x] Ficou dentro do escopo da fase

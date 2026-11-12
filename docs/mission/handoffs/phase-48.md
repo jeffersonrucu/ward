@@ -1,188 +1,235 @@
-# Fase 48 — Configurações › backup externo (UI)
+# Fase 48 — Corpo v5 no `ward-core` (DT4)
 
 ## Implementado
-- **O interruptor "Backup externo em pendrive" agora funciona** em
-  `app/src/telas/Configuracoes.svelte`. A tela segue o frame `16178`, lido de uma cópia
-  do `Ward.figcraft`; os ids estão em `docs/mission/design-nodes.md` › "Fase 48".
-  - **Ligar:** abre "Escolher pendrive" (`EscolherPendrive.svelte`). O interruptor só
-    liga depois que um pendrive é escolhido e o daemon confirma.
-  - **Ligado:** aparece o cartão do pendrive (`CartaoDePendrive.svelte`, frame `16318`)
-    com o rótulo, "UUID … · conectado e montado / conectado, mas não montado / não
-    conectado / não deu para ver os pendrives agora", a linha de estado e o botão
-    "Trocar", que reabre a escolha como "Trocar pendrive" com o atual já marcado.
-  - **Desligar:** grava na hora, mantém o UUID guardado e não apaga nada do pendrive.
-    Ao religar, a escolha já vem com o último pendrive marcado.
-  - **Toasts:** "Backup externo ligado.", "Pendrive do backup externo trocado." e
-    "Backup externo desligado. As cópias no pendrive continuam lá.". Com o cofre
-    travado, a tela vai para o destravar.
-- **Diálogo de escolha** (não tem frame no FigCraft): é montado com o `Modal` e as
-  opções no desenho do cartão `16318`, com a escolhida em `borda/foco`.
-  - É um `radiogroup` com os botões "Atualizar", "Cancelar" e "Ligar" (ou "Usar este
-    pendrive"). "Ligar" fica desabilitado até haver escolha.
-  - Mensagens de lista vazia: "Nenhum pendrive conectado…"; udisks2 sem resposta:
-    "Não deu para ver os pendrives (o udisks não respondeu)."
-  - Se o pendrive sair, o diálogo mostra "Esse pendrive não está conectado…" e
-    atualiza a lista.
-- **`LinhaDeOpcao` virou controlado:** o clique só pede a mudança, e quem usa a linha
-  decide. O QA conferiu que os interruptores do gerador continuam funcionando.
-- **Núcleo do app** (`app/nucleo/src/backup_externo.rs`, novo):
-  - `PendriveVisto { uuid, rotulo, montado }`: o rótulo passa por
-    `ward_core::exibicao::neutralizar` (D51) e é aparado.
-  - `BackupExternoVisto { ligado, uuid, pendrive, pendrives_visiveis }`.
-  - `EscolhaDoPendrive::nova(ligado, uuid)`: só aceita ligar com UUID no formato de D45
-    (via `BackupExterno::novo`) ou desligar sem UUID.
-  - `achar`: busca sem diferenciar maiúsculas. Um UUID repetido conta como nenhum,
-    igual ao `wardd`.
-- **`cliente.rs`:** `backup_externo`, `pendrives` e `definir_backup_externo`. O erro
-  `pendrives_indisponiveis` vira o novo `ErroApp::PendrivesIndisponiveis`. Também foi
-  criado `ErroApp::PendriveNaoConectado`.
-- **`servico.rs`:**
-  - `backup_externo`: lê a configuração e, havendo UUID, também `pendrives`. O udisks2
-    sem resposta não dá erro: o resultado vem com `pendrives_visiveis: false`.
-  - `listar_pendrives`.
-  - `definir_backup_externo`: para ligar, consulta `pendrives` de novo e exige que o
-    UUID esteja na lista; envia o UUID como o daemon o deu. Para desligar, lê o UUID
-    atual e o reenvia. A resposta é o estado lido de novo.
-- **Comandos novos `backup_externo`, `listar_pendrives` e
-  `definir_backup_externo { ligado, uuid? }`:**
-  - entraram em `comandos.rs` (`COMANDOS_PRINCIPAL` e `COMANDOS`), `comandos.js`, na
-    capability `principal` (`allow-*`) e no `generate_handler!`;
-  - na ponte, campo a mais ou tipo errado é recusado.
-- **Daemon falso:**
-  - atende `backup_externo`, `definir_backup_externo` (mesma regra do `wardd`:
-    `BackupExterno::novo`) e `pendrives`, e `configuracao` passa a refletir o ligado;
-  - os pendrives falsos de `pendrives_de_teste()` são só dados: `WARD-BACKUP` montado,
-    `FOTOS 2024` não montado, um com rótulo `<img src=x onerror=alert(1)>` + U+202E +
-    U+200B e um sem rótulo;
-  - modos novos da ponte: `--daemon-falso backup-externo-ligado` e `sem-udisks`.
+
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard 1c4a963`
+  (master da época). No fim, `git merge master` (Fases 34a e 47b), sem conflito.
+- **`crates/ward-core/src/entry.rs`** — `name()`/`from_name()` com os nomes v5:
+  - `EntryType`: `database`, `server`, `secure-note`, `generic` (os outros iguais);
+  - `AccessLevel`: `blocked`, `approval`, `free`;
+  - `SmtpSecurity`: `none` (`starttls`, `tls` iguais).
+  - `EntryType::label()` deixou de cair em `name()` (`other => other.name()`) e lista os 9
+    rótulos pt-BR por extenso (`login`, `banco`, `servidor`, `api`, `aws`, `smtp`, `ftp/sftp`,
+    `nota segura`, `genérico`): sem isso o rótulo de banco/servidor viraria inglês.
+- **`crates/ward-core/src/body.rs`**:
+  - `BODY_VERSION` 4 → 5 (a única gravada);
+  - `LEGACY_BODY_VERSION = 4` (só leitura);
+  - enum privado `Version { V4, V5 }`: `read_header` devolve a versão (5 ou 4; o resto é
+    `Invalid`) e `read_raw(l, version)` escolhe a tabela dos nomes;
+  - no v4, a segurança SMTP vira o nome v5 já na 1ª passada (constante `SMTP_SECURITY` = 4,
+    posição no `schema`); fora da tabela, `Invalid`;
+  - documentação do módulo com a seção "Version 5".
+  - A gravação não mudou: continua pelo `name()` de cada enum, e por isso só gera v5,
+    inclusive o `change_password`, que lê e reescreve o corpo.
+- **`crates/ward-core/src/body/legacy_v4.rs`** (novo) — tabela fechada v4 → v5:
+  - `kind`, `level` e `smtp_security`, por `match` nos bytes exatos;
+  - módulo privado do `body`, chamado só por `stored_kind`/`stored_level`/`read_raw` com
+    `Version::V4`;
+  - nenhum outro caminho (protocolo, CLI, app, validação de rascunho) conhece os nomes v4.
+- **`dev/fixtures/entries.json`** — chaves em inglês pelo glossário:
+  - raiz: `_about`, `version`, `master_password`, `pin`, `entries`;
+  - entrada: `name`, `type`, `group`, `environment`, `level`, `fields`, `secrets`, `extras`
+    (`name`/`value`/`secret`) e `attachments` (`name`/`file`);
+  - campos: `username`, `port`, `engine`, `db_name`, `tunnel`, `jump`, `variable`, `region`,
+    `security`, `protocol`;
+  - segredos: `password`, `totp_seed`, `text`, `private_key_file`.
+  - Tipos e níveis com os nomes v5. Os valores falsos são iguais, conferidos por script: só
+    os 7 nomes v4 → v5 mudaram. O usuário `salto` do `acme-ssh-salto`/`-livre` é dado e
+    ficou.
+- **Leitores do `entries.json`, só nas chaves e nos nomes de tipo/nível que vêm dele**
+  (troca 1:1):
+  - Rust: o exemplo `dev-vault` (`main.rs`, que monta o cofre de teste, e `tests.rs`) e o
+    `app/core` (`client.rs`, `service.rs`, `fake_daemon.rs`);
+  - `crates/ward-test-bridge/tests/attacks.rs`;
+  - `dev/variations.py` (oráculo) e `dev/services/generate.py`;
+  - os testes `dev/tests/{dev-vault.sh, cli.py, extension.py, login.py, nm.py,
+    socket_matrix.py, chrome_policy.py, playwright.py, ssh_home.py, variations_test.py,
+    attacks-services.sh, docker-platform.sh, install.sh}`.
+  - O parser da tabela "Cofre de teste" em `dev/tests/dev-vault.sh` passou para os nomes v5
+    do contrato. A Fase 53 lista esse parser, mas sem a troca o `dev-vault-verify` já
+    falharia. Conferido: a tabela do contrato e o `entries.json` dão as mesmas 22 linhas.
+  - Ficaram de propósito: o `totp-contas.json` gerado pelo `generate.py` (`usuario`,
+    `senha`, `totp_semente`, fio do serviço `totp`) e os nomes `WARD_*` do `cli.py`
+    (Fase 53).
+- **Testes escritos ou ajustados** (V4.1, V4.2, V4.8, V4.9). Rodei só os de unidade rápidos
+  do corpo, para provar o byte a byte; os outros só rodam no Milestone 6.
+  - `body/tests.rs`:
+    - `check_accepted` aceita v4: confere que ele é regravado como v5 e relido igual;
+    - `raw_records` exige v5;
+    - `known_format_of_one_entry` vira v5 (`generic`/`free`) e ganha o gêmeo
+      `known_format_of_one_entry_v4_is_written_as_v5`: o v4 escrito à mão relê a mesma
+      entrada, regrava exatamente os bytes do v5, e os nomes cruzados e as versões 3/6
+      são recusados;
+    - `v2_31_forged_fields`: versão 4 sai da lista de desconhecidas e 6 entra;
+      "v5 rotulado 4"; nomes v4 no corpo v5 (tipo, nível e segurança SMTP);
+    - `d65_*` passam a usar o v5 como corpo corrente e o v4 com nomes v4 como controle.
+  - Seção nova "m2:DT4" no `body/tests.rs`:
+    - tabela v5 → v4 escrita à mão, independente do `legacy_v4`, mais `v4_records` e
+      `v4_test_body`;
+    - `dt4_tables_of_the_two_versions`;
+    - `dt4_v4_body_reads_equal_and_is_written_as_v5` (tudo igual, bytes do v5 e diferença
+      de tamanho exata);
+    - `dt4_v4_smtp_security_none_becomes_v5_none`;
+    - `dt4_v4_body_with_unknown_name_refused` (casos do V4.8);
+    - `dt4_v4_bit_flipped_in_every_byte`;
+    - `dt4_v4_vault_on_disk_opens_without_writing_and_any_write_is_v5` (senha errada,
+      abertura que não grava, gravação v5 com geração + 1).
+  - `wire_v1.rs`:
+    - `vault_014_body_v4_is_read_and_written_as_v5` substitui o byte a byte do v4. Lê o
+      `vault-0.1.4.ward`, confere nomes v5 e configuração, compara com o v4 em que cada
+      campo de nome foi trocado e testa a canonicidade do v5;
+    - `backup_014_*` compara as formas v5;
+    - `vault_v5_header_same_as_014` (V4.9): magia, versão 1, KDF igual e ≥ 256 MiB/3,
+      tamanho do cabeçalho;
+    - `ENTRIES_V4` ficou como a 0.1.4 gravou.
+  - `entry/tests.rs` (`combined_level_and_names`): nomes v5, rótulos pt-BR iguais e nomes v4
+    desconhecidos no `from_name`.
+  - `tests/body_memory.rs`: corpos forjados em v5 (`generic`/`free`).
+  - `protocol/tests.rs`: os valores de `nivel` passaram a `blocked`/`free` (o `from_name`
+    mudou).
+- `atomic_write/tests.rs`: comentário dizendo que o corpo com datas é gravado como v5.
+  Os nomes dos testes `d65_v4_*` ficaram.
+- `dev/english-check/frozen.txt`:
+  - saíram as 3 entradas da Fase 48 de `crates/ward-core/src/entry.rs` (`bloqueado`,
+    `aprovacao`, `livre`), sem uso;
+  - `app/core/src/service.rs livre` passou de 48 para 51: o comentário cita o valor de
+    nível dos testes do app, que seguem o protocolo (ver Problemas).
 
 ## Segurança
-- **Invariantes tocadas**
-  - **V7.8/D5:** os três comandos só valem na janela `principal` com a origem local.
-    As operações do daemon já eram só do papel app (Fase 46).
-  - **S11:**
-    - nenhum caminho de montagem chega à interface (o protocolo nem o manda), e nada
-      de segredo;
-    - o rótulo do pendrive é dado não confiável: o invisível vira escape no Rust, e a
-      tela mostra o resto como texto (interpolação do Svelte, `<bdi>` com
-      `unicode-bidi: isolate`), nunca como HTML;
-    - nada vai para `localStorage`, `sessionStorage` ou URL (conferido no QA);
-    - não foi criada capability além dos três comandos que a tela usa.
-  - **Entrada não confiável:** o UUID vindo da interface é conferido no Rust em duas
-    etapas, antes de chegar ao `definir_backup_externo`:
-    - formato de D45, sem consultar o daemon;
-    - presença na lista atual do daemon.
-  - **D17:** desligado por padrão; desligar não apaga cópias.
-- **Testes de ataque** (todos falham do lado do atacante)
-  - `app/nucleo/src/backup_externo.rs`:
-    - `ataque_uuid_forjado_fora_do_formato_e_recusado`: `../etc`, caminho, U+202E,
-      espaço, `\n`, dígito largo, HTML, 37 caracteres, ligar sem UUID e desligar com
-      UUID.
-    - `ataque_rotulo_com_direcao_e_largura_zero_vira_escape_visivel`.
-    - `ataque_resposta_pendrives_forjada_e_recusada`: um "daemon" que manda rótulo com
-      ESC ou `\n`, um campo `montagem` a mais, UUID `../etc`, rótulo acima de
-      `MAX_ROTULO` ou 33 itens recebe `RespostaInvalida`.
-    - `pelo_servico::ataque_uuid_forjado_pela_interface_nao_chega_ao_daemon`
-      (espião): fora do formato, zero quadros; no formato mas fora da lista, recusado
-      como `PendriveNaoConectado` sem nenhum quadro `definir_backup_externo`, e a
-      configuração do falso fica intacta.
-    - `pelo_servico::ataque_pendrive_clonado_com_uuid_repetido_nao_e_escolhido`.
-    - `pelo_servico::ataque_rotulo_do_pendrive_chega_neutralizado`.
-    - `pelo_servico::sem_udisks_nao_liga_e_o_cartao_diz_que_nao_viu`.
-    - `pelo_servico::travado_nao_le_nem_muda`.
-    - `pelo_servico::v7_9_escolher_ligar_e_desligar`.
-  - `app/src-tauri/src/main.rs` ›
-    `ataque_backup_externo_so_na_janela_certa_e_uuid_conferido_no_rust`:
-    - janela `outra`, janela `aprovacao` e origem remota são negadas pela ACL;
-    - UUID forjado dá `pedido-invalido` no núcleo, antes do daemon;
-    - tipo errado ou campo faltando é recusado na desserialização.
-  - `crates/ward-ponte-teste/tests/ataques.rs` › `ataque_backup_externo_pela_ponte`:
-    - nenhuma resposta tem `/media`, `/run/`, `montagem`, U+202E ou U+200B;
-    - tipo errado, campo a mais e UUID forjado são recusados;
-    - um UUID fora da lista dá `pendrive-nao-conectado`.
-  - **QA no Chrome:** uma rota do Playwright troca o UUID do pedido por `DEAD-BEEF`. A
-    tela mostra "Esse pendrive não está conectado…" e não liga
-    (`ataque-uuid-forjado-recusado.png`). O rótulo com HTML aparece como texto, sem
-    `<img>` no DOM, sem `alert` e sem os caracteres invisíveis no HTML.
-- **Dependências novas:** nenhuma, nem no Rust nem no npm. O Playwright do QA é o já
-  existente no scratchpad (`py/site`) e fica fora do repositório.
+
+- **Invariantes tocadas.**
+  - S6/RM2: um nome fora da tabela da versão recusa o corpo inteiro com `Invalid`, sem
+    valor no erro e sem gravar: nome v5 no v4, nome v4 no v5, maiúscula, espaço, `\0`,
+    vazio.
+  - A tabela v4 é fechada (`match` em bytes exatos, sem normalização) e só o caminho de
+    leitura do v4 a chama.
+  - S7: a gravação continua pelo caminho atômico de sempre e só gera v5. A migração no
+    destrave é da Fase 49.
+  - S8: a leitura v4 não aloca nada a mais. A segurança vira um `&'static [u8]` e as
+    duas passadas são as mesmas.
+  - Cripto e cabeçalho intactos: `format.rs` e `crypto.rs` não mudaram, nenhuma
+    dependência nova, nada feito à mão.
+- **Testes de ataque** (todos em `crates/ward-core/src/body/tests.rs`, salvo indicação).
+  - V4.8/RM2:
+    - `dt4_v4_body_with_unknown_name_refused`;
+    - `dt4_tables_of_the_two_versions`;
+    - `known_format_of_one_entry_v4_is_written_as_v5`;
+    - `v2_31_forged_fields` (nomes v4 no v5, "v5 rotulado 4");
+    - `dt4_v4_smtp_security_none_becomes_v5_none` (segurança cruzada).
+  - V4.2:
+    - `dt4_v4_bit_flipped_in_every_byte`, mais os 16 bits da versão do v4;
+    - `wire_v1.rs › attack_vault_014_byte_flipped_does_not_open`, que já existia; o
+      formato é o mesmo para v4 e v5 e o `format` V2.2 cobre cada byte.
+  - V4.1: `dt4_v4_vault_on_disk_opens_without_writing_and_any_write_is_v5` (senha errada e
+    abertura sem tocar o arquivo nem criar temporário).
+  - V4.9: `wire_v1.rs › vault_v5_header_same_as_014`.
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- **Caminho de montagem e "Última cópia hoje às 14:32 · 30 versões":** o frame `16178`
-  mostra "conectado em /media/usuario/WARD-BACKUP" e a data da última cópia. O
-  protocolo da Fase 46 não manda caminho ao cliente (de propósito) nem a data da última
-  cópia externa. O cartão mostra só o UUID, a situação (conectado / montado) e uma linha
-  de estado fixa. Ver Problemas.
-- **Ponta a ponta com `wardd` real e pendrive real:** não montei dispositivo nenhum. O
-  QA usou o daemon falso. V7.4/V7.5 com vfat real continuam com o validador do M7
-  (receita no handoff 46).
-- **Frame para o diálogo "Escolher pendrive":** não existe; montei com componentes da
-  Design System.
+
+- **Migração no daemon** (DT5/DT6, Fase 49). O `ward-core` não expõe se o corpo lido era
+  v4. A Fase 49 precisa de um jeito de saber, por exemplo
+  `open_entries_with_generation` devolvendo a versão; `LEGACY_BODY_VERSION` já é `pub`.
+- **Clientes do protocolo que levam valores v4 de tipo, nível ou segurança.** Desde esta
+  fase o protocolo v1 leva os nomes v5 (`name()`/`from_name()`). Ficaram para as Fases
+  51, 52 e 54 (lista em Problemas):
+  - os testes Rust de JSON montado à mão em `crates/wardd/tests/*`, `app/core/src/*`,
+    `app/src-tauri/src/main.rs`, `crates/ward-test-bridge/tests/attacks.rs`,
+    `crates/ward-nm/src/tests.rs` e `crates/ward/src/{tests,text}.rs`;
+  - o front-end (`app/src`) e a extensão.
+- **Tabela da CLI com `label()`** (Fase 51).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `cargo test -p ward-app-nucleo --all-features backup_externo` | 0 |
-| `cargo test -p ward-ponte-teste --all-features --test ataques backup` | 0 |
-| `cargo test` do `app/src-tauri` (R32): a 1ª rodada falhou porque não havia `app/dist`; rodei depois do `make app-front` | 101, depois 0 |
-| `make app-front` | 0 |
-| ponte `--daemon-falso cheio` + `qa48.py`: a 1ª rodada achou um bug (o `carregar()` apagava a mensagem do pendrive não conectado); corrigido. A 2ª acusou só o 404 do `/favicon.ico` no console, e o filtro passou a olhar a URL | 1, depois 0 |
-| ponte `--daemon-falso backup-externo-ligado` e `sem-udisks` + `qa48.py` | 0 |
-| `make fmt` | 0 |
-| `make ferramentas` | 0 |
-| `make check` | 0 |
-| `make app-check` (R32: `PKG_CONFIG_PATH`/`PKG_CONFIG_SYSROOT_DIR` do scratchpad) | 0 |
+| `git reset --hard 1c4a963` (árvore limpa) | 0 |
+| `make english-check PATHS=…` (antes do merge; log `<scratchpad>/fase48/fase48-english-check.log`): achados só pré-existentes (Cargo.toml da 34a, `fake_daemon.rs`, `retrocesso`) e as 3 exceções sem uso, depois tiradas | 2 |
+| `git merge --no-edit master` (Fases 34a e 47b) | 0 |
+| `make english-check` (repositório inteiro, depois do merge) — 0 achado(s), 0 problema(s) nas exceções | 0 |
+| `make compile` (log `<scratchpad>/fase48/fase48-make-compile.log`; 48 shell, 35 Python, 7 JS, 0 erro; 0 warning) | 0 |
+| `cargo test -p ward-core --lib -- body::tests::dt4 body::tests::known_format body::tests::v2_31_forged_fields body::tests::d65_body_v3 body::tests::v2_30_empty entry::tests::combined_level wire_v1::vault wire_v1::backup` (17 testes) | 0 |
+| `cargo fmt --all` e `cargo fmt --all -- --check` | 0 |
+| Script de literais × HEAD (`<scratchpad>/fase48/literals.py`): nenhum `\u`/`\x`/`\0` perdido | 0 |
 
 ## Problemas descobertos
-- **Design × protocolo no cartão do pendrive:** o frame `16178`/`16334` mostra o
-  caminho de montagem (`/media/usuario/WARD-BACKUP`) e "Última cópia hoje às 14:32 · 30
-  versões em ward-backup/". A Fase 46 decidiu que nenhum caminho de montagem vai ao
-  cliente, e não há operação que diga a última cópia externa. Segui o protocolo. O
-  FigCraft precisa ser ajustado numa fase de design, ou o planner cria uma operação de
-  "última cópia" (só data e contagem, sem caminho).
-- **Diálogo "Escolher pendrive" sem frame:** vale desenhá-lo (os estados lista, vazia,
-  udisks sem resposta e pendrive saiu) numa fase de design.
-- **Pendrive conectado mas não montado:** o Ward não monta (pendência da 46). O cartão
-  diz "Abra o pendrive no gerenciador de arquivos para montá-lo e receber a cópia." Se
-  o planner decidir montar pelo udisks2, esse texto muda.
-- **Escolher exige o pendrive conectado:** a tela só deixa ligar com um pendrive que o
-  daemon vê na hora. O `wardd` aceita qualquer UUID no formato. Isso é mais restrito,
-  e de propósito (evita UUID forjado pela interface); um app comprometido ainda pode
-  falar com o socket direto (papel app), como em todas as operações do app.
-- **Loops do sistema (snap) na lista:** continuam aparecendo (pendência da 46). Eles
-  aparecem na escolha com o rótulo deles, sem perigo de cópia sem escolha.
-- **Escape de D51 no rótulo:** `neutralizar` não escapa `\`. Um rótulo que já traga o
-  texto literal `\u{202E}` fica igual a um neutralizado. É só cosmético, porque nada é
-  invisível.
+
+- **O fio v1 muda nesta fase para tipo, nível e segurança SMTP.** `name()`/`from_name()`
+  servem ao corpo e ao protocolo. Até as Fases 50–54:
+  - as linhas de `dev/fixtures/legacy/protocol-v1.jsonl` com `"tipo":"servidor"`,
+    `"nivel":"livre"` e `"nivel":"bloqueado"` não fazem mais ida e volta byte a byte nos
+    testes de `wire_v1.rs`; a Fase 50 transforma essas linhas em recusa;
+  - o app manda `com-aprovacao`/`livre`/`banco`/`nenhuma`, que o `from_name` recusa:
+    `app/src/screens/{form.js, Form.svelte, credentials.js, Credentials.svelte,
+    ApprovalWindow.svelte}`, `app/src/lib/components/{types.js, levels.js,
+    LevelDialog.svelte, LevelCard.svelte}` e `app/core/src/level.rs`;
+  - os testes que montam JSON com esses valores (lista em "Ficou de fora");
+  - `grep -rnE '"(banco|servidor|nota-segura|generico|bloqueado|com-aprovacao|livre|nenhuma)"'`
+    acha todos.
+  - O plano não diz em que fase os valores do `app/src` mudam (a 52 fala da ponte, a 54
+    do `serde` da webview). O glossário, seção 10, diz que no protocolo v2 esses valores
+    são os do corpo v5. Sugestão: a 51 cuida dos testes Rust e a 52/54 do `app/src`.
+- **A coluna TIPO de `ward list` mostra o nome v5 até a Fase 51.** O `text.rs` imprime
+  `kind.name()`. A Fase 51 já prevê trocar por `label()`; note que o `label()` também
+  difere da 0.1.4 (`nota segura` × `nota-segura`, `ftp/sftp` × `ftp-sftp`, `genérico` ×
+  `generico`).
+- **`SMTP_SECURITY` entregue muda de `nenhuma` para `none`.** O valor vem de
+  `SmtpSecurity::name()` (DT4). DT11 diz que os nomes `SMTP_*` não mudam, mas não fala
+  do valor. No cofre de teste só há `starttls`, igual nas duas versões. A tabela "Entrega
+  esperada" deveria registrar isso (orchestrator/planner).
+- A mensagem de validação "deve ser nenhuma, starttls ou tls" ficou. É texto exibido
+  (regra 2) e cita o rótulo da tela, mas agora não é mais o nome que o `from_name` aceita.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `app/nucleo/src/backup_externo.rs` | criado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/nucleo/src/erro.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/src-tauri/src/main.rs` | alterado |
-| `app/src-tauri/capabilities/principal.json` | alterado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/src/main.rs` | alterado |
-| `crates/ward-ponte-teste/tests/ataques.rs` | alterado |
-| `app/src/lib/componentes/CartaoDePendrive.svelte` | criado |
-| `app/src/lib/componentes/LinhaDeOpcao.svelte` | alterado |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `app/src/telas/Configuracoes.svelte` | alterado |
-| `app/src/telas/EscolherPendrive.svelte` | criado |
-| `app/src/telas/configuracoes.js` | alterado |
-| `docs/mission/design-nodes.md` | alterado |
-| `docs/mission/evidence/fase-48/*` (8 PNG do app, 1 PNG do frame `16178`, `qa.json`) | criado |
+| `crates/ward-core/src/body/legacy_v4.rs` | criado |
+| `crates/ward-core/src/body.rs` | alterado |
+| `crates/ward-core/src/body/tests.rs` | alterado |
+| `crates/ward-core/src/entry.rs` | alterado |
+| `crates/ward-core/src/entry/tests.rs` | alterado |
+| `crates/ward-core/src/wire_v1.rs` | alterado |
+| `crates/ward-core/src/protocol/tests.rs` | alterado |
+| `crates/ward-core/src/atomic_write/tests.rs` | alterado (comentário) |
+| `crates/ward-core/tests/body_memory.rs` | alterado |
+| `crates/ward-core/examples/dev-vault/main.rs` | alterado |
+| `crates/ward-core/examples/dev-vault/tests.rs` | alterado |
+| `crates/ward-test-bridge/tests/attacks.rs` | alterado |
+| `app/core/src/client.rs` | alterado |
+| `app/core/src/service.rs` | alterado |
+| `app/core/src/fake_daemon.rs` | alterado |
+| `dev/fixtures/entries.json` | alterado |
+| `dev/variations.py` | alterado |
+| `dev/services/generate.py` | alterado |
+| `dev/tests/dev-vault.sh` | alterado |
+| `dev/tests/cli.py` | alterado |
+| `dev/tests/extension.py` | alterado |
+| `dev/tests/login.py` | alterado |
+| `dev/tests/nm.py` | alterado |
+| `dev/tests/socket_matrix.py` | alterado |
+| `dev/tests/chrome_policy.py` | alterado |
+| `dev/tests/playwright.py` | alterado |
+| `dev/tests/ssh_home.py` | alterado |
+| `dev/tests/variations_test.py` | alterado |
+| `dev/tests/attacks-services.sh` | alterado |
+| `dev/tests/docker-platform.sh` | alterado |
+| `dev/tests/install.sh` | alterado |
+| `dev/english-check/frozen.txt` | alterado |
 | `docs/mission/handoffs/phase-48.md` | criado |
 
+**Literais alterados (regra 5), todos nomes:**
+
+- nomes gravados de tipo, nível e segurança, v4 → v5 (`entry.rs`, testes, fixtures);
+- chaves do `entries.json` e os acessos a elas;
+- caminhos de chave nas mensagens de erro do `dev-vault` (`entries[{i}]`,
+  `{name}.fields`, `.secrets`, `.extras[{j}].value`/`.secret`, `{name}.attachments`);
+- `"[4, 0]"` → `"[5, 0]"` nas conferências de versão;
+- o texto `_about` do `entries.json` (cita as chaves).
+
+Nenhuma mensagem pt-BR exibida mudou. Os rótulos ficaram iguais, conferidos no teste.
+
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados (daemon falso; nenhum dispositivo montado)
-- [x] Teste de ataque para cada (SEG) tocado
-- [x] (UI/DESIGN) Conferido contra o FigCraft (cópia do `Ward.figcraft`; nada salvo)
-- [x] Ficou dentro do escopo da fase
+- [x] `make compile` rodado (regra 6 do PRD: sem a suíte; mais os 17 testes de unidade do corpo)
+- [x] Só cofre de teste e credenciais falsas usados
+- [x] Teste de ataque para cada (SEG) tocado (V4.1, V4.2, V4.8; V4.9 sem SEG)
+- [ ] (UI/DESIGN) não se aplica
+- [x] Ficou dentro do escopo da fase (os leitores do `entries.json` acompanham a troca das chaves; clientes do protocolo ficaram para 51/52/54)

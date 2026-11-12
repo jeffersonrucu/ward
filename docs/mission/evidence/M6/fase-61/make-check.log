@@ -1,0 +1,14 @@
+==> 0/7 origens do cargo (pré-checagem: configs, ambiente, toolchain, fontes)
+==> 1/7 english-check (autoteste e repositório inteiro)
+autoteste: 93/93 casos ok
+english-check: 0 achado(s) em 0 arquivo(s), 0 problema(s) nas exceções
+==> 2/7 cargo fmt --check
+==> 3/7 cargo clippy --all-targets -- -D warnings
+==> 4/7 cargo test
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: FAILED. 200 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.05s
+error: test failed, to rerun pass `-p ward-app-core --lib`
+make[1]: *** [Makefile:112: test] Erro 101
+make: *** [Makefile:88: check] Erro 2
+exit=2

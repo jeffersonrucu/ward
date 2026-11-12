@@ -1,237 +1,211 @@
-# Fase 21 — `ward-plataforma`: socket, `SO_PEERCRED`, identificação e endurecimento
+# Fase 21 — `wardd`: `execution`, `ssh_agent`, `ssh`, `ssh_tests` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- `socket` (S5, V3.1, V3.2):
-  - `preparar_diretorio(caminho)` cria o diretório com 0700. Se ele já existe com outra
-    permissão (0755, 0750, 0701…), é de outro dono, é link simbólico ou é arquivo,
-    recusa sem consertar nada. Toda pasta acima tem de ser do root ou do usuário, sem
-    escrita para grupo e outros e sem link simbólico (`/tmp` recusa). O diretório
-    fica aberto (`O_DIRECTORY|O_NOFOLLOW`) e é conferido de novo por dev/inode antes
-    e depois do `bind`. Se for trocado por outro com o mesmo nome, dá `Trocado`.
-  - `DiretorioSocket::escutar(nome)` cria o socket com 0600, conferido por `lstat`
-    depois do `bind`. Um socket velho do usuário, sem ninguém escutando, é trocado.
-    Com outro daemon escutando dá `JaEmUso`. Arquivo, link ou nome com `/`/`..` no
-    lugar do socket são recusados, e nada que não seja socket nosso é apagado. No
-    `Drop`, a `Escuta` apaga o socket se ele ainda for o mesmo inode.
-  - `Escuta::aceitar()` e `conferir_conexao(&stream)`, que serve para qualquer laço,
-    inclusive assíncrono, pelo `AsFd`. Com uid do par diferente do euid, a conexão
-    fecha sem resposta e volta `ErroAceitar::UidRecusado { uid, pid }` para o log.
-    Sem pid (outro namespace) ou sem pidfd, também fecha (`SemIdentidade`).
-  - `diretorio_runtime()` = `/run/user/<euid>`, pelo uid e não por `XDG_RUNTIME_DIR`.
-    Constantes `NOME_DIRETORIO` (`ward`), `NOME_DIRETORIO_TESTE` (`ward-teste`, D7) e
-    `NOME_SOCKET` (`wardd.sock`).
-- `processo` (D5, S1, S5, V3.5):
-  - `ProcessoPar::do_socket` junta o `SO_PEERCRED` e o pidfd do `SO_PEERPIDFD`, e
-    confere que o pid do pidfd (`/proc/self/fdinfo`) é o mesmo do `SO_PEERCRED`.
-  - Contra reaproveitamento de pid, o daemon abre `/proc/<pid>` e só depois confere
-    pelo pidfd que o processo original ainda vive. Tudo é lido por
-    `openat`/`readlinkat` relativo a esse diretório, com limite de tamanho (status
-    64 KiB, environ 1 MiB, maps 8 MiB).
-  - `identificar(binario)` exige, nesta ordem:
-    - `TracerPid` 0;
-    - `readlink exe` igual ao caminho instalado;
-    - binário e pastas acima do root, sem escrita de grupo/outros, sem link;
-    - o arquivo em execução (`exe` aberto com `O_PATH`) é o mesmo dev/inode do
-      instalado;
-    - nenhuma variável com prefixo `LD_` no `environ`;
-    - toda biblioteca mapeada como executável no `maps` é do root e é o mesmo inode
-      (pega `memfd`, biblioteca apagada ou de `/tmp`, e `LD_PRELOAD` que apagou a
-      própria variável);
-    - `TracerPid` e pidfd vivo de novo no fim.
-  - `identificar_host_extensao(host, chrome)` faz o mesmo para o host e confere o
-    pai. O pidfd do pai é aberto depois de ler o `PPid`, e o `PPid` é relido com o
-    filho vivo. Do pai conferem-se exe, dono root, depurador e `LD_*`, sem o `maps`,
-    porque o Chrome mapeia o Widevine da pasta do usuário.
-  - `classificar(&Instalacao)` devolve `ClassePar::{App, HostExtensao, Comum { app,
-    extensao }}`. Qualquer falha cai em `Comum`.
-  - `reconferir_sem_depurador()` serve para antes de cada operação sensível. Usa
-    `status`, que continua legível mesmo com o cliente não-dumpable.
-  - `Recusa` é `Copy` e vai para o log sem caminho nem valor. Uma variável `LD_*` de
-    nome inventado aparece só como `LD_*`.
-  - `cadeia_de_processos(pid)` / `ProcessoPar::cadeia()` montam a cadeia do mais
-    antigo para o mais novo, com até 32 elementos. O nome vem do `comm`, sem
-    caractere de controle nem de direção de texto e com até 64 caracteres. É só para
-    exibir.
-  - `conferir_servidor(&stream, &wardd)` é a conferência do lado do cliente (S5),
-    mas não funciona contra o daemon endurecido (ver Problemas).
-- `endurecimento` (S8, V3.6, V3.7):
-  - `endurecer_processo()` aplica `PR_SET_DUMPABLE=0` e `RLIMIT_CORE` 0/0, e confere
-    os dois depois de aplicar.
-  - `conferir_ambiente_proprio()` recusa qualquer `LD_*`, só pelo nome, e
-    `TracerPid` ≠ 0.
-  - `iniciar_endurecido()` roda os dois na ordem certa (dumpable primeiro). A
-    mensagem do `ErroInicio` traz o nome da variável e nunca o valor.
-- `memoria` (D14):
-  - `BufferTravado::novo(len)` cria uma região `mmap` só sua, em páginas inteiras,
-    com `mlock`, `MADV_DONTDUMP` e `MADV_WIPEONFORK`. No `Drop`, zera a região
-    inteira com `zeroize` e então faz `munlock`/`munmap`. O `Debug` mostra só `len`.
-    O limite é 1 MiB, e um erro de `mlock`/`madvise` recusa em vez de seguir sem
-    trava.
-  - `travar_regiao(&[u8])` trava memória que já existe. Não há função de destravar,
-    porque o `mlock` é por página e destravar soltaria segredos vizinhos.
-- `unsafe`: só em `src/sys.rs` (wrappers da `libc`) e `src/memoria.rs` (fatias da
-  região mapeada, `Send`/`Sync`), cada item com `#[allow(unsafe_code)]` e
-  `// SAFETY:`. Nos testes de integração do crate há `unsafe` só para `ptrace` e
-  `signal`, também com `// SAFETY:`.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard 3775e98`.
+  Fase adiantada em paralelo com as Fases 14, 28 e 30 (pedido do orchestrator): só os
+  nomes próprios destes quatro arquivos mudaram, com os usos dentro do `wardd`.
+- **Arquivos** (glossário seção 4, `git mv`): `src/execucao.rs` → `execution.rs`,
+  `src/agente_ssh.rs` → `ssh_agent.rs`, `src/ssh_testes.rs` → `ssh_tests.rs` (o
+  `#[path = "ssh_testes.rs"] mod testes` do `ssh.rs` → `#[path = "ssh_tests.rs"] mod
+  tests`); `lib.rs`: `pub mod execution`, `pub mod ssh_agent`. Os `mod testes` internos →
+  `mod tests`.
+- **Comentários, locais, parâmetros e nomes de teste** dos quatro arquivos em inglês.
+  Comentários que citavam nome pt-BR de fio ou de outra fase (`nota segura`, `banco`,
+  `servidor`, `saida`, `entrada_padrao`, `fim`, `janela`, `executar`, `emitir_token`,
+  `tipo_sem_entrega`, "Conectar", "encerrado", "aprovação indisponível",
+  `Daemon::autorizar_uso`, `ward_core::entrega::montar`, `crate::ponte`) foram reescritos
+  com o sentido em inglês, sem o nome (como na Fase 13). O exemplo de fuso no comentário
+  de `Shape::Timezone` passou de `America/Sao_Paulo` para `Europe/Lisbon` (o checador
+  acusa "Sao"); os testes continuam com `America/Sao_Paulo`.
+- **Renomes (antigo → novo)**, todos no glossário (parágrafo "Fase 21", depois do da
+  Fase 29):
+  - `execution`: `Temporarios { pasta, arquivos }` → `TempFiles { dir, files }` (`criar`/
+    `gravar` → `create`/`write`), `Arquivo` → `SessionFile`, `pasta_temporarios` →
+    `temp_dir`, `PASTA_TEMPORARIOS` → `TEMP_DIR`, `zerar` → `zero`, `limpar_temporarios` →
+    `clean_temp_files`; `Preparo` → `Preparation` (campos → `command`, `mask`,
+    `temp_files`, `bridge`, `pty`, `agent`, `lock`, `null_stdin`); `MorreNaTrava` →
+    `DiesOnLock` (`sessoes`/`travas`/`inicial`/`travou` → `sessions`/`locks`/`initial`/
+    `locked`); `AgentePreparado` → `PreparedAgent` (`filho_do_filho` → `child_of_child`);
+    `RecursosRun` → `RunResources`, `ContextoTunel` → `TunnelContext`; `Forma` → `Shape`
+    (`Fuso`/`Sinal` → `Timezone`/`Flag`); `ENTRAM_DA_CLI` → `FROM_CLI`, `PATH_DO_COMANDO` →
+    `COMMAND_PATH`, `DO_DAEMON` → `FROM_DAEMON`, `MAX_VALOR_DA_LISTA` → `MAX_LIST_VALUE`,
+    `LOTE` → `BATCH`, `FILA_ENTRADA` → `STDIN_QUEUE`, `PRAZO_RESTO_DA_SAIDA` →
+    `REST_OF_OUTPUT_DEADLINE`, `PASSO_LEITURA_MS` → `READ_STEP_MS`, `SESSOES` →
+    `SESSIONS`; `Conta { usuario, home }` → `Account { user, home }` (`do_passwd` →
+    `from_passwd`); `ajustar_locale` → `adjust_locale`, `entra_da_cli` →
+    `enters_from_cli`, `valor_aceito` → `value_accepted`, `e_utf8` → `is_utf8`,
+    `montar_ambiente` → `build_environment`, `visivel` → `visible`, `ler_lote` →
+    `read_batch`, `ler_saida` → `read_output`, `escrever_entrada` → `write_stdin`,
+    `ler_da_cli` → `read_from_cli`, `por_na_fila` → `enqueue`, `aviso_do_fim` →
+    `end_notice`, `Lancado` → `Launched`, `sessao`/`sessao_com` → `session`/
+    `session_with`, `Daemon::preparar_execucao` → `prepare_run`, `Cli::enviar`/
+    `enviar_saida` → `send`/`send_output`.
+  - `ssh_agent`: `AgenteSsh { pasta, dir, escuta, chave }` → `SshAgent { path, dir,
+    listener, key }` (`criar`/`publica`/`iniciar` → `create`/`public_key`/`start`; `socket`
+    fica), `Rodando` → `Running`, `Permitido` → `Allowed` (`filho_do_filho` →
+    `child_of_child`), `ErroAgente` → `AgentError` (`ChaveInvalida`/
+    `AlgoritmoNaoSuportado`/`Sistema` → `InvalidKey`/`UnsupportedAlgorithm`/`System`;
+    `Passphrase` fica), `Chave` → `Key` (`ler`/`publica_em_texto`/`assinar` → `read`/
+    `public_as_text`/`sign`), `assinar_com` → `sign_with`, `NOME_SOCKET`/`NOME_PUBLICA`/
+    `PREFIXO_PASTA` → `SOCKET_NAME`/`PUBLIC_NAME`/`DIR_PREFIX`, `MAX_MENSAGEM`/
+    `MAX_CONEXOES`/`PASSO_MS`/`PRAZO_MENSAGEM` → `MAX_MESSAGE`/`MAX_CONNECTIONS`/`STEP_MS`/
+    `MESSAGE_DEADLINE`, `apagar_pasta` → `delete_dir`, `limpar_pastas` → `clean_dirs`,
+    `deve_parar` → `should_stop`, `par_permitido(_pid)` → `peer_allowed(_pid)`, `laco` →
+    `serve_loop`, `ler_exato` → `read_exact`, `atender` → `serve`, `ler_string`/
+    `por_string` → `read_string`/`put_string`, `responder_mensagem`/`responder` →
+    `answer_message`/`answer`.
+  - `ssh`: `ProgramasSsh` → `SshPrograms` (`do_sistema` → `from_system`),
+    `TokenConectar { valor, entrada, ate }` → `ConnectToken { value, entry, until }`,
+    `PRAZO_TOKEN` → `TOKEN_DEADLINE`, `PATH_FILHO` → `CHILD_PATH`, `Destino { host, porta,
+    usuario }` → `Destination { host, port, username }`, `Autent { Senha, Chave { agente,
+    publica } }` → `SshAuth { Password, Key { agent, public_key } }`, `Programa { Ssh {
+    comando }, Sftp, Encaminhar { host, porta } }` → `Program { Ssh { command }, Sftp,
+    Forward { host, port } }`, `Cred { Senha, Chave { chave, passphrase } }` → `Cred {
+    Password, Key { key, passphrase } }`, `montar_argv(_com_alias)` →
+    `build_argv(_with_alias)`, `alias_do_destino` → `destination_alias`, `usuario_ok` →
+    `username_ok`, `host_simples` → `simple_host`, `texto` → `text`, `copiar` →
+    `copy_secret`, `cred_de` → `cred_from`, `intermediario` → `intermediate`,
+    `conferir_tipo` → `verify_kind`, `Daemon::emitir_token`/`usar_token`/`preparar_ssh` →
+    `issue_token`/`use_token`/`prepare_ssh`, `sessao` → `session`.
+  - Testes: `aviso_do_fim_so_diz_encerrado_sem_sobra` →
+    `end_notice_only_says_ended_with_nothing_left`, `locale_utf8_fica_e_c_vira_c_utf8` →
+    `utf8_locale_stays_and_c_becomes_c_utf8`, `ataque_so_a_lista_passa_da_cli` →
+    `attack_only_the_list_passes_from_the_cli`, `ataque_valor_que_vira_caminho_sai` →
+    `attack_value_that_becomes_a_path_stays_out`, `temporarios_0600_zerados_e_apagados` →
+    `temp_files_0600_zeroed_and_deleted`, `partida_limpa_o_que_ficou` →
+    `startup_cleans_what_was_left`, `ataque_rt_aberto_ou_link_recusado` →
+    `attack_open_or_linked_rt_refused`, `f28g_partida_apaga_pastas_ssh_que_sobraram` →
+    `f28g_startup_deletes_leftover_ssh_dirs`,
+    `ataque_sftp_bang_outro_filho_do_sftp_e_recusado` →
+    `attack_sftp_bang_other_child_of_sftp_is_refused`, `so_lista_e_assina` →
+    `only_lists_and_signs`, `ataque_adicionar_remover_travar_e_lixo_recusados` →
+    `attack_add_remove_lock_and_garbage_refused`, `d43_usuario_com_arroba_so_depois_de_l` →
+    `d43_user_with_at_sign_only_after_l`, `chave_usa_o_agente_da_sessao` →
+    `key_uses_the_session_agent`, `ataque_valores_fora_do_formato_recusados` →
+    `attack_values_out_of_format_refused`, `fase28_argv_da_ponte_sem_proxyjump` →
+    `phase28_bridge_argv_without_proxyjump`, `fase28_ataque_alvo_e_alias_fora_do_formato`
+    → `phase28_attack_target_and_alias_out_of_format` (`d56_sftp` fica). Nenhum script,
+    alvo do Makefile nem teste fora destes arquivos cita esses nomes (procurado com
+    `git grep`).
+- **Usos ajustados** (só os nomes desta fase): `wardd/src/lib.rs` (módulos e o link do
+  doc), `main.rs` (`execution::clean_temp_files`, `ssh_agent::clean_dirs`), `nucleo.rs`
+  (`ConnectToken`, `SshPrograms::from_system`, `issue_token`), `servidor.rs`
+  (`execution::session`, `ssh::session`), `ponte.rs` (`SshAgent`, `Allowed`, `SshAuth`,
+  `Cred`, `Destination`, `Program::Forward`, `build_argv`, `execution::BATCH`/
+  `read_batch`), `tests/ssh.rs` (`SshPrograms`, `execution::session`, `ssh::session` e os
+  dois comentários que citavam os caminhos).
+- **Homônimos que não mudaram**: `limpar_temporarios` do `externo.rs` e
+  `limpar_temporarios_estado` do `arquivos.rs`; `sessao` de `trava.rs`, `udisks.rs`,
+  `cdp.rs`, `playwright.rs` e `tests/ssh.rs` (o ajudante local); `Daemon::com_programas_ssh`/
+  `programas_ssh` (nucleo, Fase 20, e o gancho `test-hooks` que o V3.15 lista pelo nome);
+  `PATH_FILHO` do `ponte.rs`; `PonteRodando`. Os nomes de fora (protocolo, entrega,
+  máscara, núcleo, aprovação, ponte, log) ficaram como no master.
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`.
+
+## Literais alterados (PRD regra 5)
+Multiconjunto de literais por arquivo, fora de comentários, comparado com `3775e98`:
+- `Debug`: `"Temporarios({} arquivo(s))"` → `"TempFiles({} arquivo(s))"`,
+  `"AgenteSsh(••••)"` → `"SshAgent(••••)"`, `"Rodando(agente SSH)"` → `"Running(agente
+  SSH)"` (nome do tipo, como o `"PinHash(••••)"` da Fase 13; nenhum script nem teste
+  procura esses textos; o V6.3 compara com `strings-0.1.4.txt`).
+- `#[path = "ssh_testes.rs"]` → `"ssh_tests.rs"` (nome de arquivo).
+- Capturas de `format!` (V6.3, valor igual no log): `"executar: {erro}"` (×2) →
+  `{err}`, `"ssh: {erro}"` → `{err}`, `"executar: {tirados} variável(is) …"` →
+  `{removed}`, `"agente SSH: mensagem {outro} recusada …"` → `{other}`,
+  `"[{host}]:{porta}"` → `{port}`, `"[{host}]:{alvo}"`/`"{host}:{alvo}"` → `{target}`,
+  `"{PREFIXO_PASTA}{sufixo}"` → `"{DIR_PREFIX}{suffix}"`; nos testes
+  `"{PREFIXO_PASTA}abcdefghijklmnop"`/`"{PREFIXO_PASTA}link"` → `{DIR_PREFIX}`,
+  `"wardd-exec-{}-{rotulo}"` → `{label}`, `"{nome} passou"`/`"{nome}={valor}"` →
+  `{name}`/`{value}`, `"{um}"`/`"{dois}"` → `{one}`/`{two}`.
+- **Ficaram**: todas as mensagens de log (`aviso!`/`depurar!`), os textos para a CLI
+  ("o cofre travou; o comando foi encerrado"…), as mensagens do `AgentError` (`Display`),
+  os `ErroRecurso("…")`, os nomes de thread (`wardd-run-saida`, `wardd-agente-ssh`…), as
+  opções do `ssh` e todos os valores dos testes.
+- Nos outros arquivos tocados nenhum literal mudou.
 
 ## Segurança
-- Invariantes tocadas:
-  - S5: diretório 0700 e socket 0600, os dois do usuário, e uid do par por
-    `SO_PEERCRED`. Uid diferente fecha sem responder.
-  - S1/D5: os papéis app e extensão só saem da identificação completa, e qualquer
-    falha cai em agente.
-  - S8: não-dumpable, core 0, recusa `LD_*` e depurador, buffer travado zerado ao
-    sair.
-  - S13: nenhuma mensagem de erro leva valor de variável nem conteúdo do `/proc`.
-- Testes de ataque escritos:
-  - `tests/socket.rs`:
-    - `ataque_diretorio_existente_0755_nao_sobe_nem_conserta`;
-    - `ataque_diretorio_de_outro_dono_nao_sobe`;
-    - `ataque_link_simbolico_no_lugar_do_diretorio`;
-    - `ataque_arquivo_no_lugar_do_diretorio`;
-    - `ataque_pasta_acima_gravavel_por_grupo`;
-    - `ataque_arquivo_ou_link_no_lugar_do_socket`;
-    - `segundo_daemon_no_mesmo_socket_recusa_e_socket_velho_e_trocado`;
-    - `diretorio_trocado_depois_de_preparar_recusa_escutar`;
-    - caminho feliz: `diretorio_novo_fica_0700_e_socket_0600_do_usuario` (V3.1).
-  - `src/socket.rs` › `uid_diferente_recusa`: a decisão por uid (V3.2, lógica; ver
-    "Ficou de fora") e `pai_gravavel_por_outros_recusa` (`/tmp`).
-  - `tests/identificacao.rs`:
-    - `ataque_binario_copiado_para_fora_da_instalacao` (V3.5);
-    - `ataque_variaveis_ld_no_ambiente` (`LD_PRELOAD`, `LD_AUDIT`,
-      `LD_LIBRARY_PATH`; V3.5);
-    - `ataque_cliente_sob_strace` (TracerPid; V3.5);
-    - `ataque_biblioteca_de_usuario_sem_variavel`;
-    - `ataque_processo_que_sai_antes_da_conferencia` (pidfd);
-    - `host_da_extensao_exige_o_pai_permitido`;
-    - `host_da_extensao_sem_pai_permitido_quando_o_pai_e_o_teste`;
-    - `cliente_confere_o_servidor_antes_da_senha` (servidor falso);
-    - `servidor_nao_dumpable_nao_pode_ser_conferido_pelo_proc`, que registra o
-      conflito descrito em Problemas.
-  - `tests/endurecimento.rs`:
-    - `ataque_ler_memoria_ambiente_e_ptrace_do_processo_endurecido` (V3.6). Cobre
-      `/proc/<pid>/mem`, `environ` e `maps` com EACCES, `PTRACE_SEIZE` feito pelo
-      próprio pai (que o Yama deixaria) com EPERM, `strace -p` falhando e `limits`
-      com core 0/0, além de um controle sem endurecer em que o `environ` é legível;
-    - `ataque_sigsegv_nao_deixa_core` (V3.6): morre por SIGSEGV, `core_dumped()`
-      falso e nenhum arquivo na pasta;
-    - `ataque_subir_com_ld_recusa` (V3.7): sai ≠ 0, com o nome na mensagem e sem o
-      valor;
-    - `ataque_subir_sob_strace_recusa` (V3.7);
-    - caminho feliz: `sobe_limpo_sem_ld_e_sem_depurador`.
-  - `src/processo.rs`: `ambiente_com_qualquer_ld_recusa_sem_valor`,
-    `mapas_recusam_biblioteca_fora_do_root`, `mapas_recusam_inode_diferente_do_caminho`,
-    `instalacao_recusa_arquivo_de_usuario_e_link`, `caminho_permitido_so_absoluto_e_canonico`,
-    `nome_da_cadeia_higienizado`, `recusa_nao_vaza_detalhe`.
-  - `src/memoria.rs`: `debug_nao_mostra_conteudo`, `zerar_apaga_a_regiao_inteira`,
-    `buffer_travado_le_escreve_e_trava` (VmLck) e `tamanho_fora_do_limite_recusa`.
-- Dependências novas: nenhuma crate entra na árvore (`Cargo.lock` só ganha a lista de
-  dependências do `ward-plataforma`).
-  - `libc` 0.2.191, já presente pelo `ward-core`, para `getsockopt`
-    (`SO_PEERCRED`/`SO_PEERPIDFD`), `pidfd_open`/`pidfd_send_signal`,
-    `openat`/`readlinkat`, `prctl`, `setrlimit`/`getrlimit` e
-    `mmap`/`mlock`/`madvise`/`munmap`. Nada disso existe estável na biblioteca
-    padrão (`UnixStream::peer_cred` continua instável).
-  - `zeroize` 1.9.1, já presente, para zerar o `BufferTravado`.
-  - O `SO_PEERPIDFD` (77, do asm-generic) é definido no crate porque a `libc` 0.2.191
-    não o exporta para glibc. Fica restrito a x86_64/aarch64.
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários):
+  - S3/S8/S13 e D13/D60 (ambiente do filho montado do zero): `build_environment`,
+    `FROM_CLI`, `value_accepted`, `adjust_locale`, `FROM_DAEMON` com a mesma lógica e a
+    mesma ordem (PATH fixo, HOME/USER/LOGNAME do passwd, lista da CLI conferida, entrega
+    por cima, recusa se a entrega traz nome fixo).
+  - S2 (temporários): `TempFiles::write` (`create_new`, 0600, `O_NOFOLLOW`), `zero` (mesmo
+    inode, um link, regular) e `clean_temp_files` iguais.
+  - D12 (agente SSH): `peer_allowed_pid` (preso ao primeiro filho do `sftp`), `serve_loop`
+    (`SO_PEERCRED`, fecha sem byte), `answer_message` (só lista e assina), `Key::read`
+    (só Ed25519) iguais.
+  - S3/D43/D56 (argv sem segredo, sem shell): `build_argv_with_alias`, `username_ok`,
+    `host_ok`, `simple_host`, `alias_ok`, `text` iguais; senha só em `SSHPASS`.
+  - D13/R19 (`known_hosts` próprio, `-F /dev/null`): mesmas opções na mesma ordem.
+  - D3 (token do "Conectar"): `issue_token`/`use_token` com a mesma conferência de papel,
+    tempo constante (`tokens_equal`) e uso único.
+  - S8/V2.7 (trava mata `ward run` e `ward ssh`): `DiesOnLock`, o registro antes do
+    lançamento e `end_notice` iguais.
+  - D19/Fase 28 (salto e túnel): `intermediate` e a ponte com a máscara das duas
+    entradas iguais.
+- **Conferência**: (1) multiconjunto de literais (acima); (2) sequência de tokens dos
+  quatro arquivos com todo identificador trocado por `ID` e sem comentários, comparada
+  com `3775e98`: as únicas diferenças são vírgulas finais do `rustfmt`, a ordem dos `use`
+  e os campos escritos por extenso (`Resposta::Saida { fluxo: stream, dados: data }`,
+  `Resposta::Fim { codigo: code }`) ou abreviados (`child::Pipes { stdin, stdout, stderr
+  }`) por causa dos nomes novos dos locais.
+- **Testes de ataque**: nenhum novo (só rename); os existentes (lista da CLI, valor que
+  vira caminho, `<rt>` aberto ou link, link trocado pelo filho, `!cmd` do `sftp`,
+  mensagens do agente proibidas, valores fora do formato no argv, alvo e alias da ponte)
+  acompanham os nomes. Não rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- A ligação com o `wardd` é da Fase 22. O `main` do `wardd` deve chamar
-  `iniciar_endurecido()` antes de qualquer outra coisa e sair ≠ 0 com a mensagem
-  (V3.7). Depois vêm `preparar_diretorio(diretorio_runtime().join(NOME_DIRETORIO))`,
-  `escutar(NOME_SOCKET)` e, a cada conexão, `conferir_conexao` (log da recusa) e
-  `classificar` → papel.
-- O mapeamento de `ClassePar` para o `Papel` do protocolo fica com as Fases 20 e 22:
-  `App` vira app, `HostExtensao` vira extensão e `Comum` vira agente. Não criei tipo
-  de protocolo. O `Instalacao` com os caminhos reais (`/usr/local/…`) é do M9; o
-  daemon de teste passa os seus.
-- V3.2 ponta a ponta (`docker run --user 4242`) depende do daemon. Aqui só a decisão
-  por uid está testada (unidade), porque não há como criar um processo de outro uid
-  sem root. Com o diretório 0700, o uid 4242 nem chega a conectar (EACCES), então a
-  checagem do `SO_PEERCRED` é a segunda camada. Para exercitá-la de verdade, o
-  validador precisa abrir o diretório no contêiner.
-- V3.6 com `gdb -p` e `coredumpctl`: coberto pelo mesmo `ptrace` (EPERM) e pelo
-  `core_dumped()` falso. O `gdb` não está no teste.
-- O `mlock` da chave de dados do `ward-core` (`cripto::Chave`, um `Box` no heap) fica
-  para a Fase 22, por `travar_regiao`, ou para uma mudança no `ward-core` que use um
-  armazenamento travado. Ver Problemas.
+- Os nomes que estes arquivos usam e que são de outras fases: `ward_core::entrega`
+  (Fase 15), `mascara` (16), `protocolo` (17–18), `wardd` `log`/`aviso!`/`depurar!` (19),
+  `nucleo`/`aprovacao` (`Daemon::autorizar_uso`, `estado`, `travas_agora`,
+  `sessoes_run`, `temporarios`, `programas_ssh`, `SessoesRun`, `Cliente`; Fase 20),
+  `ponte` (`Ponte`, `Abertura`, `Intermediario { porta, usuario }`, `LIMITES_*`; Fase 22).
+  O checador ainda acusa esses identificadores nos quatro arquivos (514 achados, todos
+  de nomes de fora; nenhum comentário).
+- Comentários pt-BR de `lib.rs`, `main.rs`, `nucleo.rs`, `ponte.rs`, `servidor.rs` e
+  `tests/ssh.rs`: das fases deles (19, 20, 22, 23, 24).
+- `make check` e testes: não rodaram (PRD regra 6).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `cargo test -p ward-plataforma` (21 unidade + 26 integração) | 0 |
-| `cargo clippy -p ward-plataforma --all-targets --all-features -- -D warnings` | 0 |
-| `make check` | 0 |
+| `git reset --hard 3775e98` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `cargo fmt --all` | 0 |
+| `make compile` (log `.dev/logs/fase21-make-compile.log`; `cargo check` do workspace com todos os alvos e features, `npm ci`, build do Vite, `cargo check` do `app/src-tauri`, `syntax_check.py`) | 0 |
+| `cargo clippy -p wardd --all-targets --all-features --locked -- -D warnings` (extra; log `fase21-clippy.log`) | 0 |
+| `python3 -I dev/english_check.py --paths crates/wardd/src/{execution,ssh_agent,ssh,ssh_tests}.rs` (log `fase21-english.log`) | 1 (514 achados, todos identificadores de outras fases; 0 de comentário) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **S5 × S8: conflito no escopo. Decide o planner; não escolhi um lado.** D5 diz que
-  "o mesmo teste vale para a CLI e o app conferirem o `wardd` antes de mandar a
-  senha mestra". Só que o `wardd` endurecido (S8, `PR_SET_DUMPABLE=0`) tem `exe`,
-  `environ` e `maps` ilegíveis para outro processo do mesmo uid (EACCES, conferido
-  em `servidor_nao_dumpable_nao_pode_ser_conferido_pelo_proc`). Contra o daemon
-  real, `conferir_servidor` dá `SemAcesso`, falhando fechada. Se a CLI exigir isso,
-  nunca manda a senha; se ignorar, S5 fica sem a conferência. Opções:
-  - rótulo de LSM por `SO_PEERSEC`, com um perfil AppArmor por binário instalado,
-    que o kernel atribui no exec, que não depende do dumpable e que o usuário não
-    forja (exige perfil instalado como root no M9);
-  - aceitar só "par do mesmo uid, `/proc/<pid>` não-dumpable e `status` com
-    `Name: wardd`", o que é fraco e forjável;
-  - aceitar o risco no escopo.
-- **Mesma tensão para app e host.** Se o app ou o `ward-nm` ficarem não-dumpable
-  antes da identificação, o daemon não lê o `/proc` deles e eles caem em agente.
-  Ligação com a Fase 20: o cliente conecta, espera o daemon responder com o papel e
-  só então se endurece. Na janela entre a identificação e o endurecimento, um
-  processo-pai malicioso (o Yama `ptrace_scope=1` deixa o pai depurar o filho) pode
-  se prender, injetar código e se soltar antes do pedido sensível.
-  `reconferir_sem_depurador` só pega o depurador enquanto ele está preso. O rótulo
-  de LSM acima resolveria também este caso.
-- **Chrome não-dumpable.** Se o processo do navegador do Chrome for não-dumpable, o
-  `exe` dele fica ilegível e o host da extensão nunca é reconhecido. Também não
-  conferi se o Chrome lança o host como filho direto ou por um intermediário. É
-  preciso confirmar no M6 com o Chrome real.
-- **`LD_*` fecha mais que o D5.** Recuso qualquer variável com prefixo `LD_`, e não
-  só as três do D5, seguindo o "e similares" de S8. Quem tiver `LD_LIBRARY_PATH` no
-  ambiente da sessão vai ver o app como agente e o daemon não vai subir. A falha é
-  fechada, mas pode surpreender.
-- **O `maps` vai além do D5.** Exijo que toda biblioteca executável do app e do host
-  seja do root. É defesa a mais, contra `LD_PRELOAD` que apaga a variável. O
-  WebKitGTK do app Tauri pode carregar algo de fora do root, como um módulo GTK do
-  usuário, e então o app cai em agente. Confirmar no M5.
-- **O SIGSEGV não mata o Rust.** O `std` do Rust instala um tratador de SIGSEGV que
-  ignora o sinal mandado por `kill`, e o processo continua vivo. Para o `kill -SEGV`
-  da V3.6, o `wardd` real não morre: não deixa core, mas também não cai. O teste
-  devolve a ação padrão ao filho para conferir que não há core. A Fase 22 pode fazer
-  o mesmo, se quiser que o daemon morra.
-- **Sem conferência de que `/proc` é procfs** (`fstatfs`). Um processo do mesmo uid
-  não remonta `/proc` no namespace do daemon, então deixei de fora.
-- **Exige Linux 6.5 ou mais novo** por causa do `SO_PEERPIDFD`. Em kernel antigo,
-  toda conexão é recusada (`SemIdentidade`). Este Pop!_OS está no 7.2.
+- O worktree nasceu em `b4d5e1b`, não em `3775e98`; reset com a árvore limpa.
+- **Checador não limpo** nos arquivos da fase: sobram só identificadores que vêm de
+  outros módulos ainda não traduzidos (lista em "Ficou de fora"); some quando as Fases
+  15–20 e 22 rodarem. Não pus nada em `allow.txt`/`frozen.txt` por isso (não são
+  exceções permanentes nem nomes de fio).
+- **Conflitos prováveis no merge** (fases em paralelo): `docs/glossario.md` (parágrafo
+  "Fase 21" depois do da Fase 29, antes de "Funções e métodos…"); `crates/wardd/src/
+  nucleo.rs` (três linhas com `crate::ssh::…` e a chamada `issue_token`), se a Fase 14
+  mexer nas mesmas linhas.
+- O comentário do `ssh.rs` "o V3.15 lê só os arquivos de primeiro nível de `src/`" ficou
+  traduzido como estava, mas está velho: o teste `v3_15_sem_aprovador_no_binario` desce
+  nas subpastas desde o scrutiny do M3. Não mexi no sentido (fase só de nomes).
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-plataforma/Cargo.toml` | alterado |
-| `crates/ward-plataforma/src/lib.rs` | alterado |
-| `crates/ward-plataforma/src/sys.rs` | criado |
-| `crates/ward-plataforma/src/memoria.rs` | criado |
-| `crates/ward-plataforma/src/endurecimento.rs` | criado |
-| `crates/ward-plataforma/src/processo.rs` | criado |
-| `crates/ward-plataforma/src/socket.rs` | criado |
-| `crates/ward-plataforma/tests/comum/mod.rs` | criado |
-| `crates/ward-plataforma/tests/socket.rs` | criado |
-| `crates/ward-plataforma/tests/identificacao.rs` | criado |
-| `crates/ward-plataforma/tests/endurecimento.rs` | criado |
-| `Cargo.lock` | alterado |
+| `crates/wardd/src/execution.rs` (era `execucao.rs`) | renomeado e reescrito |
+| `crates/wardd/src/ssh_agent.rs` (era `agente_ssh.rs`) | renomeado e reescrito |
+| `crates/wardd/src/ssh.rs` | reescrito |
+| `crates/wardd/src/ssh_tests.rs` (era `ssh_testes.rs`) | renomeado e reescrito |
+| `crates/wardd/src/{lib,main,nucleo,ponte,servidor}.rs` | alterado (usos) |
+| `crates/wardd/tests/ssh.rs` | alterado (usos) |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-21.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados. Nenhum cofre foi aberto; os
-  diretórios de teste ficam em `/run/user/<uid>/ward-plataforma-teste-*` e são
-  apagados
-- [x] Teste de ataque para cada (SEG) tocado (V3.1, V3.5, V3.6, V3.7; V3.2 só na
-  lógica, ver "Ficou de fora")
-- [ ] (UI/DESIGN) Não se aplica
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make compile` (0), `cargo fmt` e `cargo clippy -p wardd -D warnings` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

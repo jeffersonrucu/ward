@@ -1,0 +1,35 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --features test-mode --bin ward
+dev/tests/ssh-home.sh target/debug/wardd target/debug/ward
+wardd de teste só deste script: pid 1865044, socket /ward-ssh-home/sock/wardd.sock
+ok    destravar o wardd de teste (0)
+ok    ward ssh por senha → deploy (0)
+ok    ward ssh por chave (agente de D12) → deploy (0)
+ok    ward ssh pelo salto → hostname do interno (0)
+ok    ward ssh no sftp (0)
+ok    ward ssh interativo num pty: whoami → deploy (0)
+ok    ward run pelo túnel → select 1 (0)
+ok    V4.27 /tmp/sentinela-ssh não existe (ProxyCommand do config não rodou)
+ok    V4.27 LocalCommand do config não rodou
+ok    V4.27 inotify: nenhum evento no home durante a suíte (0)
+ok    V4.27 nenhuma isca FIFO aberta ([])
+ok    V4.27 o agente falso não recebeu conexão (0)
+ok    V4.27 strace: ssh.1865142 não abre nada do home (0)
+ok    V4.27 strace: ssh.1865203 não abre nada do home (0)
+ok    V4.27 strace: sshpass.1865101 não abre nada do home (0)
+ok    V4.27 strace: sshpass.1865214 não abre nada do home (0)
+ok    V4.27 strace: sshpass.1865254 não abre nada do home (0)
+ok    V4.27 strace: sshpass.1865274 não abre nada do home (0)
+ok    V4.27 strace: sshpass.1865298 não abre nada do home (0)
+ok    os traços pegaram os programas do daemon (execve: {'ssh': 7, 'sshpass': 5, 'sftp': 1})
+ok    S1 nenhum padrão de .dev/variations.txt nos traços
+ok    S1 nenhum padrão de .dev/variations.txt na saída da CLI
+ok    S1 log do daemon (trace, 50 linhas) sem padrão de .dev/variations.txt
+ok    controle: ssh sem -F /dev/null roda o ProxyCommand e cria a sentinela
+ok    controle: o inotify acusa o ssh que lê o config do home
+ok    controle: o ssh com as identidades padrão abre isca FIFO
+ok    controle: o ssh com a variável do agente conecta no agente falso
+ok    controle: o analisador do strace acusa os dois ssh sem o isolamento (2 traços)
+
+teste-ssh-home: V4.27 ok (nada do home do passwd na suíte de ward ssh e túnel)

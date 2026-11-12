@@ -1,81 +1,83 @@
-//! `ward ssh` (Fase 27; D3, D12, D13, D34, D43, D56; S1–S4, S8, S13).
+//! `ward ssh` (Phase 27; D3, D12, D13, D34, D43, D56; S1–S4, S8, S13).
 //!
-//! - **Quem chamou** (D3): a CLI é sempre agente; vale o nível da entrada. A exceção é
-//!   o token do "Conectar" do app ([`Daemon::emitir_token`]): aleatório, de uso único,
-//!   30 s, preso à entrada. Um token válido para a entrada pula o nível (nunca o
-//!   bloqueado: a entrada continua invisível); inválido, vencido ou de outra entrada é
-//!   ignorado e vale o nível. Todo token apresentado que existe morre ali, mesmo usado
-//!   na entrada errada.
-//! - **Sem shell** (S3, D43): o daemon executa `ssh` (ou `sshpass` → `ssh`) por
-//!   `execve`, com o argv montado aqui: o usuário só como argumento próprio de
-//!   `-l <usuário>`, o host depois de `--`, nunca `usuário@host` nem `-o User=`. No
-//!   `sftp`, onde `-l` é limite de banda, o usuário vai como `-o` + `User=<usuário>`
-//!   (D56), com `-F /dev/null` e o host depois de `--`.
-//! - **Nada do `~/.ssh`** (D13, R19): `-F /dev/null`, `IdentitiesOnly=yes`, sem
-//!   identidades padrão (`IdentityFile`/`CertificateFile`), `known_hosts` próprio do Ward
-//!   (`StrictHostKeyChecking=accept-new`: a primeira conexão grava a chave do host; uma
-//!   chave diferente depois recusa) e o ambiente do filho montado do zero (sem
-//!   `SSH_AUTH_SOCK` do usuário nem nada do daemon).
-//! - **Senha**: `sshpass -e`, a senha só em `SSHPASS` no ambiente do filho (nunca em
-//!   argv), com `PubkeyAuthentication=no` e `IdentityAgent=none`.
-//! - **Chave**: o agente temporário de D12 ([`crate::agente_ssh`]), só para o `ssh`
-//!   filho; a chave privada nunca sai do daemon.
-//! - **Trava** (Fase 54c, S8): a sessão aberta morre quando o cofre trava, como o
-//!   `ward run`: `SIGKILL` no grupo do `ssh`/`sshpass` e no do `ssh` que o `sshpass`
-//!   cria com sessão própria; a CLI sai 137 com o aviso. O agente de D12 e a ponte do
-//!   salto também caem.
-//! - **Fim da sessão** (Fase 54l): a CLI que cai (fechou, SIGKILL), o quadro fora da
-//!   sessão e o fim do filho usam o mesmo `matar_com_sessoes_filhas` da trava: nenhum
-//!   `ssh` com sessão própria fica para trás esperando o `SIGHUP` do pty do `sshpass`.
-//! - **Interativo** (sem comando e com janela): o filho roda num pty; a saída passa pela
-//!   máscara pedaço a pedaço, sem segurar nem atrasar nada (D34 revisto: segurar o
-//!   prefixo virava oráculo). Com comando (ou sem terminal), saída e erro em fluxos
-//!   separados, como no `ward run`.
-//! - **Salto** (Fase 28, D19): sem `ProxyJump` (que põe um `sh -c` na cadeia e não
-//!   passa as opções de `-o` ao `ssh` do salto). O daemon abre a ponte de
-//!   [`crate::ponte`] (um `ssh -W <host>:<porta>` até a entrada de salto, por `execve`,
-//!   só para o `ssh` principal) e o `ssh` principal conecta em `127.0.0.1:<porta da
-//!   ponte>` com `HostKeyAlias` igual ao nome do destino no `known_hosts`. A máscara
-//!   cobre as duas entradas.
+//! - **Who called** (D3): the CLI is always the agent; the entry's level counts. The
+//!   exception is the app's "Connect" token ([`Daemon::issue_token`]): random, single
+//!   use, 30 s, bound to the entry. A token valid for the entry skips the level (never
+//!   the blocked one: the entry stays invisible); an invalid, expired or other-entry one
+//!   is ignored and the level counts. Every presented token that exists dies there, even
+//!   when used on the wrong entry.
+//! - **No shell** (S3, D43): the daemon runs `ssh` (or `sshpass` → `ssh`) through
+//!   `execve`, with the argv built here: the user only as the own argument of
+//!   `-l <user>`, the host after `--`, never `user@host` nor `-o User=`. In `sftp`, where
+//!   `-l` is the bandwidth limit, the user goes as `-o` + `User=<user>` (D56), with
+//!   `-F /dev/null` and the host after `--`.
+//! - **Nothing from `~/.ssh`** (D13, R19): `-F /dev/null`, `IdentitiesOnly=yes`, no
+//!   default identities (`IdentityFile`/`CertificateFile`), Ward's own `known_hosts`
+//!   (`StrictHostKeyChecking=accept-new`: the first connection writes the host's key; a
+//!   different key later refuses) and the child's environment built from scratch (no
+//!   `SSH_AUTH_SOCK` of the user nor anything from the daemon).
+//! - **Password**: `sshpass -e`, the password only in `SSHPASS` in the child's
+//!   environment (never in argv), with `PubkeyAuthentication=no` and
+//!   `IdentityAgent=none`.
+//! - **Key**: the temporary agent of D12 ([`crate::ssh_agent`]), only for the child
+//!   `ssh`; the private key never leaves the daemon.
+//! - **Lock** (Phase 54c, S8): the open session dies when the vault locks, like
+//!   `ward run`: `SIGKILL` on the group of `ssh`/`sshpass` and on the one of the `ssh`
+//!   that `sshpass` creates with its own session; the CLI exits 137 with the notice. The
+//!   agent of D12 and the jump's bridge also go down.
+//! - **End of the session** (Phase 54l): the CLI that goes away (closed, SIGKILL), the
+//!   frame outside the session and the end of the child use the same
+//!   `kill_with_child_sessions` as the lock: no `ssh` with its own session is left
+//!   behind waiting for the `SIGHUP` of the `sshpass` pty.
+//! - **Interactive** (no command and with a window): the child runs in a pty; the output
+//!   goes through the mask piece by piece, without holding or delaying anything (D34
+//!   revised: holding the prefix became an oracle). With a command (or without a
+//!   terminal), output and error in separate streams, as in `ward run`.
+//! - **Jump** (Phase 28, D19): no `ProxyJump` (which puts an `sh -c` in the chain and does
+//!   not pass the `-o` options to the jump's `ssh`). The daemon opens the bridge of the
+//!   bridge module (an `ssh -W <host>:<port>` to the jump entry, through `execve`, only
+//!   for the main `ssh`) and the main `ssh` connects to `127.0.0.1:<bridge port>` with
+//!   `HostKeyAlias` equal to the destination's name in `known_hosts`. The mask covers
+//!   both entries.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ward_core::entrada::{Autenticacao, Dados, Entrada, NivelAcesso, Protocolo, Segredo};
-use ward_core::mascara::{ConstrutorMascara, Mascara};
-use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta};
-use ward_plataforma::filho::Comando;
+use ward_core::entry::{AccessLevel, Auth, Data, Entry, Protocol, Secret};
+use ward_core::mask::{Mask, MaskBuilder};
+use ward_core::protocol::{Request, Response, ResponseError, Role};
+use ward_platform::child::Command;
 use zeroize::Zeroizing;
 
-use crate::agente_ssh::{AgenteSsh, ErroAgente};
-use crate::aprovacao::Cliente;
-use crate::execucao::{AgentePreparado, MorreNaTrava, Preparo};
-use crate::nucleo::Daemon;
-use crate::ponte::{Abertura, Intermediario, LIMITES_SALTO, Ponte};
-use crate::{aviso, depurar};
+use crate::approval::Client;
+use crate::bridge::{Bridge, Intermediate, JUMP_LIMITS, Opening};
+use crate::core::Daemon;
+use crate::execution::{DiesOnLock, Preparation, PreparedAgent};
+use crate::ssh_agent::{AgentError, SshAgent};
+use crate::{debug, warning};
 
-/// Validade do token do "Conectar" (D3).
-pub const PRAZO_TOKEN: Duration = Duration::from_secs(30);
-/// Tokens não usados guardados ao mesmo tempo (o mais antigo sai).
+/// Validity of the "Connect" token (D3).
+pub const TOKEN_DEADLINE: Duration = Duration::from_secs(30);
+/// Unused tokens kept at the same time (the oldest goes away).
 const MAX_TOKENS: usize = 16;
-/// `PATH` do filho (os programas vão por caminho absoluto; isto é para o `ssh` achar o
-/// que ele mesmo chama, nada da sessão).
-const PATH_FILHO: &[u8] = b"/usr/bin:/bin";
-/// `TERM` do pty (o protocolo não traz o terminal da CLI).
+/// The child's `PATH` (the programs go by absolute path; this is for `ssh` to find what
+/// it calls itself, nothing from the session).
+const CHILD_PATH: &[u8] = b"/usr/bin:/bin";
+/// `TERM` of the pty (the protocol does not bring the CLI's terminal).
 const TERM_PTY: &[u8] = b"xterm-256color";
 
-/// Os programas do `ward ssh`, por caminho absoluto.
+/// The programs of `ward ssh`, by absolute path.
 #[derive(Debug, Clone)]
-pub struct ProgramasSsh {
+pub struct SshPrograms {
     pub ssh: PathBuf,
     pub sshpass: PathBuf,
     pub sftp: PathBuf,
 }
 
-impl ProgramasSsh {
-    /// Os do sistema (D13: `sshpass` é dependência de sistema da instalação).
-    pub fn do_sistema() -> Self {
-        ProgramasSsh {
+impl SshPrograms {
+    /// The system's (D13: `sshpass` is a system dependency of the installation).
+    pub fn from_system() -> Self {
+        SshPrograms {
             ssh: PathBuf::from("/usr/bin/ssh"),
             sshpass: PathBuf::from("/usr/bin/sshpass"),
             sftp: PathBuf::from("/usr/bin/sftp"),
@@ -83,77 +85,81 @@ impl ProgramasSsh {
     }
 }
 
-/// Um token do "Conectar" emitido e ainda não usado.
-pub(crate) struct TokenConectar {
-    valor: Segredo,
-    entrada: String,
-    ate: Duration,
+/// A "Connect" token issued and not used yet.
+pub(crate) struct ConnectToken {
+    value: Secret,
+    entry: String,
+    until: Duration,
 }
 
-// --- Argv (S3, D13, D43, D56) ------------------------------------------------------------
+// --- Argv (S3, D13, D43, D56) ----------------------------------------------------------
 
-/// Onde conectar (valores já validados pelo núcleo; conferidos de novo aqui).
+/// Where to connect (values already validated by the core; verified again here).
 #[derive(Debug, Clone, Copy)]
-pub struct Destino<'a> {
+pub struct Destination<'a> {
     pub host: &'a str,
-    pub porta: u16,
-    pub usuario: &'a str,
+    pub port: u16,
+    pub username: &'a str,
 }
 
-/// Como autenticar.
+/// How to authenticate.
 #[derive(Debug, Clone, Copy)]
-pub enum Autent<'a> {
-    /// `sshpass -e`; a senha vai em `SSHPASS`, nunca aqui.
-    Senha,
-    /// Agente de D12: o socket e a chave pública (para `IdentitiesOnly=yes`).
-    Chave { agente: &'a Path, publica: &'a Path },
+pub enum SshAuth<'a> {
+    /// `sshpass -e`; the password goes in `SSHPASS`, never here.
+    Password,
+    /// Agent of D12: the socket and the public key (for `IdentitiesOnly=yes`).
+    Key {
+        agent: &'a Path,
+        public_key: &'a Path,
+    },
 }
 
-/// Qual programa.
+/// Which program.
 #[derive(Debug, Clone, Copy)]
-pub enum Programa<'a> {
-    /// `ssh`, com o comando remoto (vazio: shell).
-    Ssh { comando: &'a [Zeroizing<Vec<u8>>] },
-    /// `sftp` (a entrada `ftp/sftp` com protocolo `sftp`).
+pub enum Program<'a> {
+    /// `ssh`, with the remote command (empty: shell).
+    Ssh { command: &'a [Zeroizing<Vec<u8>>] },
+    /// `sftp` (the `ftp/sftp` entry with the `sftp` protocol).
     Sftp,
-    /// `ssh -W <host>:<porta>`: a ponte do salto e do túnel (Fase 28), com a entrada e
-    /// a saída padrão ligadas à conexão da ponte.
-    Encaminhar { host: &'a str, porta: u16 },
+    /// `ssh -W <host>:<port>`: the bridge of the jump and of the tunnel (Phase 28), with
+    /// the standard input and output tied to the bridge's connection.
+    Forward { host: &'a str, port: u16 },
 }
 
-/// O nome do destino no `known_hosts` numa conexão direta (`host` na 22, `[host]:porta`
-/// nas outras), para o `HostKeyAlias` do `ssh` que conecta pela ponte do salto.
-pub fn alias_do_destino(host: &str, porta: u16) -> Option<String> {
-    if !host_simples(host) || porta == 0 {
+/// The destination's name in `known_hosts` on a direct connection (`host` on 22,
+/// `[host]:port` on the others), for the `HostKeyAlias` of the `ssh` that connects
+/// through the jump's bridge.
+pub fn destination_alias(host: &str, port: u16) -> Option<String> {
+    if !simple_host(host) || port == 0 {
         return None;
     }
-    Some(if porta == 22 {
+    Some(if port == 22 {
         host.to_owned()
     } else {
-        format!("[{host}]:{porta}")
+        format!("[{host}]:{port}")
     })
 }
 
-/// Alias conferido: o que [`alias_do_destino`] produz, nada mais.
+/// Verified alias: what [`destination_alias`] produces, nothing else.
 fn alias_ok(a: &str) -> bool {
-    if let Some(resto) = a.strip_prefix('[') {
-        let Some((h, p)) = resto.split_once("]:") else {
+    if let Some(rest) = a.strip_prefix('[') {
+        let Some((h, p)) = rest.split_once("]:") else {
             return false;
         };
-        return host_simples(h) && p.parse::<u16>().is_ok_and(|p| p != 0) && !p.starts_with('0');
+        return simple_host(h) && p.parse::<u16>().is_ok_and(|p| p != 0) && !p.starts_with('0');
     }
-    host_simples(a)
+    simple_host(a)
 }
 
-/// Usuário de `servidor`/`ftp-sftp` (D43): `[A-Za-z0-9._@-]`, sem `-` no começo.
-fn usuario_ok(u: &str) -> bool {
+/// User of the server and FTP/SFTP entries (D43): `[A-Za-z0-9._@-]`, no `-` at the start.
+fn username_ok(u: &str) -> bool {
     !u.is_empty()
         && !u.starts_with('-')
         && u.bytes()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b'@' | b'-'))
 }
 
-/// Host (D43): o do núcleo, sem `@` e sem `-` no começo.
+/// Host (D43): the core's, without `@` and without `-` at the start.
 fn host_ok(h: &str) -> bool {
     !h.is_empty()
         && !h.starts_with('-')
@@ -162,62 +168,63 @@ fn host_ok(h: &str) -> bool {
         })
 }
 
-/// Host do alvo da ponte e do alias: o de [`host_ok`], sem colchetes (eles são postos
-/// aqui, quando o host é IPv6).
-fn host_simples(h: &str) -> bool {
+/// Host of the bridge's target and of the alias: the one of [`host_ok`], without
+/// brackets (they are put here, when the host is IPv6).
+fn simple_host(h: &str) -> bool {
     host_ok(h) && !h.contains(['[', ']'])
 }
 
-fn texto(p: &Path) -> Option<&str> {
+fn text(p: &Path) -> Option<&str> {
     p.to_str()
         .filter(|s| !s.contains(['\n', '\0', ',', ' ', '%', '"', '\'']))
 }
 
-/// O argv inteiro do filho (`argv[0]` é o programa). `None` se algum valor não passa
-/// na conferência (nada é executado). Sem shell: cada item vai como um argumento.
-pub fn montar_argv(
-    progs: &ProgramasSsh,
+/// The child's whole argv (`argv[0]` is the program). `None` if some value does not pass
+/// the verification (nothing is executed). No shell: each item goes as one argument.
+pub fn build_argv(
+    progs: &SshPrograms,
     known_hosts: &Path,
-    destino: Destino<'_>,
-    autent: Autent<'_>,
-    programa: Programa<'_>,
+    destination: Destination<'_>,
+    auth: SshAuth<'_>,
+    program: Program<'_>,
 ) -> Option<Vec<Vec<u8>>> {
-    montar_argv_com_alias(progs, known_hosts, destino, autent, programa, None)
+    build_argv_with_alias(progs, known_hosts, destination, auth, program, None)
 }
 
-/// Como [`montar_argv`], com o `HostKeyAlias` do `ssh` que conecta pela ponte do salto
-/// (o destino é `127.0.0.1:<porta da ponte>`; a chave conferida é a do host de verdade).
-pub fn montar_argv_com_alias(
-    progs: &ProgramasSsh,
+/// Like [`build_argv`], with the `HostKeyAlias` of the `ssh` that connects through the
+/// jump's bridge (the destination is `127.0.0.1:<bridge port>`; the verified key is the
+/// real host's).
+pub fn build_argv_with_alias(
+    progs: &SshPrograms,
     known_hosts: &Path,
-    destino: Destino<'_>,
-    autent: Autent<'_>,
-    programa: Programa<'_>,
+    destination: Destination<'_>,
+    auth: SshAuth<'_>,
+    program: Program<'_>,
     alias: Option<&str>,
 ) -> Option<Vec<Vec<u8>>> {
-    if !usuario_ok(destino.usuario) || !host_ok(destino.host) || destino.porta == 0 {
+    if !username_ok(destination.username) || !host_ok(destination.host) || destination.port == 0 {
         return None;
     }
-    if let Programa::Encaminhar { host, porta } = programa
-        && (!host_simples(host) || porta == 0)
+    if let Program::Forward { host, port } = program
+        && (!simple_host(host) || port == 0)
     {
         return None;
     }
     if alias.is_some_and(|a| !alias_ok(a)) {
         return None;
     }
-    let kh = texto(known_hosts)?;
+    let kh = text(known_hosts)?;
     let mut a = Argv(Vec::new());
-    let prog = match programa {
-        Programa::Ssh { .. } | Programa::Encaminhar { .. } => &progs.ssh,
-        Programa::Sftp => &progs.sftp,
+    let prog = match program {
+        Program::Ssh { .. } | Program::Forward { .. } => &progs.ssh,
+        Program::Sftp => &progs.sftp,
     };
-    if let Autent::Senha = autent {
-        a.s(texto(&progs.sshpass)?);
+    if let SshAuth::Password = auth {
+        a.s(text(&progs.sshpass)?);
         a.s("-e");
     }
-    a.s(texto(prog)?);
-    // Nada da configuração do usuário nem do sistema.
+    a.s(text(prog)?);
+    // Nothing from the user's nor the system's configuration.
     a.s("-F");
     a.s("/dev/null");
     a.o("IdentitiesOnly", "yes");
@@ -233,73 +240,73 @@ pub fn montar_argv_com_alias(
     a.o("PermitLocalCommand", "no");
     a.o("ProxyCommand", "none");
     if let Some(al) = alias {
-        // A ponte do salto: a chave conferida é a do destino, não a de 127.0.0.1.
+        // The jump's bridge: the verified key is the destination's, not 127.0.0.1's.
         a.o("HostKeyAlias", al);
         a.o("CheckHostIP", "no");
     }
-    match autent {
-        Autent::Senha => {
+    match auth {
+        SshAuth::Password => {
             a.o("PubkeyAuthentication", "no");
             a.o("IdentityAgent", "none");
             a.o("IdentityFile", "none");
         }
-        Autent::Chave { agente, publica } => {
+        SshAuth::Key { agent, public_key } => {
             a.o("PubkeyAuthentication", "yes");
-            a.o("IdentityAgent", texto(agente)?);
-            a.o("IdentityFile", texto(publica)?);
+            a.o("IdentityAgent", text(agent)?);
+            a.o("IdentityFile", text(public_key)?);
             a.o("PasswordAuthentication", "no");
             a.o("KbdInteractiveAuthentication", "no");
             a.o("BatchMode", "yes");
         }
     }
-    let porta = destino.porta.to_string();
-    match programa {
-        Programa::Ssh { comando } => {
+    let port = destination.port.to_string();
+    match program {
+        Program::Ssh { command } => {
             a.s("-p");
-            a.s(&porta);
-            // D43: o usuário só como argumento próprio de `-l`.
+            a.s(&port);
+            // D43: the user only as the own argument of `-l`.
             a.s("-l");
-            a.s(destino.usuario);
+            a.s(destination.username);
             a.s("--");
-            a.s(destino.host);
-            for c in comando {
+            a.s(destination.host);
+            for c in command {
                 a.0.push(c.to_vec());
             }
         }
-        Programa::Encaminhar { host, porta: alvo } => {
+        Program::Forward { host, port: target } => {
             a.o("ConnectTimeout", "15");
             a.o("ExitOnForwardFailure", "yes");
-            if let Autent::Senha = autent {
+            if let SshAuth::Password = auth {
                 a.o("NumberOfPasswordPrompts", "1");
             }
             a.s("-W");
-            // `-W` lê `host:porta`; IPv6 vai entre colchetes.
+            // `-W` reads `host:port`; IPv6 goes between brackets.
             if host.contains(':') {
-                a.s(&format!("[{host}]:{alvo}"));
+                a.s(&format!("[{host}]:{target}"));
             } else {
-                a.s(&format!("{host}:{alvo}"));
+                a.s(&format!("{host}:{target}"));
             }
             a.s("-p");
-            a.s(&porta);
+            a.s(&port);
             a.s("-l");
-            a.s(destino.usuario);
+            a.s(destination.username);
             a.s("--");
-            a.s(destino.host);
+            a.s(destination.host);
         }
-        Programa::Sftp => {
-            // D56: no `sftp`, `-l` é limite de banda; o usuário vai como `-o` +
-            // `User=<usuário>` (o conjunto de D43 não tem `%`, espaço, aspas, `=`, `,`).
-            a.o("User", destino.usuario);
+        Program::Sftp => {
+            // D56: in `sftp`, `-l` is the bandwidth limit; the user goes as `-o` +
+            // `User=<user>` (the set of D43 has no `%`, space, quotes, `=`, `,`).
+            a.o("User", destination.username);
             a.s("-P");
-            a.s(&porta);
+            a.s(&port);
             a.s("--");
-            a.s(destino.host);
+            a.s(destination.host);
         }
     }
     Some(a.0)
 }
 
-/// O argv em montagem.
+/// The argv being built.
 struct Argv(Vec<Vec<u8>>);
 
 impl Argv {
@@ -307,399 +314,405 @@ impl Argv {
         self.0.push(x.as_bytes().to_vec());
     }
 
-    /// `-o` e `Opção=valor` em dois argumentos.
+    /// `-o` and `Option=value` in two arguments.
     fn o(&mut self, op: &str, v: &str) {
         self.s("-o");
         self.0.push(format!("{op}={v}").into_bytes());
     }
 }
 
-// --- Token do "Conectar" (D3) ------------------------------------------------------------
+// --- "Connect" token (D3) -------------------------------------------------------------
 
 impl Daemon {
-    /// `emitir_token` (só o app; D3): token aleatório de uso único, 30 s, preso a uma
-    /// entrada `servidor`. Some ao travar. O valor só vai na resposta ao app.
-    pub(crate) fn emitir_token(&self, papel: Papel, nome: &str) -> Result<Resposta, ErroResposta> {
-        if papel != Papel::App {
-            return Err(ErroResposta::NaoAutorizado);
+    /// Token issuing (app only; D3): random single-use token, 30 s, bound to a
+    /// server entry. Goes away on lock. The value only goes in the response to the
+    /// app.
+    pub(crate) fn issue_token(&self, role: Role, name: &str) -> Result<Response, ResponseError> {
+        if role != Role::App {
+            return Err(ResponseError::Unauthorized);
         }
-        let agora = self.aprovacao.agora();
-        let mut est = self.estado();
-        let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
+        let now = self.approval.now();
+        let mut st = self.state();
+        let a = st.open.as_mut().ok_or(ResponseError::Locked)?;
         let e = a
-            .entradas
+            .entries
             .iter()
-            .find(|e| e.nome() == nome)
-            .ok_or(ErroResposta::EntradaInexistente)?;
-        if !matches!(e.dados(), Dados::Servidor(_)) {
-            return Err(ErroResposta::PedidoInvalido);
+            .find(|e| e.name() == name)
+            .ok_or(ResponseError::EntryNotFound)?;
+        if !matches!(e.data(), Data::Server(_)) {
+            return Err(ResponseError::InvalidRequest);
         }
-        let valor = ward_core::gerador::token_conectar().map_err(|_| ErroResposta::Interno)?;
-        a.tokens.retain(|t| agora < t.ate);
+        let value = ward_core::generator::connect_token().map_err(|_| ResponseError::Internal)?;
+        a.tokens.retain(|t| now < t.until);
         if a.tokens.len() >= MAX_TOKENS {
             a.tokens.remove(0);
         }
-        a.tokens.push(TokenConectar {
-            valor: Segredo::de_bytes(valor.expor().to_vec()),
-            entrada: nome.to_owned(),
-            ate: agora.saturating_add(PRAZO_TOKEN),
+        a.tokens.push(ConnectToken {
+            value: Secret::from_bytes(value.expose().to_vec()),
+            entry: name.to_owned(),
+            until: now.saturating_add(TOKEN_DEADLINE),
         });
-        aviso!("token do Conectar emitido para uma entrada servidor (D3)");
-        Ok(Resposta::Token(valor))
+        warning!("token do Conectar emitido para uma entrada servidor (D3)");
+        Ok(Response::Token(value))
     }
 
-    /// O token vale para `entrada`? Todo token que existe morre aqui (uso único), mesmo
-    /// apresentado com outra entrada. Comparação em tempo constante.
-    fn usar_token(&self, token: &Segredo, entrada: &str) -> bool {
-        let agora = self.aprovacao.agora();
-        let mut est = self.estado();
-        let Some(a) = est.aberto.as_mut() else {
+    /// Is the token valid for `entry`? Every token that exists dies here (single use),
+    /// even when presented with another entry. Constant-time comparison.
+    fn use_token(&self, token: &Secret, entry: &str) -> bool {
+        let now = self.approval.now();
+        let mut st = self.state();
+        let Some(a) = st.open.as_mut() else {
             return false;
         };
-        a.tokens.retain(|t| agora < t.ate);
-        let mut achado = None;
+        a.tokens.retain(|t| now < t.until);
+        let mut found = None;
         for (i, t) in a.tokens.iter().enumerate() {
-            if ward_core::gerador::tokens_iguais(t.valor.expor(), token.expor()) {
-                achado = Some(i);
+            if ward_core::generator::tokens_equal(t.value.expose(), token.expose()) {
+                found = Some(i);
             }
         }
-        match achado {
-            Some(i) => a.tokens.remove(i).entrada == entrada,
+        match found {
+            Some(i) => a.tokens.remove(i).entry == entry,
             None => false,
         }
     }
 }
 
-// --- Preparo --------------------------------------------------------------------------
+// --- Preparation -----------------------------------------------------------------------
 
-/// O que a sessão precisa da entrada, copiado sob a trava do estado.
+/// What the session needs from the entry, copied under the state's lock.
 pub(crate) enum Cred {
-    Senha(Segredo),
-    Chave {
-        chave: Segredo,
-        passphrase: Option<Segredo>,
+    Password(Secret),
+    Key {
+        key: Secret,
+        passphrase: Option<Secret>,
     },
 }
 
-fn copiar(s: &Segredo) -> Segredo {
-    Segredo::de_bytes(s.expor().to_vec())
+fn copy_secret(s: &Secret) -> Secret {
+    Secret::from_bytes(s.expose().to_vec())
 }
 
-pub(crate) fn cred_de(a: &Autenticacao) -> Cred {
+pub(crate) fn cred_from(a: &Auth) -> Cred {
     match a {
-        Autenticacao::Senha(s) => Cred::Senha(copiar(s)),
-        Autenticacao::Chave {
-            chave_privada,
+        Auth::Password(s) => Cred::Password(copy_secret(s)),
+        Auth::Key {
+            private_key,
             passphrase,
-        } => Cred::Chave {
-            chave: copiar(chave_privada),
-            passphrase: passphrase.as_ref().map(copiar),
+        } => Cred::Key {
+            key: copy_secret(private_key),
+            passphrase: passphrase.as_ref().map(copy_secret),
         },
     }
 }
 
-/// A entrada de salto ou de túnel (D19, D25): `servidor` visível, sem salto próprio.
-/// Bloqueada (ou sumida) depois da autorização nega; outro tipo, ou com salto, falha.
-pub(crate) fn intermediario<'a>(
-    entradas: &'a [Entrada],
-    nome: &str,
-) -> Result<(&'a Entrada, Intermediario), ErroResposta> {
-    let Some(e) = visivel(entradas, nome) else {
-        aviso!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
-        return Err(ErroResposta::Negado);
+/// The jump or tunnel entry (D19, D25): a visible server entry, without its own jump.
+/// Blocked (or gone) after the authorization denies; another kind, or with a jump, fails.
+pub(crate) fn intermediate<'a>(
+    entries: &'a [Entry],
+    name: &str,
+) -> Result<(&'a Entry, Intermediate), ResponseError> {
+    let Some(e) = visible(entries, name) else {
+        warning!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
+        return Err(ResponseError::Denied);
     };
-    match e.dados() {
-        Dados::Servidor(s) if s.salto.is_none() => Ok((
+    match e.data() {
+        Data::Server(s) if s.jump.is_none() => Ok((
             e,
-            Intermediario {
+            Intermediate {
                 host: s.host.clone(),
-                porta: s.porta,
-                usuario: s.usuario.clone(),
-                cred: cred_de(&s.autenticacao),
+                port: s.port,
+                username: s.username.clone(),
+                cred: cred_from(&s.auth),
             },
         )),
         _ => {
-            aviso!("salto ou túnel: a outra entrada não é um servidor sem salto");
-            Err(ErroResposta::EntregaFalhou)
+            warning!("salto ou túnel: a outra entrada não é um servidor sem salto");
+            Err(ResponseError::DeliveryFailed)
         }
     }
 }
 
-/// A entrada visível (bloqueada = inexistente, V3.17).
-fn visivel<'a>(entradas: &'a [Entrada], nome: &str) -> Option<&'a Entrada> {
-    entradas
+/// The visible entry (blocked = nonexistent, V3.17).
+fn visible<'a>(entries: &'a [Entry], name: &str) -> Option<&'a Entry> {
+    entries
         .iter()
-        .find(|e| e.nome() == nome && e.nivel() != NivelAcesso::Bloqueado)
+        .find(|e| e.name() == name && e.level() != AccessLevel::Blocked)
 }
 
-/// O tipo aceita o `ward ssh`? `servidor`, ou `ftp/sftp` com `sftp` e sem comando (o
-/// `sftp` lê os comandos da entrada). Os outros: `tipo_sem_entrega`.
-fn conferir_tipo(e: &Entrada, com_comando: bool) -> Result<(), ErroResposta> {
-    match e.dados() {
-        Dados::Servidor(_) => Ok(()),
-        Dados::FtpSftp(f) if f.protocolo == Protocolo::Sftp => {
-            if com_comando {
-                Err(ErroResposta::PedidoInvalido)
+/// Does the kind accept `ward ssh`? A server entry, or FTP/SFTP with `sftp` and without a
+/// command (`sftp` reads the commands from the input). The others: "type without delivery".
+fn verify_kind(e: &Entry, with_command: bool) -> Result<(), ResponseError> {
+    match e.data() {
+        Data::Server(_) => Ok(()),
+        Data::FtpSftp(f) if f.protocol == Protocol::Sftp => {
+            if with_command {
+                Err(ResponseError::InvalidRequest)
             } else {
                 Ok(())
             }
         }
-        _ => Err(ErroResposta::TipoSemEntrega),
+        _ => Err(ResponseError::TypeWithoutDelivery),
     }
 }
 
 impl Daemon {
-    /// Autoriza (token ou nível), monta o argv, o ambiente, a máscara e o agente.
-    pub(crate) fn preparar_ssh(
+    /// Authorizes (token or level), builds the argv, the environment, the mask and the
+    /// agent.
+    pub(crate) fn prepare_ssh(
         &self,
-        cliente: &dyn Cliente,
-        pedido: Pedido,
-    ) -> Result<Preparo, ErroResposta> {
-        let Pedido::Ssh {
-            entrada,
-            comando,
+        client: &dyn Client,
+        request: Request,
+    ) -> Result<Preparation, ResponseError> {
+        let Request::Ssh {
+            entry,
+            command,
             token,
-            janela,
-            tipo_entrada,
-        } = &pedido
+            window_size,
+            stdin_kind,
+        } = &request
         else {
-            return Err(ErroResposta::PedidoInvalido);
+            return Err(ResponseError::InvalidRequest);
         };
-        let com_comando = !comando.is_empty();
-        // Pty só no interativo: sem comando e com o tamanho do terminal da CLI.
-        let janela = if com_comando { None } else { *janela };
-        let nome = entrada.clone();
-        let entrada_nula = *tipo_entrada == ward_core::protocolo::TipoEntradaPadrao::Nula;
-        depurar!("ssh: entrada padrão {}", tipo_entrada.nome());
-        // O nível vem antes do tipo (V4.32: o token inventado numa entrada `banco` com
-        // aprovação dá "aprovação indisponível"); o tipo é conferido depois, sob a trava.
-        let pelo_token = token.as_ref().is_some_and(|t| self.usar_token(t, &nome));
-        if pelo_token {
-            aviso!("ssh: token do Conectar aceito; sem nível nem aprovação (D3)");
+        let with_command = !command.is_empty();
+        // Pty only in the interactive one: no command and with the size of the CLI's
+        // terminal.
+        let window = if with_command { None } else { *window_size };
+        let name = entry.clone();
+        let null_stdin = *stdin_kind == ward_core::protocol::StdinKind::Null;
+        debug!("ssh: entrada padrão {}", stdin_kind.name());
+        // The level comes before the kind (V4.32: the made-up token on a database entry
+        // with approval gives "approval unavailable"); the kind is verified afterwards,
+        // under the lock.
+        let by_token = token.as_ref().is_some_and(|t| self.use_token(t, &name));
+        if by_token {
+            warning!("ssh: token do Conectar aceito; sem nível nem aprovação (D3)");
         } else {
             if token.is_some() {
-                aviso!(
+                warning!(
                     "ssh: token inválido, vencido, já usado ou de outra entrada; vale o nível (D3)"
                 );
             }
-            self.autorizar_uso(cliente, &pedido)?;
+            self.authorize_use(client, &request)?;
         }
-        self.registrar_uso();
-        let Pedido::Ssh { comando, .. } = pedido else {
-            return Err(ErroResposta::PedidoInvalido);
+        self.record_use();
+        let Request::Ssh { command, .. } = request else {
+            return Err(ResponseError::InvalidRequest);
         };
-        // Com o estado travado: a entrada pode ter mudado durante a aprovação.
-        let (host, porta, usuario, cred, sftp, mascara, travas, inicial, salto, sessoes) = {
-            let est = self.estado();
-            let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-            let e = visivel(&a.entradas, &nome).ok_or(ErroResposta::EntradaInexistente)?;
-            conferir_tipo(e, com_comando)?;
-            let (host, porta, usuario, auth, sftp, nome_salto) = match e.dados() {
-                Dados::Servidor(s) => (
+        // With the state locked: the entry may have changed during the approval.
+        let (host, port, username, cred, sftp, mask, locks, initial, jump, sessions) = {
+            let st = self.state();
+            let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
+            let e = visible(&a.entries, &name).ok_or(ResponseError::EntryNotFound)?;
+            verify_kind(e, with_command)?;
+            let (host, port, username, auth, sftp, jump_name) = match e.data() {
+                Data::Server(s) => (
                     &s.host,
-                    s.porta,
-                    &s.usuario,
-                    &s.autenticacao,
+                    s.port,
+                    &s.username,
+                    &s.auth,
                     false,
-                    s.salto.as_deref(),
+                    s.jump.as_deref(),
                 ),
-                Dados::FtpSftp(f) => (&f.host, f.porta, &f.usuario, &f.autenticacao, true, None),
-                _ => return Err(ErroResposta::TipoSemEntrega),
+                Data::FtpSftp(f) => (&f.host, f.port, &f.username, &f.auth, true, None),
+                _ => return Err(ResponseError::TypeWithoutDelivery),
             };
-            let falhou = |erro: ward_core::mascara::ErroMascara| {
-                aviso!("ssh: {erro}");
-                ErroResposta::EntregaFalhou
+            let failed = |err: ward_core::mask::MaskError| {
+                warning!("ssh: {err}");
+                ResponseError::DeliveryFailed
             };
-            // D19: com salto, a máscara cobre as duas entradas (uma para a saída do
-            // `ssh` principal, outra para o `stderr` do `ssh` da ponte).
-            let (mascara, salto) = match nome_salto {
-                None => (Mascara::da_entrada(e, None).map_err(falhou)?, None),
-                Some(ns) => {
-                    let (es, via) = intermediario(&a.entradas, ns)?;
-                    let duas = || {
-                        ConstrutorMascara::new()
-                            .entrada(e)
-                            .entrada(es)
-                            .construir()
-                            .map_err(falhou)
+            // D19: with a jump, the mask covers both entries (one for the main `ssh`'s
+            // output, another for the `stderr` of the bridge's `ssh`).
+            let (mask, jump) = match jump_name {
+                None => (Mask::from_entry(e, None).map_err(failed)?, None),
+                Some(jn) => {
+                    let (es, via) = intermediate(&a.entries, jn)?;
+                    let both = || {
+                        MaskBuilder::new()
+                            .entry(e)
+                            .entry(es)
+                            .build()
+                            .map_err(failed)
                     };
-                    (duas()?, Some((via, duas()?)))
+                    (both()?, Some((via, both()?)))
                 }
             };
-            let (travas, inicial) = self.travas_agora(&est);
+            let (locks, initial) = self.locks_now(&st);
             (
                 host.clone(),
-                porta,
-                usuario.clone(),
-                cred_de(auth),
+                port,
+                username.clone(),
+                cred_from(auth),
                 sftp,
-                mascara,
-                travas,
-                inicial,
-                salto,
-                self.sessoes_run(&est),
+                mask,
+                locks,
+                initial,
+                jump,
+                self.run_sessions(&st),
             )
         };
-        // `known_hosts` do Ward conferido (0700/0600, sem link) antes de qualquer `ssh`.
+        // Ward's `known_hosts` verified (0700/0600, no link) before any `ssh`.
         let known_hosts = self.known_hosts().map_err(|m| {
-            aviso!("ssh: {m}");
-            ErroResposta::EntregaFalhou
+            warning!("ssh: {m}");
+            ResponseError::DeliveryFailed
         })?;
-        // Salto: a ponte escuta antes do `ssh` principal existir; o par só é aceito
-        // depois, quando o pid dele é conhecido.
-        let ponte = match salto {
+        // Jump: the bridge listens before the main `ssh` exists; the peer is only
+        // accepted afterwards, when its pid is known.
+        let bridge = match jump {
             None => None,
-            Some((via, mascara_ponte)) => Some(
-                Ponte::abrir(Abertura {
+            Some((via, bridge_mask)) => Some(
+                Bridge::open(Opening {
                     via,
-                    alvo_host: &host,
-                    alvo_porta: porta,
-                    programas: self.programas_ssh(),
+                    target_host: &host,
+                    target_port: port,
+                    programs: self.ssh_programs(),
                     known_hosts: &known_hosts,
-                    rt: self.temporarios(),
-                    mascara: mascara_ponte,
-                    limites: LIMITES_SALTO,
-                    travas: (travas.clone(), inicial),
+                    rt: self.temp_root(),
+                    mask: bridge_mask,
+                    limits: JUMP_LIMITS,
+                    locks: (locks.clone(), initial),
                 })
                 .map_err(|m| {
-                    aviso!("ssh: {m}");
-                    ErroResposta::EntregaFalhou
+                    warning!("ssh: {m}");
+                    ResponseError::DeliveryFailed
                 })?,
             ),
         };
-        let alias = match &ponte {
+        let alias = match &bridge {
             None => None,
-            Some(_) => Some(alias_do_destino(&host, porta).ok_or_else(|| {
-                aviso!("ssh: host fora do formato; nada foi executado");
-                ErroResposta::EntregaFalhou
+            Some(_) => Some(destination_alias(&host, port).ok_or_else(|| {
+                warning!("ssh: host fora do formato; nada foi executado");
+                ResponseError::DeliveryFailed
             })?),
         };
-        let (senha, agente) = match cred {
-            Cred::Senha(s) => (Some(s), None),
-            Cred::Chave { chave, passphrase } => {
-                let rt = self.temporarios().ok_or(ErroResposta::EntregaFalhou)?;
-                let ag = AgenteSsh::criar(rt, &chave, passphrase.as_ref()).map_err(
-                    |e: ErroAgente| {
-                        aviso!("ssh: {e}");
-                        ErroResposta::EntregaFalhou
-                    },
-                )?;
+        let (password, agent) = match cred {
+            Cred::Password(s) => (Some(s), None),
+            Cred::Key { key, passphrase } => {
+                let rt = self.temp_root().ok_or(ResponseError::DeliveryFailed)?;
+                let ag =
+                    SshAgent::create(rt, &key, passphrase.as_ref()).map_err(|e: AgentError| {
+                        warning!("ssh: {e}");
+                        ResponseError::DeliveryFailed
+                    })?;
                 (None, Some(ag))
             }
         };
-        let caminhos = agente.as_ref().map(|a| (a.socket(), a.publica()));
-        let autent = match &caminhos {
-            None => Autent::Senha,
-            Some((sock, publica)) => Autent::Chave {
-                agente: sock,
-                publica,
+        let paths = agent.as_ref().map(|a| (a.socket(), a.public_key()));
+        let auth = match &paths {
+            None => SshAuth::Password,
+            Some((sock, public_key)) => SshAuth::Key {
+                agent: sock,
+                public_key,
             },
         };
-        let programa = if sftp {
-            Programa::Sftp
+        let program = if sftp {
+            Program::Sftp
         } else {
-            Programa::Ssh { comando: &comando }
+            Program::Ssh { command: &command }
         };
-        let destino = match &ponte {
-            None => Destino {
+        let destination = match &bridge {
+            None => Destination {
                 host: &host,
-                porta,
-                usuario: &usuario,
+                port,
+                username: &username,
             },
-            Some(p) => Destino {
+            Some(p) => Destination {
                 host: "127.0.0.1",
-                porta: p.porta(),
-                usuario: &usuario,
+                port: p.port(),
+                username: &username,
             },
         };
-        let argv = montar_argv_com_alias(
-            self.programas_ssh(),
+        let argv = build_argv_with_alias(
+            self.ssh_programs(),
             &known_hosts,
-            destino,
-            autent,
-            programa,
+            destination,
+            auth,
+            program,
             alias.as_deref(),
         )
         .ok_or_else(|| {
-            aviso!("ssh: host, usuário ou caminho fora do formato; nada foi executado");
-            ErroResposta::EntregaFalhou
+            warning!("ssh: host, usuário ou caminho fora do formato; nada foi executado");
+            ResponseError::DeliveryFailed
         })?;
         let cwd = {
             use std::os::unix::ffi::OsStringExt;
-            ward_plataforma::pasta_pessoal()
+            ward_platform::home_dir()
                 .map(OsStringExt::into_vec)
                 .unwrap_or_else(|_| b"/".to_vec())
         };
-        let invalido = |_| ErroResposta::EntregaFalhou;
-        let mut cmd = Comando::novo(&argv[0], &cwd).map_err(invalido)?;
+        let invalid = |_| ResponseError::DeliveryFailed;
+        let mut cmd = Command::new(&argv[0], &cwd).map_err(invalid)?;
         for x in &argv[1..] {
-            cmd.argumento(x).map_err(invalido)?;
+            cmd.argument(x).map_err(invalid)?;
         }
-        // Ambiente do zero (D13, R19): nada do daemon nem da sessão do usuário.
-        cmd.variavel(b"PATH", PATH_FILHO).map_err(invalido)?;
-        cmd.variavel(b"LANG", b"C.UTF-8").map_err(invalido)?;
-        if janela.is_some() {
-            cmd.variavel(b"TERM", TERM_PTY).map_err(invalido)?;
+        // Environment from scratch (D13, R19): nothing from the daemon nor from the user's
+        // session.
+        cmd.variable(b"PATH", CHILD_PATH).map_err(invalid)?;
+        cmd.variable(b"LANG", b"C.UTF-8").map_err(invalid)?;
+        if window.is_some() {
+            cmd.variable(b"TERM", TERM_PTY).map_err(invalid)?;
         }
-        if let Some(s) = &senha {
-            // `sshpass -e`: a senha só no ambiente do filho, nunca em argv (S3).
-            cmd.variavel(b"SSHPASS", s.expor()).map_err(invalido)?;
+        if let Some(s) = &password {
+            // `sshpass -e`: the password only in the child's environment, never in argv
+            // (S3).
+            cmd.variable(b"SSHPASS", s.expose()).map_err(invalid)?;
         }
-        drop(senha);
-        depurar!(
+        drop(password);
+        debug!(
             "ssh: {} argumento(s), {}, {}",
             argv.len(),
             if sftp { "sftp" } else { "ssh" },
-            if janela.is_some() { "pty" } else { "sem pty" }
+            if window.is_some() { "pty" } else { "sem pty" }
         );
-        if ponte.is_some() {
-            depurar!("ssh: com salto (ponte em 127.0.0.1)");
+        if bridge.is_some() {
+            debug!("ssh: com salto (ponte em 127.0.0.1)");
         }
-        Ok(Preparo {
-            comando: cmd,
-            mascara,
-            temporarios: None,
-            ponte,
-            pty: janela,
-            agente: agente.map(|a| AgentePreparado {
-                agente: a,
-                filho_do_filho: sftp,
-                travas: travas.clone(),
-                inicial,
+        Ok(Preparation {
+            command: cmd,
+            mask,
+            temp_files: None,
+            bridge,
+            pty: window,
+            agent: agent.map(|a| PreparedAgent {
+                agent: a,
+                child_of_child: sftp,
+                locks: locks.clone(),
+                initial,
             }),
-            // Fase 54c (S8; decisão do usuário, 2026-11-10): a sessão SSH aberta morre na
-            // trava, como o `ward run` (o agente e a ponte já caíam: D12).
-            trava: Some(MorreNaTrava {
-                sessoes,
-                travas,
-                inicial,
+            // Phase 54c (S8; user's decision, 2026-11-10): the open SSH session dies on
+            // lock, like `ward run` (the agent and the bridge already went down: D12).
+            lock: Some(DiesOnLock {
+                sessions,
+                locks,
+                initial,
             }),
-            entrada_nula,
+            null_stdin,
         })
     }
 }
 
-/// Atende um `ssh` do papel agente, como o [`crate::execucao::sessao`] do `ward run`.
-pub fn sessao(
+/// Serves an `ssh` of the agent role, like the [`crate::execution::session`] of
+/// `ward run`.
+pub fn session(
     daemon: &Daemon,
-    cliente: &dyn Cliente,
+    client: &dyn Client,
     stream: &std::os::unix::net::UnixStream,
-    pedido: Pedido,
+    request: Request,
 ) -> bool {
-    crate::execucao::sessao_com(
+    crate::execution::session_with(
         stream,
         |c| {
-            let r = daemon.preparar_ssh(c, pedido);
+            let r = daemon.prepare_ssh(c, request);
             if let Err(e) = &r {
-                depurar!("ssh (agente): {}", e.codigo());
+                debug!("ssh (agente): {}", e.code());
             }
             r
         },
-        cliente,
+        client,
     )
 }
 
-// Fora de `src/ssh/`: o V3.15 lê só os arquivos de primeiro nível de `src/`.
+// Outside `src/ssh/`: V3.15 reads only the first-level files of `src/`.
 #[cfg(test)]
-#[path = "ssh_testes.rs"]
-mod testes;
+#[path = "ssh_tests.rs"]
+mod tests;

@@ -1,0 +1,65 @@
+==> m2:V4.3 de ponta a ponta: SIGKILL no wardd 0.2.0 em instantes variados do primeiro destrave (60 rodadas)
+      rodada 1: kill em 0.020s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 2: kill em 0.030s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 3: kill em 0.040s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 4: kill em 0.051s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 5: kill em 0.061s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 6: kill em 0.071s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 7: kill em 0.081s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 8: kill em 0.091s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 9: kill em 0.101s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 10: kill em 0.112s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 11: kill em 0.122s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 12: kill em 0.132s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 13: kill em 0.142s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 14: kill em 0.152s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 15: kill em 0.162s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 16: kill em 0.173s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 17: kill em 0.183s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 18: kill em 0.193s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 19: kill em 0.203s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 20: kill em 0.213s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 21: kill em 0.223s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 22: kill em 0.234s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 23: kill em 0.244s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 24: kill em 0.254s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 25: kill em 0.264s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 26: kill em 0.274s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 27: kill em 0.284s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 28: kill em 0.295s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 29: kill em 0.305s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 30: kill em 0.315s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 31: kill em 0.325s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 32: kill em 0.335s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 33: kill em 0.345s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 34: kill em 0.356s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 35: kill em 0.366s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 36: kill em 0.376s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 37: kill em 0.386s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 38: kill em 0.396s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 39: kill em 0.406s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 40: kill em 0.417s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 41: kill em 0.427s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 42: kill em 0.437s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 43: kill em 0.447s → v4; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 44: kill em 0.457s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 45: kill em 0.467s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 46: kill em 0.478s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 47: kill em 0.488s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 48: kill em 0.498s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 49: kill em 0.508s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 50: kill em 0.518s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 51: kill em 0.528s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 52: kill em 0.539s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 53: kill em 0.549s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 54: kill em 0.559s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 55: kill em 0.569s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 56: kill em 0.579s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 57: kill em 0.589s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 58: kill em 0.600s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 59: kill em 0.610s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      rodada 60: kill em 0.620s → v5; próximo destrave: ok -; depois: WARDCOFR ward-state 2; temporários sobrando: 0
+      resultado: v4 intacta=43 v5=17 outro=0
+ok    V4.3 nunca outra coisa além da v4 original ou da v5
+ok    S13: logs das rodadas sem padrão
+fase64: 0 falha(s)

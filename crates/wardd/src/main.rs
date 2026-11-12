@@ -1,68 +1,70 @@
-//! `wardd`: endurece o processo antes de tudo (V3.7), pega o socket do systemd
-//! (`LISTEN_FDS`, D46) ou, só no daemon de teste, cria o seu num diretório 0700 do
-//! usuário (D7), e atende.
+//! `wardd`: hardens the process before anything else (V3.7), takes the systemd socket
+//! (`LISTEN_FDS`, D46) or, only in the test daemon, creates its own in a 0700 directory
+//! of the user (D7), and serves.
 
 #![forbid(unsafe_code)]
 
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use ward_plataforma::{BinarioPermitido, Escuta, Instalacao, Memoria};
-use wardd::aprovacao::{Motor, RelogioMonotonico};
+use ward_platform::{AllowedBinary, Install, Listener, Memory};
+use wardd::approval::{Engine, MonotonicClock};
 use wardd::config::Config;
-use wardd::lancamento::{AbridorReal, AppDeTeste, ExtensaoDeTeste};
-use wardd::nucleo::{Daemon, RelogioReal};
-use wardd::servidor::{self, Papeis};
-use wardd::{aviso, execucao, log, trava, udisks};
+use wardd::core::{Daemon, RealClock};
+use wardd::launch::{RealOpener, TestApp, TestExtension};
+use wardd::server::{self, Roles};
+use wardd::{execution, lock, log, udisks, warning};
 
-/// Chrome instalado, pai aceito do host da extensão (D5, D47).
+/// Installed Chrome, accepted parent of the extension host (D5, D47).
 const CHROME: &str = "/opt/google/chrome/chrome";
 
-fn escuta(config: &Config) -> Result<Escuta, String> {
+fn listener(config: &Config) -> Result<Listener, String> {
     if std::env::var_os("LISTEN_FDS").is_some() {
-        return ward_plataforma::escutar_de_listen_fds(&ward_plataforma::caminho_socket_sistema())
+        return ward_platform::listen_from_listen_fds(&ward_platform::system_socket_path())
             .map_err(|e| format!("socket do systemd recusado: {e}"));
     }
-    match &config.diretorio_socket_teste {
+    match &config.test_socket_dir {
         Some(dir) => {
-            let d = ward_plataforma::preparar_diretorio(dir)
+            let d = ward_platform::prepare_dir(dir)
                 .map_err(|e| format!("diretório do socket de teste recusado: {e}"))?;
-            d.escutar(ward_plataforma::socket::NOME_SOCKET)
+            d.listen(ward_platform::socket::SOCKET_NAME)
                 .map_err(|e| format!("socket de teste recusado: {e}"))
         }
         None => Err("sem o socket do systemd (LISTEN_FDS); o wardd sobe pela unit".into()),
     }
 }
 
-/// Só no daemon de teste (D63): o abridor do `WARD_DEV_APP` e o papel app do processo
-/// que ele abrir. No release, nenhum dos dois existe.
-#[cfg(feature = "modo-teste")]
-fn abridor_de_teste(config: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>) {
-    match &config.app_de_teste {
+/// Only in the test daemon (D63): the opener of `WARD_DEV_APP` and the app role of the
+/// process it opens. In the release, neither exists.
+#[cfg(feature = "test-mode")]
+fn test_opener(config: &Config) -> (Option<RealOpener>, Option<TestApp>) {
+    match &config.test_app {
         Some(b) => {
-            aviso!("daemon de teste: abrir_app abre o app de teste da configuração");
-            let a = AbridorReal::de_teste(b.clone());
-            let app = AppDeTeste::novo(a.app_lancado());
+            warning!("daemon de teste: open_app abre o app de teste da configuração");
+            let a = RealOpener::for_test(b.clone());
+            let app = TestApp::new(a.launched_app());
             (Some(a), Some(app))
         }
         None => (None, None),
     }
 }
 
-/// Só no daemon de teste com `WARD_DEV_EXTENSAO=chrome` (Fase 41): o papel extensão
-/// para o filho do Chrome instalado, sem o egid. No release, nunca.
-#[cfg(feature = "modo-teste")]
-fn extensao_de_teste(config: &Config) -> Option<ExtensaoDeTeste> {
-    if !config.extensao_de_teste {
+/// Only in the test daemon with `WARD_DEV_EXTENSION=chrome` (Phase 41): the extension
+/// role for the child of the installed Chrome, without the egid. In the release, never.
+#[cfg(feature = "test-mode")]
+fn test_extension(config: &Config) -> Option<TestExtension> {
+    if !config.test_extension {
         return None;
     }
-    match BinarioPermitido::novo(CHROME) {
+    match AllowedBinary::new(CHROME) {
         Ok(c) => {
-            aviso!("daemon de teste: papel extensão para o filho do Chrome instalado, sem o grupo");
-            Some(ExtensaoDeTeste::novo(c))
+            warning!(
+                "daemon de teste: papel extensão para o filho do Chrome instalado, sem o grupo"
+            );
+            Some(TestExtension::new(c))
         }
         Err(_) => {
-            aviso!(
+            warning!(
                 "daemon de teste: Chrome instalado não achado; papel extensão de teste desligado"
             );
             None
@@ -70,166 +72,167 @@ fn extensao_de_teste(config: &Config) -> Option<ExtensaoDeTeste> {
     }
 }
 
-#[cfg(not(feature = "modo-teste"))]
-fn extensao_de_teste(_: &Config) -> Option<ExtensaoDeTeste> {
+#[cfg(not(feature = "test-mode"))]
+fn test_extension(_: &Config) -> Option<TestExtension> {
     None
 }
 
-#[cfg(not(feature = "modo-teste"))]
-fn abridor_de_teste(_: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>) {
+#[cfg(not(feature = "test-mode"))]
+fn test_opener(_: &Config) -> (Option<RealOpener>, Option<TestApp>) {
     (None, None)
 }
 
 fn main() -> ExitCode {
-    // V3.7, V3.25: antes de qualquer outra coisa (inclusive de abrir arquivo).
-    // D62: o release só segue com toda a memória travada (`mlockall`); o `modo-teste`
-    // com o limite comum do usuário segue com aviso.
-    let memoria = match ward_plataforma::iniciar_endurecido() {
+    // V3.7, V3.25: before anything else (including opening a file).
+    // D62: the release only goes on with all the memory locked (`mlockall`); `test-mode`
+    // with the user's usual limit goes on with a warning.
+    let memory = match ward_platform::start_hardened() {
         Ok(m) => m,
         Err(e) => {
             eprintln!("wardd: {e}");
             return ExitCode::FAILURE;
         }
     };
-    log::configurar();
-    // Fase 55 (S8): o órfão de um `ward run`/`ward ssh` (quem saiu do grupo com
-    // `setsid -f` ou `setpgid`) vira filho do daemon, que o mata no fim da sessão e na
-    // trava. Sem isso, o daemon não sobe.
-    if let Err(e) = ward_plataforma::descendentes::virar_subreaper() {
-        aviso!(
+    log::configure();
+    // Phase 55 (S8): the orphan of a `ward run`/`ward ssh` (whoever left the group with
+    // `setsid -f` or `setpgid`) becomes a child of the daemon, which kills it at the end
+    // of the session and on lock. Without this, the daemon does not start.
+    if let Err(e) = ward_platform::descendants::become_subreaper() {
+        warning!(
             "não deu para virar subreaper (PR_SET_CHILD_SUBREAPER): {}",
             e.kind()
         );
         return ExitCode::FAILURE;
     }
-    if let Memoria::SemTravar(e) = &memoria {
-        aviso!("daemon de teste com a memória sem travar: {e}");
+    if let Memory::NotLocked(e) = &memory {
+        warning!("daemon de teste com a memória sem travar: {e}");
     }
-    let config = match Config::do_ambiente() {
+    let config = match Config::from_env() {
         Ok(c) => c,
         Err(e) => {
-            aviso!("{e}");
+            warning!("{e}");
             return ExitCode::FAILURE;
         }
     };
-    let escuta = match escuta(&config) {
+    let listener = match listener(&config) {
         Ok(e) => e,
         Err(e) => {
-            aviso!("{e}");
+            warning!("{e}");
             return ExitCode::FAILURE;
         }
     };
-    let instalacao = match BinarioPermitido::novo(CHROME).map(Instalacao::do_sistema) {
+    let install = match AllowedBinary::new(CHROME).map(Install::from_system) {
         Ok(Ok(i)) => Some(i),
         Ok(Err(e)) => {
-            aviso!("papéis app e extensão desligados: {e}");
+            warning!("papéis app e extensão desligados: {e}");
             None
         }
         Err(_) => None,
     };
-    if cfg!(feature = "modo-teste") {
-        aviso!("daemon de TESTE (modo-teste): cofre de .dev/, nunca o real");
+    if cfg!(feature = "test-mode") {
+        warning!("daemon de TESTE (test-mode): cofre de .dev/, nunca o real");
     }
-    // D57/D63: o app só é aberto pelo lançador, e só o processo que ele abriu é app.
-    // No daemon de teste com `WARD_DEV_APP`, o lançador abre o binário de teste, e só
-    // ele é app (sem o egid).
-    let (abridor, app_de_teste) = abridor_de_teste(&config);
-    let extensao_de_teste = extensao_de_teste(&config);
-    let (abridor, app) = match abridor {
+    // D57/D63: the app is only opened by the launcher, and only the process it opened is
+    // app. In the test daemon with `WARD_DEV_APP`, the launcher opens the test binary,
+    // and only it is app (without the egid).
+    let (opener, test_app) = test_opener(&config);
+    let test_extension = test_extension(&config);
+    let (opener, app) = match opener {
         Some(a) => (Some(a), None),
         None => {
-            let a = instalacao.as_ref().and_then(AbridorReal::instalado);
-            let app = a.as_ref().map(AbridorReal::app_lancado);
+            let a = install.as_ref().and_then(RealOpener::installed);
+            let app = a.as_ref().map(RealOpener::launched_app);
             (a, app)
         }
     };
-    // S2, V4.15: o que um `wardd` morto deixou em `<rt>tmp/` some na partida.
-    match execucao::limpar_temporarios(&config.rt) {
+    // S2, V4.15: what a dead `wardd` left in `<rt>tmp/` goes away at startup.
+    match execution::clean_temp_files(&config.rt) {
         Ok(0) => {}
-        Ok(n) => aviso!("{n} pasta(s) temporária(s) de antes da partida apagada(s) (S2)"),
-        Err(e) => aviso!(
+        Ok(n) => warning!("{n} pasta(s) temporária(s) de antes da partida apagada(s) (S2)"),
+        Err(e) => warning!(
             "pasta de temporários do ward run indisponível ({})",
             e.kind()
         ),
     }
-    // Fase 28g: pastas do agente SSH (`<rt>ssh-*/`) que um `wardd` morto deixou.
-    match wardd::agente_ssh::limpar_pastas(&config.rt) {
+    // Phase 28g: SSH agent dirs (`<rt>ssh-*/`) that a dead `wardd` left.
+    match wardd::ssh_agent::clean_dirs(&config.rt) {
         Ok(0) => {}
-        Ok(n) => aviso!("{n} pasta(s) do agente SSH de antes da partida apagada(s)"),
-        Err(e) => aviso!("pastas do agente SSH indisponíveis ({})", e.kind()),
+        Ok(n) => warning!("{n} pasta(s) do agente SSH de antes da partida apagada(s)"),
+        Err(e) => warning!("pastas do agente SSH indisponíveis ({})", e.kind()),
     }
-    // D6 (Fase 44): storage states e perfis do `ward playwright` de antes da partida.
-    match wardd::playwright::limpar(&config.rt) {
+    // D6 (Phase 44): `ward playwright` storage states and profiles from before startup.
+    match wardd::playwright::clean_up(&config.rt) {
         Ok(0) => {}
-        Ok(n) => aviso!(
+        Ok(n) => warning!(
             "{n} sessão(ões)/perfil(is) do ward playwright de antes da partida apagado(s) (D6)"
         ),
-        Err(e) => aviso!("pasta do ward playwright indisponível ({})", e.kind()),
+        Err(e) => warning!("pasta do ward playwright indisponível ({})", e.kind()),
     }
-    let mut daemon =
-        Daemon::novo(config.caminhos, Box::new(RelogioReal)).com_temporarios(config.rt);
-    // V4.21: travado e sem app, o pedido do agente espera o `ward destravar` (D16).
-    let motor = match abridor {
-        Some(a) => Motor::novo(Arc::new(RelogioMonotonico::novo()), Box::new(a)),
-        None => Motor::sem_app(),
+    let mut daemon = Daemon::new(config.paths, Box::new(RealClock)).with_temp_root(config.rt);
+    // V4.21: locked and without the app, the agent's request waits for the unlock
+    // command (D16).
+    let engine = match opener {
+        Some(a) => Engine::new(Arc::new(MonotonicClock::new()), Box::new(a)),
+        None => Engine::without_app(),
     };
-    daemon = daemon.com_motor(motor.esperando_sem_app());
-    // Fase 24 (logind) e Fase 46 (udisks2): o mesmo barramento do sistema.
-    let barramento = match trava::barramento_do_daemon() {
+    daemon = daemon.with_engine(engine.waiting_without_app());
+    // Phase 24 (logind) and Phase 46 (udisks2): the same system bus.
+    let bus = match lock::daemon_bus() {
         Ok(b) => b,
         Err(e) => {
-            aviso!("{e}");
+            warning!("{e}");
             return ExitCode::FAILURE;
         }
     };
-    let udisks: Option<Arc<udisks::Udisks>> = barramento
+    let udisks: Option<Arc<udisks::Udisks>> = bus
         .as_ref()
-        .map(|s| Arc::new(udisks::Udisks::novo(s.clone())));
+        .map(|s| Arc::new(udisks::Udisks::new(s.clone())));
     if let Some(u) = &udisks {
-        daemon = daemon.com_pendrives(u.clone());
+        daemon = daemon.with_usb_drives(u.clone());
     }
     let daemon = Arc::new(daemon);
-    // Fase 24: trava por inatividade e pelo logind (bloqueio de tela, suspensão).
-    if trava::vigiar_inatividade(daemon.clone(), trava::INTERVALO_INATIVIDADE).is_err() {
-        aviso!("não deu para criar a thread da trava por inatividade");
+    // Phase 24: lock on inactivity and through logind (screen lock, suspend).
+    if lock::watch_inactivity(daemon.clone(), lock::INACTIVITY_INTERVAL).is_err() {
+        warning!("não deu para criar a thread da trava por inatividade");
         return ExitCode::FAILURE;
     }
-    match (barramento, udisks) {
-        (Some(socket), Some(fonte)) => {
-            if trava::vigiar_logind(daemon.clone(), socket.clone(), Box::new(|| {})).is_err() {
-                aviso!("não deu para criar a thread do logind");
+    match (bus, udisks) {
+        (Some(socket), Some(source)) => {
+            if lock::watch_logind(daemon.clone(), socket.clone(), Box::new(|| {})).is_err() {
+                warning!("não deu para criar a thread do logind");
                 return ExitCode::FAILURE;
             }
-            // Fase 46: backup externo. A cópia só acontece com o cofre destravado e o
-            // externo ligado na configuração do cofre (desligado por padrão).
-            let Some(cutucoes) = daemon.ligar_copia_externa() else {
-                aviso!("cópia externa já ligada");
+            // Phase 46: external backup. The copy only happens with the vault unlocked
+            // and the external backup turned on in the vault settings (off by default).
+            let Some(pokes) = daemon.enable_external_copy() else {
+                warning!("cópia externa já ligada");
                 return ExitCode::FAILURE;
             };
-            if udisks::vigiar_copia(daemon.clone(), fonte, cutucoes).is_err()
-                || udisks::vigiar_udisks(daemon.clone(), socket, Box::new(|| {})).is_err()
+            if udisks::watch_copy(daemon.clone(), source, pokes).is_err()
+                || udisks::watch_udisks(daemon.clone(), socket, Box::new(|| {})).is_err()
             {
-                aviso!("não deu para criar as threads do backup externo");
+                warning!("não deu para criar as threads do backup externo");
                 return ExitCode::FAILURE;
             }
         }
-        // Só o daemon de teste chega aqui (o release sempre tem o barramento do sistema).
-        // A mensagem não cita a variável: o texto `WARD_DEV_*` só existe com `modo-teste`.
-        _ => aviso!(
+        // Only the test daemon gets here (the release always has the system bus).
+        // The message does not name the variable: the `WARD_DEV_*` text only exists with
+        // `test-mode`.
+        _ => warning!(
             "daemon sem barramento do sistema: logind desligado; udisks2 (backup externo) desligado"
         ),
     }
-    aviso!("pronto");
-    let papeis = Papeis {
-        instalacao,
+    warning!("pronto");
+    let roles = Roles {
+        install,
         app,
-        app_de_teste,
-        extensao_de_teste,
+        test_app,
+        test_extension,
     };
-    match servidor::servir(&escuta, daemon, Arc::new(papeis)) {
+    match server::serve(&listener, daemon, Arc::new(roles)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            aviso!("laço do socket parou ({})", e.kind());
+            warning!("laço do socket parou ({})", e.kind());
             ExitCode::FAILURE
         }
     }

@@ -1,38 +1,38 @@
-# Ward — comandos de desenvolvimento. Rodar sempre da raiz do repositório.
+# Ward - development commands. Always run from the repository root.
 #
-# Regra (V1.5, S15): nenhum alvo daqui lê ou escreve fora do repositório, a não ser
-# as ferramentas de build (~/.cargo). Dados de desenvolvimento só em `.dev/`.
+# Rule (V1.5, S15): no target here reads or writes outside the repository, except the
+# build tools (~/.cargo). Development data only in `.dev/`.
 
-# `bash -p`: não lê BASH_ENV/ENV nem importa funções exportadas do ambiente.
+# `bash -p`: does not read BASH_ENV/ENV nor import functions exported by the environment.
 SHELL := /bin/bash
 .SHELLFLAGS := -p -eu -o pipefail -c
 .DEFAULT_GOAL := check
 MAKEFLAGS += --no-print-directory
 
-# Ambiente fixo (Fase 12b). `override`: nem o ambiente, nem `MAKEFLAGS='CARGO=…'`
-# herdado, nem `make VAR=…` trocam ferramenta, PATH ou config do git.
+# Fixed environment (Phase 12b). `override`: neither the environment, nor an inherited
+# `MAKEFLAGS='CARGO=...'`, nor `make VAR=...` swap a tool, PATH or the git config.
 #
-# Home do passwd, não $HOME (um HOME=/tmp/x trocaria o cargo e o CARGO_HOME).
-override CASA := $(shell /usr/bin/getent passwd "$$(/usr/bin/id -u)" | /usr/bin/cut -d: -f6)
-ifeq ($(strip $(CASA)),)
+# Home from passwd, not $HOME (a HOME=/tmp/x would swap cargo and CARGO_HOME).
+override PASSWD_HOME := $(shell /usr/bin/getent passwd "$$(/usr/bin/id -u)" | /usr/bin/cut -d: -f6)
+ifeq ($(strip $(PASSWD_HOME)),)
 $(error home do passwd indefinido)
 endif
-# PATH só do sistema; ~/.cargo/bin no fim, para o rustup (não há cargo em /usr/bin).
-override PATH := /usr/bin:/bin:$(CASA)/.cargo/bin
+# PATH only from the system; ~/.cargo/bin at the end, for rustup (there is no cargo in /usr/bin).
+override PATH := /usr/bin:/bin:$(PASSWD_HOME)/.cargo/bin
 export PATH
 unexport BASH_ENV ENV CDPATH GLOBIGNORE
-# Ferramentas pelo caminho absoluto: `cargo audit`/`cargo deny` passariam pelo
-# `[alias]` de um `.cargo/config.toml`; o binário direto, não.
-override CARGO := $(CASA)/.cargo/bin/cargo
-override CARGO_AUDIT := $(CASA)/.cargo/bin/cargo-audit
-override CARGO_DENY := $(CASA)/.cargo/bin/cargo-deny
+# Tools by absolute path: `cargo audit`/`cargo deny` would go through the `[alias]` of a
+# `.cargo/config.toml`; the binary itself does not.
+override CARGO := $(PASSWD_HOME)/.cargo/bin/cargo
+override CARGO_AUDIT := $(PASSWD_HOME)/.cargo/bin/cargo-audit
+override CARGO_DENY := $(PASSWD_HOME)/.cargo/bin/cargo-deny
 override PYTHON := /usr/bin/python3 -I -B
-override CARGO_HOME := $(CASA)/.cargo
-override RUSTUP_HOME := $(CASA)/.rustup
+override CARGO_HOME := $(PASSWD_HOME)/.cargo
+override RUSTUP_HOME := $(PASSWD_HOME)/.rustup
 export CARGO CARGO_HOME RUSTUP_HOME
-# git (também o que o gitleaks chama): sem config global nem do sistema, e com
-# precedência de linha de comando sobre o `.git/config`: sem ignore/attributes globais,
-# sem fsmonitor (roda programa a cada `git diff`) e sem hooks. Ver dev/ambiente.sh.
+# git (also the one gitleaks calls): no global nor system config, and with command line
+# precedence over `.git/config`: no global ignore/attributes, no fsmonitor (runs a
+# program on every `git diff`) and no hooks. See dev/env.sh.
 override GIT_CONFIG_GLOBAL := /dev/null
 override GIT_CONFIG_NOSYSTEM := 1
 override GIT_CONFIG_COUNT := 4
@@ -50,596 +50,712 @@ unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE
 	GIT_EXEC_PATH GIT_SSH GIT_SSH_COMMAND GIT_ASKPASS GIT_EXTERNAL_DIFF GIT_PAGER GIT_CONFIG \
 	GIT_CONFIG_PARAMETERS GIT_TEMPLATE_DIR GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM
 
-# Ferramentas com versão fixa (`make ferramentas`). O gitleaks fica dentro de `.dev/`
-# (fora do git): o tar.gz é conferido por sha256 antes de extrair e o binário extraído,
-# por sha256, antes de cada varredura (um binário trocado em `.dev/` não roda).
-override FERRAMENTAS_DIR := $(CURDIR)/.dev/ferramentas
-override GITLEAKS := $(FERRAMENTAS_DIR)/bin/gitleaks
-GITLEAKS_VERSAO := 8.30.1
+# Tools with a fixed version (`make tools`). gitleaks lives inside `.dev/` (out of git):
+# the tar.gz is verified by sha256 before extracting, and the extracted binary by sha256
+# before each scan (a binary swapped in `.dev/` does not run).
+override TOOLS_DIR := $(CURDIR)/.dev/tools
+override GITLEAKS := $(TOOLS_DIR)/bin/gitleaks
+GITLEAKS_VERSION := 8.30.1
 override GITLEAKS_SHA256 := 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 override GITLEAKS_BIN_SHA256 := 88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509
-GITLEAKS_URL := https://github.com/gitleaks/gitleaks/releases/download/v$(GITLEAKS_VERSAO)/gitleaks_$(GITLEAKS_VERSAO)_linux_x64.tar.gz
-CARGO_AUDIT_VERSAO := 0.22.2
-CARGO_DENY_VERSAO := 0.20.2
+GITLEAKS_URL := https://github.com/gitleaks/gitleaks/releases/download/v$(GITLEAKS_VERSION)/gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz
+CARGO_AUDIT_VERSION := 0.22.2
+CARGO_DENY_VERSION := 0.20.2
 
-.PHONY: check build fmt fmt-check clippy test audit deny gitleaks ferramentas \
-	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
-	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
-	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
-	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real teste-area-transferencia teste-selecao-revelado teste-canais-gst teste-app-e2e teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
-	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb teste-login \
-	teste-ssh-home teste-politica-chrome
+.PHONY: check build fmt fmt-check clippy test audit deny gitleaks tools \
+	origins gitleaks-binary test-attacks-foundation test-attacks-services test-home-decoys test-real-home dev-services dev-services-up \
+	dev-services-down dev-services-status dev-services-verify dev-services-rotate-host-key dev-vault \
+	dev-vault-verify dev-variations test-dev-vault dev-daemon dev-daemon-stop test-cli test-docker-uid test-units \
+	app-front app-check app-bridge test-docker-platform test-no-test-mode test-socket-attacks \
+	test-webkit-real test-clipboard test-revealed-selection test-gst-channels test-app-e2e test-app-logs test-nm test-playwright test-skill test-migration-guide \
+	release install uninstall test-install extension test-extension deb extension-crx test-deb test-login \
+	test-ssh-home test-chrome-policy compile english-check test-system-socket test-chrome-guard
 
-## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
-## cargo deny e gitleaks, nessa ordem (V1.1)
+## check: origins pre-check, then the pt-BR checker (self-test and the whole repository,
+## m2:V6.1), fmt, clippy -D warnings, tests, cargo audit, cargo deny and gitleaks, in
+## this order (V1.1)
 check:
-	@echo "==> 0/6 origens do cargo (pré-checagem: configs, ambiente, toolchain, fontes)"
-	@$(MAKE) origens
-	@echo "==> 1/6 cargo fmt --check"
+	@echo "==> 0/7 origens do cargo (pré-checagem: configs, ambiente, toolchain, fontes)"
+	@$(MAKE) origins
+	@echo "==> 1/7 english-check (autoteste e repositório inteiro)"
+	@$(PYTHON) dev/english_check.py --self-test
+	@$(MAKE) english-check PATHS=
+	@echo "==> 2/7 cargo fmt --check"
 	@$(MAKE) fmt-check
-	@echo "==> 2/6 cargo clippy --all-targets -- -D warnings"
+	@echo "==> 3/7 cargo clippy --all-targets -- -D warnings"
 	@$(MAKE) clippy
-	@echo "==> 3/6 cargo test"
+	@echo "==> 4/7 cargo test"
 	@$(MAKE) test
-	@echo "==> 4/6 cargo audit"
+	@echo "==> 5/7 cargo audit"
 	@$(MAKE) audit
-	@echo "==> 5/6 cargo deny check"
+	@echo "==> 6/7 cargo deny check"
 	@$(MAKE) deny
-	@echo "==> 6/6 gitleaks"
+	@echo "==> 7/7 gitleaks"
 	@$(MAKE) gitleaks
 	@echo "==> make check: tudo limpo"
 
-# Todo alvo que chama o cargo depende de `origens`: nem `make clippy` sozinho roda com
-# `.cargo/config*`, RUSTC_WRAPPER etc. plantados.
-build: origens
+# Every target that calls cargo depends on `origins`: not even `make clippy` alone runs
+# with a planted `.cargo/config*`, RUSTC_WRAPPER etc.
+build: origins
 	$(CARGO) build --workspace --locked
 
-fmt: origens
+fmt: origins
 	$(CARGO) fmt --all
 
-fmt-check: origens
+fmt-check: origins
 	$(CARGO) fmt --all --check
 
-clippy: origens
+clippy: origins
 	$(CARGO) clippy --workspace --all-targets --all-features --locked -- -D warnings
 
-test: origens
+test: origins
 	$(CARGO) test --workspace --all-features --locked
 
-# --deny warnings: crate sem manutenção, retirado (yanked) ou com aviso também falha.
-audit: origens
+# --deny warnings: an unmaintained or yanked crate, or one with a warning, also fails.
+audit: origins
 	$(CARGO_AUDIT) audit --deny warnings
 
-deny: origens
+deny: origins
 	$(CARGO_DENY) --all-features check
 
-# `dev/origens.py` (lista de permitidas): nenhum `.cargo/config*` no repositório nem nos
-# pais, só chaves inofensivas no do CARGO_HOME, nenhuma variável CARGO_*/RUSTC*/
-# RUSTFLAGS*/RUSTDOCFLAGS/RUSTUP* fora da lista, toolchain só do rust-toolchain.toml,
-# sem [patch]/[replace], só crates.io e paths dentro do repositório. O cargo deny não vê
-# nada disso (o lockfile continua dizendo crates.io).
-origens:
-	@$(PYTHON) dev/origens.py
+# `dev/origins.py` (allowlist): no `.cargo/config*` in the repository nor in its parents,
+# only harmless keys in the one of CARGO_HOME, no CARGO_*/RUSTC*/RUSTFLAGS*/RUSTDOCFLAGS/
+# RUSTUP* variable outside the list, toolchain only from rust-toolchain.toml, no
+# [patch]/[replace], only crates.io and paths inside the repository. cargo deny sees none
+# of this (the lockfile still says crates.io).
+origins:
+	@$(PYTHON) dev/origins.py
 
-# Três varreduras (S15):
-# - árvore de trabalho, inclusive arquivos ainda não versionados; os diretórios que o
-#   `.gitignore` tira do git ficam de fora (`dev/gitleaks-arvore.toml`);
-# - índice (`--staged`), sem exceção de diretório: pega o que foi forçado com `git add -f`;
-# - histórico inteiro dos commits.
-# --verbose mostra arquivo e linha de cada achado; --redact nunca imprime o valor.
+# Three scans (S15):
+# - working tree, including files not versioned yet; the dirs that `.gitignore` keeps out
+#   of git are skipped (`dev/gitleaks-tree.toml`);
+# - index (`--staged`), with no dir exception: catches what was forced with `git add -f`;
+# - the whole commit history.
+# --verbose shows the file and line of each finding; --redact never prints the value.
 #
-# Depois, a varredura extra (`dev/gitleaks-extra.toml`): só chave privada e AWS, sem a
-# allowlist global de caminhos das regras padrão (lockfiles, svg, png, pdf...) e
-# entrando em arquivos compactados (.gz, .zip, .tar), nas mesmas três formas.
-GITLEAKS_OPCOES := --redact --verbose --no-banner --exit-code 1
+# Then the extra scan (`dev/gitleaks-extra.toml`): only private keys and AWS, without the
+# global path allowlist of the default rules (lockfiles, svg, png, pdf...) and going into
+# compressed files (.gz, .zip, .tar), in the same three forms.
+GITLEAKS_OPTIONS := --redact --verbose --no-banner --exit-code 1
 GITLEAKS_EXTRA := --max-archive-depth 3
 
-gitleaks: gitleaks-binario
-	$(GITLEAKS) dir --config dev/gitleaks-arvore.toml $(GITLEAKS_OPCOES) .
-	$(GITLEAKS) git --staged --pre-commit --config .gitleaks.toml $(GITLEAKS_OPCOES) .
-	$(GITLEAKS) git --config .gitleaks.toml $(GITLEAKS_OPCOES) .
-	$(GITLEAKS) dir --config dev/gitleaks-extra-arvore.toml $(GITLEAKS_OPCOES) $(GITLEAKS_EXTRA) .
-	$(GITLEAKS) git --staged --pre-commit --config dev/gitleaks-extra.toml $(GITLEAKS_OPCOES) $(GITLEAKS_EXTRA) .
-	$(GITLEAKS) git --config dev/gitleaks-extra.toml $(GITLEAKS_OPCOES) $(GITLEAKS_EXTRA) .
+gitleaks: gitleaks-binary
+	$(GITLEAKS) dir --config dev/gitleaks-tree.toml $(GITLEAKS_OPTIONS) .
+	$(GITLEAKS) git --staged --pre-commit --config .gitleaks.toml $(GITLEAKS_OPTIONS) .
+	$(GITLEAKS) git --config .gitleaks.toml $(GITLEAKS_OPTIONS) .
+	$(GITLEAKS) dir --config dev/gitleaks-extra-tree.toml $(GITLEAKS_OPTIONS) $(GITLEAKS_EXTRA) .
+	$(GITLEAKS) git --staged --pre-commit --config dev/gitleaks-extra.toml $(GITLEAKS_OPTIONS) $(GITLEAKS_EXTRA) .
+	$(GITLEAKS) git --config dev/gitleaks-extra.toml $(GITLEAKS_OPTIONS) $(GITLEAKS_EXTRA) .
 
-# Confere o sha256 do binário do gitleaks antes de usar (falha fechada).
-gitleaks-binario:
-	@test -x "$(GITLEAKS)" || { echo "gitleaks não encontrado em $(GITLEAKS); rode 'make ferramentas'" >&2; exit 1; }
-	@echo "$(GITLEAKS_BIN_SHA256)  $(GITLEAKS)" | sha256sum --check --quiet --strict || { echo "o binário $(GITLEAKS) não é o gitleaks $(GITLEAKS_VERSAO) conferido; rode 'make ferramentas'" >&2; exit 1; }
+# Verifies the sha256 of the gitleaks binary before using it (fail closed).
+gitleaks-binary:
+	@test -x "$(GITLEAKS)" || { echo "gitleaks não encontrado em $(GITLEAKS); rode 'make tools'" >&2; exit 1; }
+	@echo "$(GITLEAKS_BIN_SHA256)  $(GITLEAKS)" | sha256sum --check --quiet --strict || { echo "o binário $(GITLEAKS) não é o gitleaks $(GITLEAKS_VERSION) conferido; rode 'make tools'" >&2; exit 1; }
 
-## ferramentas: instala cargo-audit, cargo-deny (cargo install --locked) e o gitleaks fixo
-ferramentas: origens
-	$(CARGO) install --locked cargo-audit@$(CARGO_AUDIT_VERSAO) cargo-deny@$(CARGO_DENY_VERSAO)
+## tools: installs cargo-audit, cargo-deny (cargo install --locked) and the pinned gitleaks
+tools: origins
+	$(CARGO) install --locked cargo-audit@$(CARGO_AUDIT_VERSION) cargo-deny@$(CARGO_DENY_VERSION)
 	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
 	curl -q -fsSL --proto '=https' --tlsv1.2 -o "$$tmp/gitleaks.tar.gz" "$(GITLEAKS_URL)"; \
 	echo "$(GITLEAKS_SHA256)  $$tmp/gitleaks.tar.gz" | sha256sum --check --quiet; \
-	mkdir -p "$(FERRAMENTAS_DIR)/bin"; \
+	mkdir -p "$(TOOLS_DIR)/bin"; \
 	tar -xzf "$$tmp/gitleaks.tar.gz" -C "$$tmp" gitleaks; \
 	echo "$(GITLEAKS_BIN_SHA256)  $$tmp/gitleaks" | sha256sum --check --quiet --strict; \
-	install -m 0755 "$$tmp/gitleaks" "$(FERRAMENTAS_DIR)/bin/gitleaks"; \
-	"$(FERRAMENTAS_DIR)/bin/gitleaks" version
+	install -m 0755 "$$tmp/gitleaks" "$(TOOLS_DIR)/bin/gitleaks"; \
+	"$(TOOLS_DIR)/bin/gitleaks" version
 
-## teste-ataques-fundacao: ataques de V1.2, V1.3 e V1.5 (cada um tem de falhar)
-teste-ataques-fundacao: gitleaks-binario
-	dev/testes/ataques-fundacao.sh
+## test-attacks-foundation: attacks of V1.2, V1.3 and V1.5 (each one must fail)
+test-attacks-foundation: gitleaks-binary
+	dev/tests/attacks-foundation.sh
 
-# --- Serviços de teste (Fase 12): docker compose em dev/compose.yml ----------------------
-# Pelo dev/servicos/compose.sh: PATH fixo, DOCKER_CONFIG vazio em .dev/docker/, sem
-# DOCKER_HOST/DOCKER_CONTEXT/COMPOSE_* herdados.
-COMPOSE_TESTE := dev/servicos/compose.sh
+# --- Test services (Phase 12): docker compose in dev/compose.yml -------------------------
+# Through dev/services/compose.sh: fixed PATH, empty DOCKER_CONFIG in .dev/docker/, no
+# inherited DOCKER_HOST/DOCKER_CONTEXT/COMPOSE_*.
+COMPOSE_TEST := dev/services/compose.sh
 
-## dev-servicos: gera em .dev/servicos/ (0700) as chaves e senhas falsas dos serviços
-dev-servicos:
-	$(PYTHON) dev/servicos/gerar.py
+## dev-services: generates in .dev/services/ (0700) the fake keys and passwords of the services
+dev-services:
+	$(PYTHON) dev/services/generate.py
 
-## dev-servicos-subir: gera o que falta e sobe os serviços de teste (só em 127.0.0.1)
-dev-servicos-subir: dev-servicos
-	$(COMPOSE_TESTE) up -d --build
+## dev-services-up: generates what is missing and starts the test services (only on 127.0.0.1)
+dev-services-up: dev-services
+	$(COMPOSE_TEST) up -d --build
 
-## dev-servicos-parar: para e apaga os contêineres e o volume do WordPress
-dev-servicos-parar:
-	$(COMPOSE_TESTE) down -v
+## dev-services-down: stops and deletes the containers and the WordPress volume
+dev-services-down:
+	$(COMPOSE_TEST) down -v
 
-## dev-servicos-estado: lista os serviços de teste e o estado de cada um
-dev-servicos-estado:
-	$(COMPOSE_TESTE) ps -a --format '{{.Service}} {{.State}}'
+## dev-services-status: lists the test services and the state of each one
+dev-services-status:
+	$(COMPOSE_TEST) ps -a --format '{{.Service}} {{.State}}'
 
-## dev-servicos-conferir: confere V1.4 com os serviços de pé
-dev-servicos-conferir:
-	dev/servicos/conferir.sh
+## dev-services-verify: verifies V1.4 with the services up
+dev-services-verify:
+	dev/services/verify.sh
 
-## dev-servicos-trocar-chave-host SERVICO=ssh-senha: nova chave de host e reinicia (V4.28)
-SERVICO ?= ssh-senha
-dev-servicos-trocar-chave-host:
-	$(PYTHON) dev/servicos/gerar.py --trocar-chave-host "$(SERVICO)"
-	$(COMPOSE_TESTE) restart "$(SERVICO)"
+## dev-services-rotate-host-key SERVICE=<service>: new host key and restart (V4.28;
+## default: the password SSH service)
+SERVICE ?= ssh-senha
+dev-services-rotate-host-key:
+	$(PYTHON) dev/services/generate.py --rotate-host-key "$(SERVICE)"
+	$(COMPOSE_TEST) restart "$(SERVICE)"
 
-## teste-ataques-servicos: ataques aos serviços de teste (cada um tem de falhar); depois,
-## os mesmos scripts inteiros com iscas FIFO no home (teste-iscas-home)
-teste-ataques-servicos:
-	dev/testes/ataques-servicos.sh
-	dev/testes/iscas-home.sh
+## test-attacks-services: attacks on the test services (each one must fail); then the
+## same scripts, whole, with FIFO decoys in the home (test-home-decoys)
+test-attacks-services:
+	dev/tests/attacks-services.sh
+	dev/tests/home-decoys.sh
 
-## teste-iscas-home: conferir.sh e ataques-servicos.sh inteiros com iscas FIFO no home
-## (coberto por tmpfs): nenhuma pode ser aberta (Fase 12b)
-teste-iscas-home:
-	dev/testes/iscas-home.sh
+## test-home-decoys: verify.sh and attacks-services.sh, whole, with FIFO decoys in the
+## home (covered by tmpfs): none of them may be opened (Phase 12b)
+test-home-decoys:
+	dev/tests/home-decoys.sh
 
-## teste-home-real: clientes de teste sob strace, com o home coberto por tmpfs (Fase 12a)
-teste-home-real:
-	dev/testes/home-real.sh
+## test-real-home: test clients under strace, with the home covered by tmpfs (Phase 12a)
+test-real-home:
+	dev/tests/real-home.sh
 
-# --- Cofre de teste (Fase 19) ------------------------------------------------------------
-# O destino vai ao programa pelo ambiente (nunca interpolado no shell) e o próprio
-# programa recusa qualquer caminho fora de `.dev/` (V2.29, S15). Os dois dependem de
-# `dev-servicos`, que gera a chave do deploy em `.dev/servicos/chaves/`.
-COFRE ?= .dev/cofre-teste.ward
-VARIACOES ?= .dev/variacoes.txt
+# --- Test vault (Phase 19) --------------------------------------------------------------
+# The destination goes to the program through the environment (never interpolated in the
+# shell) and the program itself refuses any path outside `.dev/` (V2.29, S15). Both
+# depend on `dev-services`, which generates the deploy key in `.dev/services/keys/`.
+VAULT ?= .dev/test-vault.ward
+VARIATIONS ?= .dev/variations.txt
 
-## dev-cofre: cria (ou recria) .dev/cofre-teste.ward com as 22 entradas de
-## dev/fixtures/entradas.json (D15 + D28 + D59), reabre com a senha de teste e confere;
-## COFRE=.dev/<nome>.ward troca o destino (só dentro de .dev/)
-dev-cofre: export WARD_DEV_SAIDA = $(COFRE)
-dev-cofre: origens dev-servicos
-	$(CARGO) run --quiet --locked -p ward-core --example dev-cofre -- --saida "$$WARD_DEV_SAIDA"
-	@# Cofre recriado: o estado do daemon de teste (D39) era do cofre anterior.
-	rm -f -- "$${WARD_DEV_SAIDA%.ward}.estado"
+## dev-vault: creates (or recreates) .dev/test-vault.ward with the 22 entries of
+## dev/fixtures/entries.json (D15 + D28 + D59), reopens it with the test password and
+## verifies; VAULT=.dev/<name>.ward changes the destination (only inside .dev/)
+dev-vault: export WARD_DEV_OUTPUT = $(VAULT)
+dev-vault: origins dev-services
+	$(CARGO) run --quiet --locked -p ward-core --example dev-vault -- --output "$$WARD_DEV_OUTPUT"
+	@# Vault recreated: the state of the test daemon (D39) belonged to the previous vault.
+	rm -f -- "$${WARD_DEV_OUTPUT%.ward}.state"
 
-## dev-cofre-conferir: só abre o cofre de teste com a senha de teste e confere as entradas
-dev-cofre-conferir: export WARD_DEV_SAIDA = $(COFRE)
-dev-cofre-conferir: origens
-	$(CARGO) run --quiet --locked -p ward-core --example dev-cofre -- --saida "$$WARD_DEV_SAIDA" --conferir
+## dev-vault-verify: only opens the test vault with the test password and verifies the entries
+dev-vault-verify: export WARD_DEV_OUTPUT = $(VAULT)
+dev-vault-verify: origins
+	$(CARGO) run --quiet --locked -p ward-core --example dev-vault -- --output "$$WARD_DEV_OUTPUT" --verify
 
-## dev-variacoes: grava em .dev/variacoes.txt (0600) os segredos do cofre de teste e as
-## variações da tabela única de D54 (segredo inteiro, Basic, por linha e valor de linha,
-## com as formas de texto; mais D58 e D61), a mesma da máscara, um padrão por linha,
-## para `grep -F -f`; VARIACOES=.dev/<nome>.txt
-dev-variacoes: export WARD_DEV_SAIDA = $(VARIACOES)
-dev-variacoes: dev-servicos
-	$(PYTHON) dev/variacoes.py --saida "$$WARD_DEV_SAIDA"
+## dev-variations: writes to .dev/variations.txt (0600) the secrets of the test vault and
+## the variations of the single table of D54 (whole secret, Basic, per line and line value,
+## with the text forms; plus D58 and D61), the same as the mask's, one pattern per line,
+## for `grep -F -f`; VARIATIONS=.dev/<name>.txt
+dev-variations: export WARD_DEV_OUTPUT = $(VARIATIONS)
+dev-variations: dev-services
+	$(PYTHON) dev/variations.py --output "$$WARD_DEV_OUTPUT"
 
-## teste-dev-cofre: V2.29, V2.52, V2.57, V3.29, V3.31, V3.32 e ataques ao
-## dev-cofre/dev-variacoes (cada ataque tem de falhar)
-teste-dev-cofre: origens
-	dev/testes/dev-cofre.sh
+## test-dev-vault: V2.29, V2.52, V2.57, V3.29, V3.31, V3.32 and attacks on
+## dev-vault/dev-variations (each attack must fail)
+test-dev-vault: origins
+	dev/tests/dev-vault.sh
 
-# --- App desktop (Fase 29) -----------------------------------------------------------
-# `app/nucleo` (comandos, cliente do daemon, copiar) e a ponte de teste estão no
-# workspace da raiz e entram no `make check`. O crate do Tauri (`app/src-tauri`) tem
-# workspace e lockfile próprios: precisa das bibliotecas de desenvolvimento do WebKitGTK
-# 4.1 (`libwebkit2gtk-4.1-dev`; o pkg-config do sistema ou um PKG_CONFIG_PATH herdado)
-# e entra só no `make app-check`.
+# --- Desktop app (Phase 29) -------------------------------------------------------------
+# `app/core` (commands, daemon client, copy) and the test bridge are in the root
+# workspace and go into `make check`. The Tauri crate (`app/src-tauri`) has its own
+# workspace and lockfile: it needs the WebKitGTK 4.1 development libraries
+# (`libwebkit2gtk-4.1-dev`; the system pkg-config or an inherited PKG_CONFIG_PATH) and
+# only goes into `make app-check`.
 #
-# node/npm não estão no PATH fixo. Padrão: o node mais novo do nvm do usuário; troque
-# com `make app-check NODE_DIR=/caminho/do/node/bin`. O `npm ci` roda com
-# `--ignore-scripts` (e o `app/.npmrc` também proíbe scripts de instalação).
-NODE_DIR ?= $(lastword $(sort $(wildcard $(CASA)/.nvm/versions/node/v*/bin)))
+# node/npm are not in the fixed PATH. Default: the newest node of the user's nvm; change
+# it with `make app-check NODE_DIR=/path/to/node/bin`. `npm ci` runs with
+# `--ignore-scripts` (and `app/.npmrc` also forbids install scripts).
+NODE_DIR ?= $(lastword $(sort $(wildcard $(PASSWD_HOME)/.nvm/versions/node/v*/bin)))
 override APP_NPM = PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/npm" --prefix "$(CURDIR)/app"
-# Advisories do gtk-rs 0.18 que o Tauri 2 exige no Linux (motivo no app/src-tauri/deny.toml
-# e no handoff da Fase 29). Nenhuma outra exceção.
-override APP_AUDIT_IGNORAR := --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2024-0429
+# Advisories of gtk-rs 0.18, which Tauri 2 requires on Linux (reason in
+# app/src-tauri/deny.toml and in the Phase 29 handoff). No other exception.
+override APP_AUDIT_IGNORE := --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2024-0429
 
-## app-front: npm ci (lockfile, sem scripts), build de produção e de teste da interface,
-## conferência dos pacotes (V5.2), isolamento das letras RTL (D51, Fase 39f) e npm audit
-## (dependências de runtime sem nenhum aviso)
+## app-front: npm ci (lockfile, no scripts), production and test builds of the interface,
+## package check (V5.2), isolation of the RTL letters (D51, Phase 39f) and npm audit
+## (runtime dependencies without any warning)
 app-front:
 	@test -x "$(NODE_DIR)/node" || { echo "node não encontrado; use NODE_DIR=/caminho/do/node/bin" >&2; exit 1; }
 	$(APP_NPM) ci --ignore-scripts --no-audit --no-fund
 	$(APP_NPM) run build
-	$(APP_NPM) run build:teste
-	$(PYTHON) dev/testes/app-dist.py
-	PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/node" dev/testes/bidi.mjs
-	$(PYTHON) dev/testes/bidi_icu.py
+	$(APP_NPM) run build:test
+	$(PYTHON) dev/tests/app-dist.py
+	PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/node" dev/tests/bidi.mjs
+	$(PYTHON) dev/tests/bidi_icu.py
 	$(APP_NPM) audit --omit=dev
 	$(APP_NPM) audit --audit-level=moderate
 
-## app-check: app-front + fmt, clippy -D warnings, testes (ACL com o runtime falso do
-## Tauri), cargo audit e cargo deny do app Tauri, build de release e V5.6 (strings)
-app-check: origens app-front
+## app-check: app-front + fmt, clippy -D warnings, tests (ACL with Tauri's fake runtime),
+## cargo audit and cargo deny of the Tauri app, release build and V5.6 (strings)
+app-check: origins app-front
 	cd app/src-tauri && $(CARGO) fmt --check
 	cd app/src-tauri && $(CARGO) clippy --all-targets --all-features --locked -- -D warnings
 	cd app/src-tauri && $(CARGO) test --all-features --locked
-	cd app/src-tauri && $(CARGO_AUDIT) audit --deny warnings $(APP_AUDIT_IGNORAR)
+	cd app/src-tauri && $(CARGO_AUDIT) audit --deny warnings $(APP_AUDIT_IGNORE)
 	cd app/src-tauri && $(CARGO_DENY) --all-features check
 	cd app/src-tauri && $(CARGO) build --release --locked
-	dev/testes/app-release.sh app/src-tauri/target/release/ward-app
+	dev/tests/app-release.sh app/src-tauri/target/release/ward-app
 
-## app-ponte: a ponte de teste (D7) aberta pelo daemon de teste (D63): sobe o daemon de
-## teste com WARD_DEV_APP = a ponte (ou exige que esteja no ar com ele), pede abrir_app e
-## imprime a URL com o token, lida de .dev/logs/ward-ponte-teste.log
-app-ponte: origens
-	@test -f app/dist-teste/index.html || { echo "rode 'make app-front' antes" >&2; exit 1; }
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
-	WARD_DEV_APP="$(PONTE_DE_TESTE)" dev/daemon.sh subir
-	dev/ponte.sh
+## compile: one fast build and no test (m2:PRD rule 6, m2:V1.5): cargo check of the
+## workspace (all targets and features), the production Vite build, cargo check of
+## app/src-tauri when libwebkit2gtk-4.1-dev is there (or PKG_CONFIG_PATH), node --check
+## of the extension, bash -n of the scripts and the Python parser; goes through `origins`
+compile: origins
+	$(CARGO) check --workspace --all-targets --all-features --locked
+	@test -x "$(NODE_DIR)/node" || { echo "node não encontrado; use NODE_DIR=/caminho/do/node/bin" >&2; exit 1; }
+	@test -d app/node_modules || $(APP_NPM) ci --ignore-scripts --no-audit --no-fund
+	$(APP_NPM) run build
+	@if /usr/bin/pkg-config --exists webkit2gtk-4.1; then \
+		cd app/src-tauri && $(CARGO) check --all-targets --all-features --locked; \
+	else \
+		echo "==> sem libwebkit2gtk-4.1-dev: cargo check do app/src-tauri pulado"; \
+	fi
+	$(PYTHON) dev/syntax_check.py --node "$(NODE_DIR)/node"
 
-## teste-logs-app: V5.27 (S13, Fase 39): nenhum padrão de .dev/variacoes.txt nos logs de
-## .dev/logs/ (app, ponte, daemon de teste e o console da webview que o QA grava ali);
-## antes, o autoteste com um log plantado (o ataque tem de ser achado). Nunca imprime a
-## lista nem o trecho. Precisa de `make dev-variacoes`; fora do `make check`.
-## `LOGS="<arquivo ou pasta em .dev/> ..."` troca o que é varrido
-teste-logs-app:
-	$(PYTHON) dev/testes/varredura-logs.py --autoteste
-	$(PYTHON) dev/testes/varredura-logs.py $(LOGS)
+## english-check: report of the pt-BR leftovers in comments, identifiers and file names
+## (m2:DT17; step 1/7 of `make check` since Phase 60, with the self-test).
+## `PATHS="<file or folder> ..."` limits it to some paths. The self-test alone:
+## `python3 -I dev/english_check.py --self-test`
+english-check:
+	$(PYTHON) dev/english_check.py $(if $(strip $(PATHS)),--paths $(PATHS))
 
-## teste-area-transferencia: Fase 39f (S2, S12; V5.4, V5.5): a área do GTK do app na sessão
-## gráfica sob strace -f (teste ignorado `area_gtk::testes::sessao_real`): nenhum programa
-## executado (nada de wl-copy), nenhum arquivo em /tmp, /var/tmp nem $XDG_RUNTIME_DIR com
-## o valor (inotify e varredura; antes, o autoteste acha o que o wl-copy grava), wl-paste
-## devolve o valor com x-kde-passwordManagerHint, some no prazo, texto do usuário fica,
-## trava de fora limpa na hora. Só valores falsos; limpa a área no fim. Exige strace,
-## wl-clipboard, python3-gi e libwebkit2gtk-4.1-dev (ou PKG_CONFIG_PATH); fora do `make check`
-teste-area-transferencia: origens
-	dev/testes/area-transferencia.sh "$(CARGO)"
+## app-bridge: the test bridge (D7) opened by the test daemon (D63): starts the test
+## daemon with WARD_DEV_APP = the bridge (or requires it to be up with it), asks the
+## daemon to open the app and prints the URL with the token, read from
+## .dev/logs/ward-test-bridge.log. Phase 66: refuses a test bundle older than the app
+## sources (dev/check-test-bundle.sh), as `test-app-e2e` does since Phase 65c
+app-bridge: origins
+	@dev/check-test-bundle.sh app-bridge
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+	WARD_DEV_APP="$(TEST_BRIDGE)" dev/daemon.sh up
+	dev/bridge.sh
 
-## teste-webkit-real: V5.32 (D48, D57, D64) com o WebKitGTK real sob strace -f: harness do
-## app sem a partida, montado só em .dev/webkit-real; abre uma janela na sessão Wayland
-## por ~20 s. Sai 1 se V5.32 falhar (inclusive os canais da 29b, fechados na Fase 39c).
-## Exige libwebkit2gtk-4.1-dev (ou PKG_CONFIG_PATH, R32), strace, gcc e `make app-front`;
-## fora do `make check`. `SEM_MPS=1` roda sem CUDA_MPS_PIPE_DIRECTORY e `SEM_39C=1` sem
-## GST_PLUGIN_LOADING_WHITELIST/__GL_APPLICATION_PROFILE (mostram os ataques)
-teste-webkit-real: origens
-	dev/testes/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(SEM_MPS)),--sem-mps)$(if $(filter 1,$(SEM_39C)),--sem-39c)
+## test-app-logs: V5.27 (S13, Phase 39): no pattern of .dev/variations.txt in the logs of
+## .dev/logs/ (app, bridge, test daemon and the webview console the QA writes there);
+## before that, the self-test with a planted log (the attack must be found). Never prints
+## the list nor the excerpt. Needs `make dev-variations`; out of `make check`.
+## `LOGS="<file or dir in .dev/> ..."` changes what is scanned
+test-app-logs:
+	$(PYTHON) dev/tests/log-scan.py --self-test
+	$(PYTHON) dev/tests/log-scan.py $(LOGS)
 
-## teste-app-e2e: V5.10, V5.16, V5.24 (Fase 39c) de ponta a ponta pela ponte: `wardd` de
-## teste só dele (WARD_DEV_SOCKET_DIR, padrão /run/user/<uid>/ward-teste-e2e) com a ponte
-## aberta pelo daemon, Chrome headless e a CLI de teste de verdade (`ward run` com a
-## janela de aprovação; "Conectar" com `ward ssh --token-fd` no ssh-salto e os ataques ao
-## token); varredura de logs no fim; o cofre de teste volta ao que era. Precisa de
-## `make dev-cofre`, `make dev-variacoes`, `make app-front`, dos serviços de pé e do
-## Playwright do Python em PW_PYTHONPATH; fora do `make check`
-teste-app-e2e: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
-	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	PW_PYTHONPATH="$(PW_PYTHONPATH)" WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/testes/app-e2e.sh
+## test-clipboard: Phase 39f (S2, S12; V5.4, V5.5): the app's GTK clipboard in the
+## graphical session under strace -f (the ignored GTK clipboard session test): no program
+## executed (no wl-copy), no file in /tmp, /var/tmp nor $XDG_RUNTIME_DIR with the value
+## (inotify and scan; before that, the self-test finds what wl-copy writes), wl-paste
+## returns the value with x-kde-passwordManagerHint, it goes away on time, the user's
+## text stays, a lock from outside clears it at once. Fake values only; clears the
+## clipboard at the end. Needs strace, wl-clipboard, python3-gi and libwebkit2gtk-4.1-dev
+## (or PKG_CONFIG_PATH); out of `make check`
+test-clipboard: origins
+	dev/tests/clipboard.sh "$(CARGO)"
 
-## teste-selecao-revelado: Fase 39g (S2, S12): o valor revelado no `Campo secreto` não vai
-## à PRIMARY nem à CLIPBOARD por seleção, Ctrl+A, Ctrl+C, arrasto ou clique triplo, no
-## WebKitGTK 4.1 de verdade (python3-gi) num Xwayland privado com cookie (a área de
-## transferência da sessão não é tocada); autoteste com o valor como texto (o ataque da
-## auditoria é achado). `wardd` de teste só dele (WARD_DEV_SOCKET_DIR, padrão
-## /run/user/<uid>/ward-teste-selecao) com a ponte; varredura de logs no fim. Precisa de
-## `make dev-cofre`, `make dev-variacoes`, `make app-front`, Xwayland, xauth e da sessão
-## Wayland; fora do `make check`
-teste-selecao-revelado: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
-	WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/testes/selecao-revelado.sh
+## test-webkit-real: V5.32 (D48, D57, D64) with the real WebKitGTK under strace -f: an app
+## harness without the startup, built only in .dev/webkit-real; opens a window in the
+## Wayland session for ~20 s. Exits 1 if V5.32 fails (including the 29b channels, closed
+## in Phase 39c). Needs libwebkit2gtk-4.1-dev (or PKG_CONFIG_PATH, R32), strace, gcc and
+## `make app-front`; out of `make check`. `NO_MPS=1` runs without
+## CUDA_MPS_PIPE_DIRECTORY and `NO_39C=1` without
+## GST_PLUGIN_LOADING_WHITELIST/__GL_APPLICATION_PROFILE (they show the attacks). Phase 65a:
+## the harness tray icon goes to .dev/webkit-real/tray-runtime, and touching
+## $XDG_RUNTIME_DIR/ward-tray (the installed app's folder) fails the test
+test-webkit-real: origins
+	dev/tests/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(NO_MPS)),--no-mps) $(if $(filter 1,$(NO_39C)),--no-39c)
 
-## teste-canais-gst: canais da 29b (Fase 39c) sem o WebKitGTK: o gst-plugin-scanner do
-## sistema e o EGL da GPU com o ambiente de D57 (valores do lancador.rs), HOME falso em
-## .dev/canais-gst e iscas (frei0r, LADSPA, libvisual, LV2, perfis da NVIDIA). Roda antes
-## sem as variáveis da 39c e exige que as iscas carreguem (o teste enxerga o ataque);
-## depois com elas, nada carrega. Exige gst-inspect-1.0, strace e gcc; fora do `make check`
-teste-canais-gst:
-	dev/testes/canais-gst.sh
+## test-app-e2e: V5.10, V5.16, V5.24 (Phase 39c) end to end through the bridge: a test
+## `wardd` of its own (WARD_DEV_SOCKET_DIR, default /run/user/<uid>/ward-test-e2e) with
+## the bridge opened by the daemon, headless Chrome (Phase 65a: through
+## dev/tests/chrome-isolated.sh, a bwrap without the Ward policy, host manifest nor
+## /usr/local, with the guard inside) and the real test CLI (`ward run`
+## with the approval window; the app's Connect button with `ward ssh --token-fd` on the
+## jump SSH service and the attacks on the token); log scan at the end; the test vault
+## goes back to what it was.
+## Needs `make dev-vault`, `make dev-variations`, `make app-front`, the services up and
+## the Python Playwright in PW_PYTHONPATH; out of `make check`.
+## Phase 65c: the test bundle (the test Vite build) is rebuilt here, like the binaries: a
+## bundle left from an older build (the 0.1.x one calls the old bridge path, which the
+## current bridge does not serve) stopped the suite on the unlock screen with an invalid
+## bridge reply error. `npm ci` only if app/node_modules is missing, as in `compile`.
+test-app-e2e: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
+	@test -x "$(NODE_DIR)/node" || { echo "node não encontrado; use NODE_DIR=/caminho/do/node/bin" >&2; exit 1; }
+	@test -d app/node_modules || $(APP_NPM) ci --ignore-scripts --no-audit --no-fund
+	$(APP_NPM) run build:test
+	PW_PYTHONPATH="$(PW_PYTHONPATH)" WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/tests/app-e2e.sh
 
-# --- Plataforma em contêiner (Fase 21b) ---------------------------------------------
-# D46/D47 com root só dentro de um contêiner ubuntu:24.04 descartável, sem rede: grupos
-# ward-app/ward-nm, binários setgid 2755, /run/ward/1000 do root e socket criado pelo
-# root e entregue por LISTEN_FDS. Nada de sudo nem de /etc ou /run do host. Exige Docker
-# e gcc (a biblioteca do ataque de LD_PRELOAD); fica fora do `make check`.
+## test-revealed-selection: Phase 39g (S2, S12): the value revealed in the secret field
+## does not go to PRIMARY nor CLIPBOARD by selection, Ctrl+A, Ctrl+C, drag or triple
+## click, in the real WebKitGTK 4.1 (python3-gi) on a private Xwayland with a cookie (the
+## session clipboard is not touched); self-test with the value as text (the audit attack
+## is found). A test `wardd` of its own (WARD_DEV_SOCKET_DIR, default
+## /run/user/<uid>/ward-test-selection) with the bridge; log scan at the end. Needs
+## `make dev-vault`, `make dev-variations`, `make app-front`, Xwayland, xauth and the
+## Wayland session; out of `make check`. Phase 66: refuses a test bundle older than the
+## app sources (dev/check-test-bundle.sh)
+test-revealed-selection: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+	WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/tests/revealed-selection.sh
 
-## teste-docker-plataforma: V3.5 (forma de D47), V3.23, V3.24, V5.31 (lançador e partida
-## do app, D57), a 2ª parte do V4.2 (CLI e wardd sem modo-teste, falso não-dumpable do
-## uid 1000; Fase 28) e V6.1/V6.2 (Fase 40: ward-nm do release setgid com o "Chrome" de
-## pai e o wardd de teste real; precisa de `make dev-cofre`) num contêiner ubuntu:24.04
-teste-docker-plataforma: origens
-	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
-	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner
-	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --example chrome-falso --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --example wardd-cliente-teste
-	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner target/debug/examples/partida-conteiner \
-		target/sem-modo-teste/debug/ward target/sem-modo-teste/debug/wardd \
-		target/debug/wardd target/sem-modo-teste/debug/ward-nm target/sem-modo-teste/debug/examples/chrome-falso \
-		target/debug/examples/wardd-cliente-teste
+## test-gst-channels: the 29b channels (Phase 39c) without WebKitGTK: the system
+## gst-plugin-scanner and the GPU EGL with the D57 environment (values of launcher.rs),
+## fake HOME in .dev/gst-channels and decoys (frei0r, LADSPA, libvisual, LV2, NVIDIA
+## profiles). Runs first without the 39c variables and requires the decoys to load (the
+## test sees the attack); then with them, nothing loads. Needs gst-inspect-1.0, strace
+## and gcc; out of `make check`
+test-gst-channels:
+	dev/tests/gst-channels.sh
 
-## teste-docker-uid: V3.2 (D49) num contêiner ubuntu:24.04: o wardd de teste roda como
-## uid 1000; clientes de outro uid (4242, também com CAP_DAC_OVERRIDE) e o root são
-## recusados sem receber um byte; o uid 1000 é atendido
-teste-docker-uid: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --example wardd-cliente-teste
-	dev/testes/docker-uid.sh target/debug/wardd target/debug/examples/wardd-cliente-teste
+# --- Platform in a container (Phase 21b) ----------------------------------------------
+# D46/D47 with root only inside a disposable ubuntu:24.04 container, without network:
+# ward-app/ward-nm groups, setgid 2755 binaries, root's /run/ward/1000 and a socket
+# created by root and handed over by LISTEN_FDS. No sudo and nothing of the host's /etc
+# or /run. Needs Docker and gcc (the library of the LD_PRELOAD attack); stays out of
+# `make check`.
 
-## teste-units: V3.21 (Fase 24; D46, D57, D62): `systemd-analyze verify` das units de
-## `instalacao/systemd/` e, num contêiner ubuntu:24.04 com systemd e sem rede, a primeira
-## conexão ao `wardd@1000.socket` sobe o `wardd` (sem `modo-teste`) como o uid 1000,
-## com LimitCORE=0, LimitMEMLOCK=infinity e sem no_new_privs
-teste-units: origens
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
-	dev/testes/units.sh target/sem-modo-teste/debug/wardd target/sem-modo-teste/debug/examples/wardd-cliente-teste target/sem-modo-teste/debug/ward
+## test-docker-platform: V3.5 (D47 form), V3.23, V3.24, V5.31 (launcher and startup of
+## the app, D57), the 2nd part of V4.2 (CLI and wardd without test-mode, a non-dumpable
+## fake of uid 1000; Phase 28) and V6.1/V6.2 (Phase 40: release ward-nm setgid with the
+## "Chrome" as parent and the real test wardd; needs `make dev-vault`) in an
+## ubuntu:24.04 container
+test-docker-platform: origins
+	$(CARGO) build --quiet --locked -p ward-platform --features test-mode --example ward-platform-container
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --example fake-chrome --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-test-client
+	dev/tests/docker-platform.sh target/debug/examples/ward-platform-container target/debug/examples/startup-container \
+		target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
+		target/debug/wardd target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/fake-chrome \
+		target/debug/examples/wardd-test-client
 
-# --- Instalação (Fase 51; D18, D46, D47, D57, D60, D62, D63) --------------------------
-# `make release` (como o usuário, sem root) compila os artefatos por pacote (`-p`, sem
-# `modo-teste`, D63); `sudo make install` só confere e copia (nunca chama o cargo como
-# root) e `sudo make uninstall` desfaz. O trabalho fica em instalacao/instalar.sh e a
-# árvore, em instalacao/arvore.txt. Com DESTDIR=<pasta absoluta>, só copia a árvore
-# (sem grupos, sem dono root, sem systemctl): staging do `.deb` (Fase 52) e testes.
+## test-docker-uid: V3.2 (D49) in an ubuntu:24.04 container: the test wardd runs as
+## uid 1000; clients of another uid (4242, also with CAP_DAC_OVERRIDE) and root are
+## refused without getting a byte; uid 1000 is served
+test-docker-uid: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-test-client
+	dev/tests/docker-uid.sh target/debug/wardd target/debug/examples/wardd-test-client
+
+## test-system-socket: m2:Phase 54a (S1, S5, D46): every test that runs a Ward binary
+## has the `test-mode` guard, the ones that talk to a daemon do not build without it,
+## and, in an ubuntu:24.04 container without network with a fake system socket planted
+## (root folder, peer uid 0), no test binary (`--all-features` and the ones built
+## without the feature) connects to it; the release `ward-nm` does (control)
+test-system-socket: origins
+	dev/tests/system-socket.sh
+
+## test-units: V3.21 (Phase 24; D46, D57, D62): `systemd-analyze verify` of the units of
+## `install/systemd/` and, in an ubuntu:24.04 container with systemd and without network,
+## the first connection to `wardd@1000.socket` starts `wardd` (without `test-mode`) as
+## uid 1000, with LimitCORE=0, LimitMEMLOCK=infinity and without no_new_privs
+test-units: origins
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+	dev/tests/units.sh target/no-test-mode/debug/wardd target/no-test-mode/debug/examples/wardd-test-client target/no-test-mode/debug/ward
+
+# --- Install (Phase 51; D18, D46, D47, D57, D60, D62, D63) ------------------------------
+# `make release` (as the user, without root) builds the artifacts per package (`-p`,
+# without `test-mode`, D63); `sudo make install` only verifies and copies (never calls
+# cargo as root) and `sudo make uninstall` undoes it. The work is in install/install.sh
+# and the tree in install/tree.txt. With DESTDIR=<absolute dir>, it only copies the tree
+# (no groups, no root owner, no systemctl): staging of the `.deb` (Phase 52) and tests.
 PREFIX ?= /usr/local
 DESTDIR ?=
 WARD_UID ?= $(SUDO_UID)
-EXTENSAO_ID ?=
-EXTENSAO_CRX ?=
+EXTENSION_ID ?=
+EXTENSION_CRX ?=
 BIN_WARD ?= $(CURDIR)/target/release/ward
 BIN_WARDD ?= $(CURDIR)/target/release/wardd
 BIN_NM ?= $(CURDIR)/target/release/ward-nm
 BIN_APP ?= $(CURDIR)/app/src-tauri/target/release/ward-app
-# Pelo ambiente (`export`), nunca interpolado na linha do shell.
+# Through the environment (`export`), never interpolated in the shell line.
 install uninstall: export DESTDIR := $(DESTDIR)
 install uninstall: export PREFIX := $(PREFIX)
 install uninstall: export WARD_UID := $(WARD_UID)
-install uninstall: export EXTENSAO_ID := $(EXTENSAO_ID)
-install uninstall: export EXTENSAO_CRX := $(EXTENSAO_CRX)
+install uninstall: export EXTENSION_ID := $(EXTENSION_ID)
+install uninstall: export EXTENSION_CRX := $(EXTENSION_CRX)
 install uninstall: export BIN_WARD := $(BIN_WARD)
 install uninstall: export BIN_WARDD := $(BIN_WARDD)
 install uninstall: export BIN_NM := $(BIN_NM)
 install uninstall: export BIN_APP := $(BIN_APP)
 
-## release: artefatos de release para o `make install`, como o usuário: ward, wardd e
-## ward-nm por pacote (`-p`, sem `modo-teste`, D63) e o app (`app-front` + build do
-## Tauri; precisa de libwebkit2gtk-4.1-dev ou PKG_CONFIG_PATH, R32), com o V5.6
-release: origens app-front
+## release: release artifacts for `make install`, as the user: ward, wardd and ward-nm
+## per package (`-p`, without `test-mode`, D63) and the app (`app-front` + Tauri build;
+## needs libwebkit2gtk-4.1-dev or PKG_CONFIG_PATH, R32), with V5.6
+release: origins app-front
 	$(CARGO) build --release --locked -p ward --bin ward
 	$(CARGO) build --release --locked -p wardd --bin wardd
 	$(CARGO) build --release --locked -p ward-nm --bin ward-nm
 	cd app/src-tauri && $(CARGO) build --release --locked
-	dev/testes/app-release.sh app/src-tauri/target/release/ward-app
+	dev/tests/app-release.sh app/src-tauri/target/release/ward-app
 
-## install: `sudo make install EXTENSAO_ID=<id> EXTENSAO_CRX=<pacote.crx>` (depois de
-## `make release`): grupos ward-app/ward-nm (D60), binários (ward-app e ward-nm 2755),
-## units do sistema, /run/ward por tmpfiles.d, manifesto de native messaging, política
-## do Chrome e `systemctl enable --now wardd@<SUDO_UID>.socket`. Recusa artefato com
-## `modo-teste` (V9.2). DESTDIR=<pasta> só copia a árvore
+## install: `sudo make install EXTENSION_ID=<id> EXTENSION_CRX=<package.crx>` (after
+## `make release`): ward-app/ward-nm groups (D60), binaries (ward-app and ward-nm 2755),
+## system units, /run/ward by tmpfiles.d, native messaging manifest, Chrome policy and
+## `systemctl enable --now wardd@<SUDO_UID>.socket`. Refuses an artifact with
+## `test-mode` (V9.2). Over 0.1.x (m2:DT15, m2:DT16): stops the running wardd@* before
+## the binaries, deletes the old extension dir and moves the groups mark to
+## created-groups. DESTDIR=<dir> only copies the tree
 install:
-	instalacao/instalar.sh instalar
+	install/install.sh install
 
-## uninstall: `sudo make uninstall`: para e desliga o wardd@*, apaga os arquivos e os
-## grupos; nunca toca no cofre do usuário (V9.10)
+## uninstall: `sudo make uninstall`: stops and disables wardd@*, deletes the files and the
+## groups (the created-groups mark or, without it, the 0.1.x one); never touches the
+## user's vault (V9.10, m2:V5.8)
 uninstall:
-	instalacao/instalar.sh desinstalar
+	install/install.sh uninstall
 
-## teste-install: V9.1, V9.2, V9.6, V9.10 com DESTDIR em .dev/ (árvore, modos, conteúdo,
-## systemd-analyze verify, recusas) e, num contêiner ubuntu:24.04 com systemd e sem
-## rede, `make install`/`uninstall` como root: grupos (D60, V9.11), units sem
-## no_new_privs (D57), socket e primeira conexão (V9.7), ambiente e dumpable do wardd
-## (V9.4), app aberto pelo daemon com o papel app, CLI recusa servidor falso (V9.3).
-## Exige Docker (o build da imagem usa rede), gcc e `make dev-cofre`; fora do `make check`
-teste-install: origens
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	dev/testes/install.sh
+## test-install: V9.1, V9.2, V9.6, V9.10 with DESTDIR in .dev/ (tree, modes, content,
+## systemd-analyze verify, refusals) and, in an ubuntu:24.04 container with systemd and
+## without network, `make install`/`uninstall` as root: groups (D60, V9.11), units
+## without no_new_privs (D57), socket and first connection (V9.7), environment and
+## dumpable of wardd (V9.4), app opened by the daemon with the app role, CLI refuses a
+## fake server (V9.3); upgrade over the 0.1.4 `make install` with its wardd unlocked and
+## uninstall over a 0.1.4 install (m2:V5.6-V5.8, from `.dev/baseline/` of Phase 3 and the
+## v0.1.4 tag). Needs Docker (the image build uses the network), gcc and
+## `make dev-vault`; out of `make check`
+test-install: origins
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-platform --features test-mode --example ward-platform-container
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	dev/tests/install.sh
 
-## teste-politica-chrome: Fase 51a (V9.5, V9.6; crítico da auditoria do M9): a política
-## gerada pelo instalar.sh (NativeMessagingUserLevelHosts false) com o Chrome real num
-## bwrap com /etc/opt/chrome trocado por uma pasta em .dev/politica-chrome.*: sem ela o
-## manifesto plantado no perfil vence e o ataque da auditoria tira senhas do wardd de
-## teste (controle); com ela o host do perfil não roda e o do sistema sim. Nunca toca o
-## perfil real do Chrome. Precisa de bwrap, openssl, `make dev-cofre`, `make
-## dev-variacoes` e do Chrome em /opt/google/chrome; fora do `make check`
-teste-politica-chrome: origens
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
-	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
-	dev/testes/politica-chrome.sh target/debug/wardd target/debug/ward-nm \
-		target/sem-modo-teste/debug/ward target/sem-modo-teste/debug/wardd \
-		target/sem-modo-teste/debug/ward-nm target/sem-modo-teste/debug/examples/partida-conteiner \
-		target/debug/wardd-aprovador-teste
+## test-chrome-policy: Phase 51a (V9.5, V9.6; critical finding of the M9 audit): the
+## policy generated by install.sh (NativeMessagingUserLevelHosts false) with the real
+## Chrome in a bwrap with /etc/opt/chrome swapped for a dir in .dev/chrome-policy.*:
+## without it the manifest planted in the profile wins and the audit attack takes
+## passwords from the test wardd (control); with it the profile host does not run and the
+## system one does. Never touches the real Chrome profile. m2:Phase 66c: the policy is
+## built on the host and the rounds run in the browser container of Phase 65a
+## (dev/tests/browser-container.sh chrome-policy; /etc/opt/chrome = the dir of the test,
+## the guard inside, Chrome sandboxed by the seccomp profile of dev/container-browser/);
+## never a Chrome on the host. Needs Docker, openssl, `make dev-vault` and
+## `make dev-variations`; out of `make check`
+test-chrome-policy: origins
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+	dev/tests/chrome-policy.sh target/debug/wardd target/debug/ward-nm \
+		target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
+		target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/startup-container \
+		target/debug/wardd-test-approver
 
-# --- Pacote .deb (Fase 52; D18; V9.9) ------------------------------------------------
-# `make deb` (como o usuário) monta o staging com o `instalar.sh` (DESTDIR) e o empacota
-# por `dpkg-deb`; os binários setgid vão 0755 no pacote e o 2755 entra pelo
-# `dpkg-statoverride` do preinst. `make extensao-crx` empacota a extensão pelo Chrome.
+# --- .deb package (Phase 52; D18; V9.9) -------------------------------------------------
+# `make deb` (as the user) builds the staging with `install.sh` (DESTDIR) and packs it
+# with `dpkg-deb`; the setgid binaries go 0755 in the package and the 2755 comes from
+# the `dpkg-statoverride` of the preinst. `make extension-crx` packs the extension with
+# Chrome.
 DEB_DIR ?= $(CURDIR)/target/deb
-CHAVE_EXTENSAO ?= $(CURDIR)/.dev/extensao/chave.pem
+EXTENSION_KEY ?= $(CURDIR)/.dev/extension/key.pem
 deb: export DEB_DIR := $(DEB_DIR)
-deb: export EXTENSAO_ID := $(EXTENSAO_ID)
-deb: export EXTENSAO_CRX := $(EXTENSAO_CRX)
+deb: export EXTENSION_ID := $(EXTENSION_ID)
+deb: export EXTENSION_CRX := $(EXTENSION_CRX)
 deb: export BIN_WARD := $(BIN_WARD)
 deb: export BIN_WARDD := $(BIN_WARDD)
 deb: export BIN_NM := $(BIN_NM)
 deb: export BIN_APP := $(BIN_APP)
-extensao-crx: export CHAVE_EXTENSAO := $(CHAVE_EXTENSAO)
+extension-crx: export EXTENSION_KEY := $(EXTENSION_KEY)
 
-## deb: `make deb EXTENSAO_ID=<id> EXTENSAO_CRX=<pacote.crx>` (depois de `make release`),
-## sem sudo: target/deb/ward_<versão>_<arq>.deb com a árvore do `make install`, Depends
-## com sshpass; instalar com `sudo dpkg -i` (roteiro em docs/instalacao.md)
+## deb: `make deb EXTENSION_ID=<id> EXTENSION_CRX=<package.crx>` (after `make release`),
+## without sudo: target/deb/ward_<version>_<arch>.deb with the tree of `make install`,
+## Depends with sshpass; install it with `sudo dpkg -i` (guide in docs/instalacao.md)
 deb:
-	instalacao/deb.sh
+	install/deb.sh
 
-## extensao-crx: empacota extensao/dist/ (do `make extensao`) em target/extensao/ward.crx
-## pelo Chrome com a chave .dev/extensao/chave.pem (CHAVE_EXTENSAO); recusa id ≠ ID_EXTENSAO
-extensao-crx:
-	instalacao/empacotar-extensao.sh
+## extension-crx: packs extension/dist/ (from `make extension`) into
+## target/extension/ward.crx with Chrome and the key .dev/extension/key.pem
+## (EXTENSION_KEY); refuses an id other than the extension id constant of ward-nm
+extension-crx:
+	install/pack-extension.sh
 
-## teste-deb: V9.9 (Fase 52): `make deb` com os artefatos sem `modo-teste` e um CRX3 falso
-## (lista do `dpkg-deb -c` = staging, root/root, sem setgid no pacote, Depends com
-## sshpass, recusas) e, num contêiner ubuntu:24.04 com systemd e sem rede, `dpkg -i`
-## (falta de sshpass, grupo fora de D60, instalação, statoverride 2755, socket, primeira
-## conexão, pasta SSH do usuário e /etc/ssh intactas, V9.8), reinstalar, `dpkg -r`/`-P`
-## com o cofre intacto. Exige Docker (o build da imagem usa rede) e gcc; fora do `make check`
-teste-deb: origens
-	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	dev/testes/deb.sh
+## test-deb: V9.9 (Phase 52): `make deb` with the artifacts without `test-mode` and a
+## fake CRX3 (`dpkg-deb -c` list = staging, root/root, no setgid in the package, Depends
+## with sshpass, refusals) and, in an ubuntu:24.04 container with systemd and without
+## network, `dpkg -i` (missing sshpass, group outside D60, install, statoverride 2755,
+## socket, first connection, the user's SSH dir and /etc/ssh untouched, V9.8),
+## reinstall, `dpkg -r`/`-P` with the vault untouched; upgrade over the 0.1.4 `.deb` of
+## `.dev/baseline/` with its wardd unlocked (m2:V5.7, m2:V5.9). Needs Docker (the image
+## build uses the network) and gcc; out of `make check`
+test-deb: origins
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	dev/tests/deb.sh
 
-# --- Daemon de teste (Fase 22) ------------------------------------------------------
-# `wardd` com a feature `modo-teste`: cofre de `.dev/`, socket em
-# $XDG_RUNTIME_DIR/ward-teste/. Sobe com `env -i` e uma lista fixa (HOME, PATH,
-# XDG_RUNTIME_DIR, LANG, WARD_DEV_DIR): o wardd recusa TMPDIR e LD_* (V3.30).
+# --- Test daemon (Phase 22) ----------------------------------------------------------
+# `wardd` with the `test-mode` feature: vault from `.dev/`, socket in
+# $XDG_RUNTIME_DIR/ward-test/. Starts with `env -i` and a fixed list (HOME, PATH,
+# XDG_RUNTIME_DIR, LANG, WARD_DEV_DIR): wardd refuses TMPDIR and LD_* (V3.30).
 
-## dev-daemon: compila e sobe o daemon de teste em segundo plano (log em .dev/logs/), com
-## WARD_DEV_APP (D63; padrão: a ponte de teste, que o `abrir_app` abre com o papel app)
-PONTE_DE_TESTE := $(CURDIR)/target/debug/ward-ponte-teste
-WARD_DEV_APP ?= $(PONTE_DE_TESTE)
-dev-daemon: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
-	WARD_DEV_APP="$(WARD_DEV_APP)" dev/daemon.sh subir
+## dev-daemon: builds and starts the test daemon in the background (log in .dev/logs/),
+## with WARD_DEV_APP (D63; default: the test bridge, which the open-app request opens with
+## the app role)
+TEST_BRIDGE := $(CURDIR)/target/debug/ward-test-bridge
+WARD_DEV_APP ?= $(TEST_BRIDGE)
+dev-daemon: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+	WARD_DEV_APP="$(WARD_DEV_APP)" dev/daemon.sh up
 
-## teste-cli: CLI `ward` de teste num pty (Fase 25): V4.2 com servidor falso, V4.1 e
-## V4.22 contra o daemon de teste; precisa de `make dev-daemon WARD_DEV_APP=` (sem a
-## ponte: recusa no começo se o daemon de teste subiu com WARD_DEV_APP) e `make dev-variacoes`
-teste-cli: origens
-	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	$(PYTHON) dev/testes/cli.py target/debug/ward "$(CURDIR)"
+## test-cli: test `ward` CLI in a pty (Phase 25): V4.2 with a fake server, V4.1 and
+## V4.22 against the test daemon; needs `make dev-daemon WARD_DEV_APP=` (without the
+## bridge: refuses at the start if the test daemon came up with WARD_DEV_APP) and
+## `make dev-variations`
+test-cli: origins
+	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
+	$(PYTHON) dev/tests/cli.py target/debug/ward "$(CURDIR)"
 
-## teste-ssh-home: V4.27 (Fase 28b; R19, D13): a suíte de `ward ssh` e túnel num bwrap com
-## o home do passwd e o /tmp em tmpfs, iscas na pasta do ssh do home (config com Host * e
-## ProxyCommand de sentinela, known_hosts, id_ed25519, FIFOs), agente falso, inotify e o
-## ssh/sshpass/sftp do daemon sob strace; controles positivos no fim. `wardd` de teste só
-## dele (WARD_DEV_SOCKET_DIR próprio). Precisa de bwrap, strace, `make dev-cofre`,
-## `make dev-variacoes` e dos serviços de pé; fora do `make check`
-teste-ssh-home: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	dev/testes/ssh-home.sh target/debug/wardd target/debug/ward
+## test-ssh-home: V4.27 (Phase 28b; R19, D13): the `ward ssh` and tunnel suite in a
+## bwrap with the passwd home and /tmp on tmpfs, decoys in the home's ssh dir (config
+## with Host * and a sentinel ProxyCommand, known_hosts, id_ed25519, FIFOs), a fake
+## agent, inotify and the daemon's ssh/sshpass/sftp under strace; positive controls at
+## the end. A test `wardd` of its own (its own WARD_DEV_SOCKET_DIR). Needs bwrap, strace,
+## `make dev-vault`, `make dev-variations` and the services up; out of `make check`
+test-ssh-home: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
+	dev/tests/ssh-home.sh target/debug/wardd target/debug/ward
 
-## teste-playwright: `ward playwright` de ponta a ponta (Fase 44; V6.12–V6.16 da parte do
-## daemon) com o Chrome instalado: os ataques contra sites locais (`cargo test --ignored`)
-## e, com os serviços de pé, o WordPress e o phish contra um `wardd` de teste só dele
-## (WARD_DEV_SOCKET_DIR próprio). Precisa de `make dev-cofre`, `make dev-variacoes` e do
-## Playwright do Python em PW_PYTHONPATH (ou SEM_PLAYWRIGHT_PYTHON=1); fora do `make check`
-teste-playwright: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
-	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright -- --ignored
-	PW_PYTHONPATH="$(PW_PYTHONPATH)" SEM_PLAYWRIGHT_PYTHON="$(SEM_PLAYWRIGHT_PYTHON)" \
-		dev/testes/playwright.sh target/debug/wardd target/debug/ward target/debug/wardd-aprovador-teste
+## test-playwright: `ward playwright` end to end (Phase 44; V6.12–V6.16, the daemon
+## part) with the installed Chrome: the attacks against local sites
+## (`cargo test --ignored`) and, with the services up, WordPress and phish against a test
+## `wardd` of its own (its own WARD_DEV_SOCKET_DIR). Needs `make dev-vault`,
+## `make dev-variations` and the Python Playwright in PW_PYTHONPATH (or
+## NO_PLAYWRIGHT_PYTHON=1); out of `make check`. m2:Phase 66c: everything that opens
+## Chrome (the `--ignored` test binary, built here, and dev/tests/playwright.sh) runs in
+## the browser container of Phase 65a (dev/tests/browser-container.sh playwright; the
+## guard inside, the services through the relay, Chrome sandboxed by the seccomp profile
+## of dev/container-browser/); never a Chrome on the host. Needs Docker and the services
+## up
+test-playwright: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
+	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright --no-run \
+		--message-format=json > target/playwright-test.json
+	bin="$$($(PYTHON) dev/tests/test_binary.py "$(CURDIR)" playwright < target/playwright-test.json)" && \
+	PW_PYTHONPATH="$(PW_PYTHONPATH)" NO_PLAYWRIGHT_PYTHON="$(NO_PLAYWRIGHT_PYTHON)" \
+		dev/tests/browser-container.sh playwright "$$bin" \
+		target/debug/wardd target/debug/ward target/debug/wardd-test-approver
 
-## teste-sem-modo-teste: D63/V3.37: nenhum membro liga modo-teste em dependência normal,
-## testes de unidade do wardd e do ward-plataforma sem a feature e strings do release
-## sem WARD_DEV_APP (compila em target/sem-modo-teste)
-teste-sem-modo-teste: origens
-	dev/testes/sem-modo-teste.sh
+## test-no-test-mode: D63/V3.37: no member turns on test-mode in a normal dependency,
+## unit tests of wardd and ward-platform without the feature and release strings without
+## WARD_DEV_APP (builds in target/no-test-mode)
+test-no-test-mode: origins
+	dev/tests/no-test-mode.sh
 
-## teste-socket-ataques: V3.3 e V3.4 (scrutiny do M3) contra um `wardd` de teste só dele
-## (cópia do cofre de teste em .dev/socket-ataques.*, socket em $XDG_RUNTIME_DIR por
-## WARD_DEV_SOCKET_DIR; nunca o daemon de `make dev-daemon`): quadros ruins, 10 000
-## conexões caladas, matriz operação × entrada × campo e o log sem segredo. Precisa de
-## `make dev-cofre` e `make dev-variacoes`; fora do `make check`. CONEXOES=<n> troca as
-## 10 000
-CONEXOES ?= 10000
-teste-socket-ataques: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	dev/testes/socket-ataques.sh target/debug/wardd "$(CONEXOES)"
+## test-socket-attacks: V3.3 and V3.4 (M3 scrutiny) against a test `wardd` of its own
+## (copy of the test vault in .dev/socket-attacks.*, socket in $XDG_RUNTIME_DIR by
+## WARD_DEV_SOCKET_DIR; never the daemon of `make dev-daemon`): bad frames, 10 000 silent
+## connections, operation × entry × field matrix and the log without secrets. Needs
+## `make dev-vault` and `make dev-variations`; out of `make check`. CONNECTIONS=<n>
+## changes the 10 000
+CONNECTIONS ?= 10000
+test-socket-attacks: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	dev/tests/socket-attacks.sh target/debug/wardd "$(CONNECTIONS)"
 
-## teste-nm: Fase 40 (V6.1; D5, D9, D47): o `ward-nm` de teste aberto à mão fica agente
-## e não recebe segredo; com o Chrome real (headless, perfil temporário em .dev/nm.*,
-## manifesto só nele) o host é filho direto do navegador, o `conferir_pai` aceita esse
-## pai e recusa outro, e o host responde pelo Chrome. Daemon de teste só dele (cópia do
-## cofre, socket próprio). Precisa de `make dev-cofre`, `make dev-variacoes` e do Chrome
-## em /opt/google/chrome; fora do `make check`
-## teste-skill: Fase 50 (V8.1, V8.2, V8.4): frontmatter da skill `ward`, comandos citados
-## no `ward --help`, nenhum padrão de .dev/variacoes.txt em skill/, JSON do deny válido e
-## com os caminhos do escopo, regras Bash sem âncora que negam cada forma de ATAQUES_BASH
-## e nenhum exemplo da skill (Fase 50a); antes, o autoteste planta cada ataque numa cópia e exige
-## falha. O `ward` (sem `modo-teste`) vai para target/sem-modo-teste, fora do target/debug
-## dos outros testes. Precisa de `make dev-variacoes`; fora do `make check`
-teste-skill: origens
-	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
-	$(PYTHON) dev/testes/skill.py target/sem-modo-teste/debug/ward
+## test-nm: Phase 40 (V6.1; D5, D9, D47): the test `ward-nm` opened by hand stays an
+## agent and gets no secret; with the real Chrome (headless, temporary profile in
+## .dev/nm.*, manifest only in it; Phase 65a: in the browser container, see
+## `browser-container.sh` below) the host is a direct child of the browser,
+## `verify_parent` accepts that parent and refuses another, and the host answers through
+## Chrome. Test daemon of its own (copy of the vault, its own socket). Needs
+## `make dev-vault`, `make dev-variations` and Chrome in /opt/google/chrome; out of
+## `make check`
+## test-skill: Phase 50 (V8.1, V8.2, V8.4): frontmatter of the `ward` skill, commands
+## cited in `ward --help`, no pattern of .dev/variations.txt in skill/, valid deny JSON
+## with the scope paths, unanchored Bash rules that deny each form of BASH_ATTACKS and no
+## example of the skill (Phase 50a); before that, the self-test plants each attack in a
+## copy and requires a failure. `ward` (without `test-mode`) goes to target/no-test-mode,
+## out of the other tests' target/debug. Needs `make dev-variations`; out of `make check`
+test-skill: origins
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+	$(PYTHON) dev/tests/skill.py target/no-test-mode/debug/ward
 
-## teste-migracao: Fases 53, 53b e 53d (V10.1–V10.3): ordem dos passos de docs/migracao.md,
-## os itens de montagem.md um por um, Conferir e Voltar atrás em cada passo, nada para a
-## conversa com o Claude, nenhum segredo em argv nem padrão de .dev/variacoes.txt, lista
-## positiva de comandos nos blocos (chave só por `install -m 600` entre a pasta em memória
-## e a pasta do ssh do home, sem `..`, find/chmod/grep/busctl limitados); antes, o
-## autoteste planta cada ataque numa cópia e exige falha. Só lê o guia; não executa
-## nenhum passo. Precisa de `make dev-variacoes`; fora do `make check`
-teste-migracao:
-	$(PYTHON) dev/testes/migracao.py
+## test-migration-guide: Phases 53, 53b and 53d (V10.1–V10.3): order of the steps of
+## docs/migracao.md, the items of the setup list one by one, verify and go-back sections
+## in each step, nothing for the conversation with Claude, no secret in argv nor pattern
+## of .dev/variations.txt, allowlist of commands in the blocks (key only by
+## `install -m 600` between the in-memory dir and the home's ssh dir, no `..`,
+## find/chmod/grep/busctl limited); before that, the self-test plants each attack in a
+## copy and requires a failure. Only reads the guide; runs no step. Needs
+## `make dev-variations`; out of `make check`
+test-migration-guide:
+	$(PYTHON) dev/tests/migration-guide.py
 
-teste-nm: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
-	$(CARGO) build --quiet --locked -p ward-plataforma --example pai-chrome
-	dev/testes/nm.sh target/debug/wardd target/debug/ward-nm target/debug/examples/pai-chrome
+test-nm: origins
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
+	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+	$(CARGO) build --quiet --locked -p ward-platform --example chrome-parent
+	dev/tests/browser-container.sh nm target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-parent
 
-## extensao: monta a extensão do Chrome em extensao/dist/ (Fase 41) com os tokens, ícones
-## e fontes do app e confere o pacote e o manifesto (id fixo = ward-nm, sem
-## externally_connectable/web_accessible_resources/storage, CSP estrita). Precisa de
-## `make app-front` (fontes)
-extensao:
-	$(PYTHON) dev/extensao/montar.py
+## Phase 65a: test-nm, test-extension and test-login run in a disposable ubuntu:24.04
+## container with Chrome (image built from dev/container-browser/; the build
+## uses the network, the test runs with --network none), through
+## dev/tests/browser-container.sh: on a host with Ward installed, the Chrome policy
+## force-installs the real extension and the system manifest sends the Ward id to
+## /usr/local/bin/ward-nm (the real vault). The services (already up on the host) are
+## reached through dev/tests/service_relay.py; needs Docker.
+##
+## test-chrome-guard: Phase 65a: self-test of the guard (dev/tests/chrome_guard.py) that
+## every suite that opens Chrome runs first (refuses with exit 3 when this Chrome would see
+## a Ward policy or the br.ward.nm host manifest): plants each form of the policy and of
+## the manifest, including a copy of the host's ward.json, in a copy under .dev/
+test-chrome-guard:
+	$(PYTHON) dev/tests/chrome_guard.py --self-test
 
-## teste-extensao: Fase 41 (V6.2, V6.4–V6.7): a extensão no Chrome real (headless, perfil
-## temporário em .dev/extensao.*) pelo ward-nm de teste e um wardd de teste só dele com
-## WARD_DEV_EXTENSAO=chrome; sugestões, preenchimento, TOTP, phishing, redir, iframe,
-## DOM clobbering, campo escondido, mensagens da página, travado; screenshots em
-## docs/mission/evidence/fase-41/. Precisa de `make dev-cofre`, `make dev-variacoes`,
-## `make dev-servicos-subir` e `make app-front`; fora do `make check`
-teste-extensao: origens extensao
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
-	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
-	$(CARGO) build --quiet --locked -p ward-nm --example chrome-falso
-	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	dev/testes/extensao.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso target/debug/ward target/debug/wardd-aprovador-teste
+## extension: builds the Chrome extension in extension/dist/ (Phase 41) with the tokens,
+## icons and fonts of the app and verifies the package and the manifest (fixed id =
+## ward-nm, no externally_connectable/web_accessible_resources/storage, strict CSP).
+## Needs `make app-front` (fonts)
+extension:
+	$(PYTHON) dev/extension/build.py
 
-## teste-login: `ward login` de ponta a ponta (Fase 43; V6.3, V6.10, V6.11, V6.15, V6.16):
-## a extensão no Chrome real headless, o `ward-nm` aberto pelo service worker e um `wardd`
-## de teste só dele com `WARD_DEV_EXTENSAO=chrome`; fora do `make check`
-teste-login: origens extensao
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
-	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
-	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	dev/testes/login.sh target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-aprovador-teste
+## test-extension: Phase 41 (V6.2, V6.4–V6.7): the extension in the real Chrome
+## (headless, temporary profile in .dev/extension.*) through the test ward-nm and a test
+## wardd of its own with WARD_DEV_EXTENSION=chrome; suggestions, filling, TOTP, phishing,
+## redir, iframe, DOM clobbering, hidden field, page messages, locked; screenshots in
+## docs/mission/evidence/test-extension/. Needs `make dev-vault`, `make dev-variations`,
+## `make dev-services-up` and `make app-front`; out of `make check`
+test-extension: origins extension
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+	$(CARGO) build --quiet --locked -p ward-nm --example fake-chrome
+	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
+	dev/tests/browser-container.sh extension target/debug/wardd target/debug/ward-nm target/debug/examples/fake-chrome target/debug/ward target/debug/wardd-test-approver
 
-## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
-dev-daemon-parar:
-	dev/daemon.sh parar
+## test-login: `ward login` end to end (Phase 43; V6.3, V6.10, V6.11, V6.15, V6.16):
+## the extension in the real headless Chrome, `ward-nm` opened by the service worker and
+## a test `wardd` of its own with `WARD_DEV_EXTENSION=chrome`; out of `make check`
+test-login: origins extension
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
+	dev/tests/browser-container.sh login target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-test-approver
+
+## dev-daemon-stop: stops the test daemon (verifies the pid really is the wardd from here)
+dev-daemon-stop:
+	dev/daemon.sh stop
+
+## test-totp-detail: Phase 65b (S11, D4): the detail of an entry with TOTP shows the
+## current code (TOTP code command) and never asks for, nor shows, the seed. Unit test of
+## the detail rules (node) and, with the test bridge on the fake daemon of the app core
+## (no wardd), headless Chrome by the Python Playwright: code, countdown and copy of the
+## code; every button of the detail clicked without any call naming the seed or any reply
+## or page carrying it; control: the edit form still reveals it and the same detector
+## sees it. Copy is answered by the test (the session clipboard is not touched). Needs
+## `make app-front`, Chrome in /opt/google/chrome (m2:Phase 66c: through
+## dev/tests/chrome-isolated.sh, with the guard inside) and the Python Playwright in
+## PW_PYTHONPATH; out of `make check`
+.PHONY: test-totp-detail
+test-totp-detail: origins
+	@test -f app/dist-teste/index.html || { echo "rode 'make app-front' antes" >&2; exit 1; }
+	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+	PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/node" dev/tests/credentials_totp.mjs
+	PW_PYTHONPATH="$(PW_PYTHONPATH)" $(PYTHON) dev/tests/totp_detail.py target/debug/ward-test-bridge app/dist-teste

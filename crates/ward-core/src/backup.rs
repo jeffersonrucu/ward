@@ -1,44 +1,46 @@
-//! Backup local automático (R27, D17, D27; Fase 45).
+//! Automatic local backup (R27, D17, D27; Phase 45).
 //!
-//! - A cada gravação do cofre que deu certo, a **mesma versão selada** (os bytes
-//!   cifrados que acabaram de ir para o cofre) vai para a pasta de backups como
-//!   `ward-AAAAMMDD-HHMMSS.ward`: mesmo formato, cifrado com a senha mestra daquela
-//!   versão. Nenhum byte em claro passa por aqui (S2), e nada é selado de novo: o backup
-//!   não queima nem repete geração (D53).
-//! - Data e hora em **UTC** (o núcleo não tem fuso horário; a interface mostra no fuso
-//!   local). Duas versões no mesmo segundo ganham sufixo: `ward-AAAAMMDD-HHMMSS-1.ward`
-//!   até `-99`, nessa ordem.
-//! - Gravação atômica pelo caminho interno de [`crate::gravacao`] (D27): temporário
-//!   `O_EXCL` 0600 → fsync → `link(2)` para o nome final, que **nunca sobrescreve** →
-//!   fsync do diretório. Uma gravação interrompida em qualquer ponto não mexe nos
-//!   backups que já estavam lá (S7, V7.3); o temporário que sobrar é cifrado e é
-//!   apagado no começo da gravação seguinte.
-//! - Mantém [`VERSOES`] versões: depois de gravar, apaga as de geração mais antiga,
-//!   nunca a que acabou de gravar, e só arquivos comuns com o nome exato.
-//! - **Só o que confere conta e sai** (Fase 54c): a rotação lê cada versão e confere a
-//!   geração selada pela chave do cofre aberto ([`para_apagar_conferidas`]). Ficam as
-//!   [`VERSOES`] gerações mais altas, cada uma contada uma vez; lixo com nome de versão,
-//!   versão de outro cofre, cópia de uma versão real com nome novo e versão de antes de
-//!   uma troca de senha mestra (outra chave) não ocupam lugar das reais. O que não
-//!   confere nunca é apagado pela rotação: só o usuário apaga.
-//! - **Data do nome não é confiável** (Fase 49a): qualquer processo do usuário pode pôr
-//!   na pasta um arquivo com nome de data futura. A rotação só conta e só apaga versões
-//!   com data **até o segundo da versão que acabou de gravar**: uma versão com
-//!   data passada nunca é apagada para manter uma futura, e as futuras não são contadas
-//!   nem apagadas. A lista para o restaurar ([`PastaBackup::listar_ate`]) ignora as
-//!   versões com data depois de agora + [`MARGEM_FUTURO`], e o daemon confere a geração
-//!   selada de cada versão ([`geracao_selada`], pela chave do cofre aberto) e marca as
-//!   que estão fora de ordem ([`fora_de_ordem`]); a geração em si não sai do daemon.
-//! - A pasta tem de ser um diretório do próprio usuário, sem nenhuma permissão para
-//!   grupo e outros (0700). O daemon a abre com `O_NOFOLLOW | O_DIRECTORY` e passa o
-//!   caminho pelo fd (`/proc/self/fd/<n>`): trocar a pasta por um link simbólico, ou por
-//!   outro diretório no meio da operação, não desvia nada (V7.x, "diretório trocado por
-//!   link").
+//! - On every vault write that succeeded, the **same sealed version** (the encrypted
+//!   bytes that just went to the vault) goes to the backups directory as
+//!   `ward-YYYYMMDD-HHMMSS.ward`: same format, encrypted with the master password of that
+//!   version. No plaintext byte passes through here (S2), and nothing is sealed again:
+//!   the backup neither burns nor repeats a generation (D53).
+//! - Date and time in **UTC** (the core has no time zone; the interface shows them in the
+//!   local time zone). Two versions in the same second get a suffix:
+//!   `ward-YYYYMMDD-HHMMSS-1.ward` up to `-99`, in that order.
+//! - Atomic write through the internal path of [`crate::atomic_write`] (D27): temp file
+//!   `O_EXCL` 0600 → fsync → `link(2)` to the final name, which **never overwrites** →
+//!   directory fsync. A write interrupted at any point does not touch the backups that
+//!   were already there (S7, V7.3); the temp file left behind is encrypted and is deleted
+//!   at the start of the next write.
+//! - Keeps [`VERSIONS`] versions: after writing, deletes those of the oldest generation,
+//!   never the one just written, and only regular files with the exact name.
+//! - **Only what verifies counts and leaves** (Phase 54c): the rotation reads each
+//!   version and verifies the sealed generation with the key of the open vault
+//!   ([`to_delete_verified`]). The [`VERSIONS`] highest generations stay, each one
+//!   counted once; junk with a version name, a version from another vault, a copy of a
+//!   real version under a new name and a version from before a master password change
+//!   (another key) do not take the place of the real ones. What does not verify is never
+//!   deleted by the rotation: only the user deletes it.
+//! - **The date in the name is not trusted** (Phase 49a): any process of the user can put
+//!   in the directory a file named with a future date. The rotation only counts and only
+//!   deletes versions dated **up to the second of the version just written**: a version
+//!   with a past date is never deleted to keep a future one, and the future ones are
+//!   neither counted nor deleted. The list for the restore ([`BackupDir::list_until`])
+//!   ignores the versions dated after now + [`FUTURE_MARGIN`], and the daemon verifies the
+//!   sealed generation of each version ([`sealed_generation`], with the key of the open
+//!   vault) and marks those that are out of order ([`out_of_order`]); the generation
+//!   itself does not leave the daemon.
+//! - The directory must be a directory of the user, with no permission for group and
+//!   others (0700). The daemon opens it with `O_NOFOLLOW | O_DIRECTORY` and passes the
+//!   path through the fd (`/proc/self/fd/<n>`): swapping the directory for a symbolic
+//!   link, or for another directory in the middle of the operation, diverts nothing
+//!   (V7.x, "directory swapped for a link").
 //!
-//! Restaurar é do daemon, só pelo papel app (D17, D39, V7.8): abre a versão com a
-//! senha dela ([`crate::corpo::abrir_entradas_lida`] sem geração mínima), guarda o cofre
-//! atual como backup ([`guardar_atual`]) e sela a versão de novo com geração = maior
-//! queimada + 1 pela gravação normal.
+//! Restoring belongs to the daemon, only through the app role (D17, D39, V7.8): it opens
+//! the version with its password ([`crate::body::open_entries_with_generation`] with no
+//! minimum generation), keeps the current vault as a backup ([`keep_current`]) and seals
+//! the version again with generation = highest burned + 1 through the normal write.
 
 use std::ffi::OsString;
 use std::fmt;
@@ -48,122 +50,122 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::formato::CofreAberto;
-use crate::gravacao::{self, ErroGravacao, Ponto};
+use crate::atomic_write::{self, Point, WriteError};
+use crate::format::OpenVault;
 
-/// Quantas versões ficam na pasta (D17).
-pub const VERSOES: usize = 30;
-/// Maior sufixo para versões no mesmo segundo.
-pub const MAX_SUFIXO: u32 = 99;
-/// Base do nome dos temporários na pasta (`.backup.ward-tmp-<hex>`).
-const BASE_TEMPORARIO: &str = "backup";
-/// Tamanho do maior nome válido: `ward-AAAAMMDD-HHMMSS-NN.ward`.
-pub const MAX_NOME: usize = 28;
-/// Folga para o relógio (Fase 49a): uma versão com data até agora + esta margem ainda
-/// aparece na lista do restaurar (um ajuste pequeno do relógio para trás não esconde a
-/// gravação mais nova). Depois disso, a versão é ignorada até o relógio chegar lá.
-pub const MARGEM_FUTURO: Duration = Duration::from_secs(5 * 60);
+/// How many versions stay in the directory (D17).
+pub const VERSIONS: usize = 30;
+/// Highest suffix for versions in the same second.
+pub const MAX_SUFFIX: u32 = 99;
+/// Base of the temp file names in the directory (`.backup.ward-tmp-<hex>`).
+const TEMP_BASE: &str = "backup";
+/// Length of the longest valid name: `ward-YYYYMMDD-HHMMSS-NN.ward`.
+pub const MAX_NAME: usize = 28;
+/// Slack for the clock (Phase 49a): a version dated up to now + this margin still shows
+/// in the restore list (a small backwards adjustment of the clock does not hide the
+/// newest write). Beyond that, the version is ignored until the clock gets there.
+pub const FUTURE_MARGIN: Duration = Duration::from_secs(5 * 60);
 
-/// Uma versão de backup, identificada pelo nome do arquivo. A ordem é a do tempo:
-/// data, hora e sufixo.
+/// A backup version, identified by the file name. The order is the order of time: date,
+/// time and suffix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Versao {
-    /// AAAAMMDD.
-    data: u32,
+pub struct Version {
+    /// YYYYMMDD.
+    date: u32,
     /// HHMMSS.
-    hora: u32,
-    /// 0 = sem sufixo.
-    sufixo: u32,
+    time: u32,
+    /// 0 = no suffix.
+    suffix: u32,
 }
 
-impl Versao {
-    /// A versão de um instante (UTC), sem sufixo. `None` antes de 1970 ou depois de
+impl Version {
+    /// The version of an instant (UTC), with no suffix. `None` before 1970 or after
     /// 9999.
-    pub fn do_instante(t: SystemTime) -> Option<Self> {
+    pub fn from_instant(t: SystemTime) -> Option<Self> {
         let s = t.duration_since(UNIX_EPOCH).ok()?.as_secs();
-        let dias = i64::try_from(s / 86_400).ok()?;
-        let resto = s % 86_400;
-        let (a, m, d) = civil_de_dias(dias);
-        if !(1970..=9999).contains(&a) {
+        let days = i64::try_from(s / 86_400).ok()?;
+        let rest = s % 86_400;
+        let (y, m, d) = civil_from_days(days);
+        if !(1970..=9999).contains(&y) {
             return None;
         }
-        let data = u32::try_from(a * 10_000 + m * 100 + d).ok()?;
-        let hora =
-            u32::try_from((resto / 3600) * 10_000 + (resto % 3600 / 60) * 100 + resto % 60).ok()?;
+        let date = u32::try_from(y * 10_000 + m * 100 + d).ok()?;
+        let time =
+            u32::try_from((rest / 3600) * 10_000 + (rest % 3600 / 60) * 100 + rest % 60).ok()?;
         Some(Self {
-            data,
-            hora,
-            sufixo: 0,
+            date,
+            time,
+            suffix: 0,
         })
     }
 
-    /// Lê o nome do arquivo, estrito: `ward-AAAAMMDD-HHMMSS.ward` ou com `-N` (1 a 99,
-    /// sem zero à esquerda) antes do `.ward`; data e hora possíveis. Qualquer outra coisa
-    /// (barra, `..`, espaço, maiúscula) é `None`.
-    pub fn de_nome(nome: &str) -> Option<Self> {
-        if nome.len() > MAX_NOME || !nome.is_ascii() {
+    /// Reads the file name, strictly: `ward-YYYYMMDD-HHMMSS.ward` or with `-N` (1 to 99,
+    /// no leading zero) before the `.ward`; a possible date and time. Anything else
+    /// (slash, `..`, space, uppercase) is `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        if name.len() > MAX_NAME || !name.is_ascii() {
             return None;
         }
-        let miolo = nome.strip_prefix("ward-")?.strip_suffix(".ward")?;
-        let b = miolo.as_bytes();
+        let core = name.strip_prefix("ward-")?.strip_suffix(".ward")?;
+        let b = core.as_bytes();
         if b.len() < 15 || b[8] != b'-' {
             return None;
         }
-        let data = digitos(&b[..8])?;
-        let hora = digitos(&b[9..15])?;
-        let sufixo = match &b[15..] {
+        let date = digits(&b[..8])?;
+        let time = digits(&b[9..15])?;
+        let suffix = match &b[15..] {
             [] => 0,
-            [b'-', resto @ ..] if !resto.is_empty() && resto.len() <= 2 && resto[0] != b'0' => {
-                digitos(resto)?
+            [b'-', rest @ ..] if !rest.is_empty() && rest.len() <= 2 && rest[0] != b'0' => {
+                digits(rest)?
             }
             _ => return None,
         };
-        let v = Self { data, hora, sufixo };
-        v.possivel().then_some(v)
+        let v = Self { date, time, suffix };
+        v.is_possible().then_some(v)
     }
 
-    /// Nome do arquivo.
-    pub fn nome(&self) -> String {
-        if self.sufixo == 0 {
-            format!("ward-{:08}-{:06}.ward", self.data, self.hora)
+    /// File name.
+    pub fn name(&self) -> String {
+        if self.suffix == 0 {
+            format!("ward-{:08}-{:06}.ward", self.date, self.time)
         } else {
             format!(
                 "ward-{:08}-{:06}-{}.ward",
-                self.data, self.hora, self.sufixo
+                self.date, self.time, self.suffix
             )
         }
     }
 
-    /// A maior versão possível no mesmo segundo de `self` (sufixo [`MAX_SUFIXO`]): o teto
-    /// das versões "até este instante".
-    pub fn fim_do_segundo(self) -> Self {
-        self.com_sufixo(MAX_SUFIXO)
+    /// The highest possible version in the same second as `self` (suffix
+    /// [`MAX_SUFFIX`]): the ceiling of the versions "up to this instant".
+    pub fn end_of_second(self) -> Self {
+        self.with_suffix(MAX_SUFFIX)
     }
 
-    fn com_sufixo(self, sufixo: u32) -> Self {
-        Self { sufixo, ..self }
+    fn with_suffix(self, suffix: u32) -> Self {
+        Self { suffix, ..self }
     }
 
-    fn possivel(&self) -> bool {
-        let (a, m, d) = (self.data / 10_000, self.data / 100 % 100, self.data % 100);
-        let (h, mi, s) = (self.hora / 10_000, self.hora / 100 % 100, self.hora % 100);
-        (1970..=9999).contains(&a)
+    fn is_possible(&self) -> bool {
+        let (y, m, d) = (self.date / 10_000, self.date / 100 % 100, self.date % 100);
+        let (h, mi, s) = (self.time / 10_000, self.time / 100 % 100, self.time % 100);
+        (1970..=9999).contains(&y)
             && (1..=12).contains(&m)
             && (1..=31).contains(&d)
             && h < 24
             && mi < 60
             && s < 60
-            && self.sufixo <= MAX_SUFIXO
+            && self.suffix <= MAX_SUFFIX
     }
 }
 
-impl fmt::Display for Versao {
+impl fmt::Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.nome())
+        f.write_str(&self.name())
     }
 }
 
-fn digitos(b: &[u8]) -> Option<u32> {
+fn digits(b: &[u8]) -> Option<u32> {
     if b.is_empty() || !b.iter().all(u8::is_ascii_digit) {
         return None;
     }
@@ -172,9 +174,9 @@ fn digitos(b: &[u8]) -> Option<u32> {
     })
 }
 
-/// Dias desde 1970-01-01 → (ano, mês, dia) no calendário gregoriano proléptico
-/// (algoritmo `civil_from_days` de Howard Hinnant; só aritmética inteira).
-fn civil_de_dias(z: i64) -> (i64, i64, i64) {
+/// Days since 1970-01-01 → (year, month, day) in the proleptic Gregorian calendar
+/// (Howard Hinnant's `civil_from_days` algorithm; integer arithmetic only).
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);
@@ -183,207 +185,203 @@ fn civil_de_dias(z: i64) -> (i64, i64, i64) {
     let mp = (5 * doy + 2) / 153;
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let a = yoe + era * 400 + i64::from(m <= 2);
-    (a, m, d)
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (y, m, d)
 }
 
-/// Erro do backup. Não carrega caminho nem conteúdo.
+/// Backup error. Carries no path and no content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErroBackup {
-    /// A pasta não é um diretório do próprio usuário com 0700 (ou foi trocada por link).
-    PastaInsegura,
-    /// O arquivo do cofre atual não foi selado por este cofre ([`guardar_atual`]).
-    NaoAutentico,
-    /// O relógio está antes de 1970 ou depois de 9999.
-    Relogio,
-    /// Os 100 nomes do mesmo segundo já existem.
-    NomesEsgotados,
-    /// Falha na gravação atômica (o que estava na pasta continua igual).
-    Gravacao(ErroGravacao),
-    /// Falha de E/S ao listar ou ao apagar versões antigas.
+pub enum BackupError {
+    /// The directory is not a 0700 directory of the user (or was swapped for a link).
+    UnsafeDir,
+    /// The current vault file was not sealed by this vault ([`keep_current`]).
+    NotAuthentic,
+    /// The clock is before 1970 or after 9999.
+    Clock,
+    /// The 100 names of the same second already exist.
+    NamesExhausted,
+    /// The atomic write failed (what was in the directory stays the same).
+    Write(WriteError),
+    /// I/O failure while listing or deleting old versions.
     Io(io::ErrorKind),
 }
 
-impl fmt::Display for ErroBackup {
+impl fmt::Display for BackupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PastaInsegura => {
-                f.write_str("a pasta de backups não é um diretório 0700 do usuário")
-            }
-            Self::NaoAutentico => f.write_str("o arquivo do cofre não é o que o Ward gravou"),
-            Self::Relogio => f.write_str("o relógio do sistema está fora do intervalo"),
-            Self::NomesEsgotados => f.write_str("backups demais no mesmo segundo"),
-            Self::Gravacao(e) => write!(f, "falha ao gravar o backup: {e}"),
+            Self::UnsafeDir => f.write_str("a pasta de backups não é um diretório 0700 do usuário"),
+            Self::NotAuthentic => f.write_str("o arquivo do cofre não é o que o Ward gravou"),
+            Self::Clock => f.write_str("o relógio do sistema está fora do intervalo"),
+            Self::NamesExhausted => f.write_str("backups demais no mesmo segundo"),
+            Self::Write(e) => write!(f, "falha ao gravar o backup: {e}"),
             Self::Io(k) => write!(f, "falha de E/S na pasta de backups ({k})"),
         }
     }
 }
 
-impl std::error::Error for ErroBackup {}
+impl std::error::Error for BackupError {}
 
-/// Como a rotação lê uma versão da pasta para conferir a geração selada (Fase 54c):
-/// `None` se não é um arquivo comum do usuário do tamanho do formato, ou não deu para
-/// ler. O daemon passa um leitor com `O_NOFOLLOW | O_NONBLOCK` ([`PastaBackup::com_leitor`]).
-pub type LerVersao = fn(&Path, u32) -> Option<Vec<u8>>;
+/// How the rotation reads a version of the directory to verify the sealed generation
+/// (Phase 54c): `None` if it is not a regular file of the user with the size of the
+/// format, or could not be read. The daemon passes a reader with
+/// `O_NOFOLLOW | O_NONBLOCK` ([`BackupDir::with_reader`]).
+pub type ReadVersion = fn(&Path, u32) -> Option<Vec<u8>>;
 
-/// A pasta de backups e o uid dono esperado.
+/// The backups directory and the expected owner uid.
 #[derive(Debug, Clone)]
-pub struct PastaBackup {
+pub struct BackupDir {
     dir: PathBuf,
     uid: u32,
-    ler: LerVersao,
+    read: ReadVersion,
 }
 
-impl PastaBackup {
-    /// A pasta em `dir`, de dono `uid`. O daemon passa o caminho pelo fd aberto com
-    /// `O_NOFOLLOW` (`/proc/self/fd/<n>`), então `dir` é seguido aqui: quem garante que
-    /// não é um link simbólico trocado é quem abriu. Mesmo assim, toda operação confere
-    /// que é um diretório do `uid`, sem permissão para grupo e outros.
-    pub fn nova(dir: PathBuf, uid: u32) -> Self {
+impl BackupDir {
+    /// The directory at `dir`, owned by `uid`. The daemon passes the path through the fd
+    /// opened with `O_NOFOLLOW` (`/proc/self/fd/<n>`), so `dir` is followed here: whoever
+    /// opened it guarantees it is not a swapped symbolic link. Even so, every operation
+    /// verifies that it is a directory of `uid`, with no permission for group and others.
+    pub fn new(dir: PathBuf, uid: u32) -> Self {
         Self {
             dir,
             uid,
-            ler: ler_versao_padrao,
+            read: read_version_default,
         }
     }
 
-    /// Troca o leitor das versões da rotação (Fase 54c). O núcleo não tem `libc`; o
-    /// daemon passa um que abre com `O_NOFOLLOW | O_NONBLOCK` (um FIFO trocado no lugar
-    /// de uma versão não prende a gravação).
-    pub fn com_leitor(mut self, ler: LerVersao) -> Self {
-        self.ler = ler;
+    /// Replaces the reader of the rotation's versions (Phase 54c). The core has no
+    /// `libc`; the daemon passes one that opens with `O_NOFOLLOW | O_NONBLOCK` (a FIFO
+    /// swapped in place of a version does not block the write).
+    pub fn with_reader(mut self, read: ReadVersion) -> Self {
+        self.read = read;
         self
     }
 
-    /// Caminho do arquivo de uma versão.
-    pub fn caminho(&self, v: Versao) -> PathBuf {
-        self.dir.join(v.nome())
+    /// Path of the file of a version.
+    pub fn path(&self, v: Version) -> PathBuf {
+        self.dir.join(v.name())
     }
 
-    fn conferir(&self) -> Result<(), ErroBackup> {
+    fn check(&self) -> Result<(), BackupError> {
         let m = fs::metadata(&self.dir).map_err(|e| match e.kind() {
-            io::ErrorKind::NotFound => ErroBackup::PastaInsegura,
-            k => ErroBackup::Io(k),
+            io::ErrorKind::NotFound => BackupError::UnsafeDir,
+            k => BackupError::Io(k),
         })?;
         if !m.is_dir() || m.uid() != self.uid || m.permissions().mode() & 0o077 != 0 {
-            return Err(ErroBackup::PastaInsegura);
+            return Err(BackupError::UnsafeDir);
         }
         Ok(())
     }
 
-    /// As versões na pasta, da mais nova para a mais antiga. Só arquivos comuns (sem
-    /// seguir link simbólico) com o nome exato; o resto é ignorado.
-    pub fn listar(&self) -> Result<Vec<Versao>, ErroBackup> {
-        self.conferir()?;
+    /// The versions in the directory, from the newest to the oldest. Only regular files
+    /// (without following a symbolic link) with the exact name; the rest is ignored.
+    pub fn list(&self) -> Result<Vec<Version>, BackupError> {
+        self.check()?;
         let mut v = Vec::new();
-        for item in fs::read_dir(&self.dir).map_err(|e| ErroBackup::Io(e.kind()))? {
-            let item = item.map_err(|e| ErroBackup::Io(e.kind()))?;
-            let Some(versao) = item.file_name().to_str().and_then(Versao::de_nome) else {
+        for item in fs::read_dir(&self.dir).map_err(|e| BackupError::Io(e.kind()))? {
+            let item = item.map_err(|e| BackupError::Io(e.kind()))?;
+            let Some(version) = item.file_name().to_str().and_then(Version::from_name) else {
                 continue;
             };
-            // `DirEntry::file_type` não segue link simbólico.
+            // `DirEntry::file_type` does not follow a symbolic link.
             if item
                 .file_type()
-                .map_err(|e| ErroBackup::Io(e.kind()))?
+                .map_err(|e| BackupError::Io(e.kind()))?
                 .is_file()
             {
-                v.push(versao);
+                v.push(version);
             }
         }
         v.sort_unstable_by(|a, b| b.cmp(a));
         Ok(v)
     }
 
-    /// As versões da pasta que não estão no futuro: data até `agora` +
-    /// [`MARGEM_FUTURO`] (Fase 49a), da mais nova para a mais antiga. Uma versão plantada
-    /// com data futura não aparece como a mais nova no restaurar nem vai para o pendrive.
-    pub fn listar_ate(&self, agora: SystemTime) -> Result<Vec<Versao>, ErroBackup> {
-        let teto = teto_de(agora)?;
-        let mut v = self.listar()?;
-        v.retain(|x| *x <= teto);
+    /// The versions of the directory that are not in the future: dated up to `now` +
+    /// [`FUTURE_MARGIN`] (Phase 49a), from the newest to the oldest. A version planted
+    /// with a future date does not show as the newest in the restore nor go to the USB
+    /// drive.
+    pub fn list_until(&self, now: SystemTime) -> Result<Vec<Version>, BackupError> {
+        let ceiling = ceiling_of(now)?;
+        let mut v = self.list()?;
+        v.retain(|x| *x <= ceiling);
         Ok(v)
     }
 
-    /// Grava `arquivo` (já selado por `cofre` e com a estrutura conferida) como a
-    /// versão do `instante` e apaga as que passarem de [`VERSOES`] entre as que conferem
-    /// pela chave de `cofre` (Fase 54c, [`para_apagar_conferidas`]).
-    pub(crate) fn guardar(
+    /// Writes `file` (already sealed by `vault` and with the structure verified) as the
+    /// version of `instant` and deletes those beyond [`VERSIONS`] among the ones that
+    /// verify with the key of `vault` (Phase 54c, [`to_delete_verified`]).
+    pub(crate) fn keep(
         &self,
-        arquivo: &[u8],
-        instante: SystemTime,
-        cofre: &CofreAberto,
-    ) -> Result<Versao, ErroBackup> {
-        self.guardar_com_pontos(
-            arquivo,
-            instante,
-            &|b: &[u8]| geracao_selada(cofre, b),
+        file: &[u8],
+        instant: SystemTime,
+        vault: &OpenVault,
+    ) -> Result<Version, BackupError> {
+        self.keep_with_points(
+            file,
+            instant,
+            &|b: &[u8]| sealed_generation(vault, b),
             &mut |_| Ok(()),
         )
     }
 
-    /// [`PastaBackup::guardar`] com a conferência da geração (`geracao`) e os pontos
-    /// da gravação à parte (os testes do V7.3 os trocam).
-    pub(crate) fn guardar_com_pontos(
+    /// [`BackupDir::keep`] with the generation check (`generation`) and the write points
+    /// passed separately (the V7.3 tests replace them).
+    pub(crate) fn keep_with_points(
         &self,
-        arquivo: &[u8],
-        instante: SystemTime,
-        geracao: &dyn Fn(&[u8]) -> Option<u64>,
-        ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
-    ) -> Result<Versao, ErroBackup> {
-        self.conferir()?;
-        let base = Versao::do_instante(instante).ok_or(ErroBackup::Relogio)?;
-        // Temporários de uma gravação interrompida (cifrados), só os da pasta. Antes de
-        // escrever: nunca sobra mais de um. Quem grava é só o daemon, uma vez por vez.
-        let _ = gravacao::limpar_temporarios(&self.dir.join(BASE_TEMPORARIO));
-        let versoes: Vec<Versao> = (0..=MAX_SUFIXO).map(|s| base.com_sufixo(s)).collect();
-        let nomes: Vec<OsString> = versoes.iter().map(|v| v.nome().into()).collect();
-        let (i, _) = gravacao::gravar_novo_com_pontos(
-            &self.dir,
-            BASE_TEMPORARIO.as_ref(),
-            &nomes,
-            arquivo,
-            ponto,
-        )
-        .map_err(|e| match e {
-            ErroGravacao::Io {
-                tipo: io::ErrorKind::AlreadyExists,
-                ..
-            } => ErroBackup::NomesEsgotados,
-            e => ErroBackup::Gravacao(e),
-        })?;
-        let nova = versoes[i];
-        self.rodar(nova, geracao)?;
-        Ok(nova)
+        file: &[u8],
+        instant: SystemTime,
+        generation: &dyn Fn(&[u8]) -> Option<u64>,
+        point: &mut dyn FnMut(Point) -> io::Result<()>,
+    ) -> Result<Version, BackupError> {
+        self.check()?;
+        let base = Version::from_instant(instant).ok_or(BackupError::Clock)?;
+        // Temp files of an interrupted write (encrypted), only those of the directory.
+        // Before writing: never more than one is left. Only the daemon writes, one at a
+        // time.
+        let _ = atomic_write::clean_temp_files(&self.dir.join(TEMP_BASE));
+        let versions: Vec<Version> = (0..=MAX_SUFFIX).map(|s| base.with_suffix(s)).collect();
+        let names: Vec<OsString> = versions.iter().map(|v| v.name().into()).collect();
+        let (i, _) =
+            atomic_write::write_new_with_points(&self.dir, TEMP_BASE.as_ref(), &names, file, point)
+                .map_err(|e| match e {
+                    WriteError::Io {
+                        kind: io::ErrorKind::AlreadyExists,
+                        ..
+                    } => BackupError::NamesExhausted,
+                    e => BackupError::Write(e),
+                })?;
+        let new = versions[i];
+        self.rotate(new, generation)?;
+        Ok(new)
     }
 
-    /// Apaga as versões de geração mais antiga até sobrarem [`VERSOES`] gerações com
-    /// data até o segundo da `nova`, nunca a `nova`, nunca uma com data depois desse
-    /// segundo e nunca uma que não confere pela chave de `cofre`
-    /// ([`para_apagar_conferidas`], Fase 54c). O teto é o fim do segundo (sufixo 99),
-    /// não a `nova`: a rotação pode ter liberado um nome de sufixo menor no mesmo
-    /// segundo, que a `nova` reusa. Só as versões até o teto são lidas e decifradas (o
-    /// conteúdo zera ao sair; só a geração fica).
-    fn rodar(
+    /// Deletes the versions of the oldest generation until [`VERSIONS`] generations dated
+    /// up to the second of `new` are left, never `new`, never one dated after that second
+    /// and never one that does not verify with the key of `vault`
+    /// ([`to_delete_verified`], Phase 54c). The ceiling is the end of the second (suffix
+    /// 99), not `new`: the rotation may have freed a name with a lower suffix in the same
+    /// second, which `new` reuses. Only the versions up to the ceiling are read and
+    /// decrypted (the content is zeroed on drop; only the generation stays).
+    fn rotate(
         &self,
-        nova: Versao,
-        geracao: &dyn Fn(&[u8]) -> Option<u64>,
-    ) -> Result<(), ErroBackup> {
-        let teto = nova.fim_do_segundo();
-        let lista: Vec<(Versao, Option<u64>)> = self
-            .listar()?
+        new: Version,
+        generation: &dyn Fn(&[u8]) -> Option<u64>,
+    ) -> Result<(), BackupError> {
+        let ceiling = new.end_of_second();
+        let list: Vec<(Version, Option<u64>)> = self
+            .list()?
             .into_iter()
-            .filter(|v| *v <= teto)
+            .filter(|v| *v <= ceiling)
             .map(|v| {
-                let g = (self.ler)(&self.caminho(v), self.uid).and_then(|b| geracao(&b));
+                let g = (self.read)(&self.path(v), self.uid).and_then(|b| generation(&b));
                 (v, g)
             })
             .collect();
-        for v in para_apagar_conferidas(&lista, teto, &[nova]) {
-            let caminho = self.caminho(v);
-            // Só arquivo comum: um link posto no lugar não é seguido nem apagado.
-            match fs::symlink_metadata(&caminho) {
+        for v in to_delete_verified(&list, ceiling, &[new]) {
+            let path = self.path(v);
+            // Regular file only: a link put in its place is neither followed nor deleted.
+            match fs::symlink_metadata(&path) {
                 Ok(m) if m.file_type().is_file() => {
-                    fs::remove_file(&caminho).map_err(|e| ErroBackup::Io(e.kind()))?;
+                    fs::remove_file(&path).map_err(|e| BackupError::Io(e.kind()))?;
                 }
                 _ => {}
             }
@@ -392,128 +390,127 @@ impl PastaBackup {
     }
 }
 
-/// O teto das versões aceitas em `agora`: o fim do segundo de agora + [`MARGEM_FUTURO`].
-fn teto_de(agora: SystemTime) -> Result<Versao, ErroBackup> {
-    let t = agora
-        .checked_add(MARGEM_FUTURO)
-        .ok_or(ErroBackup::Relogio)?;
-    Versao::do_instante(t)
-        .map(Versao::fim_do_segundo)
-        .ok_or(ErroBackup::Relogio)
+/// The ceiling of the versions accepted at `now`: the end of the second of now +
+/// [`FUTURE_MARGIN`].
+fn ceiling_of(now: SystemTime) -> Result<Version, BackupError> {
+    let t = now.checked_add(FUTURE_MARGIN).ok_or(BackupError::Clock)?;
+    Version::from_instant(t)
+        .map(Version::end_of_second)
+        .ok_or(BackupError::Clock)
 }
 
-/// A rotação desde a Fase 54c (local e no pendrive): das versões em `lista`, com a
-/// geração selada de cada uma ([`geracao_selada`]; `None` = não confere pela chave do
-/// cofre aberto), quais apagar. **A data do nome não decide nada além do teto**, e o
-/// que não confere nunca conta nem sai:
-/// - contam só as versões com data até o `teto` (Fase 49a) e geração conhecida;
-/// - ficam as [`VERSOES`] **gerações** mais altas (a geração é autenticada pela AEAD e
-///   nunca se repete, D53); cada geração conta uma vez, então cópias de uma versão real
-///   com nomes novos não ocupam lugar;
-/// - saem as versões (originais e cópias) das gerações mais baixas, menos as
-///   `protegidas` (o que acabou de ser gravado ou copiado);
-/// - lixo, versão de outro cofre e versão de antes de uma troca de senha mestra (outra
-///   chave) não contam e não são apagados: só o usuário os apaga.
+/// The rotation since Phase 54c (local and on the USB drive): of the versions in `list`,
+/// with the sealed generation of each one ([`sealed_generation`]; `None` = does not
+/// verify with the key of the open vault), which to delete. **The date in the name decides
+/// nothing beyond the ceiling**, and what does not verify never counts nor leaves:
+/// - only the versions dated up to `ceiling` (Phase 49a) with a known generation count;
+/// - the [`VERSIONS`] highest **generations** stay (the generation is authenticated by
+///   the AEAD and never repeats, D53); each generation counts once, so copies of a real
+///   version under new names take no place;
+/// - the versions (originals and copies) of the lowest generations leave, except the
+///   `protected` ones (what was just written or copied);
+/// - junk, a version from another vault and a version from before a master password
+///   change (another key) neither count nor are deleted: only the user deletes them.
 ///
-/// Um relógio que voltou não apaga nada a mais: a versão nova, com data mais antiga,
-/// tem a geração mais alta. Devolve da geração mais baixa para a mais alta (e, na mesma
-/// geração, da data mais antiga para a mais nova).
-pub fn para_apagar_conferidas(
-    lista: &[(Versao, Option<u64>)],
-    teto: Versao,
-    protegidas: &[Versao],
-) -> Vec<Versao> {
-    let mut conferidas: Vec<(u64, Versao)> = lista
+/// A clock that went back deletes nothing more: the new version, with an older date, has
+/// the highest generation. Returns from the lowest generation to the highest (and, within
+/// the same generation, from the oldest date to the newest).
+pub fn to_delete_verified(
+    list: &[(Version, Option<u64>)],
+    ceiling: Version,
+    protected: &[Version],
+) -> Vec<Version> {
+    let mut verified: Vec<(u64, Version)> = list
         .iter()
-        .filter(|(v, _)| *v <= teto)
+        .filter(|(v, _)| *v <= ceiling)
         .filter_map(|(v, g)| g.map(|g| (g, *v)))
         .collect();
-    conferidas.sort_unstable();
-    conferidas.dedup();
-    let mut geracoes: Vec<u64> = conferidas.iter().map(|(g, _)| *g).collect();
-    geracoes.dedup();
-    let sobra = geracoes.len().saturating_sub(VERSOES);
-    let Some(&ultima_fora) = sobra.checked_sub(1).and_then(|i| geracoes.get(i)) else {
+    verified.sort_unstable();
+    verified.dedup();
+    let mut generations: Vec<u64> = verified.iter().map(|(g, _)| *g).collect();
+    generations.dedup();
+    let excess = generations.len().saturating_sub(VERSIONS);
+    let Some(&last_out) = excess.checked_sub(1).and_then(|i| generations.get(i)) else {
         return Vec::new();
     };
-    conferidas
+    verified
         .into_iter()
-        .filter(|(g, v)| *g <= ultima_fora && !protegidas.contains(v))
+        .filter(|(g, v)| *g <= last_out && !protected.contains(v))
         .map(|(_, v)| v)
         .collect()
 }
 
-/// Lê uma versão para a rotação só com a biblioteca padrão (o padrão de
-/// [`PastaBackup::nova`]; o daemon troca por um com `O_NOFOLLOW | O_NONBLOCK`): arquivo
-/// comum do `uid` (sem seguir link), até o tamanho do formato, e o arquivo aberto tem
-/// de ser o mesmo do `lstat`.
-fn ler_versao_padrao(caminho: &Path, uid: u32) -> Option<Vec<u8>> {
+/// Reads a version for the rotation with the standard library only (the default of
+/// [`BackupDir::new`]; the daemon replaces it with one using `O_NOFOLLOW | O_NONBLOCK`):
+/// a regular file of `uid` (without following a link), up to the size of the format, and
+/// the opened file must be the same as the one from `lstat`.
+fn read_version_default(path: &Path, uid: u32) -> Option<Vec<u8>> {
     use std::io::Read;
-    let limite = (crate::formato::TAM_CABECALHO
-        + crate::formato::MAX_CONTEUDO
-        + crate::cripto::TAM_TAG) as u64;
-    let antes = fs::symlink_metadata(caminho).ok()?;
-    if !antes.file_type().is_file() || antes.uid() != uid || antes.len() > limite {
+    let limit =
+        (crate::format::HEADER_SIZE + crate::format::MAX_CONTENT + crate::crypto::TAG_SIZE) as u64;
+    let before = fs::symlink_metadata(path).ok()?;
+    if !before.file_type().is_file() || before.uid() != uid || before.len() > limit {
         return None;
     }
-    let f = fs::File::open(caminho).ok()?;
+    let f = fs::File::open(path).ok()?;
     let m = f.metadata().ok()?;
-    if !m.file_type().is_file() || m.dev() != antes.dev() || m.ino() != antes.ino() {
+    if !m.file_type().is_file() || m.dev() != before.dev() || m.ino() != before.ino() {
         return None;
     }
     let mut bytes = Vec::new();
-    f.take(limite + 1).read_to_end(&mut bytes).ok()?;
-    (bytes.len() as u64 <= limite).then_some(bytes)
+    f.take(limit + 1).read_to_end(&mut bytes).ok()?;
+    (bytes.len() as u64 <= limit).then_some(bytes)
 }
 
-/// Quais versões estão fora de ordem (Fase 49a): pela data do nome, da mais antiga para
-/// a mais nova, uma versão cuja geração selada é menor que a de alguma versão com data
-/// anterior (uma cópia antiga com nome novo, ou o relógio que andou para trás). Versões
-/// sem geração conhecida (`None`: outra chave) não contam nem saem marcadas. Devolve uma
-/// marca por item, na ordem de `lista`. A geração fica no daemon: só a marca vai ao app
-/// (nenhuma resposta leva a geração, D39).
-pub fn fora_de_ordem(lista: &[(Versao, Option<u64>)]) -> Vec<bool> {
-    let mut ordem: Vec<usize> = (0..lista.len()).collect();
-    ordem.sort_by_key(|&i| lista[i].0);
-    let mut marcas = vec![false; lista.len()];
-    let mut maior: Option<u64> = None;
-    for i in ordem {
-        if let Some(g) = lista[i].1 {
-            marcas[i] = maior.is_some_and(|m| g < m);
-            maior = Some(maior.map_or(g, |m| m.max(g)));
+/// Which versions are out of order (Phase 49a): by the date in the name, from the oldest
+/// to the newest, a version whose sealed generation is lower than that of some version
+/// with an earlier date (an old copy under a new name, or the clock that went backwards).
+/// Versions with no known generation (`None`: another key) neither count nor come out
+/// marked. Returns one mark per item, in the order of `list`. The generation stays in the
+/// daemon: only the mark goes to the app (no response carries the generation, D39).
+pub fn out_of_order(list: &[(Version, Option<u64>)]) -> Vec<bool> {
+    let mut order: Vec<usize> = (0..list.len()).collect();
+    order.sort_by_key(|&i| list[i].0);
+    let mut marks = vec![false; list.len()];
+    let mut highest: Option<u64> = None;
+    for i in order {
+        if let Some(g) = list[i].1 {
+            marks[i] = highest.is_some_and(|m| g < m);
+            highest = Some(highest.map_or(g, |m| m.max(g)));
         }
     }
-    marcas
+    marks
 }
 
-/// A geração selada no corpo de `arquivo` (Fase 49a), se ele foi selado pela chave do
-/// `cofre` aberto: autenticada pela AEAD, então não dá para forjar sem a chave. `None`
-/// quando é de outra chave (outra senha mestra, de antes de uma troca) ou não abre. O
-/// conteúdo decifrado zera ao sair; só o número sai daqui.
-pub fn geracao_selada(cofre: &CofreAberto, arquivo: &[u8]) -> Option<u64> {
-    cofre.geracao_selada(arquivo)
+/// The generation sealed in the body of `file` (Phase 49a), if it was sealed with the key
+/// of the open `vault`: authenticated by the AEAD, so it cannot be forged without the
+/// key. `None` when it is from another key (another master password, from before a
+/// change) or does not open. The decrypted content is zeroed on drop; only the number
+/// leaves here.
+pub fn sealed_generation(vault: &OpenVault, file: &[u8]) -> Option<u64> {
+    vault.sealed_generation(file)
 }
 
-/// Guarda o arquivo do cofre atual como backup antes de restaurar outra versão (D17).
-/// Só se `arquivo` foi selado por `cofre` (mesma chave de dados, corpo autêntico): o
-/// daemon passa o que leu do caminho do cofre, com a identidade conferida, e o cofre
-/// aberto que tem na memória.
-pub fn guardar_atual(
-    pasta: &PastaBackup,
-    cofre: &CofreAberto,
-    arquivo: &[u8],
-    instante: SystemTime,
-) -> Result<Versao, ErroBackup> {
-    if !cofre.autentica(arquivo) {
-        return Err(ErroBackup::NaoAutentico);
+/// Keeps the file of the current vault as a backup before restoring another version
+/// (D17). Only if `file` was sealed by `vault` (same data key, authentic body): the daemon
+/// passes what it read from the vault path, with the identity verified, and the open
+/// vault it has in memory.
+pub fn keep_current(
+    dir: &BackupDir,
+    vault: &OpenVault,
+    file: &[u8],
+    instant: SystemTime,
+) -> Result<Version, BackupError> {
+    if !vault.authenticates(file) {
+        return Err(BackupError::NotAuthentic);
     }
-    pasta.guardar(arquivo, instante, cofre)
+    dir.keep(file, instant, vault)
 }
 
-/// O nome de uma versão é válido? (Para o protocolo conferir o pedido.)
-pub fn nome_valido(nome: &str) -> bool {
-    Versao::de_nome(nome).is_some()
+/// Is the name of a version valid? (For the protocol to check the request.)
+pub fn valid_name(name: &str) -> bool {
+    Version::from_name(name).is_some()
 }
 
 #[cfg(test)]
-mod testes;
+mod tests;

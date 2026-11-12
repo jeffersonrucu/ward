@@ -8,8 +8,8 @@ import '@fontsource/inter/latin-ext-600.css';
 import '@fontsource/inter/latin-ext-700.css';
 import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-700.css';
-import './lib/estilo/tokens.css';
-import './lib/estilo/base.css';
+import './lib/style/tokens.css';
+import './lib/style/base.css';
 import { mount } from 'svelte';
 import App from './App.svelte';
 

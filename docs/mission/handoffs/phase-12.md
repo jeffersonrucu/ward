@@ -1,201 +1,177 @@
-# Fase 12 — Serviços de teste (`dev/compose.yml`), `make dev-servicos` e fixtures
+# Fase 12 — `ward-core`: `entry`, `entry/secret`, `entry/validation` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- `dev/compose.yml` (projeto `ward-teste`) com `postgres` (55432), `ssh-senha` (2222),
-  `ssh-chave` (2223), `ssh-salto` (2224), `ssh-interno` (sem porta), `mariadb`,
-  `wordpress` (8081), `wpcli` (serviço que roda uma vez: instala o WordPress e cria
-  `wp_admin`/`wp_editor`), `phish` (8082), `totp` (8083), `redir` (8084).
-- SSH: uma imagem (`dev/servicos/ssh/`, alpine fixado por digest) com o modo em
-  `WARD_MODO`:
-  - `senha`: `deploy` por senha, com túnel só até `postgres:5432` (`PermitOpen`, para
-    V4.29). `sftpuser` só sftp (`ForceCommand internal-sftp`, chroot, sem túnel, sem tty).
-  - `chave`: `deploy` só por chave (`AuthenticationMethods publickey`).
-  - `salto`: `salto` por senha; encaminha só até `ssh-interno:22`.
-  - `interno`: `deploy` só por chave, só na rede `interno`.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard a8dde4c`.
+  No meio da fase, a pedido do orchestrator, `git merge 118d248` (fast-forward; a Fase 43
+  moveu o exemplo para `crates/ward-core/examples/dev-vault/{main,tests}.rs`), e os
+  renomes desta fase foram aplicados também nesses arquivos.
+- **Arquivos** (glossário seção 4): `src/entrada.rs` → `entry.rs`,
+  `entrada/segredo.rs` → `entry/secret.rs`, `entrada/validacao.rs` →
+  `entry/validation.rs`; `entrada/testes.rs` → `entry/tests.rs` (só `git mv` e os usos dos
+  nomes desta fase; a tradução do arquivo é da Fase 13). `lib.rs`: `pub mod entry`.
+- **Comentários, locais, parâmetros e privados** dos 3 arquivos em inglês.
+- **Renomes públicos e `pub(crate)`** (antigo → novo), com todos os usos no repositório:
+  - `Segredo` → `Secret` (`de_texto`/`de_bytes`/`expor`/`expor_texto` → `from_text`/
+    `from_bytes`/`expose`/`expose_text`).
+  - `Ambiente` → `Environment`; `NivelAcesso` → `AccessLevel` (`Bloqueado`/`ComAprovacao`/
+    `Livre` → `Blocked`/`Approval`/`Free`, `mais_restritivo` → `most_restrictive`);
+    `TipoEntrada` → `EntryType` (`Banco`/`Servidor`/`NotaSegura`/`Generico` → `Database`/
+    `Server`/`SecureNote`/`Generic`); `Motor` → `Engine`; `SegurancaSmtp` →
+    `SmtpSecurity` (`Nenhuma` → `None`); `Protocolo` → `Protocol`. Em todos: `TODOS`/`TODAS`
+    → `ALL`, `nome`/`de_nome`/`rotulo`/`porta_padrao` → `name`/`from_name`/`label`/
+    `default_port`.
+  - `Autenticacao { Senha, Chave { chave_privada, passphrase } }` → `Auth { Password, Key {
+    private_key, passphrase } }`; structs `Login`, `Banco` → `Database`, `Servidor` →
+    `Server`, `Api`, `Aws`, `Smtp`, `FtpSftp`, `NotaSegura` → `SecureNote` com os campos
+    `usuario`/`senha`/`totp_semente`/`motor`/`porta`/`base`/`tunel`/`autenticacao`/`salto`/
+    `variavel`/`regiao`/`seguranca`/`protocolo`/`texto` → `username`/`password`/`totp_seed`/
+    `engine`/`port`/`db_name`/`tunnel`/`auth`/`jump`/`variable`/`region`/`security`/
+    `protocol`/`text`.
+  - `Dados` → `Data` (`tipo()` → `kind()`); `ValorExtra { Texto, Segredo }` → `ExtraValue {
+    Text, Secret }`; `CampoExtra` → `ExtraField` (`nome`/`valor`/`e_segredo` → `name`/
+    `value`/`is_secret`); `Anexo` → `Attachment` (`conteudo` → `content`);
+    `OrigemSegredo { Campo, Extra, Anexo }` → `SecretOrigin { Field, Extra, Attachment }`;
+    `SegredoDaEntrada { origem, valor }` → `EntrySecret { origin, value }`; `Datas {
+    criada_em, alterada_em }` → `Dates { created_at, modified_at }` (`NENHUMA`, `instante`,
+    `de_partes`, `carimbo_novo`, `alterado` → `NONE`, `instant`, `from_parts`, `new_stamp`,
+    `modified`).
+  - `Entrada` → `Entry`: `nome`, `grupo`, `ambiente`, `projeto`, `tags`, `nivel`,
+    `definir_nivel`, `datas`, `definir_datas`, `tipo`, `dados`, `extras`, `anexos`,
+    `segredos`, `substituir_por`, `referencia`, `conferir_no_cofre` → `name`, `group`,
+    `environment`, `project`, `tags`, `level`, `set_level`, `dates`, `set_dates`, `kind`,
+    `data`, `extras`, `attachments`, `secrets`, `replace_with`, `reference`,
+    `verify_in_vault`.
+  - `validation`: `ErroValidacao { campo, posicao, motivo }` → `ValidationError { field,
+    position, reason }`; `ErrosValidacao` → `ValidationErrors` (`lista`/`tem`/`tem_motivo`
+    → `list`/`has`/`has_reason`); `Rascunho { nome, grupo, ambiente, projeto, tags, dados,
+    extras, anexos }` → `Draft { name, group, environment, project, tags, data, extras,
+    attachments }` (`validar` → `validate`); `RascunhoDados` → `DataDraft` (mesmos
+    variantes e campos do `Data`, mais `chave_privada` → `private_key`); `RascunhoExtra {
+    nome, valor, segredo }` → `ExtraDraft { name, value, secret }`; `RascunhoAnexo { nome,
+    conteudo }` → `AttachmentDraft { name, content }`; `GRANDE_PARA_MASCARA` →
+    `TOO_LARGE_FOR_MASK`; `nome_variavel` → `variable_name`; `origem_da_url` →
+    `url_origin`; `origem_local_da_url` → `local_url_origin`; `url_valida` → `valid_url`;
+    `separar_host_porta` → `split_host_port`; `VARIAVEIS_COMUNS` → `COMMON_VARIABLES`;
+    `variaveis_do_tipo`/`anexos_do_tipo` → `type_variables`/`type_attachments`. Privados:
+    `Coletor` → `Collector`, constantes de mensagem (`OBRIGATORIO` → `REQUIRED`…),
+    predicados `*_valido(a)` → `valid_*`, `motivo_linha`/`motivo_segredo` →
+    `line_reason`/`secret_reason`, `caractere_de_exibicao` → `display_character`,
+    `host_local` → `local_host`, `chave_parece_privada` → `looks_like_private_key`.
+- **Usos ajustados** (só os nomes desta fase; 71 arquivos): `ward-core` (corpo e testes,
+  `cofre_teste`, entrega e testes, mascara e testes, protocolo `campos`/`erros`/`pedido`/
+  `resposta`/`testes`, `origin`, `generator`, `totp`, `atomic_write`, `limits/tests`,
+  `backup/testes`, `wire_v1.rs`, `tests/corpo_memoria.rs`, `examples/dev-vault`), `wardd`
+  (src e testes), `ward`, `ward-nm/src/testes.rs` e `app/core`. Feito pelo compilador: um
+  script (scratchpad, não versionado) lê os diagnósticos JSON do `cargo check` e troca o
+  identificador só no span de cada erro causado pelo rename (tipo novo citado na
+  mensagem); campo abreviado vira `novo: antigo`, para manter o nome do local. Os
+  `redundant_field_names` que isso gerou no `dev-vault` (locais já em inglês pela Fase 43)
+  e no `limits/tests.rs` voltaram à forma abreviada. Links de doc (`[`…`]`) para os nomes
+  desta fase em `corpo.rs`, `protocolo/{erros,pedido,campos,resposta}.rs`,
+  `corpo/testes.rs`, `entrega.rs`, `wardd/src/{uso,nucleo}.rs` acompanharam.
+- **Homônimos que não mudaram**: o `Segredo` do `app/core/src/segredo.rs` (e o `Debug`
+  `"Segredo(••••)"` dele), o `Motor` do `wardd/src/aprovacao.rs`, o `ValorExtra` do
+  `app/core/src/formulario.rs`, os `Anexo` de `wardd/src/playwright.rs` e
+  `app/core/src/credenciais.rs`, `Resposta::Segredo`/`TipoResposta::Segredo`,
+  `CampoRascunho::Segredo` (Fase 17), `TipoEntradaPadrao` (Fase 17).
+- **Glossário**: parágrafo "Fase 12" na seção 15.
+- **Exceções**: 11 linhas em `frozen.txt` (seção "Phase 12"): os nomes gravados
+  `bloqueado`/`com-aprovacao`/`livre` citados no doc de `AccessLevel::name` (Fase 48) e as
+  variáveis entregues `WARD_AMBIENTE`, `WARD_PROTOCOLO`, `WARD_ARQUIVO_*`, `WARD_ENTRADA`,
+  `WARD_GRUPO`, `WARD_ARQUIVO_CHAVE` citadas nos comentários (Fase 53). Nenhuma em
+  `allow.txt`.
 
-  Em todos: `PermitRootLogin no`, `AllowUsers`, sem agent/X11/tunnel. As chaves
-  autorizadas ficam em `/etc/ssh/autorizadas/%u`, fora da home.
-- `phish`/`totp`/`redir`: um script Python só com a biblioteca padrão
-  (`dev/servicos/web/servidor.py`). Roda como nobody, com raiz somente leitura.
-  - `phish` imita a tela de login do WordPress (`log`/`pwd`, ids `user_login`/
-    `user_pass`) e grava todo POST, em JSON por linha, em `/registro/posts.log` (0600,
-    em tmpfs).
-  - `totp` tem `/login` (usuário, senha e código `autocomplete=one-time-code`) e
-    `/cadastro` (conta nova em memória, até 100 contas).
-  - `redir` manda tudo (GET e POST) com 302 para `http://localhost:8082/wp-login.php`.
-- `make dev-servicos` (`dev/servicos/gerar.py`) gera `.dev/servicos/` (0700):
-  - senhas das contas tiradas das fixtures;
-  - senhas internas da MariaDB aleatórias (`secrets`);
-  - chave ed25519 do `deploy` com a passphrase de D15, digitada por um pty e não por
-    argv;
-  - chaves de host estáveis de cada SSH;
-  - `known_hosts` próprio;
-  - HOME falso dos clientes.
-
-  É idempotente. `--trocar-chave-host <servico>` existe para V4.28.
-- `dev/fixtures/entradas.json`: as 20 entradas da tabela D15 (senha mestra, PIN,
-  `campos` não secretos, `segredos`, extras, anexos), mais
-  `dev/fixtures/anexos/gama-generico/app.env`. É a fonte única: a Fase 19 deve montar
-  o cofre a partir delas.
-- `dev/servicos/conferir.sh` (`make dev-servicos-conferir`) confere todo o V1.4 (13
-  checagens). `dev/servicos/comum.sh` tem os clientes de teste isolados:
-  - `env -i` com HOME falso;
-  - `ssh -F /dev/null` com `.dev/servicos/known_hosts`, `StrictHostKeyChecking=yes`,
-    `IdentityAgent=none`, `IdentitiesOnly`;
-  - senha e passphrase por `sshpass -f <arquivo>`;
-  - `psql` da imagem do postgres com `-e PGPASSWORD` sem valor.
-- Makefile: `dev-servicos`, `dev-servicos-subir`, `dev-servicos-parar` (`down -v`),
-  `dev-servicos-conferir`, `dev-servicos-trocar-chave-host SERVICO=…` e
-  `teste-ataques-servicos`. `CLAUDE.md` › "Comandos" atualizado (comandos e resumo dos
-  serviços).
+## Literais alterados (PRD regra 5)
+- `entry/secret.rs`: `Debug` `"Segredo(••••)"` → `"Secret(••••)"` (o valor continua
+  `••••`); o teste `entry/tests.rs` que confere esse `Debug` acompanha.
+- `entry/validation.rs`: `Debug` manuais `debug_struct("RascunhoExtra")` → `"ExtraDraft"`
+  (campos `"nome"`, `"valor"`, `"segredo"` → `"name"`, `"value"`, `"secret"`),
+  `"RascunhoAnexo"` → `"AttachmentDraft"` (`"nome"`, `"conteudo"` → `"name"`,
+  `"content"`), `"RascunhoDados({})"` → `"DataDraft({})"`, `debug_struct("Rascunho")` →
+  `"Draft"` com o campo `"tipo"` → `"kind"`. Nenhum script nem teste procura esses textos.
+  O `{}` do `DataDraft` continua o `name()` do tipo (nome gravado).
+- **Ficaram**: todos os literais de `name()` (nomes gravados no cofre: `banco`,
+  `servidor`, `nota-segura`, `generico`, `bloqueado`, `com-aprovacao`, `livre`, `nenhuma`…,
+  Fase 48) e de `label()` (texto exibido); todas as mensagens de validação pt-BR (só os
+  nomes das constantes mudaram); os rótulos de campo das mensagens (`"nome"`, `"usuário"`,
+  `"porta"`, `"túnel SSH"`…) e de `SecretOrigin::Field` (`"senha"`, `"chave privada"`…);
+  `"entrada inválida: "`; os sufixos `WARD_*` (`"PROTOCOLO"`, `"ENTRADA"`, `"ARQUIVO"`,
+  `"CHAVE"`…).
+- **Fora dos 3 arquivos**: nenhum literal mudou (conferido por multiconjunto de literais
+  entre linhas removidas e adicionadas do `git diff`, por arquivo: zero diferença), exceto
+  a expectativa do `Debug` acima.
+- **Debug derivado**: os `#[derive(Debug)]` de `Entry`, `Data`, `AccessLevel` etc. agora
+  imprimem os nomes ingleses; procurei `ComAprovacao`, `NotaSegura`, `TipoEntrada`,
+  `NivelAcesso` etc. em scripts e testes: nenhum uso (só `strings-0.1.4.txt`, que o V6.3
+  deve aceitar, como nas Fases 8–11). Nenhum `{:?}` desses tipos vai para texto exibido.
 
 ## Segurança
-- Invariantes tocadas:
-  - **S15**: as fixtures só têm valores de D15. O `make check` passa com a allowlist
-    atual, sem valor novo. As senhas internas aleatórias e as chaves ficam só em
-    `.dev/` (ignorado; teste abaixo).
-  - **S3 (análogo, nos serviços)**: nenhuma senha em argv nem em `environment`. Os
-    segredos entram como arquivos somente leitura em `/run/ward/`, por `*_FILE`, pelo
-    stdin do `chpasswd`, ou pelo `--prompt` do wp-cli com stdin. A passphrase da chave
-    vai por pty.
-  - **S13 (análogo)**: o log de acesso dos sites só mostra método e caminho (sem query
-    nem corpo). Nenhum segredo aparece nos `docker logs` (teste abaixo).
-  - **R19**: nenhum arquivo de `dev/` cita pasta de chaves ou de credenciais do
-    usuário, agente nem config do ssh. Os clientes rodam com HOME falso e `-F /dev/null`.
-    `make teste-ataques-fundacao` (`v1_5`) segue passando com os arquivos novos.
-  - Exposição na rede: todas as portas ficam presas em `127.0.0.1`.
-  - Rede `interno` com `internal: true` + `com.docker.network.bridge.inhibit_ipv4`.
-    Sem essa opção o host alcançava o `ssh-interno` pelo IP do contêiner (ataque
-    abaixo, que pegou isso).
-  - Estado em tmpfs; `no-new-privileges` em todos; imagens fixadas por digest; bind
-    sem `create_host_path`, para que sem `make dev-servicos` o compose falhe em vez
-    de subir com diretório vazio.
-- Testes de ataque: `dev/testes/ataques-servicos.sh` (`make teste-ataques-servicos`,
-  40 checagens, todas barradas, rodado 4 vezes). Funções do script:
-  - `portas_so_loopback`: toda porta publicada é `127.0.0.1:*`, e nenhuma das 8 responde
-    pelo IP de rede da máquina. Uma mutação temporária (`8084:8080` sem IP) foi pega e
-    revertida.
-  - `interno_inalcancavel`: conexão do host ao IP do contêiner `ssh-interno`:22 falha.
-  - `autenticacao`:
-    - 2223 só oferece `publickey` e 2222 só `password`;
-    - a senha do deploy é recusada em 2223;
-    - senha errada é recusada em 2222 e 2224;
-    - `root` é recusado em 2222 e 2224;
-    - a senha de outra conta é recusada.
-  - `sftp_restrito`: o `sftpuser` não executa comando. `sshd -T` mostra
-    `forcecommand internal-sftp`, chroot e `allowtcpforwarding no`. O túnel do
-    `sftpuser` até o postgres é recusado.
-  - `tuneis`: `deploy@2222` abre o canal até `postgres:5432` e não até `ssh-chave:22`.
-    `salto` abre só `ssh-interno:22`, não `postgres:5432`. Prova positiva: resposta do
-    destino pelo canal.
-  - `chave_host`:
-    - host desconhecido é recusado (sem TOFU);
-    - depois de trocar a chave de host do `ssh-senha`, o known_hosts antigo é recusado
-      com "REMOTE HOST IDENTIFICATION HAS CHANGED" (base de V4.28);
-    - o known_hosts novo volta a entrar.
-  - `wordpress`: senha errada e senha de outra conta não dão `wordpress_logged_in`.
-  - `totp`: aceita senha e código certos. Recusa:
-    - código errado, vazio ou de 5 min à frente;
-    - senha errada com código certo;
-    - senha de outra conta;
-    - corpo de 20 KB (413).
-  - `phish`: grava o POST, o `posts.log` é 0600, e o corpo acima do limite não é
-    gravado. No fim o log é esvaziado para V6.3/V6.15. `redir` manda até POST para o
-    8082.
-  - `sem_segredo_exposto`: nenhum valor secreto das fixtures, nem as senhas internas
-    aleatórias, aparece no `docker inspect`, no argv de algum processo dos 11
-    contêineres, nos `docker logs` ou no `docker compose config`.
-  - `permissoes`:
-    - diretórios 0700;
-    - chaves e senhas de SSH 0600;
-    - nada gravável por grupo ou outros;
-    - a chave do deploy não abre sem passphrase;
-    - `.dev/servicos/` é ignorado pelo git.
-  - `sem_arquivos_nao_sobe`: numa cópia sem `.dev/`, o `compose create` falha e não cria
-    `.dev/` vazio.
-- Dependências novas: nenhum crate. Imagens Docker de teste, fixadas por digest:
-  - `alpine:3.22` (base do SSH, com os pacotes `openssh-server` e `openssh-sftp-server`
-    do apk);
-  - `python:3.13-alpine3.22` (sites falsos);
-  - `wordpress:cli-2.12-php8.3` (instalação do WordPress).
-
-  As imagens `postgres:16-alpine`, `mariadb:11.4` e `wordpress:6.8-php8.3-apache`
-  já estavam na máquina. Motivo: são os serviços que V1.4 pede. Ferramentas do host
-  usadas pelos scripts: `docker`, `sshpass`, `ssh`, `ssh-keygen`, `curl`, `python3`
-  (sem `psql` nem `oathtool` no host: o psql vem da imagem e o TOTP do teste é
-  calculado com a biblioteca padrão do Python).
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários):
+  - S8/S13 (`Secret`): zera ao sair (`Drop` + `ZeroizeOnDrop`), sem `Clone`/`PartialEq`/
+    `Hash`/`Deref`, `Debug`/`Display` só `••••`; `ZeroizeOnDrop` de `Entry`, `Data`,
+    `ExtraField`, `Attachment`, `Auth` igual. Erros de validação só com `&'static str`.
+  - S9: `Draft::validate` cria com `AccessLevel::Approval` (o default, antigo
+    `ComAprovacao`); `replace_with` mantém o nível; `set_level` continua só para o daemon.
+    A ordem de `most_restrictive` (Blocked 0 < Approval 1 < Free 2) é a mesma.
+  - Domínio/origem (D9, D41, D55, Fase 44e): `valid_url`, `url_origin`,
+    `local_url_origin`, `local_host`, `valid_url_host`, `split_host_port` com a mesma
+    lógica, só nomes.
+  - Listas de variáveis proibidas (D25, D42) e reservadas (D10) iguais.
+  - A forma dos 3 arquivos foi revista à mão contra os originais (mesmas expressões, mesma
+    ordem; renomes de locais só).
+- **Testes de ataque**: nenhum novo (só rename); os existentes acompanham os nomes. Não
+  rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- `make dev-cofre`/`dev-variacoes`: são da Fase 19. As fixtures já estão no formato
-  para ela ler.
-- Nenhum `ward-*` foi usado: os serviços são só o alvo dos testes dos próximos
-  milestones.
+- `entry/tests.rs`: só o `git mv` e os usos; comentários e nomes do arquivo são da Fase 13.
+- Os 12 achados que sobram no `english-check` são identificadores da Fase 16
+  (`mascara`, `ErroMascara::{GrandeDemais, SemEntrega}`, `custo_da_entrada`).
+- Locais e comentários pt-BR dos outros arquivos que usam os nomes novos ficam para as
+  fases deles (`pedido.rs:351` ainda diz `RascunhoDados::Login` num comentário comum).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `python3 -I -B dev/servicos/gerar.py` (`make dev-servicos`) | 0 |
-| `docker compose -f dev/compose.yml up -d --build` | 0 |
-| `make dev-servicos-parar` + `make dev-servicos-subir` (do zero) | 0 |
-| `make dev-servicos-conferir` (V1.4, 13 checagens) | 0 |
-| `make teste-ataques-servicos` (40 checagens; rodado 4×) | 0 |
-| idem com a mutação `8084:8080` (tem de falhar) | 1 (2 achados, como esperado; revertido) |
-| `make teste-ataques-fundacao` | 0 |
-| `make check` | 0 |
+| `git reset --hard a8dde4c` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `git merge --no-edit 118d248` (pedido do orchestrator; fast-forward) | 0 |
+| script de rename por diagnóstico (`cargo check --workspace --all-targets --all-features --locked --message-format=json`, várias rodadas até 0 erro; logs `.dev/logs/fase12-fix*.log`) | 0 |
+| `cargo fmt --all` / `cargo fmt --all --check` | 0 |
+| `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` (extra; log `fase12-clippy.log`) | 0 |
+| `make compile` (log `fase12-make-compile.log`; inclui o `cargo check` do `app/src-tauri`) | 0 |
+| `python3 -I dev/english_check.py --paths crates/ward-core/src/entry.rs crates/ward-core/src/entry/secret.rs crates/ward-core/src/entry/validation.rs` (log `fase12-english.log`) | 1 (12 achados, todos nomes da Fase 16; 0 problema nas exceções) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **Nenhuma entrada de D15 aponta para `localhost:8083`**, mas V6.7 pede que a extensão
-  preencha usuário, senha e TOTP ali. O serviço `totp` aceita as contas `wp_admin` e
-  `wp_editor` com as senhas e a semente de `acme-wp-*`. Mesmo assim, a origem das
-  entradas é 8081 e a extensão (D9) não vai sugerir nada em 8083. Saídas: acrescentar
-  a D15 uma entrada `login` com URL `http://localhost:8083/login` (e valor novo na
-  allowlist), ou o validador cadastrar uma no teste. Decisão do planner/orchestrator.
-- O `ssh-interno` era alcançável do host pelo IP do contêiner, mesmo com
-  `internal: true`. Foi corrigido com `inhibit_ipv4`, e o ataque cobre o caso.
-  Registro porque o docker deste host (29.9.2) aceita a opção. Num docker antigo sem
-  ela, o teste `interno_inalcancavel` falha (falha fechada).
-- O teste `chave_host` troca de verdade a chave de host do `ssh-senha` (como V4.28
-  pede). Quem guardou a chave antiga em outro known_hosts (o do Ward, no M4) vai ver o
-  aviso, como esperado.
-- Arquivos lidos por usuário não root dentro do contêiner (postgres, mariadb, www-data,
-  nobody) precisam ser 0644. Ficam dentro de `.dev/servicos/segredos/` 0700, que é a
-  barreira para os outros usuários da máquina. Os que só o root do contêiner lê (SSH)
-  ficam 0600. O compose fora do Swarm não tem uid/modo por segredo.
-- O TOTP do serviço `totp` e o do teste são RFC 6238 escritos sobre `hmac`/`hashlib` da
-  biblioteca padrão. É código de serviço de teste, não do Ward. O TOTP do Ward continua
-  na Fase 18 com biblioteca auditada.
-- `docker compose -f dev/compose.yml up -d` sem `make dev-servicos` antes falha de
-  propósito (bind sem `create_host_path`). O `CLAUDE.md` diz para rodar
-  `make dev-servicos` antes ou usar `make dev-servicos-subir`.
-- Os pacotes do apk na imagem SSH não têm versão fixa (só a base é fixada por digest).
-  Para teste é aceitável. Se quiserem build reproduzível, fixar as versões no
-  Dockerfile.
-- O `make check` passou com 0 nesta rodada. Nada nos arquivos de evidência ou no
-  `.gitleaks.toml` atrapalhou, e não mexi em nenhum dos dois.
+- O worktree nasceu em `b4d5e1b`, não em `a8dde4c`; reset com a árvore limpa.
+- **Arquivo da trilha S tocado** (pedido do orchestrator): `crates/ward-core/examples/
+  dev-vault/{main,tests}.rs` (Fase 43), só os usos dos nomes desta fase.
+- **Arquivos compartilhados**: `dev/english-check/frozen.txt` (11 linhas no fim) e
+  `docs/glossario.md` (parágrafo depois do da Fase 11). Nenhum script de `dev/` tocado.
+- `SmtpSecurity::None` é um variante chamado `None`: só aparece qualificado; um
+  `use SmtpSecurity::*` faria sombra ao `Option::None`. Nenhum hoje.
+- `entry/tests.rs` confere o `Debug` do `Secret` (`"Secret(••••)"`); o do `Segredo` do
+  `app/core` continua `"Segredo(••••)"` até a Fase 30.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `dev/compose.yml` | criado |
-| `dev/fixtures/entradas.json` | criado |
-| `dev/fixtures/anexos/gama-generico/app.env` | criado |
-| `dev/servicos/gerar.py` | criado |
-| `dev/servicos/comum.sh` | criado |
-| `dev/servicos/conferir.sh` | criado |
-| `dev/servicos/ssh/Dockerfile` | criado |
-| `dev/servicos/ssh/entrada.sh` | criado |
-| `dev/servicos/web/servidor.py` | criado |
-| `dev/servicos/wordpress/instalar.sh` | criado |
-| `dev/testes/ataques-servicos.sh` | criado |
-| `Makefile` | alterado (alvos de serviços; `dev-servicos` deixou de ser stub) |
-| `CLAUDE.md` | alterado ("Comandos": serviços de teste) |
+| `crates/ward-core/src/entry.rs`, `entry/secret.rs`, `entry/validation.rs` (eram `entrada.rs`, `entrada/segredo.rs`, `entrada/validacao.rs`) | renomeado e reescrito |
+| `crates/ward-core/src/entry/tests.rs` (era `entrada/testes.rs`) | renomeado (usos) |
+| `crates/ward-core/src/lib.rs` | alterado |
+| `crates/ward-core/src/{atomic_write,corpo,entrega,generator,mascara,origin,totp,wire_v1}.rs`, `atomic_write/tests.rs`, `backup/testes.rs`, `corpo/{cofre_teste,testes}.rs`, `entrega/testes.rs`, `generator/tests.rs`, `limits/tests.rs`, `mascara/testes.rs`, `totp/tests.rs`, `protocolo/{campos,erros,pedido,resposta,testes}.rs` | alterado (usos) |
+| `crates/ward-core/tests/corpo_memoria.rs`, `crates/ward-core/examples/dev-vault/{main,tests}.rs` | alterado (usos) |
+| `crates/wardd/src/{agente_ssh,cdp,execucao,login,nucleo,playwright,ponte,servidor,ssh,uso}.rs`, `crates/wardd/app-teste/main.rs`, `crates/wardd/aprovador-teste/main.rs`, `crates/wardd/examples/test-client.rs` | alterado (usos) |
+| `crates/wardd/tests/{anexos_edicao,app_valor,aprovacao,backup,datas,extensao,login,nucleo,ssh,valor_app}.rs` | alterado (usos) |
+| `crates/ward/src/{cliente,comandos,testes,texto}.rs`, `crates/ward-nm/src/testes.rs` | alterado (usos) |
+| `app/core/src/{aprovacao,cliente,credenciais,daemon,daemon_falso,destrave,formulario,gerador,nivel,servico,terminal}.rs` | alterado (usos) |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-12.md` | criado |
-| `.dev/servicos/**` | criado por `make dev-servicos` (fora do git) |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): 0
-- [x] Só cofre de teste e credenciais falsas usados (D15 + aleatórias em `.dev/`)
-- [x] Teste de ataque para cada (SEG) tocado (V1.5 segue em `ataques-fundacao`; os
-  ataques dos serviços estão em `ataques-servicos.sh`)
-- [x] (UI/DESIGN) não se aplica
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make compile` (0), `cargo fmt` e `cargo clippy -D warnings` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

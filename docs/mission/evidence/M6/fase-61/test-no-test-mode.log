@@ -1,0 +1,15 @@
+   Compiling aead v0.6.1
+   Compiling poly1305 v0.9.1
+   Compiling blake2 v0.11.0
+   Compiling hmac v0.13.0
+   Compiling sha1 v0.11.0
+   Compiling chacha20 v0.10.2
+   Compiling argon2 v0.6.0
+   Compiling chacha20poly1305 v0.11.0
+   Compiling getrandom v0.4.3
+   Compiling ward-platform v0.2.0 (<repo>/crates/ward-platform)
+   Compiling ward-core v0.2.0 (<repo>/crates/ward-core)
+   Compiling ward-nm v0.2.0 (<repo>/crates/ward-nm)
+    Finished `release` profile [optimized] target(s) in 7.66s
+    Finished `release` profile [optimized] target(s) in 0.02s
+no-test-mode: release sem WARD_DEV_*, sem os nomes de teste (novos e antigos) nem a exceção do app de teste

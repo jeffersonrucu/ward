@@ -1,144 +1,156 @@
-# Fase 36 — Janela de aprovação
+# Fase 36 — (UI) `Form`, `Credentials` e `ChooseType`
 
 ## Implementado
-- **Fila → janela (D65 a).** `FilaAvisos::esperar_aprovacao` (`app/nucleo/src/daemon.rs`) tira só os `Aviso::Aprovacao`, na ordem, e deixa os `Destrave` para a vigia da Fase 31 (`esperar_destrave`). As duas vigias leem a mesma fila sem disputar item.
-- **Núcleo `app/nucleo/src/aprovacao.rs` (novo).**
-  - `Aprovacoes` guarda os pendentes por ordem de chegada. Ignora id repetido, tem limite de 16 (`MAX_AVISOS`), prazo de 120 s contado no app só para mostrar (o daemon é quem expira) e marca o estado `bloqueado`.
-  - `exibir()` passa nome, comando e cada processo da cadeia por `ward_core::exibicao::neutralizar` (D51), mesmo que o daemon já tenha neutralizado. Uma `→` dentro do nome de um processo vira `\u{2192}`, para não imitar o separador.
-  - `vigiar()` roda a thread `ward-app-aprovacao`.
-  - `decisao_de_nome` aceita só `negar`, `uma_vez`, `uma_hora` e `sempre`.
-- **Serviço (`servico.rs`).**
-  - `pedido_de_aprovacao()` devolve o pedido já neutralizado e busca o tipo da entrada pelo detalhe.
-  - `responder_aprovacao(id, decisao, pin)`:
-    - id desconhecido dá `PedidoInvalido` e não chega ao daemon;
-    - Negar vai sem PIN; os três Permitir vão com `Pin`, que zera ao sair;
-    - PIN errado deixa o pedido pendente; no 5º erro (cofre travado), o pedido vira `bloqueado`;
-    - num pedido bloqueado, Permitir dá `Travado` e Negar só o tira da lista.
-  - `negar_aprovacoes_pendentes()` responde ao fechar a janela (S10).
-- **Cliente (`cliente.rs`).** `responder_aprovacao` monta `Pedido::ResponderAprovacao`, recusa quando PIN e decisão não combinam, larga o quadro logo após a troca e mapeia `PinIncorreto`/`Expirado`.
-- **Tauri (`app/src-tauri`).**
-  - Janela `aprovacao`: 560×880, centrada, sempre no topo, focada, tema escuro, sem arrastar arquivo, devtools só com `modo-teste` e navegação só para `tauri://localhost`. A vigia a abre, ou traz para a frente, pela thread principal.
-  - Capability nova `capabilities/aprovacao.json` (só a janela `aprovacao`, `local`) com `allow-ouvir-avisos`, `allow-pedido-de-aprovacao` e `allow-responder-aprovacao`.
-  - Os comandos conferem o rótulo da janela de novo (`na_janela_de_aprovacao`). Quando não há mais pedido, a janela é destruída.
-  - `WindowEvent::Destroyed` da janela tira o canal dela e nega todos os pendentes (S10).
-- **Depois do merge da 31 (pedido do orchestrator): o mesmo `ouvir_avisos`/canal, sem segundo mecanismo.**
-  - O canal virou um por janela (`Canais { principal, aprovacao }`). `ouvir_avisos` guarda o canal pelo rótulo dado pelo Tauri e recusa qualquer outra janela.
-  - `avisar(canais, janela, aviso)` manda só o nome: `pedido-de-destrave` para a principal, `pedido-de-aprovacao` para a de aprovação.
-  - No JS, `ouvirAvisos(aoChegar, aviso)` ganhou o nome do aviso, conferido numa lista fixa (`AVISOS`).
-  - A janela consulta ao abrir, a cada aviso, depois de responder e quando a contagem chega a zero. A contagem anda localmente só para exibição.
-  - Na ponte de teste, que não tem canal, vale a consulta periódica da 31 (`ouvirPorConsulta`).
-- **Interface.**
-  - `app/src/telas/JanelaAprovacao.svelte` e `aprovacao.js` (textos do design) cobrem os 5 estados.
-  - Componentes novos `Contagem`, `CaixaDeCodigo` (texto puro, `direction:ltr; unicode-bidi:isolate`, ligaduras desligadas, quebra em qualquer ponto) e `BotaoIcone`. `Destaque` ganhou os tipos `perigo` e `prod`.
-  - `App.svelte` escolhe a janela pelo rótulo do Tauri ou, no build de teste, por `&tela=aprovacao`.
-  - Foco inicial em Negar; Esc nega; não há atalho de Enter; o X nega. O PIN é limpo a cada envio.
-- **Ponte de teste.**
-  - `--daemon-falso aprovacao | aprovacao-prod | aprovacao-expirando | aprovacao-ataque`, com os pedidos em `daemon_falso::aprovacoes_simuladas`.
-  - O `DaemonFalso` responde `responder_aprovacao` com a regra do `wardd`: id desconhecido dá `Expirado`, o 5º PIN errado trava e nega, `sempre` deixa a entrada livre.
-  - Com o daemon de teste real, a ponte também vigia as aprovações.
-- **QA (Chrome headless, Playwright Python) em `docs/mission/evidence/fase-36/`.** Todas as 54 checagens de `qa.json` passaram, nenhuma falha.
-  - PNGs da janela: `aprovacao-normal`, `-prod`, `-pin-errado`, `-pin-bloqueado`, `-expirando` e `-ataque-d51`.
-  - PNGs dos frames do FigCraft: `figcraft-16701…17035`.
-- `docs/mission/design-nodes.md` ganhou a seção "Fase 36" ligando componentes e frames ao código.
-- **Testes do `app/src-tauri` isolados do daemon de teste do uid (pedido do orchestrator).** O `app_de_teste()` monta o serviço com `sem_daemon()`, só em `#[cfg(test)]`: um `DaemonSocket::sistema_em(<app/src-tauri/target/sem-daemon-<pid>/wardd.sock>)`, num caminho que não existe (conferido por `assert!`). Antes ele usava `DaemonSocket::padrao()`, que no `modo-teste` é o socket compartilhado `/run/user/<uid>/ward-teste/`. O caminho do release e o do `modo-teste` em produção não mudaram. Os testes da ponte usam o `DaemonFalso` e não precisaram de mudança.
+
+Troca 1:1 pelo `docs/glossario.md` (seção 4, mais a tabela nova "Telas `Form`,
+`Credentials` e `ChooseType` (Fase 36)"), sem mudar comportamento nem texto visível em
+pt-BR. Parte de `master` 6c046d4.
+
+- **Arquivos** (`git mv`): `screens/Formulario.svelte` → `Form.svelte`, `formulario.js` →
+  `form.js`, `Credenciais.svelte` → `Credentials.svelte`, `credenciais.js` →
+  `credentials.js`, `EscolherTipo.svelte` → `ChooseType.svelte`. `App.svelte` importa
+  `./screens/Credentials.svelte`.
+- **`form.js`**: exports em inglês (`FORM_TYPES`, `FORM_ENVIRONMENTS`, `AWS_REGIONS`,
+  `SECURITY_OPTIONS`, `ENGINES`, `PROTOCOLS`, `AUTHENTICATIONS`, `EXTRAS_TEXTS`,
+  `ATTACHMENTS_TEXTS`, `TYPE_CARDS`, `databaseAccess`, `defaultPort`, `fieldsOfType`,
+  `fieldVisible`, `readableSize`, `attachmentVariable`, `urlWithPunycode`, `tagsOf`,
+  `newIsEmpty`, `buildForm`, `errorsByField`; `nfc` fica). Definição de campo `{ id,
+  label, kind, options, local, generate, auth, multiline, port, inputMode, help, … }`;
+  `kind` `text/secret/select/totp/note`; select local `authentication` com
+  `password`/`key`; linha TOTP `code`. Chaves de tipo do fio entre aspas (`'banco'`…),
+  como em `types.js`.
+- **`buildForm`** devolve exatamente o mesmo objeto de `salvar_credencial` (chaves do fio
+  entre aspas: `tipo`, `nome`, `grupo`, `ambiente`, `projeto`, `tags`, `campos`,
+  `segredos`, `extras`, `anexos`, `anexos_mantidos`; valores `vazio`/`manter`/`gerada`/
+  `carregada`/`{ novo }`). O estado interno do segredo virou `{ mode, typed, length }`
+  com `saved`/`typing`/`generated`/`loaded`, e o mapa para o fio é o mesmo braço a braço.
+- **`credentials.js`**: `ENVIRONMENTS`, `EMPTY_FILTERS` (`{ group, kind, environment }`),
+  `normalize`, `countEntries`, `activeFilters`, `matchesSearch`, `filterItems`,
+  `groupsOf` (`{ name, color }`), `groupItems` (`{ …, items, count }`), `topSummary`,
+  `filtersSummary`, `LEVELS` (`{ label, icon, explanation }`). Os filtros agora usam o
+  mesmo formato do `FiltersDialog`; a conversão `grupo/tipo/ambiente` da Fase 35 saiu
+  (o `aplicarFiltros` e o `filters={{ … }}` do diálogo ficam com as mesmas chaves).
+- **Telas**: identificadores, props (`Form` `kind`/`detail`/`groups`/`servers`/
+  `oncancel`/`onsaved`; `ChooseType` `onchoose`/`oncancel`; `Credentials` sem o alias
+  `onlocked: ontravado`), modos da tela (`detail`/`choose`/`form`), classes locais e
+  comentários em inglês. Comentários citam os nodes do FigCraft pelo id (regra da Fase
+  35) e não citam nomes de fio em pt-BR (comandos descritos em inglês).
+- **Glossário**: tabela da Fase 36 (exports, campos, valores internos, props, modos, ids
+  e `data-*`).
+
+### Literais alterados (PRD regra 5; todos são nomes)
+
+- Caminhos de import: `./formulario.js` → `./form.js`, `./credenciais.js` →
+  `./credentials.js`, `./Formulario.svelte` → `./Form.svelte`, `./EscolherTipo.svelte` →
+  `./ChooseType.svelte`, `./screens/Credenciais.svelte` → `./screens/Credentials.svelte`.
+- Valores internos (nunca saem da tela): `kind` do campo `texto/segredo/nota` →
+  `text/secret/note`; `auth`/opções do select local `senha`/`chave` → `password`/`key`;
+  id local `autenticacao` → `authentication` (filtrado por `local: true`, não vai no
+  pedido) e `codigo` (linha TOTP, sem valor) → `code`; chaves de opções `regioes`,
+  `segurancas`, `motores`, `protocolos`, `autenticacoes`, `servidores`, `saltos` →
+  `regions`, `security`, `engines`, `protocols`, `authentications`, `servers`, `jumps`;
+  modo do segredo `salvo/digitando/gerada/carregada` → `saved/typing/generated/loaded`;
+  modo da tela `detalhe/escolher/formulario` → `detail/choose/form`.
+- Ids do DOM: `form-nome/tipo/grupo/ambiente/projeto/codigo` →
+  `form-name/kind/group/environment/project/code`; `formulario-credencial` (e o `form=`
+  do botão) → `credential-form`; `aviso-anexo` → `attachment-notice`; `erro-anexos` →
+  `attachments-error`; `secao-acesso/extras/anexos` → `section-access/extras/attachments`;
+  `titulo-credenciais` → `credentials-title`; `busca` → `search`; `campo-<id>` →
+  `field-<id>`; `segredo-<id>` → `secret-<id>`; `grupo-<cor>-<nome>` →
+  `group-<color>-<name>`. `form-texto` virou `form-{c.id}` (o único campo nota tem id
+  `texto`: mesmo valor). `form-<id do fio>` e `extra-<…>` ficam.
+- `data-*` do app: `data-entrada` → `data-entry` (usos em `dev/tests/app_e2e.py` e
+  `revealed_selection.py` ajustados), `data-acao="carregar-chave"` →
+  `data-action="load-key"`, `data-conectado="sim"` → `data-connected="yes"` (ninguém lê
+  esses dois; conferido em `app/`, `dev/`, `extension/`, `crates/`).
+- Classes locais (escopadas pelo Svelte; nenhuma global nem lida fora): `cabecalho` →
+  `header`, `corpo` → `body`, `grade` → `grid`, `rodape` → `footer` etc.
+- Chaves do fio passaram de shorthand a chave entre aspas (`{ entrada, campo }` →
+  `{ 'entrada': …, 'campo': id }`, `formulario` → `'formulario': form`): mesmos bytes.
+- Template strings só mudaram nas variáveis interpoladas; o texto pt-BR é o mesmo.
+
+### Entradas novas de `dev/english-check/frozen.txt` (todas Fase 54)
+
+- `app/src/screens/credentials.js`: `nome`, `tipo`, `grupo`, `ambiente`, `endereco`,
+  `usuario`.
+- `app/src/screens/Credentials.svelte`: `nome`, `tipo`, `ambiente`, `resumo`,
+  `subtitulo`, `campos`, `segredos`, `segredo`, `rotulo`, `valor`, `nivel`, `criada_em`,
+  `alterada_em`, `mensagem`.
+- `app/src/screens/form.js`: `motor`, `protocolo`, `seguranca`, `campo`, `posicao`,
+  `motivo`.
+- `app/src/screens/Form.svelte`: `nome`, `grupo`, `ambiente`, `projeto`, `campos`,
+  `segredos`, `segredo`, `valor`, `anexos`, `tamanho`, `nivel`, `resultado`, `motivo`,
+  `restante`, `codigo`, `salvo`, `erros`, `formulario`, `mensagem`, `motor`,
+  `protocolo`, `regiao`, `tunel`, `salto`, `totp_semente`.
 
 ## Segurança
-- **Invariantes tocadas e como a fase as respeita.**
-  - **S9:** o PIN só vai num `Pin`, que zera e cujo `Deserialize` não ecoa o valor. É limpo da tela a cada envio, nunca volta na resposta, e a contagem e a trava ficam no daemon. Depois do 5º erro, os Permitir são recusados no núcleo (`Travado`), não só desligados na tela.
-  - **S10:**
-    - a janela abre em primeiro plano e sempre no topo;
-    - fechar (o X ou destruir a janela) nega todos os pendentes, sempre do lado de quem falha fechado;
-    - Esc nega e não há atalho de Enter;
-    - id que o daemon não mandou é recusado antes do daemon;
-    - os 120 s são do daemon; a contagem é só exibição.
-  - **S11:** cada janela tem sua capability. A principal não tem os comandos de aprovação; a de aprovação não alcança nenhum outro comando, nem plugin, nem `core:event`. Em comum, só `ouvir_avisos`, e o canal é guardado por rótulo de janela. Origem remota é negada. O comando confere o rótulo de novo.
-  - **D51 / V5.29:** todo texto do agente (nome, comando, cada processo da cadeia) passa por `neutralizar` no Rust e entra na tela só como texto Svelte (`{…}`, nunca `{@html}`). U+202E, U+2066, largura zero, ESC e `\n` aparecem como escape visível, e HTML vira texto. A caixa força LTR isolado.
-  - **S13:** nenhuma resposta da janela traz segredo ou PIN, e não há `localStorage`, URL nem estado global com o pedido.
-- **Testes de ataque.**
-  - `app/nucleo/src/aprovacao.rs`:
-    - `ataque_texto_do_agente_vira_escape_visivel` (HTML, bidi, largura zero, ESC, `\n`, seta falsa na cadeia);
-    - `ataque_pin_errado_cinco_vezes_trava_e_nega`;
-    - `ataque_resposta_forjada_nao_chega_ao_daemon` (id inventado, decisão inventada, PIN no Negar, Permitir sem PIN);
-    - `ataque_nada_de_segredo_ou_pin_na_janela` (nenhum valor de `SEGREDOS` nem o PIN em pedido ou resposta).
-  - Mais em `aprovacao.rs`: `prazo_de_120_s_e_expirado_sai`, `ordem_de_chegada_sem_repetir_e_com_limite`, `vigia_tira_a_aprovacao_e_deixa_o_destrave`, `sempre_deixa_livre_e_fechar_nega_todos`.
-  - `app/nucleo/src/daemon.rs` › `esperar_aprovacao_deixa_o_destrave_na_fila`.
-  - `app/src-tauri/src/main.rs`:
-    - `ataque_aprovacao_so_pela_janela_certa`: principal e outra janela negadas pela ACL, origem remota negada, a janela de aprovação não chega a 16 comandos e plugins, PIN e id fora do formato recusados na leitura e sem eco, resposta bem formada com id que o daemon não mandou recusada pelo serviço;
-    - `ataque_aviso_de_uma_janela_nao_vai_para_a_outra`: canal por janela; rótulo desconhecido não recebe; canal tirado na destruição.
-  - `app/nucleo/tests/configuracao_tauri.rs`:
-    - `ataque_capability_com_permissao_a_mais`: duas capabilities exatas; em comum só `ouvir_avisos`; a principal sem os comandos de aprovação;
-    - `janela_de_aprovacao_segue_o_rust_e_nao_usa_html`.
-  - QA (`qa.json`):
-    - nenhum caractere invisível no DOM e nenhum elemento `<b>`;
-    - nem o PIN, nem o PIN errado, nem algum segredo do cofre de teste no DOM, nos inputs, no armazenamento, na URL ou no console;
-    - Enter (com PIN vazio e com PIN certo) não permite.
-- **Dependências novas:** nenhuma.
+
+- Invariantes: S11 (o formulário nunca recebe segredo salvo; revelar só por pedido,
+  valor some em 30 s, ao esconder e ao sair; o que é digitado fica só no estado da tela e
+  `descartar_formulario` no `onDestroy`), S2 (chave carregada fica no Rust) e S9 (nível
+  só pelo `LevelDialog`, com PIN) mantidas: só nomes e comentários mudaram. O mapa
+  modo → valor do fio de `buildForm` é o mesmo braço a braço (`saved`→`manter`,
+  `generated`→`gerada`, `loaded`→`carregada`, digitado vazio→`vazio`, autenticação da
+  outra forma→`vazio`, nota em NFC). Nenhum segredo em estado global, armazenamento ou
+  URL; nenhum comando Tauri novo.
+- Testes de ataque: nenhum novo (fase de nomes); `revealed_selection.py` (ataque à
+  seleção do valor revelado, V3.4) acompanha `data-entry`.
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **V5.16 de ponta a ponta com o `ward run` e o `wardd` reais** (CLI saindo ≠ 0 e marca inexistente; "1 hora" sem janela até travar). Não foi rodado: depende do binário do app com WebKitGTK e de sessão gráfica. O caminho foi conferido com o `DaemonFalso`, que segue a regra do `wardd`, e pela ACL no MockRuntime.
-- **V5.20** (o papel agente não responde aprovação) é do daemon (23/23a). Esta fase não mexeu nisso.
-- **V5.28** (foco e primeiro plano no COSMIC/Wayland) só se confere com o usuário.
+
+- Nomes de fio (comandos Tauri, campos, valores e ids de campo): Fase 54 (`frozen.txt`).
+- `data-entrada` do popup da extensão (`extension/popup.js`, `dev/tests/extension.py`):
+  Fase 39.
+- `docs/mission/design-nodes.md` cita `app/src/telas/Credenciais.svelte`,
+  `Formulario.svelte`, `formulario.js`, `EscolherTipo.svelte` e a classe `.esmaecer`:
+  Fase 59 (PRD regra 2).
+- Suítes (`app_e2e.py`, `revealed_selection.py`, QA visual V3.2/V3.3): Milestone 6
+  (PRD regra 6).
 
 ## Comandos executados
+
 | Comando | Exit code |
 | --- | --- |
-| `cargo test -p ward-app-nucleo --all-features` | 0 |
-| `cargo clippy --all-targets --locked -- -D warnings` (app/src-tauri, PKG_CONFIG da R32) | 0 |
-| `cargo test --locked` (app/src-tauri, 11 testes) | 0 |
-| `cargo test -p ward-ponte-teste --all-features` | 0 |
-| `python3 -I qa36.py …` (Playwright, Chrome headless) | 0 |
-| `make app-front` | 0 |
-| `make check` | 0 |
-| `make app-check` (antes do isolamento, com o `wardd` de outro worktree no ar) | 2: 9/11 testes |
-| `make app-check` (depois do `sem_daemon()`, com o mesmo `wardd` alheio ainda no ar) | 0: 11/11 |
+| `python3 -I dev/english_check.py --paths app/src/screens/{Form.svelte,form.js,Credentials.svelte,credentials.js,ChooseType.svelte}` (= `make english-check PATHS=…`) | 0 (0 achados, 0 problema nas exceções) |
+| `make compile` (cargo check do workspace e do `app/src-tauri`, `npm ci`, `vite build`, `syntax_check.py`: 0 erro) | 0 |
+| `npm run build:teste` (conferência rápida do pacote de teste) | 0 |
+| comparação de literais antigo × novo dos 5 arquivos (script na scratchpad) | — (só os nomes listados acima) |
+
+O `vite build` mostra os mesmos 10 avisos `state_referenced_locally` de antes, agora em
+`screens/Form.svelte` (linhas 75–86).
 
 ## Problemas descobertos
-- **Caracteres RTL fortes** (hebraico, árabe) não são escapados por D51. Mesmo com `unicode-bidi:isolate`, eles podem reordenar visualmente o trecho em que estão. Proposta: decidir no escopo se `neutralizar` escapa as letras RTL ou se basta marcar a presença delas.
-- **Texto do bloqueio:** o `CampoPin` (Fase 35) diz "PIN bloqueado: o cofre foi travado.", e o frame `16960` diz "PIN bloqueado após 5 erros. O cofre foi travado.". A janela usa o componente compartilhado.
-- **Fechar a janela nega todos os pendentes,** inclusive os da fila que o usuário ainda não viu. É fail-closed, mas o escopo fala em "o pedido".
-- **Corrida na destruição:** um pedido que chegue entre a destruição da janela e a negação pode ser negado sem ter sido mostrado. É fail-closed.
-- **Comandos síncronos do Tauri** falam com o daemon na thread de IPC, com a mesma limitação das fases anteriores.
-- **O `PedidoDeAprovacao` do protocolo não traz o prazo.** O app conta 120 s desde a chegada; a contagem pode adiantar ou atrasar alguns ms em relação ao daemon.
-- **Restaurar backup (Fase 45)** não cancela aprovações pendentes no app. O daemon responde `Expirado`, e a janela trata.
-- **`npm audit`** mostra 2 vulnerabilidades low em dependência de desenvolvimento (`deepmerge`, que veio do master). `make app-front` sai 0 (o limite é moderate).
-- **(Resolvido nesta fase.) `make app-check` dependia de não haver daemon de teste no ar.** Durante a fase, outro worktree (`agent-ae99eafcfad2810a2`) deixou um `wardd` de teste escutando em `/run/user/1000/ward-teste/wardd.sock`. Esse socket é compartilhado: o caminho vem do uid, e trocar o `XDG_RUNTIME_DIR` não muda nada.
-  - Com o daemon no ar, dois testes do master pressupõem "sem daemon" e falharam: `ataque_comandos_proprios_so_na_janela_e_origem_certas` (Fase 29) e `ataque_destravar_so_na_janela_certa_e_senha_sem_eco` (Fase 31).
-  - O segundo chegou a mandar a senha mestra de teste (falsa) ao daemon do outro agente e o destravou.
-  - Com um tmpfs sobre o diretório (bwrap), os dois passam. Sem bwrap, os outros 9 passam; o único que falha dentro do bwrap (`criar_cofre`, por falta de Wayland) passa fora dele.
-  - Não mexi no processo alheio. Corrigido com o `sem_daemon()` (ver Implementado). Continua valendo para quem roda `make dev-daemon`/`teste-cli`: o socket de teste é um só por uid, compartilhado entre worktrees.
+
+- O checador trata valor estático de atributo (`id="form-texto"`) como identificador;
+  resolvido usando `form-{c.id}`, que dá o mesmo valor.
+- Chave de fio em literal de objeto vai entre aspas (como `types.js` na Fase 35) e acesso
+  de propriedade do fio vai por ponto com entrada no `frozen.txt`: a Fase 54 precisa
+  procurar os dois (o `--literals` acha os entre aspas).
+- `make compile` com o disco em ~7 GB livres (outra trilha compilando ao mesmo tempo);
+  `target/`, `app/src-tauri/target`, `app/node_modules`, `app/dist*` apagados no fim.
 
 ## Arquivos criados/alterados
+
 | Arquivo | Ação |
 | --- | --- |
-| `app/nucleo/src/aprovacao.rs` | criado |
-| `app/nucleo/src/daemon.rs` | alterado |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/nucleo/tests/configuracao_tauri.rs` | alterado |
-| `app/src-tauri/capabilities/aprovacao.json` | criado |
-| `app/src-tauri/tauri.conf.json` | alterado |
-| `app/src-tauri/src/main.rs` | alterado |
-| `app/src/App.svelte` | alterado |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `app/src/lib/ponte/index.js` | alterado |
-| `app/src/lib/componentes/Contagem.svelte` | criado |
-| `app/src/lib/componentes/CaixaDeCodigo.svelte` | criado |
-| `app/src/lib/componentes/BotaoIcone.svelte` | criado |
-| `app/src/lib/componentes/Destaque.svelte` | alterado |
-| `app/src/telas/JanelaAprovacao.svelte` | criado |
-| `app/src/telas/aprovacao.js` | criado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/src/main.rs` | alterado |
-| `docs/mission/design-nodes.md` | alterado |
-| `docs/mission/evidence/fase-36/*` (11 PNG, `qa.json`) | criado |
+| `app/src/screens/Formulario.svelte` → `app/src/screens/Form.svelte` | renomeado e reescrito |
+| `app/src/screens/formulario.js` → `app/src/screens/form.js` | renomeado e reescrito |
+| `app/src/screens/Credenciais.svelte` → `app/src/screens/Credentials.svelte` | renomeado e reescrito |
+| `app/src/screens/credenciais.js` → `app/src/screens/credentials.js` | renomeado e reescrito |
+| `app/src/screens/EscolherTipo.svelte` → `app/src/screens/ChooseType.svelte` | renomeado e reescrito |
+| `app/src/App.svelte` | alterado (import) |
+| `dev/tests/app_e2e.py`, `dev/tests/revealed_selection.py` | alterado (`data-entry`, `#form-name`) |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-36.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks); `make app-check` e `make app-front` saem 0
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [x] (UI/DESIGN) Conferido contra o FigCraft (cópia, só leitura)
+
+- [x] `make compile` rodado (a missão 2 não roda `make check` por fase; PRD regra 6)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto nesta fase)
+- [x] Teste de ataque para cada (SEG) tocado (nenhuma lógica de segurança mudou; o teste
+  existente de V3.4 acompanha os nomes)
+- [x] (UI) Conferido contra o FigCraft: nenhuma medida, cor ou token mudou (só nomes de
+  classe locais; mesmas regras CSS)
 - [x] Ficou dentro do escopo da fase

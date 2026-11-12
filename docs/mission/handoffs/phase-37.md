@@ -1,192 +1,189 @@
-# Fase 37 — Gerador de senha avulso (UI)
+# Fase 37 — (UI) `ApprovalWindow`, `PasswordGenerator`, `FirstUse`, `RestoreBackup` e `EmergencyKit`
 
 ## Implementado
-- **Escolha do caminho (pedido do orchestrator):** o protocolo do daemon não tem
-  operação de gerar senha (só erros e operações do cofre em `ward_core::protocolo`). Por
-  isso a senha é gerada no `app/nucleo`, em Rust, por `ward_core::gerador::gerar` (RNG do
-  sistema, sem viés, símbolos de D35). Nunca no JavaScript. O "copiar" usa o mesmo
-  `Copiador` da Fase 29 (D4, S12).
-- **`app/nucleo/src/gerador.rs` (novo):**
-  - `Gerador` guarda a senha atual num `Segredo` (Zeroizing, sem `Clone`/`Display`).
-  - `Opcoes` vem da interface e é validado: tamanho 8–64 (o que o design mostra, dentro
-    dos 4–128 do núcleo), pelo menos um conjunto. `u64` enorme e tamanho fora da faixa
-    dão `PedidoInvalido`.
-  - `Gerada` (a resposta do "gerar") tem só `tamanho`, `bits`, `forca` e `simbolos`
-    (`ward_core::gerador::SIMBOLOS`, uma fonte só). Nenhum caractere da senha.
-  - Força pela entropia das opções (`tamanho × log2(alfabeto)`, de 10 em 10 para baixo):
-    `< 60` fraca, `< 80` razoável, `< 128` forte, senão muito forte. Os 24 caracteres
-    com os quatro conjuntos dão "muito forte · cerca de 150 bits", como no design.
-  - `Revelada` (Zeroizing, `Debug` mascarado) só para o "revelar".
-  - Ao gerar, a senha anterior zera antes de chamar o RNG. Se o RNG falhar, não sobra
-    senha velha.
-- **`servico.rs`:** `gerar_senha`, `copiar_senha_gerada` (resposta `()`, via
-  `Copiador`), `revelar_senha_gerada` e `descartar_senha_gerada`. `ao_sair` também zera a
-  senha avulsa. Um lock envenenado descarta a senha.
-- **`erro.rs`:** `AleatorioIndisponivel` e `SemSenhaGerada`, com mensagem fixa.
-- **Comandos novos** em `comandos::COMANDOS`, `capabilities/principal.json`
-  (`allow-gerar-senha`, `allow-copiar-senha-gerada`, `allow-revelar-senha-gerada`,
-  `allow-descartar-senha-gerada`), `app/src/lib/ponte/comandos.js`, no
-  `generate_handler!` do Tauri e no despacho da ponte de teste.
-- **Interface:**
-  - `app/src/telas/GeradorSenha.svelte`, a tela `Gerador de senha / Avulso` (13141):
-    - tamanho por `<input type=range>` (8–64, padrão 24);
-    - quatro interruptores; o último ligado fica desabilitado;
-    - máscara com um ponto por caractere;
-    - revelar por 30 s (some ao esconder, gerar de novo ou sair);
-    - copiar, gerar de novo e força com quatro segmentos;
-    - nota "Não fica no cofre" e rodapé;
-    - pedidos de gerar em série, para a senha guardada no Rust ser sempre a das opções
-      na tela;
-    - ao sair da tela, `descartar_senha_gerada`.
-  - Componentes novos, só com tokens:
-    - `NavegacaoLateral.svelte` (782/3037);
-    - `LinhaDeOpcao.svelte`, com `checkbox role=switch` (10379/10368, `Interruptor` 6838);
-    - `ControleDeslizante.svelte` (12604). O preenchido vai por
-      `style.setProperty('--progresso')` (CSSOM, que a CSP permite), sem atributo `style`.
-  - `CampoSecreto.svelte`: prop `mascara` (padrão igual ao de antes). O valor revelado
-    aparece sem ligaduras (ver Problemas).
-  - `App.svelte`: com o cofre destravado, mostra a casca (navegação + tela). Fora disso,
-    o esqueleto da Fase 29.
-  - `ponte-teste.js` (só no build de teste): a URL de abertura aceita
-    `#token=…&tela=gerador`, para o QA no Chrome antes das telas de destravar. A tela
-    sai da URL junto com o token. No build de produção, o ramo some (`app-dist.py` ok).
-- **`docs/mission/design-nodes.md`:** seção da Fase 37.
+
+Troca 1:1 pelo `docs/glossario.md` (seção 4, mais a tabela nova "Telas `ApprovalWindow`,
+`PasswordGenerator`, `FirstUse`, `RestoreBackup` e `EmergencyKit` (Fase 37)"), sem mudar
+comportamento nem texto visível em pt-BR. Parte de `master` 3aac84d.
+
+- **Arquivos** (`git mv`): `screens/JanelaAprovacao.svelte` → `ApprovalWindow.svelte`,
+  `aprovacao.js` → `approval.js`, `GeradorSenha.svelte` → `PasswordGenerator.svelte`,
+  `PrimeiroUso.svelte` → `FirstUse.svelte`, `primeiro-uso.js` → `first-use.js`,
+  `RestaurarBackup.svelte` → `RestoreBackup.svelte`, `restaurar.js` → `restore.js`,
+  `KitEmergencia.svelte` → `EmergencyKit.svelte`, `kit-emergencia.js` →
+  `emergency-kit.js`. `App.svelte` importa os três nomes novos.
+- **`approval.js`**: `URGENT_SECONDS`, `pinSufficient`, `DENY_ID`, `needsPin(decision)`,
+  `SEPARATOR` (o escape `' → '` ficou igual), `TEXTS` (chaves em inglês, textos
+  iguais), `originNotice`, `resultMessage`.
+- **`first-use.js`**: `MIN_PASSWORD_CHARS`, `MIN_PIN_DIGITS`, `MAX_PIN_DIGITS`,
+  `MESSAGES`, `charCount`, `passwordError`, `isValidPin`, `passwordStrength` (força
+  `{ upTo, code, label, segments, tone }`, `tone` `danger/warning/success`),
+  `rustMessage(reason)`.
+- **`restore.js`**: `versionDay`, `versionDate`, `howLongAgo`, `versionDetail`,
+  `versionsCaption`, `swapWarning`, `restoredMessage(instant, entries)`.
+- **`emergency-kit.js`**: `VAULT_DIR`, `BACKUPS_DIR`, `USB_DRIVE_DIR`, `RESTORE_STEPS`,
+  `printedDate`, `usbDriveLine(external)` → `{ label, value, mono }`. O objeto interno
+  `external` virou `{ enabled, uuid, usbDrive: { label } }`; o `EmergencyKit` o monta da
+  resposta do fio (`ligado`, `uuid`, `pendrive.rotulo`) como antes.
+- **Telas**: identificadores, props (`RestoreBackup` `open`/`onclose`/`onrestored`
+  (`{ instant, entries }`)/`onlocked`; `EmergencyKit` `open`/`onclose`/`onlocked`;
+  `FirstUse` sem o alias `oncreated: oncriado`), estados, classes locais, ids e
+  comentários em inglês. `PasswordGenerator` usa os mesmos nomes do `GeneratorPopover`
+  (`MIN_LENGTH`, `STRENGTHS`, `charsets`…). Comentários citam os nodes do FigCraft pelo
+  id (regra da Fase 35) e descrevem comandos e módulos Rust em inglês.
+- **Usos fora das telas da fase** (só os nomes desta fase; o resto é da Fase 38):
+  `Configuracoes.svelte` (imports, tags `<EmergencyKit>`/`<RestoreBackup>` com as props
+  novas, `restoredMessage(r.instant, r.entries)`, `rustMessage`, dois comentários),
+  `configuracoes.js` (comentário com `first-use.js`), `TrocarSenha.svelte` (imports,
+  `forca.segments/tone/label`, atributo `data-tone` e seletores `danger/warning/success`),
+  `TrocarPin.svelte` e `EscolherPendrive.svelte` (imports e chamadas).
+- **Testes**: `app/core/tests/configuracao_tauri.rs` lê `PasswordGenerator.svelte`
+  (`const MIN_LENGTH/MAX_LENGTH/DEFAULT_LENGTH = …;` contra as constantes Rust de mesmo
+  valor), `approval.js` (`URGENT_SECONDS`, `return decision !== 'negar' && decision !==
+  'confirmar';`) e `ApprovalWindow.svelte` (`{request.comando}`, `{process}`,
+  `{entry.nome}`, `{request.origem}`); `dev/tests/app_e2e.py` usa `#approval-deny` e
+  `#approval-pin`.
+- **Glossário**: tabela da Fase 37.
+
+### Literais alterados (PRD regra 5; todos são nomes)
+
+- Caminhos de import: `./aprovacao.js` → `./approval.js`, `./primeiro-uso.js` →
+  `./first-use.js`, `./restaurar.js` → `./restore.js`, `./kit-emergencia.js` →
+  `./emergency-kit.js`, `./KitEmergencia.svelte` → `./EmergencyKit.svelte`,
+  `./RestaurarBackup.svelte` → `./RestoreBackup.svelte`, `./screens/GeradorSenha.svelte`,
+  `JanelaAprovacao.svelte`, `PrimeiroUso.svelte` → `PasswordGenerator`, `ApprovalWindow`,
+  `FirstUse`.
+- Ids do DOM: `aprovacao-titulo/negar/entrada/pin` → `approval-title/deny/stdin/pin`
+  (`#aprovacao-negar`/`#aprovacao-pin` em `app_e2e.py` ajustados); `gerador-titulo`,
+  `opcoes-titulo`, `resultado-titulo`, `gerador-tamanho/minusculas/maiusculas/digitos/
+  simbolos/senha` → `generator-title`, `options-title`, `result-title`,
+  `generator-length/lowercase/uppercase/digits/symbols/password`;
+  `primeiro-uso-criar/senha/confirmar/pin/confirmar-pin` →
+  `first-use-create/password/confirm/pin/confirm-pin`; `restaurar-titulo/subtitulo/
+  senha/pin/versao-{i}/escolhida` → `restore-title/subtitle/password/pin/version-{i}/
+  chosen`; `kit-titulo` → `kit-title`. Nenhum outro é lido fora da tela (conferido em
+  `app/`, `dev/`, `extension/`, `crates/`; só o fixture legado
+  `dev/fixtures/legacy/strings-0.1.4.txt` os cita, e ele não muda).
+- `data-*`: `data-teste` → `data-test` (`simbolos` → `symbols`, `restaurar-backup` →
+  `restore-backup`, `folha-kit` → `kit-sheet`, `kit-pendrive` → `kit-usb-drive`);
+  `data-etapa` → `data-step` com `versoes`/`confirmar` → `versions`/`confirm`;
+  `data-tom` → `data-tone` com `perigo`/`aviso`/`sucesso` → `danger`/`warning`/`success`
+  (gerador, primeiro uso e trocar senha; só seletores locais). Ninguém lê esses
+  atributos fora da tela.
+- Valores internos: `tom` da força (acima); etapa do restaurar (acima).
+- Classes locais (escopadas pelo Svelte; nenhuma colide com as globais de `base.css`/
+  `tokens.css`): `fundo` → `background`, `janela` → `approval`/`window`, `cabecalho` →
+  `header`, `corpo` → `body`, `rodape` → `footer`, `folha` → `sheet` etc. Mesmas regras
+  CSS, só o seletor mudou.
+- Chaves do fio passaram de shorthand a chave entre aspas (`{ decisao, ciente }` →
+  `{ 'decisao': decision, 'ciente': withAcknowledgment }`, `{ tamanho, ...conjuntos }` →
+  `{ 'tamanho': length, ...charsets }`, `{ dados: { senha, confirmacao, … } }` →
+  `{ 'dados': { 'senha': password, 'confirmacao': confirmation, … } }`, `{ dados: {
+  versao, senha, pin } }` idem, chaves de `erros`/`charsets`/`STRENGTHS`): mesmos bytes no
+  fio.
+- Template strings só mudaram nas variáveis interpoladas; o texto pt-BR é o mesmo.
+
+### Entradas novas de `dev/english-check/frozen.txt` (todas Fase 54)
+
+- `ApprovalWindow.svelte`: `estado`, `ambiente`, `confirmacao`, `operacao`,
+  `entrada_oculta`, `restante`, `origem`, `entradas`, `tipo`, `nome`, `comando`,
+  `diretorio`, `cadeia`, `resultado`, `mensagem`.
+- `PasswordGenerator.svelte`: `tamanho`, `minusculas`, `maiusculas`, `digitos`,
+  `simbolos`, `forca`, `valor`, `mensagem`.
+- `FirstUse.svelte`: `senha`, `confirmacao`, `criado`, `erros`, `campo`, `motivo`,
+  `mensagem`.
+- `restore.js`: `conferida`, `fora_de_ordem`.
+- `RestoreBackup.svelte`: `nome`, `instante`, `fora_de_ordem`, `dados`, `entradas`,
+  `estado`, `codigo`, `mensagem`.
+- `EmergencyKit.svelte`: `ligado`, `pendrive`, `rotulo`, `codigo`, `mensagem`.
 
 ## Segurança
-- **Invariantes tocadas:**
-  - **S11:**
-    - a senha nasce e fica no Rust;
-    - "gerar" e "copiar" não devolvem o valor; só "revelar", no clique, o leva à
-      webview, e a tela o tira em 30 s, ao esconder, ao gerar de novo ou ao sair;
-    - nada em armazenamento do navegador, URL ou estado global (QA: `localStorage`,
-      `sessionStorage` e cookie vazios; nenhum pedido fora da origem);
-    - capability só com os 4 comandos novos, só na janela `principal` e com origem
-      local.
-  - **S12/V5.5:** o copiar do gerador passa pelo mesmo `Copiador` (limpeza em 30 s só
-    se a área ainda tiver o valor).
-  - **S6:** RNG só pelo `ward_core::gerador` (`getrandom`); nada de aleatório no JS.
-  - **S8/S13:** `Segredo` e `Revelada` zeram ao sair, sem `Debug` do valor. Erros com
-    mensagem fixa.
-  - **D35:** a tela mostra o conjunto que vem de `ward_core::gerador::SIMBOLOS`, sem
-    espaço, aspas, crase e `\`.
-- **Testes de ataque escritos:**
-  - `app/nucleo/src/gerador.rs`:
-    - `ataque_opcoes_fora_do_formato_sao_recusadas` (0, 4, 7, 65, 128, 129, 2³², `u64::MAX`,
-      nenhum conjunto; nada fica guardado);
-    - `ataque_gerar_nao_devolve_o_valor` (nem no `Debug`, nem um trecho de 6
-      caracteres);
-    - `simbolos_sao_os_de_d35`, `forca_do_design`, `senha_respeita_tamanho_e_conjuntos`,
-      `descartar_zera_e_gerar_de_novo_troca`, `limites_da_tela_dentro_do_nucleo`.
-  - `app/nucleo/src/servico.rs`:
-    - `ataque_gerador_copia_sem_devolver_o_valor` (resposta `()`, área com o valor,
-      descartar e `ao_sair` zeram);
-    - `ataque_limpeza_do_gerador_nao_apaga_texto_do_usuario` (V5.5 com área falsa).
-  - `crates/ward-ponte-teste/tests/ataques.rs` › `ataque_gerador_avulso_pela_ponte`: a
-    resposta do gerar é exatamente `{tamanho, bits, forca, simbolos}`. Recusa tamanho 7,
-    65, 128, -1, 24.5, `"24"`, booleano como texto, campo faltando e nenhum conjunto.
-  - `app/src-tauri/src/main.rs` › `ataque_gerador_so_na_janela_certa_e_sem_valor_no_gerar`:
-    - pela IPC do Tauri (runtime falso e capability real), as chaves da resposta são só
-      as quatro e não contêm o valor;
-    - recusa tamanho fora e tipo errado;
-    - os quatro comandos são negados em outra janela e com origem remota.
-  - `app/nucleo/tests/configuracao_tauri.rs` › `limites_do_gerador_na_interface_sao_os_do_rust`,
-    mais os testes de lista/capability da Fase 29, que agora cobrem os 4 comandos.
-  - QA no Chrome headless (Playwright em Python, fora do repositório), contra a ponte,
-    em 1280×800:
-    - símbolos mostrados iguais aos de D35;
-    - máscara de 24 pontos, e o valor fora do DOM antes do revelar;
-    - revelado com 24 caracteres do alfabeto, e fora do DOM depois de esconder;
-    - gerar de novo troca a senha;
-    - sem símbolos, a senha é alfanumérica;
-    - pelo teclado: 12 → "razoável · cerca de 70 bits", Home 8, End 64;
-    - o último conjunto não desliga;
-    - armazenamento vazio, nenhum pedido fora da origem, token e tela fora da URL.
-- **Dependências novas:** nenhuma (Rust e npm).
+
+- Invariantes: S9 e S10 (janela de aprovação: foco inicial em Negar, Esc nega, fechar
+  nega, PIN só no estado do `PinField` e limpo a cada envio, `needsPin` só dispensa
+  `negar`/`confirmar`, ciência da entrada padrão desmarcada a cada pedido, contagem só
+  de exibição; restaurar com senha e PIN só no estado local, apagados antes da
+  resposta), S11 (gerador: valor só no "revelar", some em 30 s, ao esconder, ao gerar e
+  ao sair, `descartar_senha_gerada` no `onDestroy`; primeiro uso apaga senha e PIN
+  depois do envio e no `onDestroy`; nada em estado global, armazenamento ou URL) e D51
+  (texto do agente só como texto, `AgentText`, seta só desenho) mantidas: só nomes e
+  comentários mudaram, linha a linha. O teste `janela_de_aprovacao_segue_o_rust_e_nao_usa_html`
+  acompanha os nomes novos e continua conferindo que comando, cadeia, entrada e origem
+  entram como texto e que só negar/confirmar dispensam o PIN.
+- Nenhum comando Tauri, capability, campo do fio ou texto visível mudou.
+- Testes de ataque: nenhum novo (fase de nomes); os existentes (`configuracao_tauri.rs`,
+  `app_e2e.py`) acompanham os nomes.
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **V5.5 de ponta a ponta com `wl-paste` real:** não cliquei em "copiar" na ponte, para
-  não sobrescrever a área de transferência da sessão do usuário. A lógica está coberta
-  com área falsa (os mesmos testes da Fase 29, mais os dois do gerador). Fica para o QA
-  do milestone.
-- **"Travar agora" na navegação:** o botão está desenhado, mas não há comando de
-  travar. Fica para as Fases 31 e 39.
-- **Itens "Credenciais" e "Configurações":** trocam a tela, que mostra "Esta tela ainda
-  não existe." até as Fases 32 e 38.
-- **Gerador no formulário (`Gerador de senha / No formulário`, popover 11671):** é da
-  Fase 33.
-- **App real (Tauri) chegando à tela:** a casca só aparece com o cofre destravado, e o
-  `estado_do_cofre` ainda responde `sem-protocolo` (Fases 20–22). No Chrome, a tela
-  abre pela URL de teste.
+
+- Nomes de fio (comandos Tauri, campos, valores, id da tela na URL de teste `&tela=…`,
+  aviso `pedido-de-aprovacao`, decisões `negar`/`uma_vez`/…): Fase 54 (`frozen.txt`).
+- Identificadores próprios de `Configuracoes.svelte`, `TrocarSenha.svelte`,
+  `TrocarPin.svelte`, `EscolherPendrive.svelte` e `configuracoes.js`: Fase 38 (aqui só
+  os usos dos nomes desta fase).
+- `docs/mission/design-nodes.md` cita os caminhos antigos: Fase 59 (PRD regra 2).
+- Suítes (`app_e2e.py`, `configuracao_tauri.rs`, QA visual V3.2/V3.3, V3.4): Milestone 6
+  (PRD regra 6).
 
 ## Comandos executados
+
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `cargo test -p ward-app-nucleo` (1ª: 2 falhas esperadas, capability e `comandos.js` ainda sem os comandos novos) | 101, 0 |
-| `cargo test -p ward-ponte-teste --features modo-teste --test ataques` | 0 |
-| `cargo test --all-features --locked` em `app/src-tauri` (`PKG_CONFIG_PATH` do scratchpad, R32) | 0 |
-| `make app-front` | 0 |
-| `make app-ponte` + Playwright (Python, Chrome headless): a 1ª rodada achou o último conjunto desligável e a ligadura `<=>`, ambos corrigidos; a 2ª parou no clique forçado do QA | 0, 1, 0 |
-| `make check` | 0 |
-| `make app-check` (`PKG_CONFIG_PATH` do scratchpad, R32) | 0 (avisos do `cargo deny` do app iguais aos da Fase 29: duplicados e `advisory-not-detected`) |
+| `python3 -I dev/english_check.py --paths app/src/screens/{ApprovalWindow.svelte,approval.js,PasswordGenerator.svelte,FirstUse.svelte,first-use.js,RestoreBackup.svelte,restore.js,EmergencyKit.svelte,emergency-kit.js}` (= `make english-check PATHS=…`) | 0 (0 achados, 0 problema nas exceções) |
+| `python3 -I dev/english_check.py --paths app/src` (conferir que o `frozen.txt` não tem entrada sem uso) | 0 problema nas exceções |
+| `make compile` (cargo check do workspace e do `app/src-tauri`, `vite build`, `syntax_check.py`: 0 erro) | 0 |
+| `cargo check -p ward-app-core --all-targets --all-features --locked` (de novo, com o `configuracao_tauri.rs` tocado) | 0 |
+| `npm run build:teste` (conferência rápida do pacote de teste) | 0 |
+| comparação de literais antigo × novo dos 9 arquivos e dos 4 usuários (script na scratchpad) | — (só os nomes listados acima) |
+
+O `vite build` mostra os mesmos 10 avisos `state_referenced_locally` de antes, em
+`screens/Form.svelte`; nenhum aviso nas telas desta fase.
 
 ## Problemas descobertos
-- **Ligaduras escondem caracteres (corrigido, vale para a Fase 33).** A Inter junta `<=>`
-  numa seta (⇔), e a JetBrains Mono do valor revelado tem ligaduras de código (`<=`,
-  `->`, `!=`). O usuário leria uma senha diferente da copiada. Desliguei `liga` e `calt`
-  no valor revelado do `Campo secreto` e na lista de símbolos. Outras telas que mostram
-  valor ou símbolo devem fazer o mesmo.
-- **Texto do design diverge de D35/V5.21:** a descrição de "Símbolos" no FigCraft é
-  `! @ # $ % & * ( ) - _ = + ?`, só parte do conjunto. Segui o contrato e mostro o
-  conjunto inteiro de D35, que vem do Rust. A descrição no design precisa ser atualizada
-  numa fase de design. Não escolhi lado no arquivo.
-- **Faixa de tamanho:** o design diz "De 8 a 64", e o núcleo aceita 4–128 (handoff 18). A
-  tela e o comando do app aceitam 8–64. O gerador do formulário (Fase 33) deve decidir a
-  própria faixa. Sugiro registrar a de 8–64 no PRD.
-- **Limiares de força são escolha minha:** o design só mostra "muito forte". Usei
-  fraca < 60 bits, razoável < 80, forte < 128, muito forte ≥ 128, com as cores de perigo,
-  aviso e sucesso. Precisa de aceite, e a Fase 33 deve usar os mesmos.
-- **O valor revelado sai do tipo que zera:** a serialização da IPC (serde) e a string do
-  JavaScript são cópias que não zeram. É o custo do "revelar" que S11 permite, e a Fase
-  33 terá o mesmo.
-- **Parâmetro de tela na URL de teste:** `&tela=<nome>` só no build de teste, para o QA
-  abrir telas antes de destravar existir. As Fases 30–32 podem trocar isso pelo fluxo
-  real.
-- **Conflitos prováveis com a Fase 32 (em paralelo):** `App.svelte`, a lista de comandos
-  (`comandos.rs`, `comandos.js`, capability, `generate_handler!`, despacho da ponte) e
-  talvez uma navegação lateral própria. Na hora do merge, manter os comandos dos dois
-  lados e um só `NavegacaoLateral.svelte`.
-- **404 no console da ponte:** um recurso que o Chrome pede sozinho (provavelmente
-  `/favicon.ico`). Não aparece nas respostas da página. Já existia na Fase 29.
+
+- O sandbox do worktree recusa comandos de shell que contêm "git" dentro de outra
+  palavra (`digitos`); usei o editor para o `frozen.txt`. Sem efeito no repositório.
+- O primeiro `make compile` gravou o log num arquivo da scratchpad com nome genérico, que
+  outro processo (um `make compile` no checkout principal, `/home/…/cofre`) também
+  escrevia ao mesmo tempo: as saídas se misturaram. Rodei de novo com log de nome
+  próprio; o resultado acima é só deste worktree. Sugestão: os workers usarem log com o
+  id do worktree.
+- Risco de conflito no merge com a Fase 38 (rodando em paralelo): `Configuracoes.svelte`,
+  `TrocarSenha.svelte`, `TrocarPin.svelte`, `EscolherPendrive.svelte` e
+  `configuracoes.js` tiveram linhas de uso alteradas aqui; e com a trilha R em
+  `app/core/tests/configuracao_tauri.rs` (dois testes) e no fim do
+  `dev/english-check/frozen.txt`.
+- O teste `limites_do_gerador_na_interface_sao_os_do_rust` agora tem o nome JS e o
+  Rust separados (`("MIN_LENGTH", TAMANHO_MIN)`); a Fase 34 renomeia só o lado Rust.
 
 ## Arquivos criados/alterados
+
 | Arquivo | Ação |
 | --- | --- |
-| `app/nucleo/src/gerador.rs` | criado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/erro.rs` | alterado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/nucleo/tests/configuracao_tauri.rs` | alterado |
-| `app/src-tauri/capabilities/principal.json` | alterado |
-| `app/src-tauri/src/main.rs` | alterado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/tests/ataques.rs` | alterado |
-| `app/src/App.svelte` | alterado |
-| `app/src/telas/GeradorSenha.svelte` | criado |
-| `app/src/lib/componentes/NavegacaoLateral.svelte` | criado |
-| `app/src/lib/componentes/LinhaDeOpcao.svelte` | criado |
-| `app/src/lib/componentes/ControleDeslizante.svelte` | criado |
-| `app/src/lib/componentes/CampoSecreto.svelte` | alterado (`mascara`, sem ligaduras) |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `app/src/lib/ponte/ponte-teste.js` | alterado (`&tela=` só no teste) |
-| `docs/mission/design-nodes.md` | alterado (seção da Fase 37) |
-| `docs/mission/evidence/fase-37/*.png` (5) | criado |
+| `app/src/screens/JanelaAprovacao.svelte` → `app/src/screens/ApprovalWindow.svelte` | renomeado e reescrito |
+| `app/src/screens/aprovacao.js` → `app/src/screens/approval.js` | renomeado e reescrito |
+| `app/src/screens/GeradorSenha.svelte` → `app/src/screens/PasswordGenerator.svelte` | renomeado e reescrito |
+| `app/src/screens/PrimeiroUso.svelte` → `app/src/screens/FirstUse.svelte` | renomeado e reescrito |
+| `app/src/screens/primeiro-uso.js` → `app/src/screens/first-use.js` | renomeado e reescrito |
+| `app/src/screens/RestaurarBackup.svelte` → `app/src/screens/RestoreBackup.svelte` | renomeado e reescrito |
+| `app/src/screens/restaurar.js` → `app/src/screens/restore.js` | renomeado e reescrito |
+| `app/src/screens/KitEmergencia.svelte` → `app/src/screens/EmergencyKit.svelte` | renomeado e reescrito |
+| `app/src/screens/kit-emergencia.js` → `app/src/screens/emergency-kit.js` | renomeado e reescrito |
+| `app/src/App.svelte` | alterado (imports) |
+| `app/src/screens/Configuracoes.svelte`, `configuracoes.js`, `TrocarSenha.svelte`, `TrocarPin.svelte`, `EscolherPendrive.svelte` | alterado (usos) |
+| `app/core/tests/configuracao_tauri.rs` | alterado (caminhos e trechos procurados) |
+| `dev/tests/app_e2e.py` | alterado (`#approval-deny`, `#approval-pin`) |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-37.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks), mais `make app-front` e `make app-check`
-- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto, área de transferência do usuário não tocada)
-- [x] Teste de ataque para cada (SEG) tocado (S11 e V5.21; V5.5 na lógica)
-- [x] (UI/DESIGN) Conferido contra o FigCraft (cópia; original intacto, `cmp` igual) em 1280×800
+
+- [x] `make compile` rodado (a missão 2 não roda `make check` por fase; PRD regra 6)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto nesta fase)
+- [x] Teste de ataque para cada (SEG) tocado (nenhuma lógica de segurança mudou; os
+  testes existentes de S9/S10/S11 acompanham os nomes)
+- [x] (UI) Conferido contra o FigCraft: nenhuma medida, cor ou token mudou (só nomes de
+  classe locais; mesmas regras CSS)
 - [x] Ficou dentro do escopo da fase

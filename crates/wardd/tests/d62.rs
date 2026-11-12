@@ -1,199 +1,201 @@
-//! D62 no núcleo do daemon (Fase 22b): espera do D20 por papel e guardada no arquivo
-//! de estado (V3.33, S9), `criar_cofre` com estado velho (V3.35, S7) e identidade do
-//! cofre gravado lida do fd do temporário (V3.35, S7, S13).
+//! D62 in the daemon core (Phase 22b): the D20 wait per role and kept in the state
+//! file (V3.33, S9), vault creation with an old state (V3.35, S7) and the identity of the
+//! written vault read from the temp file's fd (V3.35, S7, S13).
 //!
-//! Cofre de teste próprio, só com valores falsos (nunca o cofre real nem o de `.dev/`).
+//! Own test vault, only with fake values (never the real vault nor the one in `.dev/`).
 
-mod comum;
+mod common;
 
 use std::fs;
-#[cfg(feature = "ganchos-teste")]
+#[cfg(feature = "test-hooks")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use comum::*;
-use ward_core::configuracao::{Configuracao, HashPin};
-use ward_core::formato::{CofreAberto, SenhaMestra};
-use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Resposta};
-use wardd::arquivos::{self, Geracoes};
-use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
+use common::*;
+use ward_core::config::{PinHash, VaultConfig};
+use ward_core::format::{MasterPassword, OpenVault};
+use ward_core::protocol::{MSG_ROLLBACK, Response, ResponseError, Role};
+use wardd::core::{Clock, Daemon, MAX_WAIT, Paths, unlock_wait};
+use wardd::files::{self, Generations};
 
-/// Relógio com hora controlada pelo teste: anota as esperas e não dorme.
+/// Clock with the time controlled by the test: records the waits and does not sleep.
 #[derive(Clone, Default)]
-struct RelogioMovel {
-    agora: Arc<Mutex<Duration>>,
-    esperas: Arc<Mutex<Vec<Duration>>>,
+struct MovableClock {
+    now: Arc<Mutex<Duration>>,
+    waits: Arc<Mutex<Vec<Duration>>>,
 }
 
-impl RelogioMovel {
-    fn andar(&self, d: Duration) {
-        *self.agora.lock().unwrap() += d;
+impl MovableClock {
+    fn advance(&self, d: Duration) {
+        *self.now.lock().unwrap() += d;
     }
 
-    fn esperas(&self) -> Vec<Duration> {
-        std::mem::take(&mut *self.esperas.lock().unwrap())
-    }
-}
-
-impl Relogio for RelogioMovel {
-    fn dormir(&self, d: Duration) {
-        self.esperas.lock().unwrap().push(d);
-    }
-
-    fn agora(&self) -> Option<Duration> {
-        Some(*self.agora.lock().unwrap())
+    fn waits(&self) -> Vec<Duration> {
+        std::mem::take(&mut *self.waits.lock().unwrap())
     }
 }
 
-fn daemon_movel(c: Caminhos, r: &RelogioMovel) -> Daemon {
-    Daemon::novo(c, Box::new(r.clone()))
+impl Clock for MovableClock {
+    fn sleep(&self, d: Duration) {
+        self.waits.lock().unwrap().push(d);
+    }
+
+    fn now(&self) -> Option<Duration> {
+        Some(*self.now.lock().unwrap())
+    }
 }
 
-fn destravar_como(d: &Daemon, papel: Papel, senha: &str) -> Resposta {
-    pedir(
+fn movable_daemon(c: Paths, r: &MovableClock) -> Daemon {
+    Daemon::new(c, Box::new(r.clone()))
+}
+
+fn unlock_as(d: &Daemon, role: Role, password: &str) -> Response {
+    request(
         d,
-        papel,
-        "destravar",
-        &format!(r#"{{"senha":"{}"}}"#, b64(senha.as_bytes())),
+        role,
+        "unlock",
+        &format!(r#"{{"password":"{}"}}"#, b64(password.as_bytes())),
     )
 }
 
-fn texto_estado(dir: &Dir) -> String {
-    fs::read_to_string(dir.caminhos().estado).unwrap()
+fn state_text(dir: &Dir) -> String {
+    fs::read_to_string(dir.paths().state).unwrap()
 }
 
-fn falhas_no_disco(dir: &Dir) -> u32 {
-    arquivos::ler_estado_completo(&dir.caminhos().estado)
+fn failures_on_disk(dir: &Dir) -> u32 {
+    files::read_full_state(&dir.paths().state)
         .unwrap()
-        .falhas_agente
+        .agent_failures
 }
 
-/// Cofre de teste criado e travado; o daemon que o criou é descartado.
-fn cofre_travado(dir: &Dir) {
-    let (d, _) = cofre_de_teste(dir);
-    d.travar();
+/// Test vault created and locked; the daemon that created it is dropped.
+fn locked_vault(dir: &Dir) {
+    let (d, _) = test_vault(dir);
+    d.lock();
 }
 
-/// V3.33 (D62, S9): 10 senhas erradas do agente, o `wardd` morre e sobe de novo, e a
-/// tentativa seguinte do agente ainda espera 30 s; o contador está no disco antes de a
-/// resposta de erro sair.
+/// V3.33 (D62, S9): 10 wrong passwords from the agent, `wardd` dies and starts again,
+/// and the agent's next attempt still waits 30 s; the counter is on disk before the
+/// error reply goes out.
 #[test]
-fn v3_33_espera_do_agente_sobrevive_ao_reinicio() {
-    let dir = Dir::novo("d62-reinicio");
-    cofre_travado(&dir);
-    let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
+fn v3_33_agent_wait_survives_the_restart() {
+    let dir = Dir::new("d62-reinicio");
+    locked_vault(&dir);
+    let r = MovableClock::default();
+    let d = movable_daemon(dir.paths(), &r);
     for i in 0..10u32 {
-        let resp = destravar_como(&d, Papel::Agente, &format!("falso-errada-{i:02}"));
-        assert_eq!(erro(&resp), Some(ErroResposta::SenhaIncorreta));
-        // Já no disco quando a resposta sai (fsync antes da resposta).
-        assert_eq!(falhas_no_disco(&dir), i + 1);
+        let resp = unlock_as(&d, Role::Agent, &format!("falso-errada-{i:02}"));
+        assert_eq!(error(&resp), Some(ResponseError::WrongPassword));
+        // Already on disk when the reply goes out (fsync before the reply).
+        assert_eq!(failures_on_disk(&dir), i + 1);
     }
-    let esperas: Vec<u64> = r.esperas().iter().map(Duration::as_secs).collect();
-    assert_eq!(esperas, [0, 1, 2, 4, 8, 16, 30, 30, 30, 30]);
+    let waits: Vec<u64> = r.waits().iter().map(Duration::as_secs).collect();
+    assert_eq!(waits, [0, 1, 2, 4, 8, 16, 30, 30, 30, 30]);
 
-    // "kill -9": o daemon some sem nada além do que já foi para o disco.
+    // "kill -9": the daemon goes away with nothing beyond what is already on disk.
     drop(d);
-    let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
+    let r = MovableClock::default();
+    let d = movable_daemon(dir.paths(), &r);
     assert_eq!(
-        erro(&destravar_como(&d, Papel::Agente, "falso-errada-xx")),
-        Some(ErroResposta::SenhaIncorreta)
+        error(&unlock_as(&d, Role::Agent, "falso-errada-xx")),
+        Some(ResponseError::WrongPassword)
     );
-    assert_eq!(r.esperas(), [ESPERA_MAXIMA]);
-    assert_eq!(falhas_no_disco(&dir), 11);
+    assert_eq!(r.waits(), [MAX_WAIT]);
+    assert_eq!(failures_on_disk(&dir), 11);
 
-    // Contada da partida: o daemon novo subiu há 20 s, a primeira espera é de 10 s.
+    // Counted from the start: the new daemon started 20 s ago, the first wait is 10 s.
     drop(d);
-    let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
-    r.andar(Duration::from_secs(20));
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-yy");
-    // A seguinte já espera a inteira.
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-zz");
+    let r = MovableClock::default();
+    let d = movable_daemon(dir.paths(), &r);
+    r.advance(Duration::from_secs(20));
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-yy");
+    // The next one already waits the whole time.
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-zz");
     assert_eq!(
-        r.esperas(),
-        [Duration::from_secs(10), ESPERA_MAXIMA],
+        r.waits(),
+        [Duration::from_secs(10), MAX_WAIT],
         "a 1.ª depois da partida conta da partida; as outras, inteiras"
     );
-    // Subiu há mais de 30 s: a primeira não espera, mas o contador continua.
+    // Started more than 30 s ago: the first one does not wait, but the counter goes on.
     drop(d);
-    let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
-    r.andar(Duration::from_secs(45));
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-ww");
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-vv");
-    assert_eq!(r.esperas(), [Duration::ZERO, ESPERA_MAXIMA]);
+    let r = MovableClock::default();
+    let d = movable_daemon(dir.paths(), &r);
+    r.advance(Duration::from_secs(45));
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-ww");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-vv");
+    assert_eq!(r.waits(), [Duration::ZERO, MAX_WAIT]);
 
-    // O destravar certo zera os dois, no disco também.
-    assert!(ok(&destravar_como(&d, Papel::Agente, SENHA)));
-    assert_eq!(falhas_no_disco(&dir), 0);
-    d.travar();
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-uu");
-    let _ = destravar_como(&d, Papel::App, "falso-errada-tt");
-    assert_eq!(r.esperas()[1..], [Duration::ZERO, Duration::ZERO]);
+    // The right unlock zeroes both, on disk too.
+    assert!(ok(&unlock_as(&d, Role::Agent, PASSWORD)));
+    assert_eq!(failures_on_disk(&dir), 0);
+    d.lock();
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-uu");
+    let _ = unlock_as(&d, Role::App, "falso-errada-tt");
+    assert_eq!(r.waits()[1..], [Duration::ZERO, Duration::ZERO]);
 }
 
-/// V3.33 (D62): o agente no meio das esperas não atrasa o app, que destrava com a senha
-/// certa sem esperar; depois do destravar certo do app, os dois contadores zeram.
+/// V3.33 (D62): the agent in the middle of its waits does not delay the app, which
+/// unlocks with the right password without waiting; after the app's right unlock, both
+/// counters reset.
 #[test]
-fn ataque_agente_no_meio_da_espera_nao_atrasa_o_app() {
-    let dir = Dir::novo("d62-papel");
-    cofre_travado(&dir);
+fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
+    let dir = Dir::new("d62-papel");
+    locked_vault(&dir);
 
-    /// Relógio cujo `dormir` de 4 s ou mais (a espera do agente) fica preso até o teste
-    /// soltar; as esperas menores voltam na hora.
-    struct Preso {
-        entrou: Mutex<mpsc::Sender<Duration>>,
-        soltar: Mutex<mpsc::Receiver<()>>,
-        esperas: Arc<Mutex<Vec<(Duration, bool)>>>,
+    /// Clock whose sleep of 4 s or more (the agent's wait) stays stuck until the
+    /// test releases it; the shorter waits return at once.
+    struct Stuck {
+        entered: Mutex<mpsc::Sender<Duration>>,
+        release: Mutex<mpsc::Receiver<()>>,
+        waits: Arc<Mutex<Vec<(Duration, bool)>>>,
     }
-    impl Relogio for Preso {
-        fn dormir(&self, d: Duration) {
-            let preso = d >= Duration::from_secs(4);
-            self.esperas.lock().unwrap().push((d, preso));
-            if preso {
-                let _ = self.entrou.lock().unwrap().send(d);
-                let _ = self.soltar.lock().unwrap().recv();
+    impl Clock for Stuck {
+        fn sleep(&self, d: Duration) {
+            let stuck = d >= Duration::from_secs(4);
+            self.waits.lock().unwrap().push((d, stuck));
+            if stuck {
+                let _ = self.entered.lock().unwrap().send(d);
+                let _ = self.release.lock().unwrap().recv();
             }
         }
     }
-    let (tx_entrou, rx_entrou) = mpsc::channel();
-    let (tx_soltar, rx_soltar) = mpsc::channel();
-    let esperas = Arc::new(Mutex::new(Vec::new()));
-    let d = Arc::new(Daemon::novo(
-        dir.caminhos(),
-        Box::new(Preso {
-            entrou: Mutex::new(tx_entrou),
-            soltar: Mutex::new(rx_soltar),
-            esperas: esperas.clone(),
+    let (tx_entered, rx_entered) = mpsc::channel();
+    let (tx_release, rx_release) = mpsc::channel();
+    let waits = Arc::new(Mutex::new(Vec::new()));
+    let d = Arc::new(Daemon::new(
+        dir.paths(),
+        Box::new(Stuck {
+            entered: Mutex::new(tx_entered),
+            release: Mutex::new(rx_release),
+            waits: waits.clone(),
         }),
     ));
-    // Três erradas do agente: a próxima dele espera 4 s.
+    // Three wrong ones from the agent: its next one waits 4 s.
     for i in 0..3 {
-        let resp = destravar_como(&d, Papel::Agente, &format!("falso-errada-{i}"));
-        assert_eq!(erro(&resp), Some(ErroResposta::SenhaIncorreta));
+        let resp = unlock_as(&d, Role::Agent, &format!("falso-errada-{i}"));
+        assert_eq!(error(&resp), Some(ResponseError::WrongPassword));
     }
-    let agente = {
+    let agent = {
         let d = d.clone();
-        std::thread::spawn(move || destravar_como(&d, Papel::Agente, "falso-errada-3"))
+        std::thread::spawn(move || unlock_as(&d, Role::Agent, "falso-errada-3"))
     };
-    // O agente está preso na espera de 4 s.
+    // The agent is stuck in the 4 s wait.
     assert_eq!(
-        rx_entrou.recv_timeout(Duration::from_secs(20)).unwrap(),
+        rx_entered.recv_timeout(Duration::from_secs(20)).unwrap(),
         Duration::from_secs(4)
     );
-    // O app acerta sem esperar: o contador dele é outro, e a vez do agente não o segura.
-    assert!(ok(&destravar_como(&d, Papel::App, SENHA)));
-    assert!(!d.travado());
-    tx_soltar.send(()).unwrap();
-    // O agente acorda com o cofre já aberto.
-    assert!(ok(&agente.join().unwrap()));
+    // The app gets it right without waiting: its counter is another one, and the agent's
+    // turn does not hold it.
+    assert!(ok(&unlock_as(&d, Role::App, PASSWORD)));
+    assert!(!d.is_locked());
+    tx_release.send(()).unwrap();
+    // The agent wakes up with the vault already open.
+    assert!(ok(&agent.join().unwrap()));
     let s = Duration::from_secs;
     assert_eq!(
-        *esperas.lock().unwrap(),
+        *waits.lock().unwrap(),
         [
             (s(0), false),
             (s(1), false),
@@ -203,256 +205,237 @@ fn ataque_agente_no_meio_da_espera_nao_atrasa_o_app() {
         ],
         "o app não esperou nada"
     );
-    // Os dois zeraram (no disco também).
-    assert_eq!(falhas_no_disco(&dir), 0);
-    d.travar();
-    esperas.lock().unwrap().clear();
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-4");
-    let _ = destravar_como(&d, Papel::App, "falso-errada-5");
-    // Erro do app não atrasa o agente, e vice-versa.
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-6");
+    // Both reset (on disk too).
+    assert_eq!(failures_on_disk(&dir), 0);
+    d.lock();
+    waits.lock().unwrap().clear();
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-4");
+    let _ = unlock_as(&d, Role::App, "falso-errada-5");
+    // An app error does not delay the agent, and vice versa.
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-6");
     assert_eq!(
-        *esperas.lock().unwrap(),
+        *waits.lock().unwrap(),
         [(s(0), false), (s(0), false), (s(1), false)]
     );
 }
 
-/// V3.33 (D62): o estado no formato antigo (três linhas) é lido como contador 0, e a
-/// primeira senha errada regrava no formato novo; o arquivo não tem senha, PIN nem
-/// segredo, só números.
+/// V3.33 (D62): the state in the old format (three lines) is read as counter 0, and the
+/// first wrong password rewrites it in the new format; the file has no password, PIN or
+/// secret, only numbers.
 #[test]
-fn v3_33_formato_antigo_e_estado_sem_segredo() {
-    let dir = Dir::novo("d62-antigo");
-    cofre_travado(&dir);
-    let g = geracoes(&dir);
+fn v3_33_old_format_and_state_without_secret() {
+    let dir = Dir::new("d62-antigo");
+    locked_vault(&dir);
+    let g = generations(&dir);
     fs::write(
-        dir.caminhos().estado,
-        format!(
-            "ward-estado 1\nvista {}\nqueimada {}\n",
-            g.vista, g.queimada
-        ),
+        dir.paths().state,
+        format!("ward-estado 1\nvista {}\nqueimada {}\n", g.seen, g.burned),
     )
     .unwrap();
-    let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
-    let _ = destravar_como(&d, Papel::Agente, "falso-errada-01");
-    assert_eq!(r.esperas(), [Duration::ZERO]);
+    let r = MovableClock::default();
+    let d = movable_daemon(dir.paths(), &r);
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-01");
+    assert_eq!(r.waits(), [Duration::ZERO]);
     assert_eq!(
-        texto_estado(&dir),
+        state_text(&dir),
+        // m2:DT6: the rewrite is always `ward-state 2`.
         format!(
-            "ward-estado 1\nvista {}\nqueimada {}\nfalhas_agente 1\n",
-            g.vista, g.queimada
+            "ward-state 2\nseen {}\nburned {}\nagent_failures 1\n",
+            g.seen, g.burned
         )
     );
-    // O app não vai para o disco.
-    let _ = destravar_como(&d, Papel::App, "falso-errada-02");
-    assert_eq!(falhas_no_disco(&dir), 1);
-    let texto = fs::read(dir.caminhos().estado).unwrap();
-    for s in SEGREDOS
+    // The app does not go to disk.
+    let _ = unlock_as(&d, Role::App, "falso-errada-02");
+    assert_eq!(failures_on_disk(&dir), 1);
+    let text = fs::read(dir.paths().state).unwrap();
+    for s in SECRETS
         .iter()
-        .chain([&SENHA, &PIN, &"falso-errada-01", &"falso-errada-02"])
+        .chain([&PASSWORD, &PIN, &"falso-errada-01", &"falso-errada-02"])
     {
-        assert!(!contem(&texto, s.as_bytes()), "{s}");
+        assert!(!contains(&text, s.as_bytes()), "{s}");
         assert!(
-            !contem(&texto, b64(s.as_bytes()).as_bytes()),
+            !contains(&text, b64(s.as_bytes()).as_bytes()),
             "{s} em base64"
         );
     }
     assert!(
-        String::from_utf8(texto).unwrap().lines().skip(1).all(|l| l
+        String::from_utf8(text).unwrap().lines().skip(1).all(|l| l
             .split_once(' ')
             .is_some_and(|(_, n)| n.parse::<u64>().is_ok())),
         "só números depois do cabeçalho"
     );
-    // A espera continua sendo a mesma tabela de D20.
-    assert_eq!(espera_destrave(1), Duration::from_secs(1));
+    // The wait is still the same D20 table.
+    assert_eq!(unlock_wait(1), Duration::from_secs(1));
 }
 
-/// V3.35 (D62, S7): estado com `vista` = `queimada` = 7 e nenhum cofre: o cofre novo
-/// nasce na geração 8 e o estado vai a 8/8; a cópia de um cofre anterior na geração 5,
-/// posta no lugar, é recusada como retrocesso.
+/// V3.35 (D62, S7): state with seen = burned = 7 and no vault: the new vault is
+/// born at generation 8 and the state goes to 8/8; the copy of an earlier vault at
+/// generation 5, put in place, is refused as a rollback.
 #[test]
-fn v3_35_criar_cofre_com_estado_velho_e_copia_antiga() {
-    let dir = Dir::novo("d62-criar");
-    let c = dir.caminhos();
-    // Um cofre anterior, na geração 5, com a mesma senha de teste (o atacante guardou).
-    let antigo = dir.0.join("antigo.ward");
-    let senha = SenhaMestra::nova(SENHA.to_owned());
-    let mut velho = CofreAberto::novo(
-        &senha,
-        Configuracao::nova(HashPin::criar(PIN.as_bytes()).unwrap()),
+fn v3_35_create_vault_with_old_state_and_old_copy() {
+    let dir = Dir::new("d62-criar");
+    let c = dir.paths();
+    // An earlier vault, at generation 5, with the same test password (the attacker kept
+    // it).
+    let old = dir.0.join("antigo.ward");
+    let password = MasterPassword::new(PASSWORD.to_owned());
+    let mut stale = OpenVault::new(
+        &password,
+        VaultConfig::new(PinHash::create(PIN.as_bytes()).unwrap()),
     )
     .unwrap()
-    .depois_da_geracao(4);
-    ward_core::gravacao::gravar_entradas(&antigo, &mut velho, &[]).unwrap();
-    assert_eq!(geracao_no_disco(&antigo, SENHA), 5);
-    arquivos::gravar_estado(
-        &c.estado,
-        Geracoes {
-            vista: 7,
-            queimada: 7,
-        },
-    )
-    .unwrap();
-    assert!(!c.cofre.exists());
+    .after_generation(4);
+    ward_core::atomic_write::write_entries(&old, &mut stale, &[]).unwrap();
+    assert_eq!(generation_on_disk(&old, PASSWORD), 5);
+    files::write_state(&c.state, Generations { seen: 7, burned: 7 }).unwrap();
+    assert!(!c.vault.exists());
 
-    let (d, _) = daemon_em(c.clone());
-    let criar = pedir(
+    let (d, _) = daemon_at(c.clone());
+    let create = request(
         &d,
-        Papel::App,
-        "criar_cofre",
+        Role::App,
+        "create_vault",
         &format!(
-            r#"{{"senha":"{}","pin":"{}"}}"#,
-            b64(SENHA.as_bytes()),
+            r#"{{"password":"{}","pin":"{}"}}"#,
+            b64(PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
     );
-    assert!(ok(&criar), "{criar:?}");
-    assert_eq!(geracao_no_disco(&c.cofre, SENHA), 8);
-    assert_eq!(
-        geracoes(&dir),
-        Geracoes {
-            vista: 8,
-            queimada: 8
-        }
-    );
+    assert!(ok(&create), "{create:?}");
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), 8);
+    assert_eq!(generations(&dir), Generations { seen: 8, burned: 8 });
 
-    // O atacante põe a cópia antiga no lugar e destrava.
-    d.travar();
-    fs::copy(&antigo, &c.cofre).unwrap();
-    let r = destravar(&d, SENHA);
-    assert_eq!(erro(&r), Some(ErroResposta::Retrocesso));
-    assert_eq!(ErroResposta::Retrocesso.mensagem(), MSG_RETROCESSO);
-    assert!(d.travado());
-    // Nem um daemon novo abre.
-    let (d2, _) = daemon_em(c.clone());
-    assert_eq!(erro(&destravar(&d2, SENHA)), Some(ErroResposta::Retrocesso));
+    // The attacker puts the old copy in place and unlocks.
+    d.lock();
+    fs::copy(&old, &c.vault).unwrap();
+    let r = unlock(&d, PASSWORD);
+    assert_eq!(error(&r), Some(ResponseError::Rollback));
+    assert_eq!(ResponseError::Rollback.message(), MSG_ROLLBACK);
+    assert!(d.is_locked());
+    // Not even a new daemon opens it.
+    let (d2, _) = daemon_at(c.clone());
+    assert_eq!(error(&unlock(&d2, PASSWORD)), Some(ResponseError::Rollback));
 }
 
-/// V3.35 (D62): sem estado, o cofre nasce na geração 1 (primeiro uso de sempre); com
-/// estado ilegível e sem cofre, o `criar_cofre` recusa em vez de começar do zero.
+/// V3.35 (D62): without a state, the vault is born at generation 1 (the usual first
+/// use); with an unreadable state and no vault, the vault creation refuses instead
+/// of starting from zero.
 #[test]
-fn v3_35_criar_cofre_sem_estado_e_com_estado_invalido() {
-    let dir = Dir::novo("d62-criar-sem");
-    let c = dir.caminhos();
-    let criar = format!(
-        r#"{{"senha":"{}","pin":"{}"}}"#,
-        b64(SENHA.as_bytes()),
+fn v3_35_create_vault_without_state_and_with_invalid_state() {
+    let dir = Dir::new("d62-criar-sem");
+    let c = dir.paths();
+    let create = format!(
+        r#"{{"password":"{}","pin":"{}"}}"#,
+        b64(PASSWORD.as_bytes()),
         b64(PIN.as_bytes())
     );
-    fs::write(&c.estado, "ward-estado 1\nvista 9\n").unwrap();
-    let (d, _) = daemon_em(c.clone());
+    fs::write(&c.state, "ward-estado 1\nvista 9\n").unwrap();
+    let (d, _) = daemon_at(c.clone());
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "criar_cofre", &criar)),
-        Some(ErroResposta::FalhaAoGravar)
+        error(&request(&d, Role::App, "create_vault", &create)),
+        Some(ResponseError::WriteFailed)
     );
-    assert!(!c.cofre.exists());
-    fs::remove_file(&c.estado).unwrap();
-    assert!(ok(&pedir(&d, Papel::App, "criar_cofre", &criar)));
-    assert_eq!(geracao_no_disco(&c.cofre, SENHA), 1);
-    assert_eq!(
-        geracoes(&dir),
-        Geracoes {
-            vista: 1,
-            queimada: 1
-        }
-    );
+    assert!(!c.vault.exists());
+    fs::remove_file(&c.state).unwrap();
+    assert!(ok(&request(&d, Role::App, "create_vault", &create)));
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), 1);
+    assert_eq!(generations(&dir), Generations { seen: 1, burned: 1 });
 }
 
-/// Troca o arquivo do cofre por uma cópia de bytes iguais em outro inode (o que um
-/// processo do mesmo usuário faria logo depois do rename).
-#[cfg(feature = "ganchos-teste")]
-fn trocar_por_copia(c: &Caminhos) {
-    let bytes = fs::read(&c.cofre).unwrap();
-    let tmp = c.cofre.with_extension("troca");
+/// Swaps the vault file for a copy with the same bytes in another inode (what a process
+/// of the same user would do right after the rename).
+#[cfg(feature = "test-hooks")]
+fn swap_for_copy(c: &Paths) {
+    let bytes = fs::read(&c.vault).unwrap();
+    let tmp = c.vault.with_extension("troca");
     fs::write(&tmp, &bytes).unwrap();
-    fs::rename(&tmp, &c.cofre).unwrap();
+    fs::rename(&tmp, &c.vault).unwrap();
 }
 
-/// V3.35 (D62, S7, S13): um gancho troca o arquivo logo depois do rename do
-/// `gravar_entradas`. A identidade que o daemon guarda é a do fd do temporário, então
-/// a gravação seguinte responde "o arquivo do cofre mudou fora do Ward", trava e não
-/// grava. Com o `stat` depois do rename, a troca passaria como sendo do Ward.
-#[cfg(feature = "ganchos-teste")]
+/// V3.35 (D62, S7, S13): a hook swaps the file right after the rename of
+/// `write_entries`. The identity the daemon keeps is the one of the temp file's fd, so
+/// the next write answers "the vault file changed outside Ward", locks and does not
+/// write. With the `stat` after the rename, the swap would pass as Ward's own.
+#[cfg(feature = "test-hooks")]
 #[test]
-fn v3_35_troca_logo_depois_do_rename_e_recusada() {
-    let dir = Dir::novo("d62-rename");
-    cofre_travado(&dir);
-    let c = dir.caminhos();
-    let armado = Arc::new(AtomicBool::new(false));
-    let trocou = Arc::new(AtomicBool::new(false));
+fn v3_35_swap_right_after_the_rename_is_refused() {
+    let dir = Dir::new("d62-rename");
+    locked_vault(&dir);
+    let c = dir.paths();
+    let armed = Arc::new(AtomicBool::new(false));
+    let swapped = Arc::new(AtomicBool::new(false));
     let d = {
-        let (armado, trocou, c) = (armado.clone(), trocou.clone(), c.clone());
-        Daemon::novo(c.clone(), Box::new(RelogioFalso::default())).com_gancho_depois_de_gravar(
-            Box::new(move || {
-                if armado.swap(false, Ordering::SeqCst) {
-                    trocar_por_copia(&c);
-                    trocou.store(true, Ordering::SeqCst);
+        let (armed, swapped, c) = (armed.clone(), swapped.clone(), c.clone());
+        Daemon::new(c.clone(), Box::new(FakeClock::default())).with_hook_after_write(Box::new(
+            move || {
+                if armed.swap(false, Ordering::SeqCst) {
+                    swap_for_copy(&c);
+                    swapped.store(true, Ordering::SeqCst);
                 }
-            }),
-        )
+            },
+        ))
     };
-    assert!(ok(&destravar(&d, SENHA)));
-    // Sem troca, gravar duas vezes funciona.
-    assert!(ok(&pedir(
+    assert!(ok(&unlock(&d, PASSWORD)));
+    // Without a swap, writing twice works.
+    assert!(ok(&request(
         &d,
-        Papel::App,
-        "tempo_trava",
-        r#"{"minutos":30}"#
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":30}"#
     )));
-    armado.store(true, Ordering::SeqCst);
-    assert!(ok(&pedir(
+    armed.store(true, Ordering::SeqCst);
+    assert!(ok(&request(
         &d,
-        Papel::App,
-        "tempo_trava",
-        r#"{"minutos":31}"#
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":31}"#
     )));
-    assert!(trocou.load(Ordering::SeqCst), "o gancho não rodou");
-    let trocado = fs::read(&c.cofre).unwrap();
-    let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":32}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou));
+    assert!(swapped.load(Ordering::SeqCst), "o gancho não rodou");
+    let swapped_bytes = fs::read(&c.vault).unwrap();
+    let r = request(&d, Role::App, "lock_timeout", r#"{"minutes":32}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert_eq!(
-        ErroResposta::CofreMudou.mensagem(),
-        ward_core::protocolo::MSG_COFRE_MUDOU
+        ResponseError::VaultChanged.message(),
+        ward_core::protocol::MSG_VAULT_CHANGED
     );
-    assert!(d.travado());
+    assert!(d.is_locked());
     assert_eq!(
-        fs::read(&c.cofre).unwrap(),
-        trocado,
+        fs::read(&c.vault).unwrap(),
+        swapped_bytes,
         "gravou por cima da troca"
     );
 
-    // O mesmo na troca de senha: a identidade vem do fd da gravação dela.
-    let dir2 = Dir::novo("d62-rename-senha");
-    cofre_travado(&dir2);
-    let c2 = dir2.caminhos();
-    let armado2 = Arc::new(AtomicBool::new(false));
+    // The same in the password change: the identity comes from the fd of its write.
+    let dir2 = Dir::new("d62-rename-senha");
+    locked_vault(&dir2);
+    let c2 = dir2.paths();
+    let armed2 = Arc::new(AtomicBool::new(false));
     let d2 = {
-        let (armado2, c2) = (armado2.clone(), c2.clone());
-        Daemon::novo(c2.clone(), Box::new(RelogioFalso::default())).com_gancho_depois_de_gravar(
-            Box::new(move || {
-                if armado2.swap(false, Ordering::SeqCst) {
-                    trocar_por_copia(&c2);
+        let (armed2, c2) = (armed2.clone(), c2.clone());
+        Daemon::new(c2.clone(), Box::new(FakeClock::default())).with_hook_after_write(Box::new(
+            move || {
+                if armed2.swap(false, Ordering::SeqCst) {
+                    swap_for_copy(&c2);
                 }
-            }),
-        )
+            },
+        ))
     };
-    assert!(ok(&destravar(&d2, SENHA)));
-    armado2.store(true, Ordering::SeqCst);
-    let nova = "falso-nova-ward-03";
-    assert!(ok(&pedir(
+    assert!(ok(&unlock(&d2, PASSWORD)));
+    armed2.store(true, Ordering::SeqCst);
+    let new_password = "falso-SALTO-01";
+    assert!(ok(&request(
         &d2,
-        Papel::App,
-        "trocar_senha",
+        Role::App,
+        "change_password",
         &format!(
-            r#"{{"atual":"{}","nova":"{}"}}"#,
-            b64(SENHA.as_bytes()),
-            b64(nova.as_bytes())
+            r#"{{"current":"{}","new":"{}"}}"#,
+            b64(PASSWORD.as_bytes()),
+            b64(new_password.as_bytes())
         ),
     )));
-    let trocado = fs::read(&c2.cofre).unwrap();
-    let r = pedir(&d2, Papel::App, "tempo_trava", r#"{"minutos":33}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou));
-    assert!(d2.travado());
-    assert_eq!(fs::read(&c2.cofre).unwrap(), trocado);
+    let swapped_bytes = fs::read(&c2.vault).unwrap();
+    let r = request(&d2, Role::App, "lock_timeout", r#"{"minutes":33}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
+    assert!(d2.is_locked());
+    assert_eq!(fs::read(&c2.vault).unwrap(), swapped_bytes);
 }

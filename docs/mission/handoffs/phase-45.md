@@ -1,234 +1,106 @@
-# Fase 45 — Backup local automático e restaurar no daemon (D17, D27, D39)
+# Fase 45 — `real-home.sh`, `webkit-real.sh`, `origins.py`, serviços web, `nm.py`, ataques ao socket, `generate.py`, `deb.sh`, `compose.yml` (Missão 2, trilha S)
 
 ## Implementado
-- **`ward-core::backup`** (novo, `crates/ward-core/src/backup.rs`):
-  - `Versao`: nome `ward-AAAAMMDD-HHMMSS.ward` em **UTC** (o núcleo não tem fuso; a UI
-    da Fase 47 mostra no fuso local). Duas versões no mesmo segundo ganham `-1` … `-99`.
-    A ordem é a do tempo (data, hora, sufixo), não a do texto. `de_nome` é estrito
-    (ASCII, até 28 bytes, data e hora possíveis, sufixo sem zero à esquerda): barra,
-    `..` e caminho nunca passam. `do_instante` usa só aritmética inteira (`civil_from_days`).
-  - `PastaBackup { dir, uid }`: toda operação confere que `dir` é diretório do `uid`,
-    sem nenhum bit para grupo e outros (0700). `listar()` devolve da mais nova para a
-    mais antiga e só arquivos comuns (`DirEntry::file_type`, sem seguir link) com o nome
-    exato.
-  - Gravação (`guardar`, `pub(crate)`): primeiro apaga temporários velhos da pasta (só
-    `.backup.ward-tmp-*` comuns), depois grava pelo caminho interno do `gravacao`
-    (temporário `O_EXCL` 0600 → fsync → **`link(2)` para o nome final**, que nunca
-    sobrescreve → apaga o temporário → fsync do diretório) e por fim gira: apaga as mais
-    antigas até sobrarem **30**, nunca a que acabou de gravar e nunca um link.
-  - `guardar_atual(pasta, cofre, arquivo, instante)` (pública): grava o arquivo do cofre
-    atual como backup **só se ele foi selado por este `CofreAberto`** (mesmo cabeçalho de
-    0..128 e corpo que abre pela AEAD com a chave de dados, sem Argon2). É o "grava o
-    atual como backup antes de trocar" de D17.
-- **`ward-core::gravacao`** (D27: o backup usa o `gravar` interno):
-  - `escrever_temporario` e `sincronizar_diretorio` saíram de dentro do
-    `gravar_com_pontos` (o comportamento e os pontos de teste do V2.9 são os mesmos);
-    `gravar_novo_com_pontos` (`pub(crate)`) publica por `hard_link` sem sobrescrever.
-  - Públicas novas: `gravar_entradas_com_backup` e `trocar_senha_com_backup`. Selam e
-    gravam o cofre como antes e, **só depois que a gravação deu certo inteira**, gravam
-    os **mesmos bytes selados** na pasta. Nada é selado de novo, então o backup não
-    queima nem repete geração (D53). Devolvem `Gravado { identidade, backup }`: erro
-    do backup não desfaz a gravação do cofre.
-  - `gravar_entradas`/`trocar_senha` continuam com a mesma assinatura (delegam a
-    `gravar_entradas_selado`/`trocar_senha_selado`).
-- **`ward-core::formato`**: `CofreAberto::autentica(arquivo)` (`pub(crate)`) e
-  `ChavesCofre::abrir_proprio` (AEAD da biblioteca, nada de cripto à mão).
-- **Protocolo** (padrão das operações existentes):
-  - `backups` (só app, sem campo) → resposta `backups` (só app):
-    `{"versoes": ["ward-…", …]}`, só nomes no formato exato, até `MAX_BACKUPS = 64`.
-  - `restaurar_backup` (só app): `{"versao": "<nome exato>", "senha": b64, "pin": b64}`.
-    A leitura recusa nome fora do formato, senha vazia, PIN fora do formato e campo a
-    mais (`"geracao"`, por exemplo).
-  - Erros novos: `backup_inexistente` ("a versão do backup não existe") e
-    `backup_indisponivel` ("a pasta de backups não está disponível ou não é segura").
-  - Asserções de compilação: `backups` e `restaurar_backup` não são do agente nem da
-    extensão.
-- **`wardd`**:
-  - `arquivos::abrir_pasta_backup(dir)`: cria a pasta 0700 se faltar (sem criar os
-    pais), abre com `O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC` e confere pelo `fstat` (dono
-    euid, nenhum bit para grupo e outros). `PastaAberta::caminho()` = `/proc/self/fd/<n>`:
-    tudo que o núcleo faz na pasta passa pelo fd, então trocar a pasta por um link (ou
-    por outro diretório) depois de aberta não desvia nada. `dir_backups(cofre)` =
-    `<pasta do cofre>/backups`: `~/.local/share/ward/backups` no release e
-    `.dev/backups` no `modo-teste` (V7.1). `Caminhos` não mudou.
-  - Toda gravação do cofre (`gravar`, `criar_cofre`, `trocar_senha`) faz backup quando a
-    pasta abre. Se a pasta não abre ou não é segura, o cofre é gravado assim mesmo e o
-    log avisa com texto fixo, sem caminho.
-  - `backups`: só com o cofre destravado.
-  - `restaurar_backup`: exige o cofre destravado e o **PIN atual** (conta para os 5 que
-    travam) e a senha mestra da versão. Ordem:
-    1. lê a versão pelo fd da pasta com `O_NOFOLLOW` (`arquivos::ler_cofre`) e abre com
-       a senha dela, sem geração mínima;
-    2. confere a identidade do cofre atual (D39/D62; mudou → trava, `cofre_mudou`) e o
-       guarda como backup (`guardar_atual`). Se não guardar, não troca:
-       `backup_indisponivel`;
-    3. queima no estado a geração `q + 1`, com `q` = max(`queimada`, geração do cofre
-       aberto), sela a versão com ela pela gravação comum (com backup) e confirma
-       `vista = queimada = q + 1`;
-    4. o daemon segue destravado com a versão restaurada, sem as liberações de 1 h e com
-       os erros de PIN zerados.
 
-    Erro depois de selar trava o cofre, como na troca de senha, e o destravar reabre com
-    a `queimada` do estado.
+O worktree nasceu em `b4d5e1b`. Com a árvore limpa, rodei `git reset --hard 2cb1305` (master). A troca foi 1:1 pelo `docs/glossario.md`. Nos Python, renomeei só os tokens `NAME`, por `tokenize` e com um mapa por arquivo, e conferi por AST. Nos shell, reescrevi à mão e conferi por diff de tokens. Comentários e docstrings passaram para o inglês ("Fase" → "Phase", IDs da missão 1 sem prefixo). As mensagens de saída (`ok …`, `FALHA …`, `origens: …`, `dev-services: …`, `webkit-real: …`, `test-deb: …`) continuam em pt-BR e iguais (DT20).
+
+- **`dev/origins.py`** (pré-checagem de segurança): só nomes e comentários. Renomes: `RAIZ` → `ROOT`, `CASA` → `PASSWD_HOME`, `PERMITIDAS_HOME`/`ENV_PERMITIDAS`/`TOOLCHAIN_PERMITIDAS` → `HOME_ALLOWED`/`ENV_ALLOWED`/`TOOLCHAIN_ALLOWED`, `ENV_DO_CARGO` → `CARGO_ENV`, `CANAL_FIXO` → `FIXED_CHANNEL`, `NOME_SIMPLES` → `SIMPLE_NAME`, `PULAR` → `SKIP`, `erros` → `errors`, `dentro` → `inside`, `conferir_*` → `verify_*`, `configs_no/fora_do_repositorio` → `configs_in/outside_repo`, `terminar` → `finish`, e os locais.
+  - Pela AST, nenhuma constante, string ou operador mudou.
+  - Os textos que o `attacks-foundation.sh` procura (`origens: `, `fonte fora do crates.io`, `.cargo/config* no repositório é proibido`, `toolchain ativo`, `config`) estão iguais. Por isso nenhum `grep` daquele script precisou mudar.
+- **`dev/services/web/server.py`**: `pagina` → `page`, `responder` → `respond`, `ler_corpo` → `read_body`, `formulario` → `form`, `tela_wp`/`tela_totp`/`tela_cadastro` → `wp_screen`/`totp_screen`/`signup_screen`, `cadastrar`/`entrar` → `sign_up`/`log_in`, `totp_confere` → `totp_matches`, `LIMITE_*` → `*_LIMIT`, `TRAVA_*` → `*_LOCK`, `CONTAS_CARREGADAS` → `LOADED_ACCOUNTS` …
+  - Variáveis de ambiente: `WARD_REGISTRO`/`WARD_CONTAS`/`WARD_DESTINO_REDIR`/`WARD_PORTA` → `WARD_RECORD`/`WARD_ACCOUNTS`/`WARD_REDIR_TARGET`/`WARD_LISTEN_PORT`, pelo glossário, seção 8. Só o `compose.yml` define uma delas (`WARD_LISTEN_PORT`), e mudou junto.
+  - HTML, campos do formulário, chaves do `posts.log` e do `totp-contas.json` e caminhos do contêiner ficaram iguais.
+- **`dev/services/generate.py`**: `RAIZ` → `ROOT`, `DESTINO`/`SEGREDOS`/`CHAVES` → `DEST`/`SECRETS`/`KEYS`, `SERVICOS_SSH` → `SSH_SERVICES`, `falhar` → `fail`, `gravar` → `write_file`, `diretorio` → `ensure_dir`, `gerar_*` → `generate_*`, `gravar_*` → `write_*` …
+  - O `--help` usava a 1ª linha da docstring (`__doc__.splitlines()[0]`). Agora usa a constante `DESCRIPTION`, com o mesmo texto pt-BR byte a byte (conferido contra o original).
+- **`dev/compose.yml`**:
+  - âncoras `x-seguranca`/`seguranca` → `x-security`/`security` e `wp-ambiente` → `wp-env`;
+  - rede `interno` → `internal`;
+  - `WARD_MODO: senha|chave|salto|interno` → `WARD_MODE: password|key|jump|internal`, com o `case` e a leitura em `dev/services/ssh/entrypoint.sh` e o comentário do `Dockerfile` (uso 1:1, glossário seção 6). A imagem é refeita pelo `make dev-services-up` (`--build`);
+  - comentários em inglês.
+- **`dev/tests/nm.py`, `socket_attack.py`, `socket_matrix.py`**: renomes pelo padrão das Fases 40–42 (`ROOT`, `WORK_DIR`, `SOCKET_PATH`, `failures`/`fail`/`verify`, `read_exact`, `BAD_FRAMES`, `SLOTS`, `operations`, `session` …).
+  - No `socket_matrix.py`, duas expressões `r.get('tipo')` dentro de f-string viraram a variável `reply_kind`, calculada antes. O texto impresso é o mesmo.
+- **`dev/tests/webkit-real.sh`**: `RAIZ` → `ROOT`, `LANCADOR` → `LAUNCHER`, `valor_fixo` → `fixed_value`, `SAIDA` → `OUT_DIR`, `CASA` → `FAKE_HOME`, `MARCA` → `MARKS`, `isca` → `decoy`, `limpar` → `cleanup`, `LPID` → `LISTENER_PID`, `nao` → `not_ok`, e o Python embutido. As strings que ele procura no `main.rs` do app (`partida::iniciar()`, `tomar_daemon`, `vigiar`, `na_vigia`, `ErroApp::ConexaoPerdida`) e no `launcher.rs` (`FIXED_VARIABLES`) foram conferidas contra o master e ficaram iguais.
+- **Defeito do plano (achado da Fase 6), corrigido**: `make test-webkit-real NO_MPS=1 NO_39C=1` passava `--no-mps--no-39c` grudado. Agora:
+  - o Makefile passa as duas opções com espaço;
+  - o script lê todos os argumentos depois do cargo (`--no-mps`, `--no-39c`, juntos ou não);
+  - argumento desconhecido é recusado e o script sai 2. Antes ele era ignorado sem aviso, e agora falha fechado.
+  - Conferido isolando o laço de argumentos: nenhum, um, os dois nas duas ordens, grudado (recusa) e lixo (recusa).
+- **`dev/tests/real-home.sh`**: `CASA` → `PASSWD_HOME`, `rastrear`/`rastrear_ok` → `trace_run`/`trace_ok`, `acusados` → `flagged`, `conferir` → `verify`, `falhou`/`falhas` → `fail`/`failures`, `opcoes_mutadas` → `mutated_options`, `mutacao` → `mutation`, `controle_*` → `control_*`, e o Python embutido (`inside`, `parent_of`, `cwd_of`, `flagged` …).
+  - Os rótulos internos dos traces também mudaram: `senha`/`errada`/`chave`/`interno`/`metodos`/`canal`/`keygen-novo`/`controle-*`/`m-sem-os-dois` → `password`/`wrong`/`key`/`internal`/`methods`/`channel`/`keygen-new`/`control-*`/`m-without-both`.
+  - O diff de tokens mostra só esses pares, com mapeamento consistente.
+- **`dev/tests/deb.sh`**: `SO_HOST` → `HOST_ONLY` (opção interna `--so-host` → `--host-only`, que ninguém mais passa), `SEM` → `NO_TM`, `CLIENTE` → `CLIENT`, `NOME` → `CONTAINER_NAME`, `IMAGEM` → `IMAGE`, `confere`/`falhou`/`recusa` → `verify`/`fail`/`refusal` …
+  - Nomes temporários em `$TMP`: `extraido` → `extracted`, `conteiner` → `container`, `outra/aberta.pem` → `other/open.pem`, `outro.crx` → `other.crx`, `saida/` → `out/`, `plantado` → `planted`.
+  - Os textos procurados em saídas de `install/` (`modo-teste`, `não de EXTENSION_ID`, `não do ID_EXTENSAO`, `garantir_grupo` …), os caminhos de staging (`$D/raiz`) e os do contêiner (`/opt/teste`, `bin/cliente`) ficaram iguais.
+- **`allow.txt`**: os quatro serviços `ssh-senha`, `ssh-chave`, `ssh-salto` e `ssh-interno` são nomes de host gravados nas entradas do cofre de teste (`entries.json` e as fixtures legadas 0.1.4) e nomes dos arquivos de segredo em `.dev/services/`, então são dado e ficam.
+- **Glossário**: entrou um parágrafo da Fase 45 na seção 4, com os nomes recorrentes, as variáveis trocadas antes da Fase 56 e o que ficou para as Fases 46 e 56.
+
+### Literais alterados (PRD regra 5)
+- Nomes de variável de ambiente: `WARD_MODE` e os valores do modo, `WARD_LISTEN_PORT`, `WARD_RECORD`, `WARD_ACCOUNTS`, `WARD_REDIR_TARGET`. Junto mudaram as mensagens `WARD_MODE não definido`/`desconhecido` do `entrypoint.sh`.
+- `webkit-real.sh`:
+  - linha de uso `[--no-mps] [--no-39c]` e a mensagem nova `opção desconhecida`;
+  - caminhos em `.dev/webkit-real/` (`saida/` → `out/`, `casa` → `home`, `marcas` → `marks`);
+  - nomes das iscas (`*marca*.so` → `*mark*.so`, `urn:ward:mark`) e o C gerado (`mark()`, macro `LABEL`).
+- `real-home.sh`: os rótulos dos traces (acima) e `$TMP/wrong-password`/`$TMP/new-key`.
+- `deb.sh`: `--host-only` e os nomes em `$TMP` (acima).
+- `generate.py`: o exemplo do uso na docstring passou a ser `<ssh service>` (a docstring não é impressa; o `--help` usa `DESCRIPTION`).
 
 ## Segurança
-- **Invariantes tocadas e como a fase as respeita**
-  - **S1:** as respostas novas não levam segredo, caminho nem geração. `backups` e
-    `restaurar_backup` são só do app: tabela, asserção de compilação e segunda camada
-    no `atender_de`.
-  - **S2/S6:** o backup é o arquivo cifrado que acabou de ser selado (mesmo formato,
-    Argon2id + XChaCha20-Poly1305). Nenhum byte em claro passa pelo módulo, e os
-    temporários são prefixos do cifrado.
-  - **S7:** gravação atômica pelo caminho interno, com link sem sobrescrever. Uma morte
-    em qualquer ponto não mexe nos backups que já estavam lá. A rotação só apaga
-    depois que a versão nova entrou.
-  - **S9/D39:** restaurar exige o PIN atual (a versão traz outros níveis e outro PIN) e
-    nunca baixa a geração. A cópia à mão do backup continua em `retrocesso` (V3.22).
-  - **S13:** os logs novos têm só textos fixos (`codigo_backup`), sem caminho nem valor.
-  - **D27/D44:** nenhuma gravação pública de bytes soltos. O backup só grava bytes que a
-    própria gravação selou, ou o cofre atual autenticado pela chave do cofre aberto.
-    O V2.50 (`tests/fontes.rs`) foi atualizado: as duas públicas novas, `fs::hard_link`
-    e `linkat` só em `gravacao.rs`, e as funções `*_selado` serializam ou desserializam
-    antes de selar.
-- **Testes de ataque** (todos falham do lado do atacante)
-  - `crates/ward-core/src/backup/testes.rs`:
-    - `v7_1_31_gravacoes_deixam_30_versoes`: 31 gravações → 30 arquivos, o mais antigo
-      saiu. Arquivos 0600 e pasta 0700, cada backup igual ao cofre gravado; a lista vem
-      da mais nova para a mais antiga; abre na geração certa com as 22 entradas de
-      `cofre_de_teste` (mesmo espelho da fixture);
-    - `mesmo_segundo_ganha_sufixo_sem_sobrescrever`;
-    - `v7_2_backup_cifrado_senha_errada_e_byte_alterado`: nenhum dos `SEGREDOS` nem o
-      PIN em claro ou em base64. A senha errada não abre. O bit trocado em **cada**
-      posição não autentica (AEAD com a chave de dados). Com a senha certa, 10
-      posições, uma em cada campo do cabeçalho e do corpo, não abrem. A abertura por
-      senha de cada posição é o V2.2, no mesmo formato;
-    - `v7_3_sigkill_em_cada_ponto_do_backup`: antes do link, nenhum nome novo e o backup
-      anterior intacto; depois, o novo inteiro; a próxima gravação apaga o temporário;
-    - `v7_3_sigkill_em_100_pontos_aleatorios`: filho gravando backups sem parar, com
-      rotação. Todo backup que fica é uma versão inteira 0600; no máximo 1 temporário,
-      que é prefixo do cifrado e não tem segredo; a contagem nunca cai abaixo de
-      min(anterior, 30); a gravação seguinte volta às 30;
-    - `ataque_pasta_com_permissao_aberta_recusada` (0750/0705/0755/0777/0701,
-      inexistente, arquivo, outro uid): nada é gravado ou listado e o cofre é gravado;
-    - `ataque_link_com_nome_de_versao_nao_e_seguido`: o link plantado com o nome da
-      versão não é seguido nem sobrescrito (vira `-1`), e a lista e a rotação o ignoram;
-    - `ataque_guardar_atual_so_aceita_o_arquivo_autentico`: o cofre de outra chave, o
-      adulterado e bytes quaisquer dão `NaoAutentico`;
-    - `ataque_nome_fora_do_formato_recusado` e `nome_do_instante_em_utc_e_ida_e_volta`
-      (bissextos, fim de ano);
-    - `troca_de_senha_vai_para_o_backup_com_a_senha_nova`.
-  - `crates/ward-core/src/protocolo/testes.rs`:
-    - `v7_8_restaurar_e_backups_so_pelo_app`: agente e extensão recebem
-      `nao_autorizado` com qualquer campo; o cliente não codifica e a resposta não sai
-      nem é lida por outro papel;
-    - `ataque_restaurar_com_caminho_no_nome_recusado`: `../`, caminho absoluto,
-      `backups/…`, `-01`, senha vazia, PIN `12ab`, sem PIN e `"geracao"` a mais; a
-      resposta com nome ruim ou com 65 nomes é recusada;
-    - `v3_15_tabela_operacao_papel` e as listas de um de cada atualizadas.
-  - `crates/wardd/tests/backup.rs`:
-    - `v7_1_cada_gravacao_do_daemon_vai_para_o_backup`: 8 gravações → 8 versões, nas
-      gerações 1 a 8, a mais nova igual ao cofre, sem segredo, senha ou PIN em claro;
-    - `v7_8_agente_e_extensao_nao_restauram`: pelo protocolo e direto no
-      `Daemon::atender`, com o PIN certo; cofre e estado iguais byte a byte;
-    - `v7_11_restaurar_sela_geracao_nova_e_copia_a_mao_e_retrocesso`:
-      1. n+2 → restaurar a versão n deixa cofre e estado em n+3, com as entradas de n;
-      2. o atual (n+2) fica na pasta byte a byte;
-      3. travar e destravar com a senha da versão funciona;
-      4. a cópia à mão de n cai em `retrocesso`, também num daemon novo, e não é
-         regravada;
-    - `ataque_restaurar_sem_pin_senha_errada_e_travado`: PIN errado, senha da versão
-      errada, versão inexistente e `../` não mexem em nada; 5 PINs errados pelo
-      restaurar travam; travado, nem lista nem restaura;
-    - `ataque_pasta_de_backups_trocada_por_link`: a pasta vira link para outra com uma
-      cópia autêntica → `backup_indisponivel` em listar e restaurar; a gravação do cofre
-      segue sem escrever no alvo; a pasta 0755 também é recusada;
-    - `ataque_versao_trocada_por_link`: a versão vira link para uma cópia autêntica fora
-      da pasta → não restaura (`O_NOFOLLOW`) e some da lista;
-    - `ataque_restaurar_com_cofre_trocado_fora_do_ward`: outro inode com os mesmos
-      bytes → `cofre_mudou`, trava, nada novo na pasta;
-    - `ataque_restaurar_sem_gravar_o_estado_nao_troca_o_cofre`: diretório 0500 →
-      `falha_ao_gravar`, o cofre fica igual, o daemon segue com as entradas de antes e
-      a geração seguinte não repete;
-    - `restaurar_pede_a_senha_da_versao`: a troca de senha vai para o backup com a
-      senha nova; a versão anterior só restaura com a antiga.
-- **Dependências novas:** nenhuma. `wardd` passou a usar também `libc::O_DIRECTORY`
-  (constante, como as que já usava).
+- **Invariantes tocadas**:
+  - **S14** (`origins.py`): a lógica não mudou. Pela AST, as listas de permitidas, as regex, a ordem dos passos (nada roda antes dos passos 1–4) e as mensagens são as mesmas.
+  - **S2/S15** (`generate.py`): continua com gravação atômica `O_EXCL|O_NOFOLLOW`, modos 0600/0644/0700, passphrase só pelo pty e nada fora do repositório. Pela AST, nada mudou.
+  - **S1/S5** (`socket_matrix.py`, `socket_attack.py`): os mesmos ataques, limites e expectativas.
+  - **D47/V6.1** (`nm.py`): igual.
+  - **V5.32/D64** (`webkit-real.sh`): as conferências são as mesmas. Com a correção do defeito, `NO_MPS=1 NO_39C=1` passa a tirar as duas proteções juntas, como o Makefile descreve.
+  - **R13** (`real-home.sh`): o detector e as mutações são os mesmos.
+- **`WARD_HOME_COBERTO` ficou de propósito.** Ele é a guarda de reexecução no bwrap, e o `ssh-home.sh` (Fase 44, em paralelo) e o `home-decoys.sh` o tiram com `env -u`. Se eu trocasse só aqui, o `env -u` deles viraria no-op para o nome novo. Pelo glossário, ele vai para a Fase 56, nos três arquivos juntos.
+- **Testes de ataque**: nenhum novo (a fase é de nomes, mais a correção do argumento). Escritos, não rodados (PRD regra 6): `make test-real-home`, `test-webkit-real`, `test-nm`, `test-socket-attacks`, `test-deb` e `test-attacks-foundation` rodam no M6.
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- **UI de restaurar:** é a Fase 47.
-- **Backup externo:** pendrive e udisks2 são da Fase 46. O ligar e desligar do externo
-  pelo socket (a outra metade do V7.8) chega com ela.
-- **Fixture e `make dev-cofre`:** não mudaram, então `make teste-dev-cofre` não foi
-  necessário. O `make dev-cofre` não apaga `.dev/backups/` ao recriar o cofre. As
-  cópias velhas são do cofre de teste, com a mesma senha falsa.
+- **Contrato do `dev/services/common.sh` (Fase 46)**: `RAIZ` em `real-home.sh` e `deb.sh` (o `common.sh` lê `$RAIZ` de quem o carrega), `OPCOES_SSH`, `IMAGEM_PG`, `DS`, `SEG` e as funções `exigir`, `cliente`, `ssh_senha`, `ssh_chave`, `ssh_interno`, `wp_login`, `psql_app`. São os únicos achados que sobram do `english-check` nos meus arquivos, mais o `WARD_HOME_COBERTO`.
+- **Fase 56**: `WARD_HOME_COBERTO`, `WARD_TESTE_PG_SENHA_ARQUIVO` e `WARD_PAI_CHROME_SOCK` (literais), mais `EXTENSAO_DIST`/`CRX_SAIDA` passados ao `pack-extension.sh` (Fase 47/56).
+- **Literais de fio e de outros arquivos**: `destravar`, `lista`, `preencher`, `nao_autorizado` …, o `protocolo.rs` e `Operacao,`/`tabela!` lidos pelo `socket_matrix.py`, os exemplos `pai-chrome`, `partida-conteiner` e `wardd-cliente-teste`, e os textos de `install/`.
+- **Suítes e Docker**: Milestone 6. A validade do `compose.yml` foi conferida só por leitura, porque o `docker compose config` e o PyYAML ficaram de fora.
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` e `make dev-cofre` | 0 |
-| `cargo test -p ward-core` (lib, `corpo_memoria`, `fontes`, doctests) | 0 |
-| `cargo test -p wardd --all-features` (inclui `tests/backup.rs`) | 0 |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 0 |
-| `make check` (1ª vez: `fmt-check` acusou `tests/backup.rs`) | 2 |
-| `make fmt` e `make check` (2ª vez: `socket.rs › v3_33_kill_9_entre_as_senhas_erradas` por tempo, ver Problemas) | 2 |
-| `make check` (3ª vez) | 0 |
+| `git reset --hard 2cb1305` (árvore limpa) | 0 |
+| conferência por AST dos 6 Python (original × novo, sem docstrings; colisões só de `os.path`/kwarg `file`/`mode`/atributo `name`) | 0 problemas reais |
+| diff de tokens dos shell (`real-home.sh`, `deb.sh`) e revisão do diff do `webkit-real.sh` | só os pares listados |
+| `python3 -I dev/english_check.py --paths` dos 8 arquivos limpos + `allow.txt` | 0 (0 achados) |
+| `english-check` em `real-home.sh` e `deb.sh` | 1 (só `RAIZ`, `OPCOES_SSH`, `IMAGEM_PG` e `WARD_HOME_COBERTO`; Fases 46/56) |
+| `python3 -I -B dev/english_check.py --self-test` | 0 (91/91) |
+| `make -n test-webkit-real NO_MPS=1 NO_39C=1` → `--no-mps --no-39c` | 0 |
+| `make compile` (log em `.dev/fase45/fase45-make-compile.log`) | 0 (origens, `cargo check` do workspace e do `app/src-tauri`, Vite, sintaxe de 48 shell, 35 Python e 7 JS) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **Restaurar exige o cofre destravado e o PIN atual.** Isso é mais que o texto de
-  D17/V7.7, que fala só na senha da versão. Motivo: S9 (a versão traz outros níveis e
-  outro PIN) e "o atual vira backup", que só dá para autenticar com a chave do cofre
-  aberto. Consequência: com o cofre principal corrompido, ou a senha atual esquecida,
-  não há restaurar pelo app. A cópia à mão cai em `retrocesso` (D39). Recuperar disso
-  pede apagar o estado e recriar à mão, e não há caminho guiado. O planner decide se
-  existe restaurar com o cofre travado (só a senha da versão, o atual copiado sem
-  autenticar) e como a Fase 47 pede o PIN.
-- **Nome em UTC.** O nome em UTC pode surpreender quem lê a pasta à mão. A Fase 47 deve
-  mostrar a data no fuso local.
-- **Pedidos de aprovação pendentes não são cancelados pelo restaurar.** As liberações de
-  1 h são limpas. Uma resposta "permitir sempre" que chegue depois (com PIN) muda a
-  entrada de mesmo nome da versão restaurada. O motor não tem "cancelar todos". Fica
-  para a fase da aprovação/uso (26/36) decidir.
-- **Resíduo de mesmo uid (RA4/S3).** Um processo do usuário pode pôr na pasta uma cópia
-  autêntica antiga com nome novo, e o usuário pode escolhê-la. Isso não abre nada sem
-  a senha daquela versão. A versão restaurada ganha geração nova e o atual vira
-  backup.
-- **Pasta só verificada pelo daemon.** O `PastaBackup` do núcleo segue o caminho que
-  recebe (`fs::metadata`). Quem garante que não é um link é o `wardd`, pelo fd com
-  `O_NOFOLLOW`. Um chamador futuro do núcleo (Fase 46) precisa abrir a pasta do mesmo
-  jeito.
-- **Pendrive da Fase 46.** A publicação por `link(2)` não funciona em vfat. A Fase 46
-  precisa de outro modo de publicar sem sobrescrever (ou de checar e renomear).
-- **Teste instável sob carga (fora desta fase).** O
-  `wardd/tests/socket.rs › v3_33_kill_9_entre_as_senhas_erradas` exige a primeira
-  resposta de senha errada em menos de 0,9 s, e isso inclui um Argon2id real de 256 MiB.
-  Com a máquina com load ~22 (vários workers em paralelo), mediu 1,1–1,3 s e falhou de
-  forma consistente. Com load ~14, passou. O caminho do destravar não mudou nesta fase.
-  Sugestão: folga maior ou medir a espera pelo relógio do daemon.
-- **Contrato (V7.1).** Diz `.dev/backups/`. É o que o daemon de teste usa (pasta do
-  cofre de teste). Os testes automatizados usam diretórios próprios em `target/`.
+- **Conflitos previsíveis de merge**:
+  - a Fase 43 renomeia os exemplos `partida-conteiner`/`wardd-cliente-teste`/`pai-chrome` "com todos os usos": as linhas `APP=`/`CLIENT=` do `deb.sh` e a docstring do `nm.py` daqui também mudaram;
+  - a Fase 44 mexe no `ssh-home.sh`, que usa `WARD_HOME_COBERTO`, igual aqui.
+- **Fase 17 (protocolo)**: o `socket_matrix.py` lê `crates/ward-core/src/protocolo.rs` e procura `Operacao, `, `tabela!` e os papéis `TODOS`/`AGENTE_E_APP`/`SO_AGENTE`. Quem renomear isso tem de ajustar o script.
+- **Fase 46**: ao renomear `RAIZ` no `common.sh`, ajustar `real-home.sh`, `deb.sh` e os outros que fazem `source`. Ao renomear `OPCOES_SSH`/`IMAGEM_PG`/`DS`/`SEG`, ajustar o `declare -p` do `real-home.sh`.
+- **Fase de app (main.rs)**: o `webkit-real.sh` procura `partida::iniciar()`, `tomar_daemon`, `vigiar`, `na_vigia` e `ErroApp::ConexaoPerdida`. Quem renomear isso tem de ajustar o heredoc junto, senão o teste aborta com "main.rs do app mudou".
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-core/src/backup.rs` | criado |
-| `crates/ward-core/src/backup/testes.rs` | criado |
-| `crates/ward-core/src/lib.rs` | alterado |
-| `crates/ward-core/src/formato.rs` | alterado |
-| `crates/ward-core/src/gravacao.rs` | alterado |
-| `crates/ward-core/src/protocolo.rs` | alterado |
-| `crates/ward-core/src/protocolo/erros.rs` | alterado |
-| `crates/ward-core/src/protocolo/pedido.rs` | alterado |
-| `crates/ward-core/src/protocolo/resposta.rs` | alterado |
-| `crates/ward-core/src/protocolo/testes.rs` | alterado |
-| `crates/ward-core/tests/fontes.rs` | alterado |
-| `crates/wardd/src/arquivos.rs` | alterado |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/tests/backup.rs` | criado |
+| `dev/origins.py` | alterado |
+| `dev/services/web/server.py` | alterado |
+| `dev/services/generate.py` | alterado |
+| `dev/services/ssh/entrypoint.sh`, `dev/services/ssh/Dockerfile` | alterado (só `WARD_MODE`) |
+| `dev/compose.yml` | alterado |
+| `dev/tests/nm.py`, `socket_attack.py`, `socket_matrix.py` | alterado |
+| `dev/tests/real-home.sh`, `webkit-real.sh`, `deb.sh` | alterado |
+| `Makefile` | alterado (receita do `test-webkit-real`) |
+| `dev/english-check/allow.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-45.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado (V7.2, V7.3, V7.8, V7.11, mais pasta trocada por link, versão trocada por link, cofre trocado fora, estado que não grava)
-- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica (fase sem tela)
-- [x] Ficou dentro do escopo da fase
+- [ ] `make check` rodado: não, pela regra 6 do PRD. Rodaram `make compile` (0), o `english-check` e o autoteste.
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto, nenhum daemon, nenhum Docker).
+- [x] Teste de ataque para cada (SEG) tocado: os ataques existentes seguem iguais, conferidos por AST e por tokens.
+- [x] (UI/DESIGN) não se aplica.
+- [x] Ficou dentro do escopo da fase. A exceção é o uso 1:1 de `WARD_MODE` no `entrypoint.sh`/`Dockerfile` (Fase 46).

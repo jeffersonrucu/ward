@@ -1,0 +1,11 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-test-client
+dev/tests/docker-uid.sh target/debug/wardd target/debug/examples/wardd-test-client
+ok: wardd de teste no ar como uid 1000
+ok: uid 4242: connect recusado (EACCES)
+ok: uid 4242 com CAP_DAC_OVERRIDE: fechado sem nenhum byte
+ok: root: fechado sem nenhum byte
+ok: uid 1000: atendido
+ok: log: uid 4242 recusado por SO_PEERCRED
+ok: log: root recusado por SO_PEERCRED
+test-docker-uid: tudo ok

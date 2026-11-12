@@ -1,0 +1,108 @@
+#!/bin/bash -p
+# preinst of Ward's `.deb` (Phase 52; D18, D47, D60; V9.9, V9.11). Runs as root before
+# dpkg unpacks the files. `deb.sh` replaces the markers below with the functions of
+# `install/groups.sh` (the same as `make install`'s) and with the common dirs of
+# `install/tree.txt`.
+#
+# Fail closed: a group outside D60, a system dir out of place or another Chrome policy
+# with the same name (Phase 51a) aborts before any file. The group created here goes
+# into the mark /usr/local/lib/ward/created-groups (Phase 51a; a 0.1.x mark moves to this
+# name first, m2:DT15): postrm only deletes those. The setgid binaries come in the package
+# as 0755 root:root; the 2755 mode and the group come from the `dpkg-statoverride`
+# registered here, which dpkg applies when unpacking (there is never a setgid `ward-app`
+# with another group, nor setgid root).
+#
+# m2:DT16: the running `wardd@*` (and their sockets) stop here, before dpkg swaps the
+# binaries (the vault locks); the postinst starts the sockets again. The 0.1.x extension
+# dir is only verified here (dpkg deletes it on the upgrade; the postinst verifies). After
+# a failed upgrade, this version's postrm (`abort-upgrade`) starts again only the sockets
+# listed in the mark /run/ward-upgrade-stopped, written after the stop (Phase 63a): a
+# refused preinst writes no mark, so the abort restarts nothing and the running daemon
+# keeps the vault unlocked. A mark left from before is deleted first.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+set -euo pipefail
+umask 022
+
+error() { printf 'ward (preinst): %s\n' "$*" >&2; exit 1; }
+warning() { printf 'ward: aviso: %s\n' "$*" >&2; }
+step() { printf 'ward: %s\n' "$*"; }
+
+#@GROUPS@
+
+#@CHROME@
+
+#@UPGRADE@
+
+# Common system dirs the package uses: no link (dpkg would follow it), owned by root and
+# not writable by group and others.
+DIRS=(
+#@DIRS@
+)
+
+verify_dirs() {
+    local p m
+    for p in "${DIRS[@]}"; do
+        p="/$p"
+        if [ -L "$p" ]; then
+            error "$p é um link simbólico; o Ward não instala por cima de link"
+        elif [ -e "$p" ]; then
+            [ -d "$p" ] || error "$p existe e não é uma pasta"
+            [ "$(stat -c %u -- "$p")" = 0 ] || error "$p não é do root"
+            m="$(stat -c %a -- "$p")"
+            [ $((8#$m & 8#022)) = 0 ] || error "$p tem escrita para grupo ou outros ($m)"
+        fi
+    done
+}
+
+# The override of the setgid binary: only the expected one. A different override (from
+# an old install or made by hand) is replaced.
+override() {
+    local group="$1" path="$2" current
+    current="$(dpkg-statoverride --list "$path" || true)"
+    [ "$current" = "root $group 2755 $path" ] && return 0
+    if [ -n "$current" ]; then
+        dpkg-statoverride --quiet --remove "$path"
+    fi
+    dpkg-statoverride --add root "$group" 2755 "$path"
+}
+
+case "${1:-}" in
+    install | upgrade)
+        # Phase 63a: a stop mark left from before (an abort that did not finish) goes
+        # before any check: a refused preinst leaves no mark, so the abort-upgrade starts
+        # nothing.
+        clear_stop_mark
+        verify_dirs
+        # Phase 51a: another policy file that names ExtensionSettings or
+        # NativeMessagingUserLevelHosts refuses (Chrome does not merge the two).
+        verify_chrome_policies /etc/opt/chrome/policies/managed
+        # m2:DT15: the 0.1.x extension dir in the expected shape (no link).
+        verify_legacy_paths ""
+        # The groups mark lives in /usr/local/lib/ward/ (Phase 51a), before dpkg unpacks:
+        # the dirs above it (verified above) are created if missing, 0755 root:root as in
+        # the package.
+        for p in /usr /usr/local /usr/local/lib; do
+            [ -e "$p" ] || mkdir -m 0755 -- "$p"
+        done
+        # m2:DT15: a 0.1.x mark goes to the new name before the groups.
+        migrate_legacy_mark
+        ensure_group ward-app
+        ensure_group ward-nm
+        override ward-app /usr/local/bin/ward-app
+        override ward-nm /usr/local/lib/ward/ward-nm
+        ptrace="$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo ?)"
+        suid="$(cat /proc/sys/fs/suid_dumpable 2>/dev/null || echo ?)"
+        [ "$ptrace" != 0 ] || printf 'ward: aviso: kernel.yama.ptrace_scope = 0: o daemon recusa os papéis app e extensão (D47)\n' >&2
+        [ "$suid" != 1 ] || printf 'ward: aviso: fs.suid_dumpable = 1: o daemon recusa os papéis app e extensão (D47)\n' >&2
+        # m2:DT16: last, after every check: nothing stops if the install is refused. The
+        # stopped sockets go to the mark, for this version's postrm abort-upgrade.
+        if [ -d /run/systemd/system ]; then
+            stop_running_daemons mark
+        fi
+        ;;
+    abort-upgrade) ;;
+    *) error "argumento desconhecido: ${1:-}" ;;
+esac
+exit 0

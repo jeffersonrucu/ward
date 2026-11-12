@@ -1,141 +1,145 @@
-# Fase 43 — `ward login`: daemon → `ward-nm` → aba ativa, preenche, envia e limpa
+# Fase 43 — Scripts de contêiner e exemplos (trilha S)
 
 ## Implementado
-- **Protocolo** (`ward-core`): três operações só do papel extensão, a saber `aguardar_login`, `preencher_login{id, origem}` e `resultado_login{id, resultado}`. Uma resposta nova, `pedido_de_login{id, entrada}`, que é só da extensão e não leva valor. Mais `ResultadoLogin` (`enviado`, `recusado`, `sem_formulario`, `aba_mudou`, `falha`) e `id_login_ok` (32 caracteres alfanuméricos). Formato estrito, como no resto. Asserções de compilação: nenhuma das novas é do agente ou do app. A tabela do V3.15 foi atualizada.
-- **Daemon** (`crates/wardd/src/login.rs`): `Pedido::Login` do agente segue esta ordem.
-  1. Tipo sem entrega → recusa antes da aprovação. Bloqueada → "entrada inexistente".
-  2. `autorizar_uso` (níveis e janela de aprovação de D3) e `registrar_uso`.
-  3. Cria um trabalho com id de `token_conectar()`, com só um por vez (`Ocupado`).
-  4. O daemon não chama a extensão. O service worker dela pergunta `aguardar_login` em long-poll de 25 s pela porta de native messaging, recebe `{id, entrada}`, sonda a aba ativa e manda `preencher_login` com o id e a origem do quadro principal.
-  5. O daemon compara o id em tempo constante (`tokens_iguais`) e a origem pela mesma regra de D9 do `preencher` (`Origem::da_url`). Só então entrega o preenchimento, e uma vez só (fase `Entregue → Preenchido`).
-  6. O desfecho volta por `resultado_login`:
-     - `enviado` → `ok`;
-     - `recusado` ou `sem_formulario` → `login_recusado`;
-     - `aba_mudou` → `origem_diferente`;
-     - `falha` → `navegador_falhou`.
-  7. Prazos: 10 s para a extensão pegar o pedido e 60 s no total. O pedido morre se a CLI cair (`cliente.saiu()`) ou se o cofre travar. `aguardar_login` não conta como uso para a trava por inatividade (`trava.rs`).
-- **`ward-nm`**: as três operações na lista do host e `resposta_cabe` estrito: `aguardar_login → pedido_de_login|ok`, `preencher_login → preenchimento`, `resultado_login → ok`.
-- **CLI**: `ward login <entrada>` (args, `--help`, mensagem de uso). Pede pelo socket com o prazo do playwright e imprime `login enviado: <entrada> (aba ativa do Chrome)`. As mensagens de erro:
-  - origem diferente → "domínio não confere: a origem da aba ativa não é a da entrada; nada foi preenchido";
-  - sem extensão → "a extensão do Ward no Chrome não respondeu (o Chrome está aberto?)";
-  - recusado → "a página não tem um formulário de login seguro ou o site não aceitou o login".
-- **Extensão**: reaproveita o service worker `servico.js` da Fase 42, que só importa e chama `iniciarLogin()`. O content script fixo (`envio.js`) não foi tocado. O módulo novo é `extensao/login.js`:
-  - porta `connectNative`, que também mantém o SW vivo, com fila de respostas, prazo de 60 s e reconexão;
-  - laço `aguardar_login`;
-  - `atender`: aba ativa da última janela em foco, sonda só no quadro principal (`frameIds:[0]`), `preencher_login`, injeção só no `documentId` sondado (se a aba navegou, o Chrome recusa), apagar os argumentos, esperar a página seguinte (`tabs.get().status` e depois `sondarDepois`) e mandar o `resultado_login`.
-- **`pagina.js`** (função injetada): `preencherNaPagina(..., enviar = true)` exige estas condições.
-  - Origem conferida de novo no documento.
-  - Exatamente um campo de senha visível dentro de um `<form>`, mais o campo de usuário se a entrada tem usuário.
-  - `action`, `method` e `target` lidos pelos getters de `HTMLFormElement.prototype`, para que `<input name="action">` não tape o valor: mesma origem, POST, sem target ou `_self`. O `formaction`, `formmethod` e `formtarget` do botão de envio passam pela mesma regra.
-  - Então preenche, chama `requestSubmit` (o corpo é montado de forma síncrona) e limpa usuário, senha e TOTP num `finally`.
-  - `sondarDepois` diz origem, topo, `readyState` e se ainda há senha visível.
-- **E2E** `make teste-login` (`dev/testes/login.sh` e `login.py`): Chrome real headless (perfil em `.dev/login.*`, `--remote-debugging-pipe`), extensão por `Extensions.loadUnpacked`, `ward-nm` filho do Chrome e um `wardd` só dele (`WARD_DEV_SOCKET_DIR` próprio, `WARD_DEV_EXTENSAO=chrome`). Páginas hostis na origem certa são servidas pelo CDP (`Fetch.fulfillRequest`), que também registra o que cada POST mandou (por sha256). Resultado: **tudo certo**, 31 checagens em `docs/mission/evidence/fase-43/qa.json` e o screenshot `v6-10-painel-wordpress.png`.
+
+Comentários, docstrings e identificadores em inglês (troca 1:1 pelo `docs/glossario.md`);
+as mensagens de saída pt-BR (`ok:`, `FALHOU:`, descrições das conferências) ficam.
+
+- **Exemplos renomeados, com todos os usos** (`[[example]]` dos Cargo.toml, Makefile,
+  `CLAUDE.md`, `dev/tests/*.sh`, `nm.py`):
+  - `wardd-cliente-teste` (`examples/cliente-teste.rs`) → `wardd-test-client` (`examples/test-client.rs`)
+  - `pai-chrome` → `chrome-parent`; `chrome-falso` → `fake-chrome`
+  - `dev-cofre` (`examples/dev-cofre/{main,testes}.rs`) → `dev-vault` (`examples/dev-vault/{main,tests}.rs`)
+  - `partida-conteiner` → `startup-container` (`app/core/examples/startup-container.rs`)
+- **`dev-vault`** (`main.rs`, `tests.rs`): identificadores próprios em inglês (`Error`,
+  `Options`, `Reader`, `Obj`, `Value`, `Source`, `FakeResources`, constantes `MAX_*`,
+  `DEFAULT_OUTPUT` …) e nomes dos testes em inglês. A API do `ward-core` usada
+  (`Configuracao`, `CofreAberto`, `RascunhoDados`, `gravar_entradas`, `limites::*`,
+  `cofre_teste.rs` …) fica: é das fases R.
+- **`container.rs`, `chrome-parent.rs`, `fake-chrome.rs`, `test-client.rs`,
+  `startup-container.rs`**: comentários e identificadores em inglês; API de
+  `ward_app_core::partida` e `ward_core::protocolo` fica.
+- **`dev/container-*`** (`inside.sh` de plataforma, install, deb, units e uid;
+  `fake.c`, `mark.c`, os três Dockerfiles, `start.sh`): comentários em inglês e renomes
+  de funções e variáveis (`confere` → `check`, `nao_tem` → `lacks`, `igual` → `equal`,
+  `falhou` → `failed`, `falhas` → `failures`, `como_1000` → `as_1000`, `instalar` →
+  `install_ward`, `caso_grupo` → `group_case`, `retrato_ssh` → `ssh_snapshot`,
+  `REL`/`REG`/`FALSO`/`COFRE_T`/`USUARIO` → `REPORT`/`RECORD`/`FAKE`/`VAULT_T`/`TEST_USER` …;
+  tabela completa no glossário, seção 6, parágrafo da Fase 43). Cabeçalhos
+  `#!/bin/bash -p` e `export PATH=…` intactos.
+- **`dev/tests/clipboard.py`**: docstring, comentários e nomes em inglês (`Vigia` →
+  `Watcher`, `Teste` → `AppTest`, `TESTE` → `TEST_NAME`, `rodada_x11` → `x11_round` …).
+- **Glossário**: parágrafo "Feitos na Fase 43" na seção 6.
+
+### Literais mudados (e por quê)
+
+| Onde | Antes → depois | Motivo |
+| --- | --- | --- |
+| `dev-vault` (uso, mensagens, `dev-vault.sh`, Makefile) | `--conferir`/`--senha-stdin`/`--cruzado` → `--verify`/`--password-stdin`/`--cross`; prefixo `dev-cofre:` → `dev-vault:` | opções e nome do programa (glossário; pendência da Fase 6) |
+| `dev-vault.sh` | ataque de senha em argv `--senha` → `--password` (o `tests.rs` recusa as duas e as três opções velhas, sem alias) | nome novo da opção |
+| `tests.rs` | prefixo temporário `ward-teste-dev-cofre-` → `ward-test-dev-vault-` | nome de arquivo temporário |
+| `fake.c` + `container-platform/inside.sh` | `--ativar`/`--conectar` → `--activate`/`--connect` | glossário seção 6 |
+| `container.rs` + `inside.sh` de plataforma e install | subcomandos `ativar`, `servidor`, `cliente`, `prender`, `lancar-app`, `escutar`, `ambiente` → `activate`, `server`, `client`, `attach`, `launch-app`, `listen`, `environment`; opções `--lancar`, `--abrir-app`, `--abrir-app-com`, `--sistema-em`, `--pausar` → `--launch`, `--open-app`, `--open-app-with`, `--system-at`, `--pause` | interface interna de teste, só entre arquivos desta fase |
+| `chrome-parent.rs` + `nm.py` | subcomando `servir` → `serve` | idem |
+| `docker-platform.sh` + `container-platform/inside.sh` | cópias `/opt/teste/chrome-falso`, `/opt/teste/wardd-cliente-teste` → `/opt/teste/fake-chrome`, `/opt/teste/wardd-test-client` | nomes dos exemplos |
+| Dockerfiles `units`/`install`/`deb` | `/usr/local/sbin/iniciar` → `/usr/local/sbin/start` | o arquivo copiado já é `start.sh` |
+| usos (`docker-uid.sh`, `units.sh`, `nm.sh`, `extension.sh`, `deb.sh`, `install.sh`) | textos de uso com os nomes novos dos exemplos | nomes dos exemplos |
+| `clipboard.py` | código Python embutido: variável `alvos` → `targets`; mensagem "aceitou/recusou" montada numa variável antes do `print` (mesmo texto) | identificador dentro de string executada |
+
+### Literais que ficam
+
+Marcadores impressos e procurados pelos scripts (`servidor: pronto`, `papel=…`,
+`lancador:`, `forcado:`, `gerente:`, `app-filho:`, `prender:`, `inicio`/`depois`/
+`erro`/`queda`, `saida=`, `resposta:`, `pai=…`), subcomandos do `wardd-test-client`
+(`estado`/`lista`/`destravar` = nomes de operação do protocolo, Fase 51), JSON do
+protocolo v1, Debug dos erros conferidos (`UntrustedDir`, `CommonGroup`,
+`AppParentNotAllowed`, `AlreadyOpen`, `Session(SeveralWayland)` …), log
+`conexão recusada (UidRecusado)`, variáveis `WARD_GERENTE_PROGRAMA`/
+`WARD_PAI_CHROME_SOCK` (Fase 56), nome do teste `area_gtk::testes::sessao_real` e o
+protocolo de linhas do `clipboard.py` (vão com o teste do `app/src-tauri`), nomes de
+dentro do contêiner ditos pelos scripts de fora (`/opt/teste`, `cliente`, `plataforma`,
+`falso`, `ward-servidor`, `libmarca.so`, `/tmp/ward-app-relatorio.txt`) e o formato do
+arquivo de estado (`ward-estado 1` …). Os comentários não citam esses literais pt
+(descrevem em inglês); nenhuma entrada nova em `allow.txt` nem em `frozen.txt`.
 
 ## Segurança
-- **Invariantes tocadas**
-  - **S1/D9**: quem compara a origem é o daemon, na mesma função do `preencher`. A extensão só manda a origem do quadro principal e a confere de novo dentro do documento antes de preencher. O formulário só é enviado à mesma origem por POST.
-  - **S13**: o daemon registra só o nome da entrada e o desfecho, nunca a origem da aba nem valor. O `login.js` não usa o console (o `montar.py` recusa `console.` nele).
-  - **D3/V6.11**: o nível passa por `autorizar_uso` antes de existir o trabalho. Negado, a extensão nunca recebe o pedido.
-  - **D5/D47**: as operações novas são só do papel extensão (tabela e asserção de compilação). O agente e o app recebem `nao_autorizado`.
-  - **S2**: nada é guardado; o perfil foi varrido.
-  - **V3.17**: bloqueada responde como inexistente.
-- **Testes de ataque** (todos passam):
-  - `crates/ward-core/src/protocolo/testes.rs` › `ataque_fase_43_login_so_extensao_e_formato_estrito`, mais a tabela do V3.15.
-  - `crates/wardd/tests/login.rs`:
-    - › `v6_3_v6_15_ataque_origem_diferente_nao_preenche`
-    - › `ataque_id_forjado_nao_preenche`
-    - › `ataque_agente_e_app_nas_operacoes_da_extensao`
-    - › `recusas_antes_da_extensao`
-    - › `travar_no_meio_mata_o_pedido`
-    - › `cli_que_cai_mata_o_pedido`
-    - › `um_pedido_por_vez`
-    - › `v6_11_com_aprovacao_negar_nao_chega_a_extensao_e_permitir_chega`
-    - › `v6_10_login_livre_preenche_na_origem_certa_e_volta_ok` (inclui "preenche uma vez só")
-    - › `aguardar_nao_conta_como_uso`
-  - `crates/wardd/src/login.rs` › `id_de_outro_pedido_nao_casa`.
-  - `crates/ward-nm/src/testes.rs`: preenchimento como resposta de `aguardar_login`/`resultado_login` e segredo como resposta de `preencher_login`, todos recusados.
-  - `make teste-login`:
-    - V6.3: phishing 8082 → "domínio não confere", nada preenchido;
-    - V6.15: `delta-redir` 8084→8082 → o mesmo;
-    - `action` para fora, `formaction` para fora, GET, `target=_blank`, duas senhas e `action` mascarado por `<input name=action>`: nada preenchido, nada enviado, a aba fica;
-    - `posts.log` sem mudança;
-    - `acme-wp-dev` sem aprovação não preenche;
-    - logs do daemon, Chrome, `ward-nm` e CLI e o console sem padrão de `.dev/variacoes.txt`;
-    - log do daemon sem origens;
-    - perfil sem valor.
-- **Dependências novas**: nenhuma.
-- **Decisão de segurança nova (o planner deve registrar como D-novo)**: o manifesto ganhou `host_permissions: ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]`, exatamente as origens que D9 aceita.
-  - Motivo: sem clique do usuário não há `activeTab`, e `chrome.scripting.executeScript` falhou na prática ("Extension manifest must request permission to access the respective host").
-  - O `montar.py` aceita só essa lista exata. `optional_host_permissions` continua proibido.
-  - Efeito: a extensão pode injetar em qualquer página https sem o clique. É o mínimo para o `ward login` ser feito pelo agente, mas aumenta a superfície se o service worker for comprometido.
+
+- Invariantes tocadas: nenhuma lógica mudou; só nomes, comentários e literais de
+  interface de teste listados acima. Senha de teste continua só por stdin
+  (`--password-stdin`, `wardd-test-client destravar`); o ataque "senha em argv" segue no
+  `dev-vault.sh` e no `tests.rs` (agora também recusa `--senha` e as opções velhas).
+- Conferência: comparação de tokens Rust antigo × novo (nomes novos mapeados de volta,
+  sem comentários) em todos os exemplos: só sobram os literais da tabela acima. Python:
+  `tokenize` de strings/números/operadores do `clipboard.py` igual ao original fora das
+  docstrings e do código embutido. Shell: renome por mapa só em posição de código e
+  `$var`, revisado palavra por palavra; checagem de variáveis usadas e não definidas
+  (nenhuma nova); `bash -n` pelo `syntax_check.py`; `fake.c`/`mark.c` compilam com
+  `-Wall -Werror`.
+- Testes de ataque: os existentes, renomeados (`attack_*` em `dev-vault/tests.rs`); nenhum
+  teste novo de SEG (fase de nomes).
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **V6.11 (UI)**: a janela de aprovação de verdade (app Tauri) não entra no e2e, porque o `wardd` de teste não tem app. Coberto assim:
-  - no Rust, com um aprovador falso do mesmo canal (`Assinante`), negar não chega à extensão e permitir chega;
-  - no e2e, sem aprovador, `acme-wp-dev` sai ≠ 0 e nada é preenchido.
-  - Abrir a janela e clicar em negar fica para o QA do milestone.
-- **Senha recusada no WordPress real**: a fixture não tem entrada WP com senha errada, e nada de segredo novo no repositório. A "tentativa com senha recusada pelo site" é uma página na origem certa (`localhost:8081/ward-teste/recusa.html`, servida pelo CDP) que recebe o POST com a senha certa e volta ao formulário. O teste confere: enviado uma vez à origem certa, campos vazios, CLI ≠ 0.
+
+- Testes não rodados (PRD regra 6) nem Docker (pedido do orchestrator); `make check` não
+  rodado.
+- Nomes da API do `ward-core`/`ward-app-core` (`partida`, `iniciar`, `tomar_daemon`,
+  `vigiar`, `Pedido`, `Segredo` …): 375 achados do `english-check` em `dev-vault/*`,
+  `test-client.rs` e `startup-container.rs`, todos de API — fases R.
+- Nomes de dentro do contêiner e marcadores de saída (lista acima): fases 44–46/51/56.
+- Comentários pt dos scripts de fora (`docker-platform.sh`, `install.sh`, `deb.sh`,
+  `nm.*`, `units.sh`, `docker-uid.sh`, `extension.sh`, `dev-vault.sh`): só os nomes
+  foram trocados; o resto é das Fases 44–46.
 
 ## Comandos executados
+
 | Comando | Exit code |
 | --- | --- |
-| `make app-front` | 0 |
-| `make dev-servicos`, `make dev-cofre`, `make dev-variacoes` | 0 |
-| `make extensao` | 0 |
-| `make teste-login` | 0 (tudo certo) |
-| `make teste-extensao` (regressão das Fases 41/42 com o `pagina.js`/`servico.js` novos) | 0 |
-| `make teste-skill` (sem pendência de `login`) | 0 |
-| `make fmt` | 0 |
-| `make check` (1ª vez) | 2 (V3.15: `com_prazos_login` fora da lista de ganchos; corrigido) |
-| `make check` (2ª vez) | 2 (`tests/extensao.rs`: tabela de operações da extensão sem as 3 novas; corrigido) |
-| `make check` (3ª vez) | 2 (gitleaks não instalado no worktree; `make ferramentas`, sha256 conferido) |
-| `make ferramentas` | 0 |
-| `make check` (final: fmt, clippy, testes, audit, deny, gitleaks) | 0 ("tudo limpo") |
+| `cargo fmt --all --check` (raiz e `app/src-tauri`) | 0 |
+| `make compile` (log `fase43-make-compile.log`) | 0 (0 warnings) |
+| `cargo clippy -p ward-core -p wardd -p ward-platform -p ward-nm -p ward-app-core --examples --all-features -- -D warnings` | 0 |
+| `make english-check PATHS="dev/container-* dev/tests/clipboard.py container.rs chrome-parent.rs fake-chrome.rs"` | 0 (0 achados) |
+| `make english-check PATHS="crates/ward-core/examples/dev-vault test-client.rs startup-container.rs"` | 2 (375 achados, todos nomes de API do `ward-core`/`ward-app-core`) |
+| `python3 -I -B dev/english_check.py --self-test` | 0 (91/91) |
+| `gcc -Wall -Werror -fsyntax-only fake.c mark.c` | 0 |
 
 ## Problemas descobertos
-- **`host_permissions`**: decisão nova, com o motivo acima. Divergência com o comentário antigo do `montar.py` e com `CLAUDE.md` (já atualizados). O planner precisa registrar no escopo.
-- **Gerenciador de senhas do Chrome**:
-  - No e2e, depois do login no WordPress, o Chrome do perfil de teste preencheu sozinho o usuário em `wp-login.php` na aba seguinte. O teste agora desliga `credentials_enable_service` e o autofill no perfil temporário.
-  - No Chrome do usuário, o gerenciador nativo pode oferecer guardar (ou guardar) a senha que o `ward login` enviou: cópia do segredo fora do cofre (S1/S2).
-  - Sugestão para a política do Chrome da Fase 51: `PasswordManagerEnabled=false`, ou ao menos registrar o risco. Fora desta fase.
-- **Redirecionamento 307**: a extensão não tem `webRequest` e não consegue barrar um 307 do próprio site certo para outra origem depois do envio. O POST sai para a origem certa, mas um servidor comprometido da origem certa já tem a senha de qualquer jeito.
-- **SPA**: limpar os campos logo depois do `requestSubmit` pode quebrar logins que leem os campos de forma assíncrona após o submit. É o comportamento pedido pelo V6.10; anotar para o QA.
-- **Ganchos de teste**: a lista do V3.15 (`crates/wardd/tests/aprovacao.rs`) ganhou `com_prazos_login`, que só encurta prazos e não toca a aprovação.
+
+- **Merge com a Fase 10 (R)**: ela renomeia `limites` (`MAX_ANEXOS_SOMADOS`,
+  `MINUTOS_TRAVA_PADRAO`) e outros nomes usados em `dev-cofre/main.rs`; aqui o arquivo
+  foi movido para `dev-vault/main.rs` e reescrito. O git pode não ver o rename e dar
+  conflito modify/delete: aplicar os renomes da Fase 10 em `dev-vault/main.rs` e
+  `dev-vault/tests.rs`.
+- As imagens `ward-teste/*-systemd:1` mudam de conteúdo (`/usr/local/sbin/start`); o
+  `docker build` dos scripts refaz a camada sozinho, sem trocar a tag.
+- `container.rs`: o marcador `prender:` (saída) ficou pt enquanto o subcomando virou
+  `attach`; o script não procura esse marcador.
 
 ## Arquivos criados/alterados
+
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-core/src/protocolo.rs` | alterado |
-| `crates/ward-core/src/protocolo/pedido.rs` | alterado |
-| `crates/ward-core/src/protocolo/resposta.rs` | alterado |
-| `crates/ward-core/src/protocolo/testes.rs` | alterado |
-| `crates/wardd/src/login.rs` | criado |
-| `crates/wardd/src/lib.rs` | alterado |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/src/trava.rs` | alterado |
-| `crates/wardd/tests/login.rs` | criado |
-| `crates/wardd/tests/aprovacao.rs` | alterado |
-| `crates/wardd/tests/extensao.rs` | alterado (tabela de operações da extensão) |
-| `crates/ward-nm/src/lib.rs` | alterado |
-| `crates/ward-nm/src/testes.rs` | alterado |
-| `crates/ward/src/args.rs` | alterado |
-| `crates/ward/src/comandos.rs` | alterado |
-| `extensao/login.js` | criado |
-| `extensao/pagina.js` | alterado |
-| `extensao/servico.js` | alterado |
-| `extensao/manifest.json` | alterado |
-| `dev/extensao/montar.py` | alterado |
-| `dev/testes/login.sh` | criado |
-| `dev/testes/login.py` | criado |
-| `dev/testes/skill.py` | alterado |
-| `Makefile` | alterado (`teste-login`) |
-| `CLAUDE.md` | alterado |
-| `docs/mission/evidence/fase-43/qa.json`, `v6-10-painel-wordpress.png` | criado |
+| `app/core/examples/startup-container.rs` | renomeado (de `partida-conteiner.rs`) e alterado |
+| `crates/ward-core/examples/dev-vault/main.rs` | renomeado (de `dev-cofre/main.rs`) e alterado |
+| `crates/ward-core/examples/dev-vault/tests.rs` | renomeado (de `dev-cofre/testes.rs`) e alterado |
+| `crates/ward-nm/examples/fake-chrome.rs` | renomeado (de `chrome-falso.rs`) e alterado |
+| `crates/ward-platform/examples/chrome-parent.rs` | renomeado (de `pai-chrome.rs`) e alterado |
+| `crates/wardd/examples/test-client.rs` | renomeado (de `cliente-teste.rs`) e alterado |
+| `crates/ward-platform/examples/container.rs` | alterado |
+| `crates/ward-core/Cargo.toml`, `crates/wardd/Cargo.toml` | alterado |
+| `Makefile`, `CLAUDE.md`, `docs/glossario.md` | alterado |
+| `dev/container-platform/{inside.sh,fake.c,mark.c}` | alterado |
+| `dev/container-install/{inside.sh,Dockerfile}` | alterado |
+| `dev/container-deb/{inside.sh,Dockerfile}` | alterado |
+| `dev/container-units/{inside.sh,Dockerfile,start.sh}` | alterado |
+| `dev/container-uid/inside.sh` | alterado |
+| `dev/tests/clipboard.py` | alterado |
+| `dev/tests/{deb.sh,dev-vault.sh,docker-platform.sh,docker-uid.sh,extension.sh,install.sh,nm.py,nm.sh,units.sh}` | alterado (só usos dos exemplos) |
 | `docs/mission/handoffs/phase-43.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
+- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks) — não: a missão 2 fecha a fase com `make compile` e `english-check` (regra 6)
 - [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica (sem tela nova)
+- [x] Teste de ataque para cada (SEG) tocado (nenhum SEG mudou; ataques existentes mantidos)
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

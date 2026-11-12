@@ -1,0 +1,2 @@
+/usr/bin/python3 -I -B dev/extension/build.py
+extensão montada em extension/dist/ (id nhkehjnmlgkebhmelajfpmpblepaichf)

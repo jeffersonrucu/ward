@@ -1,0 +1,737 @@
+//! Attack tests of the daemon state (Phase 22): lock, unlock with a growing wait, PIN,
+//! level, agent list, generations and file identity.
+//!
+//! The daemon runs in process, with a fake clock and its own test vault in `target/tmp`
+//! (fake values). The role is the one the socket would give: the request goes through
+//! the same protocol parsing.
+
+mod common;
+
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::time::Duration;
+
+use common::*;
+use ward_core::entry::AccessLevel;
+use ward_core::protocol::{Response, ResponseError, Role};
+use wardd::core::{MAX_WAIT, unlock_wait};
+use wardd::files::{self, Generations};
+
+fn list(d: &wardd::core::Daemon, role: Role) -> Vec<ward_core::protocol::ListItem> {
+    match request(d, role, "list", "{}") {
+        Response::List(l) => l,
+        r => panic!("{r:?}"),
+    }
+}
+
+fn level_of(d: &wardd::core::Daemon, name: &str) -> Option<AccessLevel> {
+    list(d, Role::App)
+        .into_iter()
+        .find(|i| i.name == name)
+        .and_then(|i| i.level)
+}
+
+fn is_root() -> bool {
+    ward_platform::effective_uid() == 0
+}
+
+/// V3.10 and V3.8 (state): after locking, every operation answers "locked" until it is
+/// unlocked again; the daemon no longer keeps the entries.
+#[test]
+fn v3_10_lock_and_everything_answers_locked() {
+    let dir = Dir::new("travar");
+    let (d, _) = test_vault(&dir);
+    assert!(!d.is_locked());
+    assert!(ok(&request(&d, Role::Agent, "lock", "{}")));
+    assert!(d.is_locked());
+    let pin = b64(PIN.as_bytes());
+    for (role, op, data) in [
+        (Role::Agent, "list", "{}".to_owned()),
+        (Role::App, "list", "{}".to_owned()),
+        (Role::App, "detail", r#"{"entry":"t-aprov"}"#.to_owned()),
+        (
+            Role::App,
+            "remove_entry",
+            r#"{"entry":"t-aprov"}"#.to_owned(),
+        ),
+        (Role::App, "lock_timeout", r#"{"minutes":30}"#.to_owned()),
+        (
+            Role::App,
+            "set_level",
+            format!(r#"{{"entry":"t-aprov","level":"free","pin":"{pin}"}}"#),
+        ),
+        (Role::App, "save_entry", login("t-novo", SECRETS[0])),
+        (
+            Role::Agent,
+            "run",
+            format!(
+                r#"{{"entry":"t-livre","argv":["{}"],"cwd":"{}","stdin_kind":"null","environment":[]}}"#,
+                b64(b"true"),
+                b64(b"/")
+            ),
+        ),
+    ] {
+        assert_eq!(
+            error(&request(&d, role, op, &data)),
+            Some(ResponseError::Locked),
+            "{op}"
+        );
+    }
+    match request(&d, Role::Agent, "status", "{}") {
+        Response::Status {
+            locked,
+            vault_exists,
+            role,
+        } => assert!(locked && vault_exists && role == Role::Agent),
+        r => panic!("{r:?}"),
+    }
+    assert!(ok(&unlock(&d, PASSWORD)));
+    assert_eq!(list(&d, Role::App).len(), 5);
+}
+
+/// V3.9 (D20): 10 wrong passwords in a row; each attempt waits longer than the previous
+/// one, up to 30 s, and all answers are byte-for-byte equal (none says how many are
+/// left). The right one resets the wait.
+#[test]
+fn v3_9_wrong_password_growing_wait_without_count() {
+    let expected: Vec<u64> = vec![0, 1, 2, 4, 8, 16, 30, 30, 30, 30];
+    for (i, s) in expected.iter().enumerate() {
+        assert_eq!(unlock_wait(i as u32), Duration::from_secs(*s));
+    }
+    assert_eq!(unlock_wait(u32::MAX), MAX_WAIT);
+
+    let dir = Dir::new("espera");
+    let (d, clock) = test_vault(&dir);
+    d.lock();
+    let mut frames = Vec::new();
+    for i in 0..10 {
+        let r = unlock(&d, &format!("falso-errada-{i:02}"));
+        assert_eq!(error(&r), Some(ResponseError::WrongPassword));
+        frames.push(encoded(Role::Agent, &r));
+    }
+    assert!(frames.windows(2).all(|w| w[0] == w[1]));
+    // No number in the frame besides the protocol version: the v2 frame carries
+    // `"v":2`; take exactly that field out (it must be there, once, with the value 2)
+    // and nothing else of the frame may have a digit (no count, no attempt, no wait).
+    let s = String::from_utf8_lossy(&frames[0]);
+    let mut frame: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&frames[0]).unwrap();
+    assert_eq!(frame.remove("v"), Some(serde_json::Value::from(2u8)), "{s}");
+    let rest = serde_json::to_string(&frame).unwrap();
+    assert!(!rest.chars().any(|c| c.is_ascii_digit()), "{s}");
+    assert_eq!(s.matches(|c: char| c.is_ascii_digit()).count(), 1, "{s}");
+    let waits: Vec<u64> = clock
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|d| d.as_secs())
+        .collect();
+    assert_eq!(waits, expected);
+    assert!(waits.windows(2).all(|w| w[1] >= w[0]) && waits[6] == 30);
+    // The right one waits the 30 s and unlocks; afterwards, the wait goes back to 0.
+    assert!(ok(&unlock(&d, PASSWORD)));
+    d.lock();
+    let _ = unlock(&d, "falso-errada-xx");
+    let waits = clock.0.lock().unwrap().clone();
+    assert_eq!(waits[10], MAX_WAIT);
+    assert_eq!(waits[11], Duration::ZERO);
+}
+
+/// V3.11 (S9): changing the level without a PIN or with a wrong PIN is refused and the
+/// file does not change; the agent with the right PIN gets "not authorized".
+#[test]
+fn v3_11_change_level_requires_pin_and_app_role() {
+    let dir = Dir::new("nivel");
+    let (d, _) = test_vault(&dir);
+    let vault = dir.paths().vault;
+    let before = fs::read(&vault).unwrap();
+
+    // No PIN: the request parsing refuses.
+    let no_pin = request(
+        &d,
+        Role::App,
+        "set_level",
+        r#"{"entry":"t-aprov","level":"blocked"}"#,
+    );
+    assert_eq!(error(&no_pin), Some(ResponseError::InvalidRequest));
+    // Wrong PIN.
+    let r = set_level(&d, Role::App, "t-aprov", "blocked", WRONG_PIN);
+    assert_eq!(error(&r), Some(ResponseError::WrongPin));
+    // Agent, right PIN: not authorized, by the parsing and by the second layer.
+    let r = set_level(&d, Role::Agent, "t-aprov", "blocked", PIN);
+    assert_eq!(error(&r), Some(ResponseError::Unauthorized));
+    let p = req(
+        Role::App,
+        "set_level",
+        &format!(
+            r#"{{"entry":"t-aprov","level":"blocked","pin":"{}"}}"#,
+            b64(PIN.as_bytes())
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        error(&d.serve(Role::Agent, p)),
+        Some(ResponseError::Unauthorized)
+    );
+    assert_eq!(fs::read(&vault).unwrap(), before, "o arquivo mudou");
+    assert_eq!(level_of(&d, "t-aprov"), Some(AccessLevel::Approval));
+
+    // App with the right PIN: changes and stays on disk.
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "blocked", PIN)));
+    assert_ne!(fs::read(&vault).unwrap(), before);
+    d.lock();
+    assert!(ok(&unlock(&d, PASSWORD)));
+    assert_eq!(level_of(&d, "t-aprov"), Some(AccessLevel::Blocked));
+}
+
+/// V3.12 (S9): 5 PIN errors in a row lock, counting across connections (the counter
+/// belongs to the daemon); 4 errors and 1 success reset the count.
+#[test]
+fn v3_12_five_pin_errors_lock() {
+    let dir = Dir::new("pin");
+    let (d, _) = test_vault(&dir);
+    for _ in 0..4 {
+        let r = set_level(&d, Role::App, "t-aprov", "free", WRONG_PIN);
+        assert_eq!(error(&r), Some(ResponseError::WrongPin));
+    }
+    assert!(!d.is_locked());
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "approval", PIN)));
+    // The count was reset: 4 more errors do not lock (changing the PIN also counts).
+    for _ in 0..4 {
+        let r = request(
+            &d,
+            Role::App,
+            "change_pin",
+            &format!(
+                r#"{{"current":"{}","new":"{}"}}"#,
+                b64(WRONG_PIN.as_bytes()),
+                b64(b"2468")
+            ),
+        );
+        assert_eq!(error(&r), Some(ResponseError::WrongPin));
+    }
+    assert!(!d.is_locked());
+    let r = set_level(&d, Role::App, "t-aprov", "free", WRONG_PIN);
+    assert_eq!(error(&r), Some(ResponseError::WrongPin));
+    assert!(d.is_locked(), "o 5.º erro seguido tem de travar");
+    assert_eq!(
+        error(&request(&d, Role::App, "list", "{}")),
+        Some(ResponseError::Locked)
+    );
+    // Unlocking resets the count.
+    assert!(ok(&unlock(&d, PASSWORD)));
+    let r = set_level(&d, Role::App, "t-aprov", "free", WRONG_PIN);
+    assert_eq!(error(&r), Some(ResponseError::WrongPin));
+    assert!(!d.is_locked());
+}
+
+/// V3.17, V3.26 (S1, D50): the agent list has neither the blocked entry nor the level;
+/// the app list has both; `run` with the blocked entry answers byte for byte the same
+/// as with an entry that does not exist.
+#[test]
+fn v3_17_v3_26_agent_list_and_blocked_equals_missing() {
+    let dir = Dir::new("lista");
+    let (d, _) = test_vault(&dir);
+    let agent = list(&d, Role::Agent);
+    assert_eq!(agent.len(), 4);
+    assert!(
+        agent
+            .iter()
+            .all(|i| i.name != "t-bloq" && i.level.is_none())
+    );
+    let q = encoded(Role::Agent, &Response::List(agent));
+    assert!(!contains(&q, b"\"level\""));
+    for s in SECRETS {
+        assert!(!contains(&q, s.as_bytes()) && !contains(&q, b64(s.as_bytes()).as_bytes()));
+    }
+    let app = list(&d, Role::App);
+    assert_eq!(app.len(), 5);
+    assert!(app.iter().all(|i| i.level.is_some()));
+    assert_eq!(level_of(&d, "t-bloq"), Some(AccessLevel::Blocked));
+
+    let run = |name: &str| {
+        encoded(
+            Role::Agent,
+            &request(
+                &d,
+                Role::Agent,
+                "run",
+                &format!(
+                    r#"{{"entry":"{name}","argv":["{}"],"cwd":"{}","stdin_kind":"null","environment":[]}}"#,
+                    b64(b"env"),
+                    b64(b"/")
+                ),
+            ),
+        )
+    };
+    let blocked = run("t-bloq");
+    assert_eq!(blocked, run("nao-existe"));
+    assert!(contains(&blocked, b"entry_not_found"));
+    for op in ["ssh", "login", "playwright"] {
+        // Phase 54b: `ssh` carries the standard input kind.
+        let extra = if op == "ssh" {
+            r#","stdin_kind":"null""#
+        } else {
+            ""
+        };
+        let a = encoded(
+            Role::Agent,
+            &request(
+                &d,
+                Role::Agent,
+                op,
+                &format!(r#"{{"entry":"t-bloq"{extra}}}"#),
+            ),
+        );
+        let b = encoded(
+            Role::Agent,
+            &request(
+                &d,
+                Role::Agent,
+                op,
+                &format!(r#"{{"entry":"nao-existe"{extra}}}"#),
+            ),
+        );
+        assert!(contains(&a, b"entry_not_found"), "{op}");
+        assert_eq!(a, b, "{op}");
+    }
+}
+
+/// V3.27 (D50, S9): a created entry starts "with approval"; creating it already "free"
+/// is refused; removing and recreating goes back to "with approval"; editing keeps the
+/// level.
+#[test]
+fn v3_27_new_entry_starts_with_approval() {
+    let dir = Dir::new("nasce");
+    let (d, _) = test_vault(&dir);
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "save_entry",
+        &login("t-nova", SECRETS[0])
+    )));
+    assert_eq!(level_of(&d, "t-nova"), Some(AccessLevel::Approval));
+    // With a level in the draft, anywhere: refused by the parsing.
+    let with_level =
+        login("t-nova2", SECRETS[0]).replacen(r#""name":"#, r#""level":"free","name":"#, 1);
+    assert_eq!(
+        error(&request(&d, Role::App, "save_entry", &with_level)),
+        Some(ResponseError::InvalidRequest)
+    );
+    assert!(list(&d, Role::App).iter().all(|i| i.name != "t-nova2"));
+    // Editing the free one keeps it free.
+    let edit = login("t-livre", SECRETS[3]).replacen('{', r#"{"previous":"t-livre","#, 1);
+    assert!(ok(&request(&d, Role::App, "save_entry", &edit)));
+    assert_eq!(level_of(&d, "t-livre"), Some(AccessLevel::Free));
+    // Remove and recreate with the same name: back to "with approval".
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "remove_entry",
+        r#"{"entry":"t-livre"}"#
+    )));
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "save_entry",
+        &login("t-livre", SECRETS[3])
+    )));
+    assert_eq!(level_of(&d, "t-livre"), Some(AccessLevel::Approval));
+    // A repeated name is a validation error, and nothing changes.
+    let r = request(&d, Role::App, "save_entry", &login("t-livre", SECRETS[3]));
+    assert!(
+        matches!(error(&r), Some(ResponseError::Validation(_))),
+        "{r:?}"
+    );
+    // Removing a server used as a tunnel would leave the vault unable to reopen: refused.
+    let r = request(&d, Role::App, "remove_entry", r#"{"entry":"s1"}"#);
+    assert!(
+        matches!(error(&r), Some(ResponseError::Validation(_))),
+        "{r:?}"
+    );
+    let rename = server("s2").replacen('{', r#"{"previous":"s1","#, 1);
+    let r = request(&d, Role::App, "save_entry", &rename);
+    assert!(
+        matches!(error(&r), Some(ResponseError::Validation(_))),
+        "{r:?}"
+    );
+    assert!(list(&d, Role::App).iter().any(|i| i.name == "s1"));
+    // The vault still opens after all this.
+    d.lock();
+    assert!(ok(&unlock(&d, PASSWORD)));
+    assert_eq!(list(&d, Role::App).len(), 6);
+}
+
+/// V3.22 (D39; S7, S9, S13): old copy on top with the daemon locked, deleted state,
+/// swap by `mv` and rewrite in place with the daemon unlocked.
+#[test]
+fn v3_22_rollback_and_swapped_file() {
+    let dir = Dir::new("rollback");
+    let c = dir.paths();
+    let (d, _) = test_vault(&dir);
+    let copy_n = fs::read(&c.vault).unwrap();
+    let n = generation_on_disk(&c.vault, PASSWORD);
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":30}"#
+    )));
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":60}"#
+    )));
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 2);
+    assert_eq!(
+        generations(&dir),
+        Generations {
+            seen: n + 2,
+            burned: n + 2
+        }
+    );
+    d.lock();
+
+    // `cp` of the authentic copy of n on top and unlock: rollback, stays locked and the
+    // file is not rewritten.
+    fs::write(&c.vault, &copy_n).unwrap();
+    let r = unlock(&d, PASSWORD);
+    assert_eq!(error(&r), Some(ResponseError::Rollback));
+    assert!(contains(
+        &encoded(Role::Agent, &r),
+        "o cofre no disco é mais antigo que o último aberto".as_bytes()
+    ));
+    assert!(d.is_locked());
+    assert_eq!(fs::read(&c.vault).unwrap(), copy_n);
+
+    // Deleting the state: same refusal, even with the right vault back.
+    fs::remove_file(&c.state).unwrap();
+    let r = unlock(&d, PASSWORD);
+    assert_eq!(error(&r), Some(ResponseError::Rollback));
+    assert!(d.is_locked());
+
+    // State back (n), unlocks copy n: the generation goes up with the writes.
+    // The file is a different one since the last lock: the first unlock warns that it
+    // changed outside Ward; the next one decides by the generation only.
+    files::write_state(
+        &c.state,
+        Generations {
+            seen: n,
+            burned: n + 2,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::VaultChanged)
+    );
+    assert!(ok(&unlock(&d, PASSWORD)));
+    // With the daemon unlocked, the file swapped by `mv` (new inode): does not write over
+    // it, locks and warns.
+    let other = dir.0.join("outro.ward");
+    fs::copy(&c.vault, &other).unwrap();
+    fs::rename(&other, &c.vault).unwrap();
+    let before = fs::read(&c.vault).unwrap();
+    let r = request(&d, Role::App, "lock_timeout", r#"{"minutes":90}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
+    assert!(contains(
+        &encoded(Role::App, &r),
+        "o arquivo do cofre mudou fora do Ward".as_bytes()
+    ));
+    assert!(d.is_locked());
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+
+    // Rewritten in place (same inode, new `mtime`): the same.
+    assert!(ok(&unlock(&d, PASSWORD)));
+    std::thread::sleep(Duration::from_millis(20));
+    fs::write(&c.vault, &before).unwrap();
+    let r = request(&d, Role::App, "lock_timeout", r#"{"minutes":90}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
+    assert!(d.is_locked());
+    // Swapped with the daemon locked (without changing the generation): unlocking warns once.
+    assert!(ok(&unlock(&d, PASSWORD)));
+    d.lock();
+    std::thread::sleep(Duration::from_millis(20));
+    fs::write(&c.vault, &before).unwrap();
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::VaultChanged)
+    );
+    assert!(ok(&unlock(&d, PASSWORD)));
+
+    // The state is 0600, with no secret.
+    let m = fs::metadata(&c.state).unwrap();
+    assert_eq!(m.permissions().mode() & 0o777, 0o600);
+    let text = fs::read(&c.state).unwrap();
+    for s in SECRETS.iter().chain([&PASSWORD, &PIN]) {
+        assert!(!contains(&text, s.as_bytes()));
+    }
+}
+
+/// V3.28 (D53; S7, S9): a write that fails after the rename (directory fsync, through
+/// the 0300 directory), restart between A and B, a state that does not write and a
+/// password change that fails after sealing.
+#[test]
+fn v3_28_burned_generation_in_the_state() {
+    if is_root() {
+        eprintln!("v3_28: o root lê diretório 0300; o caso não se reproduz como root");
+        return;
+    }
+    let dir = Dir::new("queimada");
+    let state_dir = Dir::new("queimada-estado");
+    let mut c = dir.paths();
+    c.state = state_dir.0.join("estado");
+    // The test vault is born in the default state directory; moves to the separate one.
+    let (d0, _) = test_vault(&dir);
+    drop(d0);
+    fs::copy(dir.paths().state, &c.state).unwrap();
+    let (d, _) = daemon_at(c.clone());
+    assert!(ok(&unlock(&d, PASSWORD)));
+    let n = generation_on_disk(&c.vault, PASSWORD);
+    assert_eq!(generations_at(&c.state), Generations { seen: n, burned: n });
+
+    // A: the rename happens, the directory fsync fails.
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
+    let r = request(&d, Role::App, "lock_timeout", r#"{"minutes":30}"#);
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
+    assert_eq!(
+        generations_at(&c.state),
+        Generations {
+            seen: n,
+            burned: n + 1
+        }
+    );
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 1);
+    let copy_a = fs::read(&c.vault).unwrap();
+
+    // Restart between A and B: the new daemon opens with (n, n+1) and B writes n+2.
+    drop(d);
+    let (d, _) = daemon_at(c.clone());
+    assert!(ok(&unlock(&d, PASSWORD)));
+    assert_eq!(
+        generations_at(&c.state),
+        Generations {
+            seen: n + 1,
+            burned: n + 1
+        }
+    );
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":45}"#
+    )));
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 2);
+    assert_eq!(
+        generations_at(&c.state),
+        Generations {
+            seen: n + 2,
+            burned: n + 2
+        }
+    );
+
+    // The copy of A in place: rollback.
+    d.lock();
+    fs::write(&c.vault, &copy_a).unwrap();
+    assert_eq!(error(&unlock(&d, PASSWORD)), Some(ResponseError::Rollback));
+    assert!(d.is_locked());
+
+    // No restart: A fails after the rename, B writes n+4 (n+3 was burned by A).
+    let (d, _) = vault_n2(&c, &dir);
+    let g = generation_on_disk(&c.vault, PASSWORD);
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
+    let r = request(&d, Role::App, "lock_timeout", r#"{"minutes":31}"#);
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
+    assert_eq!(
+        generations_at(&c.state),
+        Generations {
+            seen: g,
+            burned: g + 1
+        }
+    );
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":32}"#
+    )));
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), g + 2);
+    assert_eq!(
+        generations_at(&c.state),
+        Generations {
+            seen: g + 2,
+            burned: g + 2
+        }
+    );
+
+    // The state does not write (read-only directory): the vault is not written.
+    let before = fs::read(&c.vault).unwrap();
+    fs::set_permissions(&state_dir.0, fs::Permissions::from_mode(0o500)).unwrap();
+    let r = request(&d, Role::App, "lock_timeout", r#"{"minutes":33}"#);
+    fs::set_permissions(&state_dir.0, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+    assert!(!d.is_locked());
+
+    // A password change that fails after sealing: locks, and the next unlock opens (with
+    // the new password, which reached the disk) above the burned one.
+    let new_password = "falso-nova-02";
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
+    let r = request(
+        &d,
+        Role::App,
+        "change_password",
+        &format!(
+            r#"{{"current":"{}","new":"{}"}}"#,
+            b64(PASSWORD.as_bytes()),
+            b64(new_password.as_bytes())
+        ),
+    );
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
+    assert!(d.is_locked());
+    let q = generations_at(&c.state).burned;
+    assert!(ok(&unlock(&d, new_password)));
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":34}"#
+    )));
+    assert!(generation_on_disk(&c.vault, new_password) > q);
+}
+
+/// New daemon unlocked in the current state (after a test rollback: puts back the
+/// newest vault through the state itself).
+fn vault_n2(c: &wardd::core::Paths, dir: &Dir) -> (wardd::core::Daemon, FakeClock) {
+    // Recreates the vault from scratch in this directory, with the separate state.
+    let _ = fs::remove_file(&c.vault);
+    let _ = fs::remove_file(&c.state);
+    let (d0, _) = test_vault(dir);
+    drop(d0);
+    fs::copy(dir.paths().state, &c.state).unwrap();
+    let (d, r) = daemon_at(c.clone());
+    assert!(ok(&unlock(&d, PASSWORD)));
+    (d, r)
+}
+
+fn generations_at(p: &std::path::Path) -> Generations {
+    files::read_state(p).unwrap()
+}
+
+/// V3.28: the password change with a wrong current password answers "wrong password"
+/// (D52) and does not lock; the right one changes it and the vault opens only with the
+/// new one.
+#[test]
+fn d52_change_password_with_wrong_password() {
+    let dir = Dir::new("troca");
+    let (d, _) = test_vault(&dir);
+    let change = |current: &str, new_password: &str| {
+        request(
+            &d,
+            Role::App,
+            "change_password",
+            &format!(
+                r#"{{"current":"{}","new":"{}"}}"#,
+                b64(current.as_bytes()),
+                b64(new_password.as_bytes())
+            ),
+        )
+    };
+    assert_eq!(
+        error(&change("falso-errada-01", "falso-nova-02")),
+        Some(ResponseError::WrongPassword)
+    );
+    assert!(!d.is_locked());
+    assert!(ok(&change(PASSWORD, "falso-nova-02")));
+    assert!(ok(&request(
+        &d,
+        Role::App,
+        "lock_timeout",
+        r#"{"minutes":20}"#
+    )));
+    d.lock();
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::WrongPassword)
+    );
+    assert!(ok(&unlock(&d, "falso-nova-02")));
+}
+
+/// First use: without a vault, the status says it does not exist and unlocking answers
+/// "missing vault"; creating it again is refused; the PIN appears neither in the state
+/// nor in the file (V3.13: only the hash, inside the encrypted part).
+#[test]
+fn first_use_and_pin_only_as_hash() {
+    let dir = Dir::new("primeiro");
+    let (d, _) = daemon_at(dir.paths());
+    match request(&d, Role::Agent, "status", "{}") {
+        Response::Status {
+            locked,
+            vault_exists,
+            ..
+        } => assert!(locked && !vault_exists),
+        r => panic!("{r:?}"),
+    }
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::VaultNotFound)
+    );
+    // The agent does not create a vault.
+    let create = format!(
+        r#"{{"password":"{}","pin":"{}"}}"#,
+        b64(PASSWORD.as_bytes()),
+        b64(PIN.as_bytes())
+    );
+    assert_eq!(
+        error(&request(&d, Role::Agent, "create_vault", &create)),
+        Some(ResponseError::Unauthorized)
+    );
+    drop(d);
+    let (d, _) = test_vault(&dir);
+    assert_eq!(
+        error(&request(&d, Role::App, "create_vault", &create)),
+        Some(ResponseError::VaultAlreadyExists)
+    );
+    d.lock();
+    assert_eq!(
+        error(&request(&d, Role::App, "create_vault", &create)),
+        Some(ResponseError::VaultAlreadyExists)
+    );
+    let c = dir.paths();
+    for file in [&c.vault, &c.state] {
+        let b = fs::read(file).unwrap();
+        assert!(!contains(&b, PIN.as_bytes()) && !contains(&b, PASSWORD.as_bytes()));
+        for s in SECRETS {
+            assert!(!contains(&b, s.as_bytes()));
+        }
+        assert_eq!(
+            fs::metadata(file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    // Changing the PIN: the old one stops working, the new one works, and it stays on disk.
+    assert!(ok(&unlock(&d, PASSWORD)));
+    let r = request(
+        &d,
+        Role::App,
+        "change_pin",
+        &format!(
+            r#"{{"current":"{}","new":"{}"}}"#,
+            b64(PIN.as_bytes()),
+            b64(b"2468")
+        ),
+    );
+    assert!(ok(&r), "{r:?}");
+    d.lock();
+    assert!(ok(&unlock(&d, PASSWORD)));
+    assert_eq!(
+        error(&set_level(&d, Role::App, "t-aprov", "free", PIN)),
+        Some(ResponseError::WrongPin)
+    );
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "free", "2468")));
+}

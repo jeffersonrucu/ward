@@ -1,0 +1,2 @@
+/usr/bin/python3 -I -B dev/english_check.py 
+english-check: 0 achado(s) em 0 arquivo(s), 0 problema(s) nas exceções

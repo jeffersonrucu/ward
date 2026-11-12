@@ -1,0 +1,35 @@
+#!/bin/bash -p
+# prerm of Ward's `.deb` (Phase 52; D46; V9.9, V9.10). On removal, stops and disables
+# every `wardd@<uid>.socket`/`.service` (the vault locks) before dpkg deletes the files.
+# On upgrade it does nothing: the new version's preinst stops the daemons and their
+# sockets before the swap (m2:DT16) and its postinst starts the sockets again.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+set -euo pipefail
+
+case "${1:-}" in
+    remove | deconfigure)
+        if [ -d /run/systemd/system ]; then
+            units=()
+            while read -r u _; do
+                [[ "$u" =~ ^wardd@[0-9]+\.(socket|service)$ ]] && units+=("$u")
+            done < <(systemctl list-units --all --plain --no-legend --full 'wardd@*' 2>/dev/null || true)
+            for p in /etc/systemd/system/*.wants/wardd@*.socket; do
+                [ -e "$p" ] || [ -L "$p" ] || continue
+                u="${p##*/}"
+                [[ "$u" =~ ^wardd@[0-9]+\.socket$ ]] && units+=("$u")
+            done
+            for u in "${units[@]}"; do
+                if [[ "$u" == *.socket ]]; then
+                    systemctl disable --now "$u" || printf 'ward: aviso: não deu para desligar %s\n' "$u" >&2
+                else
+                    systemctl stop "$u" || printf 'ward: aviso: não deu para parar %s\n' "$u" >&2
+                fi
+            done
+        fi
+        ;;
+    upgrade | failed-upgrade) ;;
+    *) printf 'ward (prerm): argumento desconhecido: %s\n' "${1:-}" >&2; exit 1 ;;
+esac
+exit 0

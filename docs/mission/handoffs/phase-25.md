@@ -1,118 +1,215 @@
-# Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar`
+# Fase 25 — `wardd`: testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- `crates/ward` agora é lib + binário, com `#![forbid(unsafe_code)]`.
-  - `args.rs`: `lista [--json]`, `travar`, `destravar`, `--help`/`-h`/`ajuda` e `--version`/`-V`. Uso errado sai com 2. A mensagem de erro nunca repete o argumento: `ward destravar <senha>` digitado por engano não devolve a senha.
-  - `cliente.rs`: `Conexao` sempre fala no papel agente.
-    - Conecta só por `ward_plataforma::conectar_servidor`. No release usa `ServidorEsperado::sistema()` (`/run/ward/<uid>/wardd.sock`: pastas do root, socket 0600, par com uid 0). Nenhuma variável nem argumento troca isso.
-    - No `modo-teste` usa `teste_em($WARD_DEV_SOCKET_DIR/wardd.sock)` ou `teste()`. Como esse build pula o uid 0 (D46), ele exige também que o par seja **não-dumpable** como o `wardd` (`/proc/<pid>/exe` dá EACCES), pelo pidfd do `ProcessoPar`, e depois chama `reconferir_sem_depurador`. Com isso, o falso em Python do V4.2 é recusado também no build de teste.
-    - Prazos: 130 s de leitura e 10 s de escrita.
-    - A resposta é lida com `decodificar_resposta(Papel::Agente)`. Uma resposta com credencial, ou uma lista com nível, é recusada (S1, D50).
-  - `comandos.rs`: o trait `Entorno` (conectar, endurecer, ler senha, stdout/stderr) deixa os testes trocarem o mundo de fora. O `destravar` segue esta ordem:
-    1. conecta e confere;
-    2. manda `estado`: se já está destravado, sai 0 sem ler a senha; se não há cofre, dá erro;
-    3. chama `endurecer_processo` (não-dumpable, sem core). Se falhar, aborta antes de ler;
-    4. lê a senha do `/dev/tty`. Vazia, cancelada, sem terminal ou longa demais: sai sem mandar nada;
-    5. `reconferir()` no mesmo socket;
-    6. manda `destravar`. A senha passa do `Zeroizing` para o `Segredo` com `mem::take`, sem cópia.
-  - `texto.rs`: tabela alinhada e JSON.
-    - `lista --json` é um array com **só** `nome`, `tipo`, `grupo`, `ambiente`, `projeto` e `endereco` (URL ou host), com `null` no campo vazio. Não leva tags nem nível.
-    - Controles C0/C1/DEL e formatação Unicode (bidi, largura zero, tags, BOM) saem como escape visível no texto e como `\uXXXX` no JSON (regra de D51).
-  - Mensagens em português, todas com o prefixo `ward:`:
-    - "o daemon não está rodando";
-    - "servidor não é o wardd (<motivo>); nada foi enviado";
-    - "travado: destrave com `ward destravar` ou pelo app";
-    - "cofre travado", "cofre destravado", "o cofre já está destravado";
-    - a mensagem fixa do `ErroResposta` (ex.: "senha mestra incorreta ou arquivo do cofre adulterado").
-- `ward-plataforma::terminal` (módulo novo) e `ler_senha(prompt, max)`:
-  - abre `/dev/tty` com `O_NOCTTY|O_CLOEXEC` e nunca lê de stdin nem de argv;
-  - desliga `ECHO`/`ECHONL`/`ICANON`/`ISIG`/`IEXTEN` com `TCSAFLUSH`, que descarta o que foi digitado antes do prompt, e confere de volta que o eco desligou;
-  - restaura o terminal no `Drop`;
-  - edição mínima: Backspace e Ctrl+U zeram o byte antes de tirá-lo; Ctrl+C e Ctrl+D com a linha vazia cancelam;
-  - o buffer é `Zeroizing<Vec<u8>>` com a capacidade toda reservada antes (`MAX_SEGREDO`), então não realoca.
-  - `sys.rs` ganhou `tcgetattr`/`tcsetattr` e, só em teste, `abrir_pty`. Todos têm `// SAFETY:`.
-- `make teste-cli` (`dev/testes/cli.py`): a CLI `modo-teste` num pty de verdade contra um falso em Python e contra o `make dev-daemon`. A linha está no `CLAUDE.md`.
-- Notas do planner tratadas:
-  - **D62:** o prazo de leitura de 130 s cobre a espera máxima do D20 (30 s, também na primeira tentativa depois do reinício) mais o Argon2id.
-  - **D63:** os `match` de `Resposta::Estado` usam `..`, então o campo `papel` da Fase 23 não quebra a CLI, e quem decodifica é o `ward-core`. Nos testes, só `resposta_estado()` em `testes.rs` monta `Resposta::Estado`; é o único ponto a ajustar no merge.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard f40e6c6`
+  (master de então). Com a Fase 23 no master (`55c4645`), o trabalho foi refeito sobre ele
+  (`git reset --hard master` e os mesmos scripts de rename), em vez de merge: o commit da
+  fase fica direto sobre `55c4645`. Os nomes do `common` (Fase 23) vêm do master; os de
+  `nucleo`/`aprovacao`/`trava`/`arquivos`/`uso` (Fases 19–20) e do `ward-core`
+  (`protocolo`, Fases 17–18) ficaram como no master.
+- **Arquivos** (glossário seção 4, `git mv`): `crates/wardd/tests/aprovacao.rs` →
+  `approval.rs`, `trava.rs` → `lock.rs`, `nucleo.rs` → `core.rs`.
+- **`Cargo.toml`** do `wardd` (achado da Fase 4; glossário seção 3): `[[test]]` `trava` →
+  `lock` (`required-features = ["test-mode"]` igual). `approval` e `core` não têm
+  `[[test]]` (não tinham antes).
+- **Usos fora dos arquivos**: nenhum. Nenhum alvo do Makefile, script de `dev/`/`install/`
+  ou `CLAUDE.md` chama `--test trava|nucleo|aprovacao` nem cita nome de função destes
+  testes (procurado com `grep -r` fora de `target/`, `.git/` e `docs/mission/arquivo/`).
+  `docs/mission/plan.md` só cita os arquivos de `src/` (Fases 19–20), que não mudam aqui.
+- **Comentários** dos três arquivos em inglês. Comentários que citavam nome pt-BR de fio,
+  de método de fora ou de outra fase (`estado`, `destravar`, `ward lista`, `detalhe`,
+  `totp`, `agora`/`dormir`, `mudar_nivel`, `trocar_pin`, `trocar_senha`,
+  `senha_incorreta`, `cofre_inexistente`, `abrir_app`, `pedido_de_destrave`,
+  `pedido_invalido`, `executar`, `entrada_oculta`, `Assinante`, `Daemon::atender`,
+  `Daemon::novo`, `com_gancho_depois_de_gravar`/`com_programas_ssh`/`com_prazos_login`,
+  `trava.rs`/`config.rs`… do V3.15, `acme-pg-aprovacao`, os botões "Permitir…") foram
+  reescritos com o sentido em inglês, sem o nome (como nas Fases 21, 24 e 27).
+- **Renomes (antigo → novo)**, todos no glossário (parágrafo "Fase 25", depois do da
+  Fase 27):
+  - `lock.rs`: macro `emitir` → `emit`; `SESSAO`/`IFACE_SESSAO` → `SESSION`/
+    `SESSION_IFACE` (`H`, `LOGIND`, `WARDD` ficam); `RelogioManual` → `ManualClock`
+    (`novo`/`esperas`/`por`/`ilegivel` → `new`/`waits`/`set`/`unreadable`);
+    `cofre_com_relogio` → `vault_with_clock`; `lista_ok` → `list_ok`; `executar` →
+    `run_request`; `BarramentoFalso { filho }` → `FakeBus { child }` (`subir`/`endereco`/
+    `cliente`/`matar` → `start`/`address`/`client`/`kill`); `Inibidores` → `Inhibitors`;
+    `Manager { inibidores }` → `Manager { inhibitors }`; `LogindFalso` → `FakeLogind`
+    (`novo`/`inibidor` → `new`/`inhibitor`); `daemon_vigiado` → `watched_daemon`;
+    `espera_travar` → `wait_locked`; `mandar` → `send`; `pedir_por` → `request_over`;
+    `Filho` → `KillOnDrop`; `esperar_no_log` → `wait_in_log`; locais (`criar`, `negado`,
+    `vistos`, `fim`, `mudou`, `valor`, `fechou`, `ini`, `limite`, `forjador`, `caminho`,
+    `membro`, `texto`, `seg`, `_pronto`…) em inglês.
+  - `core.rs`: `lista` → `list`, `nivel_de` → `level_of`, `sou_root` → `is_root`,
+    `cofre_n2` → `vault_n2`, `geracoes_em` → `generations_at`; locais (`papel`, `dados`,
+    `esperadas`, `quadros`, `esperas`, `relogio`, `cofre`, `antes`, `sem_pin`, `agente`,
+    `executar`, `bloqueada`, `com_nivel`, `editar`, `renomear`, `copia_n`, `outro`,
+    `dir_estado`, `copia_a`, `nova`, `troca`, `criar`, `arq`…) em inglês.
+  - `approval.rs`: `PRAZO` → `DEADLINE`; `RelogioManual` → `ManualClock` (`ir`/`avancar`
+    → `set`/`advance`); `Recebido { Aprovacao, Destrave }` → `Received { Approval,
+    Unlock }`; `AppFalso` → `FakeApp`; `AoSair` → `OnExit`; `AbridorFalso { resultado,
+    aberturas, ao_sair }` → `FakeOpener { result, opens, on_exit }` (`novo`/`sair` →
+    `new`/`exit`); `Cena { relogio, abridor }` → `Scene { clock, opener }`; `cena`/
+    `cena_com` → `scene`/`scene_with`; `assinar` → `subscribe`; `executar_json(_em)` →
+    `run_json(_in)`; `usar` → `use_entry`; `pedido` → `approval_request`; `responder` →
+    `answer`; `nivel` → `level`; `ExpirarSeCair` → `ExpireOnPanic`; `com_janela` →
+    `with_approval_window` (não `with_window`, que é o do `common` usado pelo `lock.rs`);
+    `fontes_rs` → `rs_sources`; `GANCHOS_DE_TESTE`/`CFG_GANCHOS` → `TEST_HOOKS`/
+    `CFG_HOOKS`; `conferir_v3_15` → `check_v3_15`; `destrave` → `unlock_request`;
+    `usar_com_entrada` → `use_with_stdin`; `com_janela_e_entrada` →
+    `with_window_and_stdin`; `responder_ciente` → `answer_confirmed`; `ClienteForjado` →
+    `ForgedClient`; `Caiu` → `Dropped`; locais em inglês.
+  - Testes de `lock.rs`: `v3_19_inatividade_com_relogio_injetado` →
+    `v3_19_inactivity_with_injected_clock`, `v3_19_tempo_lido_da_configuracao_do_cofre` →
+    `v3_19_timeout_read_from_the_vault_settings`,
+    `ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro` →
+    `attack_agent_does_not_keep_the_vault_open_with_status_or_errors`,
+    `ataque_lista_periodica_do_agente_nao_adia_a_trava` →
+    `attack_periodic_agent_list_does_not_delay_the_lock`,
+    `ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava` →
+    `attack_f55_denied_ward_run_and_window_do_not_delay_the_lock`,
+    `d62_trava_automatica_nao_mexe_na_espera_do_d20` →
+    `d62_auto_lock_does_not_touch_the_d20_wait`, `ataque_relogio_que_volta_ou_ilegivel_trava`
+    → `attack_clock_that_goes_back_or_is_unreadable_locks`,
+    `v3_19_lock_e_locked_hint_travam_em_ate_2s` → `v3_19_lock_and_locked_hint_lock_within_2s`,
+    `v3_19_prepare_for_sleep_trava_antes_de_soltar_o_inibidor` →
+    `v3_19_prepare_for_sleep_locks_before_releasing_the_inhibitor`,
+    `ataque_barramento_cai_com_o_cofre_aberto_trava` →
+    `attack_bus_drops_with_the_vault_open_locks`,
+    `ataque_sinal_forjado_nao_destrava_nem_segura` →
+    `attack_forged_signal_neither_unlocks_nor_holds`,
+    `v3_19_binario_trava_com_lock_session_do_logind_falso` →
+    `v3_19_binary_locks_on_lock_session_of_the_fake_logind`,
+    `daemon_de_teste_sem_barramento_falso_nao_liga_o_logind` →
+    `test_daemon_without_fake_bus_does_not_enable_logind`.
+  - Testes de `core.rs`: `v3_10_travar_e_tudo_responde_travado` →
+    `v3_10_lock_and_everything_answers_locked`,
+    `v3_9_senha_errada_espera_crescente_sem_contagem` →
+    `v3_9_wrong_password_growing_wait_without_count`,
+    `v3_11_mudar_nivel_exige_pin_e_papel_app` → `v3_11_change_level_requires_pin_and_app_role`,
+    `v3_12_cinco_erros_de_pin_travam` → `v3_12_five_pin_errors_lock`,
+    `v3_17_v3_26_lista_do_agente_e_bloqueada_igual_inexistente` →
+    `v3_17_v3_26_agent_list_and_blocked_equals_missing`,
+    `v3_27_entrada_nova_nasce_com_aprovacao` → `v3_27_new_entry_starts_with_approval`,
+    `v3_22_rollback_e_arquivo_trocado` → `v3_22_rollback_and_swapped_file`,
+    `v3_28_geracao_queimada_no_estado` → `v3_28_burned_generation_in_the_state`,
+    `d52_trocar_senha_com_senha_errada` → `d52_change_password_with_wrong_password`,
+    `primeiro_uso_e_pin_so_como_hash` → `first_use_and_pin_only_as_hash`.
+  - Testes de `approval.rs`: `v3_14_sem_resposta_expira_em_2_min` →
+    `v3_14_no_answer_expires_in_2_min`, `v3_14_negar_e_fechar_negam` →
+    `v3_14_deny_and_close_deny`, `v3_14_uma_vez_so_aquele_pedido` →
+    `v3_14_once_only_that_request`, `v3_14_uma_hora_ate_59_59_e_travar_encerra` →
+    `v3_14_one_hour_until_59_59_and_lock_ends_it`, `v3_14_sempre_deixa_livre_no_arquivo` →
+    `v3_14_always_leaves_free_in_the_file`, `ataque_49a_restaurar_cancela_pedido_pendente` →
+    `attack_49a_restore_cancels_pending_request`, `ataque_permitir_sem_pin_valido` →
+    `attack_allow_without_valid_pin`, `ataque_agente_responde_a_aprovacao` →
+    `attack_agent_answers_the_approval`, `v3_15_sem_aprovador_no_binario` →
+    `v3_15_no_approver_in_the_binary`, `ataque_v3_15_gancho_sem_feature_ou_fora_do_lugar` →
+    `attack_v3_15_hook_without_feature_or_out_of_place`,
+    `v3_16_prod_tem_os_mesmos_niveis_e_botoes` → `v3_16_prod_has_the_same_levels_and_buttons`,
+    `d19_nivel_combinado` → `d19_combined_level`, `d21_aprovacao_indisponivel` →
+    `d21_approval_unavailable`, `app_aberto_recebe_o_pedido_ao_assinar` →
+    `opened_app_receives_the_request_on_subscribe`,
+    `d51_comando_e_cadeia_com_escape_visivel` → `d51_command_and_chain_with_visible_escape`,
+    `f26a_diretorio_de_trabalho_vai_a_janela_com_escape_visivel` →
+    `f26a_working_directory_goes_to_the_window_with_visible_escape`,
+    `cliente_que_cai_cancela` → `client_that_drops_cancels`,
+    `v3_18_espera_o_destrave_ate_2_min` → `v3_18_waits_for_unlock_up_to_2_min`,
+    `ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados` →
+    `attack_phase_39a_unlock_with_entry_and_command_neutralized`,
+    `ataque_fase_39a_entrada_vazia_nao_derruba_o_app` →
+    `attack_phase_39a_empty_entry_does_not_bring_down_the_app`, `d57_abrir_app` →
+    `d57_open_app`, `v3_36_so_o_pid_do_lancador_e_app` → `v3_36_only_the_launcher_pid_is_app`,
+    `v3_38_estado_traz_o_papel` → `v3_38_status_carries_the_role`,
+    `f54b_ataque_pipe_na_aprovacao_sem_a_caixa_nao_passa` →
+    `f54b_attack_pipe_on_approval_without_the_box_does_not_pass`,
+    `f54b_terminal_e_nula_passam_como_antes` → `f54b_terminal_and_null_pass_as_before`,
+    `f54b_liberacao_de_1_hora_nao_cobre_pipe` → `f54b_1_hour_grant_does_not_cover_pipe`,
+    `f54b_ssh_com_pipe_avisa` → `f54b_ssh_with_pipe_warns`.
+- **Ficaram** (nomes de fora): métodos dos traits do `wardd` implementados aqui
+  (`Relogio::agora`/`dormir`, `RelogioMotor::agora`, `Assinante::entregar`,
+  `AbridorApp::abrir`, `Cliente::cadeia`/`saiu`), campos de tipos de fora em padrões e
+  literais de struct (`Resposta::Estado { papel, cofre_existe, travado }`,
+  `Pedido::ResponderAprovacao { pedido, decisao, … }`, `i.nome`, `i.nivel`, `c.cofre`,
+  `c.estado`, `Geracoes { vista, queimada }`), e os construtores `Daemon::novo`,
+  `Motor::novo`, `com_motor`, `motor()`, `travar_se_inativo`, `vigiar_logind`…
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`.
+
+## Literais alterados (PRD regra 5)
+Multiconjunto de literais por arquivo comparado com `55c4645` (léxico próprio no
+scratchpad: strings normais, cruas, de bytes e de caractere, fora de comentários). Só
+capturas de `format!` (valor igual):
+- `lock.rs`: `{limite:?}` → `{limit:?}`, `{texto:?}` → `{text:?}`, `{criar:?}` →
+  `{create:?}`, `{outra:?}` → `{other:?}`, `{entrada}` → `{entry}` (JSON do `executar`),
+  `{dados}` → `{data}` (quadro do protocolo).
+- `core.rs`: `{nome}` → `{name}` (JSON do `executar`).
+- `approval.rs`: `{texto:?}` → `{text:?}`, `{outra:?}`/`{outro:?}` → `{other:?}`,
+  `{arquivos:?}` → `{files:?}`, `{decisao}` → `{decision}`, `{tipo}` → `{kind}`,
+  `{papel:?}` → `{role:?}`, `{proibido}` → `{forbidden}`, `{assinatura}` →
+  `{signature}`, `{nome}` → `{name}`, `{versao}` → `{version}`.
+- Nenhum outro literal mudou: os nomes de arquivo de `src/` e de gancho que o V3.15
+  procura (`"trava.rs"`, `"nucleo.rs"`, `"aprovacao.rs"`, `"uso.rs"`, `"server.rs"` da
+  Fase 23, `"com_chrome"`…), as palavras proibidas (`"WARD_APROV"`…), as mensagens do log
+  que os testes procuram (`"logind: vigiando"`, `"tela bloqueada: cofre travado"`,
+  `"logind desligado"`, `"WARD_DEV_DBUS_SISTEMA recusado"`), os JSON do protocolo e as
+  mensagens de `assert!`. Os literais com escape `\u{202E}`/`\\u202e` (D51, Fase 39a) não
+  passaram por ferramenta de escrita: o rename foi feito por script que só mexe fora das
+  strings, e a comparação confirma que estão byte a byte iguais.
 
 ## Segurança
-- Invariantes tocadas:
-  - **S5 (D46):** toda conexão, e não só a do `destravar`, confere o servidor antes do primeiro byte. A conferência roda de novo logo antes de a senha sair. Um falso nunca recebe a senha, nem consegue alimentar `lista` falsa.
-  - **S1:** a CLI só aceita respostas do papel agente. Não existe comando que peça segredo, e nenhuma mensagem repete argumento nem conteúdo do quadro.
-  - **S3:** a senha vem só do `/dev/tty`.
-  - **S8:** o processo fica não-dumpable antes de a senha existir. A senha fica em `Zeroizing` e depois em `Segredo`, sem realocar, e o byte apagado é zerado.
-  - **S13:** os erros são textos fixos (tipo de `io::ErrorKind`, motivo da `RecusaServidor`).
-- Testes de ataque:
-  - `crates/ward/src/testes.rs`:
-    - `v4_2_ataque_servidor_falso_recusado_antes_de_ler_a_senha`: regra do release com o falso numa pasta do usuário. `destravar`/`lista`/`travar` recusam, a senha não é lida e o falso tem 0 conexões e 0 bytes;
-    - `v4_2_ataque_servidor_falso_no_socket_de_teste_recusado`: regra de teste com o falso dumpable. Ele vê a conexão e recebe 0 bytes, e o prompt não aparece;
-    - `com_daemon_falso::ataque_socket_trocado_enquanto_digita`: o socket vira 0666 durante a digitação; a reconferência recusa e o falso só viu o `estado`;
-    - `com_daemon_falso::ataque_resposta_com_credencial_ou_nivel_recusada`: `segredo`, `preenchimento`, lista com `nivel` e `v:2`, todos recusados sem saída;
-    - também: `destravar_na_ordem`, `destravar_senha_errada_vazia_cancelada`, `v4_1_lista_em_texto_e_json`, `v4_22_travar_e_lista_responde_travado`, `uso_e_ajuda` e `daemon_ausente`.
-  - `crates/ward/src/args.rs › ataque_argumento_nao_volta_na_mensagem`.
-  - `crates/ward/src/texto.rs › ataque_texto_com_controle_bidi_e_aspas`.
-  - `crates/ward-plataforma/src/terminal.rs`:
-    - `ataque_senha_nao_ecoa_no_pty`: pty real; a senha não aparece no mestre, o que foi digitado antes do prompt não vira senha e o eco, o `ICANON` e o `ISIG` voltam;
-    - `ctrl_c_cancela_e_restaura`, `edicao_da_linha`, `cancelar_e_limite`, `capacidade_reservada_sem_realocar` e `arquivo_comum_nao_e_terminal`.
-  - `make teste-cli`, com 21/21 ok:
-    - V4.2: falso em Python no socket de teste; recusa sem prompt, o falso recebe 0 bytes e a senha não está no registro;
-    - V4.22;
-    - senha errada e certa pelo pty, sem eco;
-    - V4.1: 20 entradas (as 21 da fixture menos `gama-bloqueada`), só os seis campos e nenhum padrão de `.dev/variacoes.txt` na saída.
-- Dependências: nenhuma crate nova no lockfile. O `Cargo.lock` ganhou só as arestas de `ward` para `ward-core`, `ward-plataforma` e `zeroize`.
-  - `ward-core`: protocolo.
-  - `ward-plataforma`: conferência do servidor e terminal.
-  - `zeroize`: senha. O `ward-plataforma` passou a ligar `zeroize/alloc`, para o `Zeroizing<Vec<u8>>`.
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários): os testes de
+  ataque de S1 (lista do agente, bloqueada igual a inexistente), S7 (gravação, geração
+  queimada, retrocesso), S8/S9 (trava, PIN, 5 erros), S10 (aprovação expira, fechar nega),
+  S13 (log sem segredo), D2, D8/V3.15 (sem aprovador no binário), D16, D19, D20, D21, D51,
+  D57, D62, D63, D68 e V3.19 (logind falso). Mesma lógica, mesmas asserções, mesmos valores
+  e prazos.
+- **Conferência**: multiconjunto de literais (acima), lista de identificadores que o
+  checador ainda acusa (todos de fora) e `make compile` (0, 0 warnings).
+- **Testes de ataque**: nenhum novo (só rename); os existentes acompanham os nomes. Não
+  rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- `run`, `ssh`, `login` e `playwright` (Fases 26–28 e seguintes). Hoje respondem "comando desconhecido" e não aparecem no `--help`.
-- Conferir o campo `papel` do `estado` (D63) na CLI. Ele ainda não existe; quando a Fase 23 chegar, a CLI pode exigir `agente`. Não é obrigatório.
+- Os identificadores de fora que o checador ainda acusa (1077 achados de identificador, 0
+  de comentário, nos três arquivos): `ward_core::protocolo` (Fases 17–18), `wardd::nucleo`,
+  `aprovacao`, `trava`, `arquivos`, `uso` (Fases 19–20). Somem com essas fases.
+- `make check` e testes: não rodaram (PRD regra 6).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas`, `make dev-cofre`, `make dev-variacoes` | 0 |
-| `cargo test -p ward --all-features` / `cargo test -p ward` (sem feature) | 0 / 0 |
-| `cargo test -p ward-plataforma --lib terminal` | 0 |
-| `cargo clippy -p ward -p ward-plataforma --all-targets [--all-features] -- -D warnings` | 0 |
-| `make dev-daemon` | 0 |
-| `make teste-cli` | 0 (21 ok, 0 falhas) |
-| `ward lista` / `travar` / `lista` (travado → exit 1) / `destravar` sem tty (exit 1) / `make dev-daemon-parar` / `lista` sem daemon (exit 1) | conforme esperado |
-| `make check` | 0 |
+| `git reset --hard f40e6c6` (worktree nasceu em `b4d5e1b`) e depois `git reset --hard master` (`55c4645`, com a Fase 23), árvore sem commit da fase | 0 |
+| `make fmt` | 0 |
+| `make compile` (log `.dev/logs/fase25-make-compile.log`; 0 warnings) | 0 |
+| `python3 -I dev/english_check.py --paths crates/wardd/tests/{lock,core,approval}.rs` (log `.dev/logs/fase25-english-check.log`) | 1 (1077 identificadores de outras fases; 0 de comentário) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **O V4.2 inteiro só vale no artefato de release.** No `modo-teste`, a CLI pula o uid 0 (D46), e a conferência extra (par não-dumpable) só barra um falso ingênuo. Um falso que chame `prctl(PR_SET_DUMPABLE, 0)`, ou o próprio `wardd` de teste copiado para `/tmp` escutando no socket de teste, passa. No release, o socket fica em `/run/ward/<uid>/`, que é do root, e o usuário nem consegue criar o falso lá; sem daemon, a CLI diz "o daemon não está rodando", e não "servidor não é o wardd". O validador deve rodar a segunda parte do V4.2 contra o build sem feature (por exemplo no contêiner da 21b), ou o texto do V4.2 precisa ser ajustado pelo planner.
-- **Terminal com eco desligado se a CLI morrer por sinal** (SIGTERM/SIGHUP/SIGKILL) durante a digitação. O Ctrl+C não tem esse problema (o `ISIG` está desligado e o byte cancela). O `reset` resolve. Não instalei handler de sinal.
-- **Teclas especiais** (setas, ESC) entram na senha como os bytes depois do ESC (ex.: `[A`). O ESC em si é ignorado.
-- **A CLI não confere o próprio ambiente** (`LD_PRELOAD` etc.) antes de ler a senha. Quem controla o ambiente do shell do usuário já pode trocar o `ward` por outro programa, então isso fica fora do modelo. Registro.
-- **Mudança fora de `crates/ward`:** o módulo `terminal` e duas funções em `sys.rs` do `ward-plataforma` (mais o `abrir_pty` de teste), porque o `termios` exige `unsafe`, que só pode viver ali. O protocolo do `ward-core` não mudou.
-- No começo fiz um commit WIP e um merge do `master` no branch; no fim reescrevi tudo num commit único em cima do `master`.
+- O worktree nasceu em `b4d5e1b`, não no master; reset com a árvore limpa.
+- **Teste de integração chamado `core`** (glossário seção 4: `tests/nucleo.rs` →
+  `core.rs`): o crate do teste se chama `core`, como o da biblioteca padrão. O
+  `cargo check --all-targets` passa (o `rmeta` `libcore-*.rmeta` do teste é gerado), mas o
+  build e a execução (`cargo test --test core`) só rodam no M6. Se der conflito lá, o
+  nome alternativo é `daemon_core.rs` (glossário e handoff juntos).
+- O comentário do V3.15 citava `trava.rs`/`config.rs`… pelos nomes de `src/`, que as
+  Fases 19–20 renomeiam; o comentário agora fala dos módulos sem o nome de arquivo, mas os
+  literais do teste (`"trava.rs"`, `"nucleo.rs"`, `"aprovacao.rs"`, `"uso.rs"`) e os
+  nomes dos ganchos têm de mudar nas Fases 19–20 junto com os arquivos de `src/`, senão o
+  V3.15 passa a não achar o que procura.
+- **Conflitos prováveis no merge**: `docs/glossario.md` (parágrafo "Fase 25" depois do da
+  Fase 27). As Fases 17–20 vão mexer nos `use` e nas chamadas dos três testes.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward/Cargo.toml` | alterado |
-| `crates/ward/src/main.rs` | alterado |
-| `crates/ward/src/lib.rs` | criado |
-| `crates/ward/src/args.rs` | criado |
-| `crates/ward/src/cliente.rs` | criado |
-| `crates/ward/src/comandos.rs` | criado |
-| `crates/ward/src/texto.rs` | criado |
-| `crates/ward/src/testes.rs` | criado |
-| `crates/ward-plataforma/Cargo.toml` | alterado (`zeroize/alloc`) |
-| `crates/ward-plataforma/src/lib.rs` | alterado |
-| `crates/ward-plataforma/src/sys.rs` | alterado |
-| `crates/ward-plataforma/src/terminal.rs` | criado |
-| `dev/testes/cli.py` | criado |
-| `Makefile` | alterado (`teste-cli`) |
-| `CLAUDE.md` | alterado (só a linha do `teste-cli`) |
-| `Cargo.lock` | alterado (só as arestas do `ward`) |
+| `crates/wardd/tests/approval.rs` (era `aprovacao.rs`) | renomeado e reescrito |
+| `crates/wardd/tests/lock.rs` (era `trava.rs`) | renomeado e reescrito |
+| `crates/wardd/tests/core.rs` (era `nucleo.rs`) | renomeado e reescrito |
+| `crates/wardd/Cargo.toml` | alterado (`[[test]]` `lock`) |
+| `docs/glossario.md` | alterado (parágrafo "Fase 25") |
 | `docs/mission/handoffs/phase-25.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [ ] (UI/DESIGN) Conferido contra o FigCraft (não se aplica: fase sem UI)
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make fmt` e `make compile` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

@@ -5,6 +5,15 @@
       "Read(~/.local/share/ward/**)",
       "Read(~/.config/ward/**)",
       "Read(/media/**/ward-backup/**)"
+    ],
+    "allow": [
+      "Bash(make dev-daemon:*)",
+      "Bash(make dev-daemon-stop:*)",
+      "Bash(make test-cli:*)",
+      "Bash(make dev-services-up:*)",
+      "Bash(make dev-services-down:*)",
+      "Bash(make app-bridge:*)",
+      "Bash(make test-revealed-selection:*)"
     ]
   },
   "enabledPlugins": {

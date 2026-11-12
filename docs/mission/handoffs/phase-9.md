@@ -1,196 +1,183 @@
-# Fase 9 — (DESIGN) Bandeja e extensão
+# Fase 9 — `ward-platform`: socket, papel, conectar, terminal, endurecimento, servidor, app, pasta e testes (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- Trabalhei no app FigCraft ao vivo (`mcp__figcraft-app__*`), no arquivo
-  `/home/jeffersonoliveira/documentos/Ward.figcraft`, sem abrir outro arquivo e sempre com
-  `ids` explícitos. Antes, li a skill `figcraft`, o PRD, o plano, o contrato (V0.17–V0.19),
-  o `design-nodes.md`, os handoffs 4d e 4g, a referência-alvo e a Inspirações `1:3` do
-  Figma (só leitura, por screenshot).
-- **Primeira tentativa interrompida**: a UI do app parou de responder ("timed out waiting
-  for the UI") e parei sem insistir. Na retomada, o `inspect_document` respondeu. Conferi
-  `17137` e o `Item de menu`: o id real era `17152` e estava vazio, porque as chamadas
-  que deram timeout não tinham sido aplicadas. Salvei logo em seguida e continuei. Fiz 7
-  `save_file` no mesmo caminho.
-- **Proposta de ícone** a partir do logo da 4g (`Logo / Símbolo`, set `3289`):
-  - `Ícone da bandeja` (set `17141`, base 32): símbolo monocromático. `destravado` `17138`
-    é branco (`marca/sobre-cor`). `travado` `17142` é cinza (`marca/sobre-cor-inativo`
-    → `neutro/400`). O PRD não pede um estado "pedido pendente", então não desenhei.
-  - `Ícone da extensão` (set `17148`, base 32): squircle (raio `raio/sm`, suavização 0,6)
-    com o símbolo branco em 24, que ocupa 75% do ícone (o ícone do app usa 62,5%) para
-    ficar mais nítido em 16. `destravado` `17145` usa o gradiente `marca/gradiente-*`.
-    `travado` `17149` tem fundo cinza (`marca/inativo` → `neutro/600`), para o
-    `chrome.action.setIcon` mostrar o estado.
-  - **Legibilidade**: exportei em 16, 24 e 32 (extensão também em 48 e 128) e montei uma
-    folha ampliada por vizinho mais próximo sobre fundo escuro (#101114 e #202124) e claro
-    (#F1F3F4). Em 16 continuam legíveis o escudo, o W e o losango, nos quatro ícones,
-    sobre fundo escuro. O ícone da extensão também é legível sobre fundo claro. A linha
-    `tamanhos` (`17244`) da seção mostra as instâncias em 16, 24 e 32.
-- **Componentes novos** em `Seção / Bandeja e extensão` (`17137`, x 11000, y 0; mesmo
-  padrão das outras seções: `fundo/sutil`, `raio/painel`, `espaco/32`, título com
-  `Título/Seção` e descrição com `Texto/Pequeno`):
-  - `Ícone/ward` `17194`: símbolo em 20 (`icone/md`), cor `icone/padrao`, para "Abrir o
-    Ward" em menus e botões. Fiz este componente porque não é possível redimensionar uma
-    instância trocada dentro de outra.
-  - `Item de menu` (set `17157`): `padrão` `17152`, `hover` `17158`
-    (`superficie/hover`), `desabilitado` `17163`. Altura `controle/md`, raio
-    `raio/controle`, padding `espaco/8` × `espaco/12`. Propriedades `Rótulo` (texto) e
-    `Ícone` (troca).
-  - `Menu da bandeja` (set `17201`): `destravado` `17168` tem a linha de estado (ponto
-    `sucesso/texto`, "Cofre destravado", "Trava sozinho após 4 h sem uso"), separador,
-    "Abrir o Ward", "Travar agora", separador e "Sair". `travado` `17202` tem o ponto
-    cinza, "Cofre travado", "Destrave com a senha mestra", "Abrir o Ward", "Destravar…" e
-    "Sair". Fundo `superficie/elevada`, borda `borda/padrao`, `raio/cartao`,
-    `Sombra/Flutuante` e largura `largura/menu` (272).
-  - `Cabeçalho do popup` (set `17234`): `destravado` `17227` e `travado` `17235`. Leva o
-    símbolo de 24, "ward" em `Título/Seção` e um selo de estado em minúsculas: pílula de
-    20, `Texto/Selo` 11, tint translúcido (`sucesso/tint` ou `selo/neutro/fundo`). Tem
-    borda de baixo `borda/sutil` e largura `largura/popup`.
-- **Telas no Layout** (página `2796`, modo `Escuro` herdado da página; área x ≥ 7200, y
-  7200–10399), só com instâncias dos componentes:
-  - `Bandeja / Destravado` `17269` (480×300, x 7200, y 7200): barra do sistema `17270`
-    (relógio e `Ícone da bandeja` 16 `17273` numa pílula de hover `17271`) e `Menu da
-    bandeja` destravado `17276` ancorado embaixo do ícone.
-  - `Bandeja / Travado` `17300` (x 7760, y 7200): igual, com o ícone `17304` e o menu
-    `17307` em travado.
-  - `Extensão / Sugestões do domínio` `17332` (360, x 7200, y 7600): cabeçalho `17333`.
-    No corpo `17340`: o cartão `origem` `17341` ("Origem da aba" e
-    `https://painel.stage.clientex.test` em mono), "2 entradas para esta origem" e a lista
-    `17343` com dois `Item de lista` compactos: `clientex / stage / painel` em hover
-    (`17348`) e `clientex / stage / admin` (`17365`), ambos tipo login e ambiente stage.
-    Abaixo vem a nota "nada fica salvo no navegador". No rodapé `17385`, o `Botão`
-    secundário "Abrir o Ward" `17386`.
-  - `Extensão / Salvar login novo` `17414` (x 7640, y 7600): cabeçalho `17415`. Corpo
-    `17422`: "Salvar este login no Ward?". Os `Campo` são Nome `17424`, Usuário `17437` e
-    Senha `17450`; a senha aparece só como `••••`, sem revelar nem copiar, com a ajuda
-    "Vai direto para o cofre; a extensão não mostra nem guarda". Os `Select` são Tipo
-    `17463` (login), Grupo `17469` (clientex) e Ambiente `17475` (stage). O cartão
-    "Nível inicial: com aprovação" é o `17483`. No rodapé `17484`: "Agora não" `17488` e
-    "Salvar no Ward" `17492`.
-  - `Extensão / Cofre travado` `17392` (x 8080, y 7600): cabeçalho travado `17393`, avatar
-    com cadeado, "O cofre está travado", `Botão` primário "Abrir o Ward para destravar"
-    `17404` e a nota "A extensão nunca pede a senha mestra".
-- **Variables novas (5)**, com escopo e code syntax WEB:
-  - `marca/sobre-cor-inativo` `VariableID:91` (→ `neutro/400`).
-  - `marca/inativo` `VariableID:92` (→ `neutro/600`).
-  - `largura/menu` `VariableID:93` (272).
-  - `verde/400-16` `VariableID:94` (#4CC77E29, primitiva oculta).
-  - `sucesso/tint` `VariableID:95` (→ `verde/400-16`).
-- **Exports** em `docs/design/icones/` (16 arquivos):
-  - `bandeja-{destravado,travado}-{16,24,32}.png` e `.svg`;
-  - `extensao-{destravado,travado}-{16,32,48,128}.png` e `.svg`.
-- Conferência do arquivo salvo: copiei o `.figcraft` para o scratchpad e rodei `cli info`.
-  Os 5 frames de tela e a seção estão lá, e os nomes dos componentes e das variables novas
-  aparecem no `document.json`.
+- **Arquivos** (`git mv`, glossário seção 4): `src/papel.rs` → `role.rs`,
+  `src/conectar.rs` → `connect.rs`, `src/endurecimento.rs` → `hardening.rs`,
+  `src/pasta.rs` → `dir.rs`, `src/servidor.rs` → `server.rs` (`socket.rs`,
+  `terminal.rs`, `app.rs` ficam); `tests/ativacao.rs` → `activation.rs`,
+  `tests/endurecimento.rs` → `hardening.rs`, `tests/identificacao.rs` →
+  `identification.rs`, `tests/comum/mod.rs` → `tests/common/mod.rs` (`socket.rs`,
+  `subreaper.rs` ficam). Módulos em `lib.rs`: `app`, `child`, `clock`, `connect`,
+  `descendants`, `dir`, `hardening`, `launcher`, `memory`, `process`, `role`, `server`,
+  `socket`, `sys`, `terminal`, `testing`.
+- **Comentários** de todos os arquivos de `src/` e `tests/` do crate em inglês, inclusive
+  os `// SAFETY:` e os comentários do `Cargo.toml` (a `description` fica). Locais,
+  parâmetros, privados e nomes de teste em inglês (`ataque_*` → `attack_*`).
+- **Renomes** (antigo → novo), com todos os usos ajustados no repositório:
+  - `role.rs`: `GRUPO_APP` → `APP_GROUP`, `GRUPO_EXTENSAO` → `EXTENSION_GROUP`,
+    `Instalacao` → `Install` (`from_system`, `for_test`, `app_gid`, `extension_gid`,
+    `chrome`), `ErroInstalacao` → `InstallError` (`MissingGroup`, `GroupWithMembers`,
+    `InvalidGid`, `GidInSubgid`, `Read`), `PoliticaKernel` → `KernelPolicy` (`read`,
+    `simulated`, `verify`); privados `GID_NAO_MAPEADO` → `UNMAPPED_GID`,
+    `MAX_ARQUIVO_GRUPOS` → `MAX_GROUPS_FILE`, `ler_limitado` → `read_limited`,
+    `gids_proprios` → `own_gids`, `gid_do_grupo` → `group_gid`, `gid_no_subgid` →
+    `gid_in_subgid`.
+  - `connect.rs`: `CanalConectar` → `ConnectChannel` (`new`, `number`, `prepare`),
+    `ErroCanal` → `ChannelError` (`Number`, `NotSocket`, `OtherUser`, `Empty`,
+    `TooLarge`, `Deadline`, `Io`; `message()`), `ler_token_herdado` →
+    `read_inherited_token`, `MAX_TOKEN`, `PRAZO_LEITURA` → `READ_DEADLINE`,
+    `MAX_NUMERO_FD` → `MAX_FD_NUMBER`.
+  - `socket.rs`: `NOME_DIRETORIO`(`_TESTE`) → `DIR_NAME`/`TEST_DIR_NAME`, `NOME_SOCKET` →
+    `SOCKET_NAME`, `DIRETORIO_SISTEMA` → `SYSTEM_DIR`, `diretorio_runtime` →
+    `runtime_dir`, `caminho_socket_sistema` → `system_socket_path`, `ErroDiretorio` →
+    `DirError`, `DiretorioSocket` → `SocketDir` (`path`, `verify`, `listen`),
+    `preparar_diretorio` → `prepare_dir`, `ErroEscuta` → `ListenError`, `Escuta` →
+    `Listener` (`path`, `listener`, `accept`), `ErroAtivacao` → `ActivationError`,
+    `escutar_de_listen_fds` → `listen_from_listen_fds`, `RecusaCaminho` → `PathRefusal`,
+    `Conexao { stream, par }` → `Connection { stream, peer }`, `ErroAceitar` →
+    `AcceptError`, `conferir_conexao` → `verify_connection`, `par_fechou` →
+    `peer_closed`; privados (`conferir_caminho_sistema` → `verify_system_path`, …).
+  - `server.rs`: `ServidorEsperado` → `ExpectedServer` (`system`, `system_at`, `test`,
+    `test_at`, `path`), `RecusaServidor` → `ServerRefusal`, `conectar_servidor` →
+    `connect_server`, `conferir_servidor` → `verify_server`.
+  - `hardening.rs`: `ErroInicio` → `StartError`, `Memoria` → `Memory` (`Locked`,
+    `NotLocked`), `endurecer_processo` → `harden_process`, `conferir_ambiente_proprio` →
+    `verify_own_environment`, `iniciar_endurecido` → `start_hardened`,
+    `nome_para_mensagem` → `name_for_message`.
+  - `terminal.rs`: `ErroTerminal` → `TerminalError` (`NoTerminal`, `Canceled`,
+    `TooLong`, `Io`), `ler_senha` → `read_password`, `ModoCru` → `RawMode`, `e_terminal`
+    → `is_terminal`, `tamanho` → `size`.
+  - `app.rs`: `largar_grupo` → `release_group`, `PaiDiferente` → `ParentMismatch`, `Pai`
+    → `Parent` (`atual` → `current`, `continua_pai` → `still_parent`,
+    `conferir_parece_o_daemon` → `verify_looks_like_daemon`), `valor_dumpable` →
+    `dumpable_value`, `tem_cloexec` → `has_cloexec`,
+    `NOME_DAEMON` → `DAEMON_NAME`, `reexecutar` → `reexec`, `esperar_fechamento` →
+    `wait_for_close`.
+  - `dir.rs`: `renomear_sem_sobrescrever` → `rename_no_replace`, `apagar_conteudo`(`_em`)
+    → `delete_contents`(`_at`), `apagar_item` → `delete_item`.
+  - `tests/common/mod.rs`: `DirTeste { caminho }` → `TestDir { path }` (`novo` → `new`),
+    `Filho` → `TestChild` (`esperar` → `wait_for`, `encerrar` → `finish`), `CLIENTE_PY` →
+    `CLIENT_PY`, `python_real` → `real_python`, `permitido` → `allowed`,
+    `comando_limpo` → `clean_command`, `iniciar` → `start`, `subir_com_nova_tentativa` →
+    `spawn_with_retry`, `copiar_binario` → `copy_binary`, `cliente_python` →
+    `python_client`.
+  - Variantes de todos os enums: parágrafo novo na seção 15 do glossário.
+- **Checador também nos arquivos da Fase 7/8** (achado da Fase 7): os nomes da Fase 9
+  que sobravam em `process.rs`, `launcher.rs`, `child.rs`, `testing.rs`, `lib.rs` e
+  `app.rs` (`PoliticaKernel`, `nome_para_mensagem`, `crate::descendentes`,
+  `por_no_fd_ativacao`, `partida`) foram trocados.
+- **Usos ajustados**: `wardd` (`main`, `servidor`, `agente_ssh`, `config`, `playwright`,
+  `execucao`, `externo`, `lancamento`; `tests/{externo,playwright,run,socket,ssh,trava}.rs`),
+  `ward` (`args`, `cliente`, `comandos`, `testes`), `ward-nm` (`main.rs`), `app/core`
+  (`partida.rs`, `daemon.rs`, `terminal.rs`, `examples/partida-conteiner.rs`) e
+  `ward-platform/examples/container.rs`. Os nomes próprios desses crates (ex.:
+  `ler_senha` do trait do `ward`, `PRAZO_LEITURA`/`NOME_SOCKET` do `wardd`/`ward`/
+  `ward-nm`, `ErroPartida::Pai`) ficam para as fases deles.
+- **Glossário**: parágrafo com as variantes fixadas na Fase 9 (seção 15).
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`.
+
+## Literais alterados (PRD regra 5)
+- `connect.rs`: `Debug` manual `"CanalConectar(fd {})"` → `"ConnectChannel(fd {})"` e
+  captura `{saida}` → `{output}` (texto impresso igual).
+- `terminal.rs`: `Debug` manual `"ModoCru"` → `"RawMode"`; captura de teste `{tela:?}` →
+  `{screen:?}`.
+- `socket.rs`: capturas `{modo:o}` → `{mode:o}` (Display de `DirError::WrongMode`, texto
+  igual) e `"{DIRETORIO_SISTEMA}/{}/{NOME_SOCKET}"` → `"{SYSTEM_DIR}/{}/{SOCKET_NAME}"`
+  (mesmo caminho); `dir.rs` `{rotulo}` → `{label}`; `{ruim}` → `{bad}` em vários testes.
+- Testes: os nomes `filho_auxiliar` → `helper_child` (também nas strings `--exact` e no
+  `sh -c` do `attack_more_than_one_fd`); as saídas esperadas do `Debug` de
+  `ActivationError` em `tests/activation.rs` (`UntrustedDir`, `PathMismatch`,
+  `NotActivated`, `PidMismatch`, `FdCount`); mensagem de assert `"a Escuta apaga…"` →
+  `"o Listener apaga…"`; capturas `{arquivo}`, `{lidas:?}`, `{esperado}`, `{MARCA}`,
+  `{modo}`, `{nome}`, `{politica:?}`, `{esperada:?}` com o nome novo.
+- `dev/container-platform/inside.sh`: `servidor=PastaNaoConfiavel` →
+  `servidor=UntrustedDir` e `servidor=Ausente` → `servidor=Missing` (saída por `Debug` de
+  `ServerRefusal` no `examples/container.rs`).
+- `crates/wardd/tests/externo.rs`: o teste que procura no fonte o texto
+  `"renomear_sem_sobrescrever(destino.as_fd()"` passa a procurar
+  `"rename_no_replace(destino.as_fd()"`.
+- **Ficaram de propósito**: todos os `Display` (pt-BR) dos erros; as variáveis de ambiente
+  dos testes (`WARD_ATIVACAO`, `WARD_CAMINHO`, `WARD_ESPERADO`,
+  `WARD_PLATAFORMA_FILHO`; mudam na Fase 56); os modos (`"ativar"`, `"receber"`,
+  `"endurecer"`, `"iniciar"`…) e marcas (`"RESULTADO:"`, `"ok-sem-travar:"`,
+  `"conectado"`); o texto do log do `wardd` `"conexão recusada (UidRecusado)…"` e
+  `"(SemIdentidade)"`, que o `dev/container-uid/inside.sh` procura (agora não é mais o
+  nome da variante; ver Problemas); o `pai=SemIdentidade(...)` impresso pelo
+  `examples/pai-chrome.rs` (literal, não `Debug`).
+- **Conferido** por comparação de literais, números e operadores (sem comentários) entre
+  cada arquivo antigo e o novo de `src/` e `tests/`: números e operadores iguais em
+  todos; strings só com as trocas listadas acima.
 
 ## Segurança
-- Nenhuma S1–S15 tocada em código (fase só de design). O desenho segue as regras:
-  - **S1 e R26**: a extensão preenche só na origem da aba, e o popup mostra a origem
-    conferida. A senha do "Salvar login novo" aparece só como máscara, sem revelar nem
-    copiar.
-  - **R21**: o popup "Cofre travado" não pede a senha mestra. Ele abre o app e diz isso
-    na tela.
-  - **R23**: há "Travar agora" na bandeja.
-  - **R6 e V0.20**: as listas mostram só campos não secretos (nome, usuário, tipo,
-    ambiente).
-- Só dados falsos: `clientex`, `painel.stage.clientex.test`, `ana.souza@clientex.test`,
-  `admin@clientex.test`. Não toquei em nenhum cofre, credencial, `~/.ssh` ou `~/.aws`. No
-  Figma, só li a `1:3`.
-- Testes de ataque: não se aplicam (o M0 não tem asserção SEG).
-- Dependências novas: nenhuma. O script da folha de conferência
-  (`scratchpad/scripts/folha.py`) usa só a biblioteca padrão do Python.
+- **Invariantes tocadas e como ficaram (V2.3):**
+  - S5/D46 (pasta 0700, socket 0600, `LISTEN_FDS` com `LISTEN_PID`, pasta do root,
+    conferência do servidor antes de qualquer byte, `SO_PEERCRED` uid 0, endereço do par):
+    diff só de nomes e comentários.
+  - D47/D60/D63 (papel pelo egid, `/etc/group`, `subgid`, política do kernel
+    `ptrace_scope`/`suid_dumpable`): só nomes e comentários.
+  - S8/D48/D62 (`PR_SET_DUMPABLE`, `RLIMIT_CORE`, lista de variáveis inseguras da glibc,
+    nome cortado na mensagem, `mlockall` e `LimitMEMLOCK`): só nomes e comentários.
+  - D3/Fase 27a (canal do token do "Conectar": socket herdado, mesmo uid, prazo, tamanho):
+    só nomes e comentários.
+  - D57 (partida do app: grupo largado, pai = daemon não-dumpable, `CLOEXEC`, reexecução):
+    só nomes e comentários.
+  - `make test-docker-platform`: as saídas `Debug` esperadas acompanharam as variantes
+    novas; sem isso, o V3.23 viraria falso "falhou".
+- **Testes de ataque**: nenhum novo (a fase só renomeia); os existentes renomeados junto
+  (ex.: `attack_fake_server_of_the_same_uid_is_refused_before_any_byte`,
+  `attack_v3_25_forged_name_comes_out_cut`). Não rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- **Estado "pedido pendente" no ícone da bandeja**: o PRD e o contrato não pedem. A janela
-  de aprovação já abre em primeiro plano.
-- **Variante clara do ícone da bandeja** para painéis claros: o branco some sobre a barra
-  clara (ver Problemas).
-- **Instâncias do ícone da extensão em 16 na linha de tamanhos**: o raio da instância não
-  escala. A conferência em 16 e 48 foi feita pelos exports.
+- `examples/container.rs` e `examples/pai-chrome.rs` (466 e 50 achados no checador): o
+  nome e o conteúdo dos exemplos ficam para a trilha S (Fase 43, com os scripts que os
+  chamam); aqui só os usos da API foram ajustados (`.verify()`, `.listen(`,
+  `app_gid()`/`extension_gid()`…).
+- Nomes próprios de `wardd`, `ward`, `ward-nm` e `app/core` que coincidem com os antigos
+  da plataforma (`ler_senha`, `PRAZO_LEITURA`, `NOME_SOCKET`, `ErroPartida::Pai`).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make check` | não executado: o `Makefile` só existe a partir da Fase 11 |
-| FigCraft `inspect_document`, `get_node`, `screenshot` | ok (3 timeouts na primeira tentativa) |
-| FigCraft `create_node`, `instance.create`/`setProperties`, `component.combineVariants`/`addVariant`/`addProperty`, `variable.create`/`set`/`update`/`bind`, `style.apply`, `node.set`/`reparent`, `edit.duplicate` | ok |
-| FigCraft `export` (16 arquivos para `docs/design/icones/`) | ok |
-| `save_file` (7×, mesmo caminho) | ok |
-| `FigCraft.AppImage cli info` na cópia salva + `unzip` e `grep` no `document.json` | 0 |
-| `python3 -I folha.py` (folhas ampliadas em 16, 24 e 32) | 0 |
+| `git reset --hard 7a102ff` (o worktree nasceu em `5114a25`, árvore limpa) | 0 |
+| `cargo check --workspace --all-targets --all-features --locked` (até ficar limpo) | 0 |
+| `cargo fmt --all` | 0 |
+| `make compile` | 0 |
+| `make english-check PATHS="crates/ward-platform/src crates/ward-platform/tests crates/ward-platform/Cargo.toml"` | 0 (0 achados) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **O menu da bandeja no Linux é nativo** (AppIndicator/libayatana, via Tauri): a
-  aparência (raio, sombra, cores, ponto colorido) vem do tema do sistema. O que vale para
-  a Fase 39 é a ordem, os rótulos, os separadores e o estado habilitado. A linha de estado
-  vira um item desabilitado ("Cofre destravado"). Os ícones nos itens podem não aparecer.
-- **O ícone branco da bandeja some em painéis claros**: o GNOME padrão tem barra escura,
-  mas temas claros existem. Uma variante escura do ícone (ou um ícone simbólico
-  `-symbolic.svg` que o tema recolore) fica para a Fase 39 ou para a aprovação (V0.23).
-- **O travado da bandeja só usa cor** (branco → cinza). Num painel monocromático isso é
-  sutil. Um cadeado pequeno sobreposto fica ilegível em 16. Fica para o usuário decidir na
-  aprovação.
-- **O popup "Salvar login novo" tem 892 de altura** e o Chrome limita popups a 600: a
-  implementação (Fase 42) precisa rolar o corpo com cabeçalho e rodapé fixos. Tipo e
-  Ambiente não cabem lado a lado, porque o `Select` tem largura mínima 160 e o corpo útil
-  tem 328.
-- **Os popups não têm cantos arredondados próprios**: no Linux, o Chrome desenha a moldura
-  do popup, e um raio interno deixaria cantos brancos. Os frames da extensão têm raio 0;
-  os da bandeja, `raio/cartao` (é só o recorte de apresentação).
-- **A senha do "Salvar login novo" precisa ir direto da página ao daemon** (content script
-  → `ward-nm` → `wardd`), sem passar pelo estado do popup nem pelo `chrome.storage`. No
-  design ela aparece só como máscara. Isso é para as Fases 40–42.
-- **O ícone trocado não herda a cor**: no `Botão` primário, o ícone trocado fica com a cor
-  padrão (cinza), o mesmo problema já registrado na 4d. Por isso o "Abrir o Ward para
-  destravar" ficou sem ícone.
-- **A variante `travado` do `Ícone da extensão` (`17149`)** guarda ligações antigas
-  (`fills/0/stops/*`) da cópia do gradiente. O preenchimento real é sólido (`marca/inativo`)
-  e a cor está certa. Não achei um comando para desligar essas ligações; vale limpar na
-  10a.
-- **O `Menu da bandeja` travado** (`17202`) marca `characters` como override no texto da
-  legenda, porque a edição foi feita na variante. A legenda está certa; isso aparece só no
-  `get_node`.
-- **"Cliente" → "Grupo"**: usei "Grupo" (regra do plano). O PRD R26 já fala em grupo.
-
-## Ids para design-nodes
-
-Seção e componentes (página Design System `2`):
-
-| Nome | Id | Variantes / filhos |
-| --- | --- | --- |
-| `Seção / Bandeja e extensão` | `17137` | título `17242`, descrição `17243`, `tamanhos` `17244` (bandeja 16/24/32 `17245` `17248` `17251` destravado, `17254` `17257` `17260` travado; extensão 32 `17263` `17266`) |
-| `Ícone da bandeja` (set) | `17141` | `Estado=destravado` `17138` (símbolo `17139`), `Estado=travado` `17142` (vetor `17144`) |
-| `Ícone da extensão` (set) | `17148` | `Estado=destravado` `17145` (símbolo `17146`), `Estado=travado` `17149` |
-| `Ícone/ward` | `17194` | símbolo `17195` (vetor `17196`) |
-| `Item de menu` (set) | `17157` | `padrão` `17152` (ícone `17153`, rótulo `17156`), `hover` `17158`, `desabilitado` `17163`; props `Rótulo`, `Ícone` |
-| `Menu da bandeja` (set) | `17201` | `Estado=destravado` `17168`, `Estado=travado` `17202` |
-| `Cabeçalho do popup` (set) | `17234` | `Estado=destravado` `17227`, `Estado=travado` `17235` |
-
-Variables: `marca/sobre-cor-inativo` `VariableID:91`, `marca/inativo` `VariableID:92`,
-`largura/menu` `VariableID:93`, `verde/400-16` `VariableID:94`, `sucesso/tint`
-`VariableID:95`.
-
-Frames de tela (página Layout `2796`) — **lista para exportar**:
-
-| Frame | Id | Posição | Tamanho |
-| --- | --- | --- | --- |
-| `Bandeja / Destravado` | `17269` | 7200, 7200 | 480×300 |
-| `Bandeja / Travado` | `17300` | 7760, 7200 | 480×300 |
-| `Extensão / Sugestões do domínio` | `17332` | 7200, 7600 | 360×494 |
-| `Extensão / Salvar login novo` | `17414` | 7640, 7600 | 360×892 |
-| `Extensão / Cofre travado` | `17392` | 8080, 7600 | 360×343 |
-
-Exports de ícone: `docs/design/icones/` (lista em "Implementado").
+- O worktree nasceu em `5114a25`, não em `7a102ff`; com a árvore limpa, fiz
+  `git reset --hard 7a102ff`.
+- **Log do `wardd` com o nome antigo da variante**: `"conexão recusada (UidRecusado)"` e
+  `"(SemIdentidade)"` ficaram porque o `dev/container-uid/inside.sh` (V3.2) os procura.
+  Quem traduzir o `wardd/src/servidor.rs` (ou a Fase 56) decide se troca o texto junto
+  com o script; não troquei para não mexer num literal de log de outra trilha.
+- **Trilha S**: esta fase mexeu em `dev/container-platform/inside.sh` (2 linhas). Se a
+  trilha S renomear o arquivo, o merge precisa levar as linhas trocadas.
+- `strings-0.1.4.txt` pode ter `"CanalConectar"`/`"ModoCru"` (nomes de tipo no `Debug`
+  manual): o V6.3 deve aceitar a troca, como `"BufferTravado"` da Fase 8.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `/home/jeffersonoliveira/documentos/Ward.figcraft` | alterado (seção, 6 componentes, 5 variables, 5 telas) |
-| `docs/design/icones/` (12 `.png`, 4 `.svg`) | criado |
+| `crates/ward-platform/src/{role,connect,hardening,dir,server}.rs` (eram `papel`, `conectar`, `endurecimento`, `pasta`, `servidor`) | renomeado e alterado |
+| `crates/ward-platform/src/{socket,terminal,app,lib,process,launcher,child,testing}.rs` | alterado |
+| `crates/ward-platform/tests/{activation,hardening,identification}.rs`, `tests/common/mod.rs` (eram `ativacao`, `endurecimento`, `identificacao`, `comum/mod`) | renomeado e alterado |
+| `crates/ward-platform/tests/{socket,subreaper}.rs` | alterado |
+| `crates/ward-platform/Cargo.toml` | alterado (comentários) |
+| `crates/ward-platform/examples/container.rs` | alterado (usos da API) |
+| `crates/wardd/src/{agente_ssh,config,execucao,externo,lancamento,main,playwright,servidor}.rs` | alterado |
+| `crates/wardd/tests/{externo,playwright,run,socket,ssh,trava}.rs` | alterado |
+| `crates/ward/src/{args,cliente,comandos,testes}.rs`, `crates/ward-nm/src/main.rs` | alterado |
+| `app/core/src/{daemon,partida,terminal}.rs`, `app/core/examples/partida-conteiner.rs` | alterado |
+| `dev/container-platform/inside.sh` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-9.md` | criado |
 
 ## Procedimentos
-- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): sem `Makefile` (Fase 11)
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make compile` (0) e `cargo fmt`
 - [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
-- [x] Teste de ataque para cada (SEG) tocado (nenhum SEG tocado)
-- [x] (UI/DESIGN) Conferido contra o FigCraft (fase DESIGN: `save_file` feito; arquivo salvo conferido pela CLI)
-- [x] Ficou dentro do escopo da fase (extras: `Ícone/ward` e 5 variables, com motivo acima)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes renomeados; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
+- [x] Ficou dentro do escopo da fase

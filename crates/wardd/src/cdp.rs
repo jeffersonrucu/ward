@@ -1,25 +1,26 @@
-//! Cliente mínimo do Chrome DevTools Protocol pelo pipe de depuração (`ward playwright`,
-//! Fase 44; D6, D9; S1–S3, S8, S13).
+//! Minimal Chrome DevTools Protocol client over the debugging pipe (`ward playwright`,
+//! Phase 44; D6, D9; S1–S3, S8, S13).
 //!
-//! - **Só pipe** (S3, D6): o Chrome recebe `--remote-debugging-pipe` e lê os comandos
-//!   no fd 3 e escreve as respostas no fd 4 ([`ward_plataforma::filho::Comando::lancar_com_depuracao`]).
-//!   Nenhuma porta TCP nem socket: outro processo não acha o navegador para mandar
-//!   comandos. As pontas do daemon são `CLOEXEC`.
-//! - **Mensagens**: JSON terminado em `\0`. Cada mensagem lida fica num buffer
-//!   `Zeroizing` com a capacidade reservada uma vez ([`MAX_MENSAGEM`]): nunca realoca, e
-//!   o que passou por ele (o corpo do POST do login aparece no `Fetch.requestPaused`)
-//!   zera no fim. Mensagem maior que o limite encerra a sessão.
-//! - **Leitura**: só os campos usados são lidos (`serde` com structs próprias); o resto
-//!   é pulado pelo `serde_json` sem cópia (`IgnoredAny`), então o corpo do POST nunca
-//!   vira `String`.
-//! - **Escrita**: o [`Escritor`] monta cada comando num `Zeroizing<Vec<u8>>` com a
-//!   capacidade calculada antes; passar dela é erro (nunca realoca com a senha dentro).
-//! - **Navegação do quadro principal** (D9): todo pedido de documento do quadro
-//!   principal passa pelo `Fetch`; origem diferente da entrada é recusada com
-//!   `Fetch.failRequest` antes de sair do navegador (o redirecionamento para o
-//!   phishing nem chega lá, e o POST com a senha só vai à origem certa).
-//! - **Prazo**: toda espera tem o prazo da sessão; vencido, a sessão acaba.
-//! - Erros sem texto da página nem do navegador (S13).
+//! - **Pipe only** (S3, D6): Chrome gets `--remote-debugging-pipe`, reads the commands
+//!   on fd 3 and writes the responses on fd 4 ([`ward_platform::child::Command::launch_with_debugging`]).
+//!   No TCP port and no socket: another process cannot find the browser to send it
+//!   commands. The daemon's ends are `CLOEXEC`.
+//! - **Messages**: JSON terminated by `\0`. Each message read lands in a `Zeroizing`
+//!   buffer whose capacity is reserved once ([`MAX_MESSAGE`]): it never reallocates, and
+//!   whatever went through it (the login POST body shows up in `Fetch.requestPaused`)
+//!   is zeroed at the end. A message over the limit ends the session.
+//! - **Reading**: only the fields in use are read (`serde` with our own structs); the
+//!   rest is skipped by `serde_json` without a copy (`IgnoredAny`), so the POST body never
+//!   becomes a `String`.
+//! - **Writing**: the [`Writer`] builds each command in a `Zeroizing<Vec<u8>>` with the
+//!   capacity computed beforehand; going past it is an error (it never reallocates with
+//!   the password inside).
+//! - **Main frame navigation** (D9): every document request of the main frame goes
+//!   through `Fetch`; an origin other than the entry's is refused with
+//!   `Fetch.failRequest` before it leaves the browser (the redirect to the phishing site
+//!   never gets there, and the POST with the password only goes to the right origin).
+//! - **Deadline**: every wait has the session deadline; once it passes, the session ends.
+//! - Errors carry no text from the page or the browser (S13).
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -29,103 +30,104 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use zeroize::Zeroizing;
 
-/// Maior mensagem aceita do Chrome (a resposta dos cookies de um site comum é bem menor).
-pub const MAX_MENSAGEM: usize = 4 * 1024 * 1024;
-/// Quanto se lê do pipe por vez.
-const PEDACO: usize = 64 * 1024;
+/// Largest message accepted from Chrome (the cookies response of a common site is much
+/// smaller).
+pub const MAX_MESSAGE: usize = 4 * 1024 * 1024;
+/// How much is read from the pipe at a time.
+const CHUNK: usize = 64 * 1024;
 
-/// Por que a conversa com o navegador acabou. Sem texto do navegador.
+/// Why the conversation with the browser ended. No text from the browser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErroCdp {
-    /// O prazo da sessão venceu.
-    Prazo,
-    /// O navegador fechou o pipe, caiu ou soltou a aba.
-    Fechado,
-    /// Mensagem fora do formato, grande demais, ou comando grande demais.
-    Protocolo,
-    /// O navegador respondeu erro a um comando.
-    Comando,
-    /// Escrita ou leitura falhou.
+pub enum CdpError {
+    /// The session deadline passed.
+    Deadline,
+    /// The browser closed the pipe, crashed or let go of the tab.
+    Closed,
+    /// Message out of format or too large, or command too large.
+    Protocol,
+    /// The browser answered a command with an error.
+    Command,
+    /// Writing or reading failed.
     Io,
 }
 
-/// Escritor de JSON dos comandos: só o necessário, sem realocar.
-pub struct Escritor {
+/// JSON writer for the commands: only what is needed, without reallocating.
+pub struct Writer {
     b: Zeroizing<Vec<u8>>,
-    /// Precisa de vírgula antes do próximo item.
-    virgula: bool,
-    estourou: bool,
+    /// A comma is needed before the next item.
+    comma: bool,
+    overflowed: bool,
 }
 
-impl Escritor {
-    /// Escritor com capacidade fixa de `capacidade` bytes.
-    pub fn novo(capacidade: usize) -> Self {
-        Escritor {
-            b: Zeroizing::new(Vec::with_capacity(capacidade)),
-            virgula: false,
-            estourou: false,
+impl Writer {
+    /// Writer with a fixed capacity of `capacity` bytes.
+    pub fn new(capacity: usize) -> Self {
+        Writer {
+            b: Zeroizing::new(Vec::with_capacity(capacity)),
+            comma: false,
+            overflowed: false,
         }
     }
 
-    fn por(&mut self, s: &[u8]) {
-        if self.estourou || self.b.len() + s.len() > self.b.capacity() {
-            self.estourou = true;
+    fn put(&mut self, s: &[u8]) {
+        if self.overflowed || self.b.len() + s.len() > self.b.capacity() {
+            self.overflowed = true;
             return;
         }
         self.b.extend_from_slice(s);
     }
 
-    fn separar(&mut self) {
-        if self.virgula {
-            self.por(b",");
+    fn separate(&mut self) {
+        if self.comma {
+            self.put(b",");
         }
     }
 
-    pub fn abre_objeto(&mut self) {
-        self.separar();
-        self.por(b"{");
-        self.virgula = false;
+    pub fn open_object(&mut self) {
+        self.separate();
+        self.put(b"{");
+        self.comma = false;
     }
 
-    pub fn fecha_objeto(&mut self) {
-        self.por(b"}");
-        self.virgula = true;
+    pub fn close_object(&mut self) {
+        self.put(b"}");
+        self.comma = true;
     }
 
-    pub fn abre_lista(&mut self) {
-        self.separar();
-        self.por(b"[");
-        self.virgula = false;
+    pub fn open_list(&mut self) {
+        self.separate();
+        self.put(b"[");
+        self.comma = false;
     }
 
-    pub fn fecha_lista(&mut self) {
-        self.por(b"]");
-        self.virgula = true;
+    pub fn close_list(&mut self) {
+        self.put(b"]");
+        self.comma = true;
     }
 
-    pub fn chave(&mut self, k: &str) {
-        self.separar();
-        self.texto_cru(k);
-        self.por(b":");
-        self.virgula = false;
+    pub fn key(&mut self, k: &str) {
+        self.separate();
+        self.raw_text(k);
+        self.put(b":");
+        self.comma = false;
     }
 
-    /// Um texto com o escape do JSON (aspas, barra invertida e controles).
-    pub fn texto(&mut self, s: &str) {
-        self.separar();
-        self.texto_cru(s);
-        self.virgula = true;
+    /// A text with JSON escaping (quotes, backslash and control characters).
+    pub fn text(&mut self, s: &str) {
+        self.separate();
+        self.raw_text(s);
+        self.comma = true;
     }
 
-    fn texto_cru(&mut self, s: &str) {
+    fn raw_text(&mut self, s: &str) {
         const HEX: &[u8; 16] = b"0123456789abcdef";
-        self.por(b"\"");
+        self.put(b"\"");
         for &c in s.as_bytes() {
             match c {
-                b'"' => self.por(b"\\\""),
-                b'\\' => self.por(b"\\\\"),
+                b'"' => self.put(b"\\\""),
+                b'\\' => self.put(b"\\\\"),
                 c if c < 0x20 => {
-                    self.por(&[
+                    self.put(&[
                         b'\\',
                         b'u',
                         b'0',
@@ -134,14 +136,14 @@ impl Escritor {
                         HEX[usize::from(c & 0xf)],
                     ]);
                 }
-                c => self.por(&[c]),
+                c => self.put(&[c]),
             }
         }
-        self.por(b"\"");
+        self.put(b"\"");
     }
 
-    pub fn inteiro(&mut self, n: u64) {
-        self.separar();
+    pub fn integer(&mut self, n: u64) {
+        self.separate();
         let mut buf = [0u8; 20];
         let mut i = buf.len();
         let mut n = n;
@@ -153,308 +155,310 @@ impl Escritor {
                 break;
             }
         }
-        self.por(&buf[i..]);
-        self.virgula = true;
+        self.put(&buf[i..]);
+        self.comma = true;
     }
 
-    pub fn logico(&mut self, v: bool) {
-        self.separar();
-        self.por(if v { b"true" } else { b"false" });
-        self.virgula = true;
+    pub fn boolean(&mut self, v: bool) {
+        self.separate();
+        self.put(if v { b"true" } else { b"false" });
+        self.comma = true;
     }
 
-    pub fn nulo(&mut self) {
-        self.separar();
-        self.por(b"null");
-        self.virgula = true;
+    pub fn null(&mut self) {
+        self.separate();
+        self.put(b"null");
+        self.comma = true;
     }
 
-    /// Os bytes, ou `None` se passou da capacidade.
-    pub fn fim(self) -> Option<Zeroizing<Vec<u8>>> {
-        (!self.estourou).then_some(self.b)
+    /// The bytes, or `None` if the capacity was exceeded.
+    pub fn finish(self) -> Option<Zeroizing<Vec<u8>>> {
+        (!self.overflowed).then_some(self.b)
     }
 }
 
-/// Tamanho do texto `s` depois do escape, no pior caso (para reservar a capacidade).
-pub fn pior_caso(s: &str) -> usize {
+/// Size of the text `s` after escaping, in the worst case (to reserve the capacity).
+pub fn worst_case(s: &str) -> usize {
     s.len() * 6 + 2
 }
 
-// --- Leitura ---------------------------------------------------------------------------
+// --- Reading ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 struct Envelope {
     id: Option<u64>,
     method: Option<String>,
     #[serde(rename = "sessionId")]
-    sessao: Option<String>,
+    session: Option<String>,
     error: Option<IgnoredAny>,
 }
 
 #[derive(Deserialize)]
-struct ComResultado<T> {
+struct WithResult<T> {
     result: T,
 }
 
 #[derive(Deserialize)]
-struct ComParametros<T> {
+struct WithParams<T> {
     params: T,
 }
 
 #[derive(Deserialize)]
-struct Pausa {
+struct Pause {
     #[serde(rename = "requestId")]
-    pedido: String,
-    request: PedidoPausado,
+    request_id: String,
+    request: PausedRequest,
     #[serde(rename = "resourceType")]
-    tipo: String,
+    resource_type: String,
     #[serde(rename = "frameId")]
-    quadro: String,
+    frame_id: String,
 }
 
 #[derive(Deserialize)]
-struct PedidoPausado {
+struct PausedRequest {
     url: String,
 }
 
-/// Regra da navegação do quadro principal (D9).
+/// Navigation rule of the main frame (D9).
 #[derive(Debug, Clone)]
-pub struct Regra {
-    /// A origem da entrada (`esquema://host[:porta]`).
-    pub origem: String,
-    /// O id do quadro principal da aba.
-    pub quadro: String,
+pub struct Rule {
+    /// The entry's origin (`scheme://host[:port]`).
+    pub origin: String,
+    /// The id of the tab's main frame.
+    pub frame: String,
 }
 
-/// A conversa com um Chrome pelo pipe.
+/// The conversation with a Chrome over the pipe.
 pub struct Cdp {
-    escrita: File,
-    leitura: File,
+    write_end: File,
+    read_end: File,
     buf: Zeroizing<Vec<u8>>,
-    proximo: u64,
-    prazo: Instant,
-    /// Sessão da aba (`Target.attachToTarget` com `flatten`).
-    pub sessao: Option<String>,
-    /// Regra dos documentos do quadro principal; sem ela, todo pedido segue.
-    pub regra: Option<Regra>,
-    /// Algum documento do quadro principal foi recusado por origem.
-    pub bloqueou: bool,
-    /// Quantos `Page.loadEventFired` da aba chegaram.
-    pub cargas: u64,
+    next_id: u64,
+    deadline: Instant,
+    /// Session of the tab (`Target.attachToTarget` with `flatten`).
+    pub session: Option<String>,
+    /// Rule for the main frame documents; without it, every request goes on.
+    pub rule: Option<Rule>,
+    /// Some main frame document was refused because of its origin.
+    pub blocked: bool,
+    /// How many `Page.loadEventFired` of the tab arrived.
+    pub loads: u64,
 }
 
 impl std::fmt::Debug for Cdp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Cdp({} cargas, ••••)", self.cargas)
+        write!(f, "Cdp({} loads, ••••)", self.loads)
     }
 }
 
 impl Cdp {
-    /// `escrita` vai ao fd 3 do Chrome; `leitura` vem do fd 4.
-    pub fn novo(escrita: File, leitura: File, prazo: Instant) -> Self {
+    /// `write_end` goes to Chrome's fd 3; `read_end` comes from fd 4.
+    pub fn new(write_end: File, read_end: File, deadline: Instant) -> Self {
         Cdp {
-            escrita,
-            leitura,
-            buf: Zeroizing::new(Vec::with_capacity(MAX_MENSAGEM + PEDACO)),
-            proximo: 1,
-            prazo,
-            sessao: None,
-            regra: None,
-            bloqueou: false,
-            cargas: 0,
+            write_end,
+            read_end,
+            buf: Zeroizing::new(Vec::with_capacity(MAX_MESSAGE + CHUNK)),
+            next_id: 1,
+            deadline,
+            session: None,
+            rule: None,
+            blocked: false,
+            loads: 0,
         }
     }
 
-    /// Manda um comando com os parâmetros já em JSON (objeto) e devolve o id.
-    /// `da_aba`: com o `sessionId` da aba.
-    pub fn enviar(&mut self, metodo: &str, params: &[u8], da_aba: bool) -> Result<u64, ErroCdp> {
-        let id = self.proximo;
-        self.proximo += 1;
-        let sessao = if da_aba {
-            Some(self.sessao.clone().ok_or(ErroCdp::Protocolo)?)
+    /// Sends a command with the parameters already in JSON (an object) and returns the
+    /// id. `in_tab`: with the tab's `sessionId`.
+    pub fn send(&mut self, method: &str, params: &[u8], in_tab: bool) -> Result<u64, CdpError> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let session = if in_tab {
+            Some(self.session.clone().ok_or(CdpError::Protocol)?)
         } else {
             None
         };
-        let cap = 96 + metodo.len() + params.len() + sessao.as_ref().map_or(0, |s| pior_caso(s));
-        let mut e = Escritor::novo(cap);
-        e.abre_objeto();
-        e.chave("id");
-        e.inteiro(id);
-        e.chave("method");
-        e.texto(metodo);
-        if let Some(s) = &sessao {
-            e.chave("sessionId");
-            e.texto(s);
+        let cap = 96 + method.len() + params.len() + session.as_ref().map_or(0, |s| worst_case(s));
+        let mut e = Writer::new(cap);
+        e.open_object();
+        e.key("id");
+        e.integer(id);
+        e.key("method");
+        e.text(method);
+        if let Some(s) = &session {
+            e.key("sessionId");
+            e.text(s);
         }
-        e.chave("params");
-        e.virgula = false;
-        e.por(params);
-        e.virgula = true;
-        e.fecha_objeto();
-        e.por(b"\0");
-        let msg = e.fim().ok_or(ErroCdp::Protocolo)?;
-        self.escrita.write_all(&msg).map_err(|_| ErroCdp::Io)?;
+        e.key("params");
+        e.comma = false;
+        e.put(params);
+        e.comma = true;
+        e.close_object();
+        e.put(b"\0");
+        let msg = e.finish().ok_or(CdpError::Protocol)?;
+        self.write_end.write_all(&msg).map_err(|_| CdpError::Io)?;
         Ok(id)
     }
 
-    /// Manda e espera a resposta (a mensagem inteira, para ler o `result`).
-    pub fn comando(
+    /// Sends and waits for the response (the whole message, to read the `result`).
+    pub fn command(
         &mut self,
-        metodo: &str,
+        method: &str,
         params: &[u8],
-        da_aba: bool,
-    ) -> Result<Zeroizing<Vec<u8>>, ErroCdp> {
-        let id = self.enviar(metodo, params, da_aba)?;
+        in_tab: bool,
+    ) -> Result<Zeroizing<Vec<u8>>, CdpError> {
+        let id = self.send(method, params, in_tab)?;
         loop {
-            let msg = self.proxima()?;
-            if let Some(r) = self.tratar(&msg, Some(id))? {
+            let msg = self.next_message()?;
+            if let Some(r) = self.handle(&msg, Some(id))? {
                 return Ok(r);
             }
         }
     }
 
-    /// Como [`Cdp::comando`], já lendo o `result` como `T`.
-    pub fn comando_de<T: for<'de> Deserialize<'de>>(
+    /// Like [`Cdp::command`], already reading the `result` as `T`.
+    pub fn command_as<T: for<'de> Deserialize<'de>>(
         &mut self,
-        metodo: &str,
+        method: &str,
         params: &[u8],
-        da_aba: bool,
-    ) -> Result<T, ErroCdp> {
-        let msg = self.comando(metodo, params, da_aba)?;
-        serde_json::from_slice::<ComResultado<T>>(&msg)
+        in_tab: bool,
+    ) -> Result<T, CdpError> {
+        let msg = self.command(method, params, in_tab)?;
+        serde_json::from_slice::<WithResult<T>>(&msg)
             .map(|r| r.result)
-            .map_err(|_| ErroCdp::Protocolo)
+            .map_err(|_| CdpError::Protocol)
     }
 
-    /// Espera até chegar mais um `Page.loadEventFired` da aba depois de `antes`, ou o
-    /// prazo `ate` (o menor dos dois prazos). `Ok(false)`: venceu `ate`.
-    pub fn esperar_carga(&mut self, antes: u64, ate: Instant) -> Result<bool, ErroCdp> {
-        while self.cargas <= antes {
-            if Instant::now() >= ate {
+    /// Waits until one more `Page.loadEventFired` of the tab arrives after `before`, or
+    /// until the deadline `until` (the smaller of the two deadlines). `Ok(false)`:
+    /// `until` passed.
+    pub fn wait_load(&mut self, before: u64, until: Instant) -> Result<bool, CdpError> {
+        while self.loads <= before {
+            if Instant::now() >= until {
                 return Ok(false);
             }
-            match self.proxima_ate(ate.min(self.prazo)) {
+            match self.next_message_until(until.min(self.deadline)) {
                 Ok(msg) => {
-                    self.tratar(&msg, None)?;
+                    self.handle(&msg, None)?;
                 }
-                Err(ErroCdp::Prazo) if Instant::now() < self.prazo => return Ok(false),
+                Err(CdpError::Deadline) if Instant::now() < self.deadline => return Ok(false),
                 Err(e) => return Err(e),
             }
         }
         Ok(true)
     }
 
-    /// Trata uma mensagem: a resposta esperada volta em `Some`; eventos são tratados.
-    fn tratar(
+    /// Handles a message: the expected response comes back in `Some`; events are
+    /// handled.
+    fn handle(
         &mut self,
         msg: &Zeroizing<Vec<u8>>,
-        esperado: Option<u64>,
-    ) -> Result<Option<Zeroizing<Vec<u8>>>, ErroCdp> {
-        let env: Envelope = serde_json::from_slice(msg).map_err(|_| ErroCdp::Protocolo)?;
+        expected: Option<u64>,
+    ) -> Result<Option<Zeroizing<Vec<u8>>>, CdpError> {
+        let env: Envelope = serde_json::from_slice(msg).map_err(|_| CdpError::Protocol)?;
         if let Some(id) = env.id {
-            if Some(id) == esperado {
+            if Some(id) == expected {
                 if env.error.is_some() {
-                    return Err(ErroCdp::Comando);
+                    return Err(CdpError::Command);
                 }
                 return Ok(Some(msg.clone()));
             }
-            // Resposta de um `continueRequest`/`failRequest` já mandado: nada a fazer.
+            // Response to a `continueRequest`/`failRequest` already sent: nothing to do.
             return Ok(None);
         }
-        let Some(metodo) = env.method.as_deref() else {
-            return Err(ErroCdp::Protocolo);
+        let Some(method) = env.method.as_deref() else {
+            return Err(CdpError::Protocol);
         };
-        let da_aba = env.sessao.is_some() && env.sessao == self.sessao;
-        match metodo {
-            "Fetch.requestPaused" if da_aba => self.decidir(msg)?,
-            "Page.loadEventFired" if da_aba => self.cargas += 1,
-            "Page.javascriptDialogOpening" if da_aba => {
-                // Um `alert`/`confirm` pararia a página: fecha sem aceitar.
-                self.enviar("Page.handleJavaScriptDialog", b"{\"accept\":false}", true)?;
+        let in_tab = env.session.is_some() && env.session == self.session;
+        match method {
+            "Fetch.requestPaused" if in_tab => self.decide(msg)?,
+            "Page.loadEventFired" if in_tab => self.loads += 1,
+            "Page.javascriptDialogOpening" if in_tab => {
+                // An `alert`/`confirm` would stall the page: close it without accepting.
+                self.send("Page.handleJavaScriptDialog", b"{\"accept\":false}", true)?;
             }
             "Target.detachedFromTarget" | "Inspector.detached" | "Target.targetCrashed" => {
-                return Err(ErroCdp::Fechado);
+                return Err(CdpError::Closed);
             }
             _ => {}
         }
         Ok(None)
     }
 
-    /// D9: documento do quadro principal só da origem da entrada; o resto segue.
-    fn decidir(&mut self, msg: &[u8]) -> Result<(), ErroCdp> {
-        let p: ComParametros<Pausa> =
-            serde_json::from_slice(msg).map_err(|_| ErroCdp::Protocolo)?;
+    /// D9: main frame documents only from the entry's origin; the rest goes on.
+    fn decide(&mut self, msg: &[u8]) -> Result<(), CdpError> {
+        let p: WithParams<Pause> = serde_json::from_slice(msg).map_err(|_| CdpError::Protocol)?;
         let p = p.params;
         let url = Zeroizing::new(p.request.url);
-        let permitido = match &self.regra {
-            Some(r) if p.tipo == "Document" && p.quadro == r.quadro => {
-                ward_core::entrada::origem_da_url(&url).is_some_and(|o| o == r.origem)
+        let allowed = match &self.rule {
+            Some(r) if p.resource_type == "Document" && p.frame_id == r.frame => {
+                ward_core::entry::url_origin(&url).is_some_and(|o| o == r.origin)
             }
             _ => true,
         };
-        let mut e = Escritor::novo(64 + pior_caso(&p.pedido));
-        e.abre_objeto();
-        e.chave("requestId");
-        e.texto(&p.pedido);
-        if !permitido {
-            e.chave("errorReason");
-            e.texto("BlockedByClient");
+        let mut e = Writer::new(64 + worst_case(&p.request_id));
+        e.open_object();
+        e.key("requestId");
+        e.text(&p.request_id);
+        if !allowed {
+            e.key("errorReason");
+            e.text("BlockedByClient");
         }
-        e.fecha_objeto();
-        let params = e.fim().ok_or(ErroCdp::Protocolo)?;
-        if permitido {
-            self.enviar("Fetch.continueRequest", &params, true)?;
+        e.close_object();
+        let params = e.finish().ok_or(CdpError::Protocol)?;
+        if allowed {
+            self.send("Fetch.continueRequest", &params, true)?;
         } else {
-            self.bloqueou = true;
-            crate::aviso!("playwright: navegação para outra origem recusada (D9)");
-            self.enviar("Fetch.failRequest", &params, true)?;
+            self.blocked = true;
+            crate::warning!("playwright: navegação para outra origem recusada (D9)");
+            self.send("Fetch.failRequest", &params, true)?;
         }
         Ok(())
     }
 
-    fn proxima(&mut self) -> Result<Zeroizing<Vec<u8>>, ErroCdp> {
-        self.proxima_ate(self.prazo)
+    fn next_message(&mut self) -> Result<Zeroizing<Vec<u8>>, CdpError> {
+        self.next_message_until(self.deadline)
     }
 
-    /// A próxima mensagem inteira (sem o `\0`), num buffer `Zeroizing` do tamanho exato.
-    fn proxima_ate(&mut self, ate: Instant) -> Result<Zeroizing<Vec<u8>>, ErroCdp> {
+    /// The next whole message (without the `\0`), in a `Zeroizing` buffer of the exact
+    /// size.
+    fn next_message_until(&mut self, until: Instant) -> Result<Zeroizing<Vec<u8>>, CdpError> {
         loop {
-            if let Some(fim) = self.buf.iter().position(|&b| b == 0) {
-                let mut msg = Zeroizing::new(Vec::with_capacity(fim));
-                msg.extend_from_slice(&self.buf[..fim]);
-                // `drain` move o resto para o começo do mesmo buffer (sem realocar); o
-                // `Zeroizing` zera a capacidade inteira no fim.
-                self.buf.drain(..=fim);
+            if let Some(end) = self.buf.iter().position(|&b| b == 0) {
+                let mut msg = Zeroizing::new(Vec::with_capacity(end));
+                msg.extend_from_slice(&self.buf[..end]);
+                // `drain` moves the rest to the start of the same buffer (without
+                // reallocating); the `Zeroizing` zeroes the whole capacity at the end.
+                self.buf.drain(..=end);
                 return Ok(msg);
             }
-            if self.buf.len() >= MAX_MENSAGEM {
-                return Err(ErroCdp::Protocolo);
+            if self.buf.len() >= MAX_MESSAGE {
+                return Err(CdpError::Protocol);
             }
-            let agora = Instant::now();
-            if agora >= ate {
-                return Err(ErroCdp::Prazo);
+            let now = Instant::now();
+            if now >= until {
+                return Err(CdpError::Deadline);
             }
             let ms =
-                i32::try_from(ate.duration_since(agora).as_millis().max(1)).unwrap_or(i32::MAX);
-            match ward_plataforma::filho::pronto_para_ler(&self.leitura, ms) {
+                i32::try_from(until.duration_since(now).as_millis().max(1)).unwrap_or(i32::MAX);
+            match ward_platform::child::ready_to_read(&self.read_end, ms) {
                 Ok(true) => {}
                 Ok(false) => continue,
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Err(_) => return Err(ErroCdp::Io),
+                Err(_) => return Err(CdpError::Io),
             }
-            let antes = self.buf.len();
-            // Dentro da capacidade reservada: o `resize` não realoca.
-            self.buf.resize(antes + PEDACO, 0);
-            match self.leitura.read(&mut self.buf[antes..]) {
+            let before = self.buf.len();
+            // Within the reserved capacity: the `resize` does not reallocate.
+            self.buf.resize(before + CHUNK, 0);
+            match self.read_end.read(&mut self.buf[before..]) {
                 Ok(0) => {
-                    self.buf.truncate(antes);
-                    return Err(ErroCdp::Fechado);
+                    self.buf.truncate(before);
+                    return Err(CdpError::Closed);
                 }
-                Ok(n) => self.buf.truncate(antes + n),
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => self.buf.truncate(antes),
+                Ok(n) => self.buf.truncate(before + n),
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => self.buf.truncate(before),
                 Err(_) => {
-                    self.buf.truncate(antes);
-                    return Err(ErroCdp::Io);
+                    self.buf.truncate(before);
+                    return Err(CdpError::Io);
                 }
             }
         }
@@ -462,44 +466,44 @@ impl Cdp {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
-    fn escritor_escapa_e_nao_realoca() {
-        let mut e = Escritor::novo(256);
-        e.abre_objeto();
-        e.chave("a");
-        e.texto("x\"y\\z\n\u{1}é");
-        e.chave("b");
-        e.abre_lista();
-        e.inteiro(0);
-        e.inteiro(18_446_744_073_709_551_615);
-        e.logico(true);
-        e.nulo();
-        e.fecha_lista();
-        e.fecha_objeto();
-        let b = e.fim().unwrap();
+    fn writer_escapes_and_does_not_reallocate() {
+        let mut e = Writer::new(256);
+        e.open_object();
+        e.key("a");
+        e.text("x\"y\\z\n\u{1}é");
+        e.key("b");
+        e.open_list();
+        e.integer(0);
+        e.integer(18_446_744_073_709_551_615);
+        e.boolean(true);
+        e.null();
+        e.close_list();
+        e.close_object();
+        let b = e.finish().unwrap();
         let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
         assert_eq!(v["a"], "x\"y\\z\n\u{1}é");
         assert_eq!(v["b"][1], 18_446_744_073_709_551_615u64);
         assert_eq!(v["b"][2], true);
         assert!(v["b"][3].is_null());
-        // Ataque: um texto que passa da capacidade nunca realoca (nada pela metade).
-        let mut e = Escritor::novo(8);
-        e.texto("falso-WP-senha-02");
-        assert!(e.fim().is_none());
+        // Attack: a text that exceeds the capacity never reallocates (nothing half done).
+        let mut e = Writer::new(8);
+        e.text("falso-WP-senha-02");
+        assert!(e.finish().is_none());
     }
 
-    /// O corpo do POST no `Fetch.requestPaused` é pulado sem virar `String`: a leitura
-    /// só pega os campos usados.
+    /// The POST body in `Fetch.requestPaused` is skipped without becoming a `String`:
+    /// the reading only takes the fields in use.
     #[test]
-    fn pausa_le_so_url_tipo_e_quadro() {
+    fn pause_reads_only_url_type_and_frame() {
         let msg = br#"{"method":"Fetch.requestPaused","sessionId":"S","params":{"requestId":"r1","request":{"url":"http://localhost:8081/wp-login.php","method":"POST","postData":"log=wp_editor&pwd=falso-WP-senha-02","headers":{}},"frameId":"F","resourceType":"Document","extra":[1,2.5,-3e2]}}"#;
-        let p: ComParametros<Pausa> = serde_json::from_slice(msg).unwrap();
-        assert_eq!(p.params.pedido, "r1");
-        assert_eq!(p.params.tipo, "Document");
-        assert_eq!(p.params.quadro, "F");
+        let p: WithParams<Pause> = serde_json::from_slice(msg).unwrap();
+        assert_eq!(p.params.request_id, "r1");
+        assert_eq!(p.params.resource_type, "Document");
+        assert_eq!(p.params.frame_id, "F");
         assert_eq!(p.params.request.url, "http://localhost:8081/wp-login.php");
     }
 }

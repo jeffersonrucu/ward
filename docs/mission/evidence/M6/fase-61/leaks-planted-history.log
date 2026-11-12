@@ -1,0 +1,27 @@
+make: Entrando no diretório '<repo>/.dev/fase61-leakcopy'
+<repo>/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
+10:32AM INF scanned ~9783722 bytes (9.78 MB) in 349ms
+10:32AM INF no leaks found
+<repo>/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+10:32AM INF 0 commits scanned.
+10:32AM INF scanned ~0 bytes (0) in 106ms
+10:32AM INF no leaks found
+<repo>/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+10:32AM INF Unknown SCM platform. Use --platform to include links in findings. host=
+Finding:     let api_key = "REDACTED"
+Secret:      REDACTED
+RuleID:      generic-api-key
+Entropy:     4.105389
+File:        crates/planted_fake.rs
+Line:        2
+Commit:      72e23734a21a328ca261ac7e3dfe5cc36378b4f7
+Author:      fase61
+Email:       fase61@invalid
+Date:        2026-11-11T13:32:28Z
+Fingerprint: 72e23734a21a328ca261ac7e3dfe5cc36378b4f7:crates/planted_fake.rs:generic-api-key:2
+
+10:32AM INF 349 commits scanned.
+10:32AM INF scanned ~15946750 bytes (15.95 MB) in 1.85s
+10:32AM WRN leaks found: 1
+make: *** [Makefile:145: gitleaks] Erro 1
+make: Saindo do diretório '<repo>/.dev/fase61-leakcopy'

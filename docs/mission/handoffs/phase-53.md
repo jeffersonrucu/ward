@@ -1,124 +1,114 @@
-# Fase 53 — `docs/migracao.md`: guia da etapa final (Milestone 10)
+# Fase 53 — Variáveis entregues (DT11)
 
 ## Implementado
-- **`docs/migracao.md`**: o guia que o usuário executa sozinho, com um "Antes de
-  começar" e 8 passos na ordem do V10.1. Cada passo tem "Conferir" e "Voltar atrás"
-  (V10.3):
-  1. cadastrar as credenciais de trabalho à mão no Ward (as pessoais vão para o
-     1Password ou o Chrome);
-  2. mover as chaves SSH: as pessoais para o `~/.ssh`, com `chmod 600` e a `.pub`
-     gerada; as de servidor para entradas `servidor`, passando pela pasta em memória
-     `/run/user/<uid>/migracao/` e coladas no app com `wl-copy <` arquivo;
-  3. conferir cada servidor com `ward ssh <entrada> hostname`, com salto e túnel,
-     comparando a impressão digital gravada no `known_hosts` do Ward com a que o
-     usuário já conhece;
-  4. devolver o chaveiro ao gnome-keyring, inclusive "Chrome Safe Storage" e as outras
-     entradas criadas por aplicativos:
-     - desliga o FdoSecrets do KeePassXC e confere `NameHasOwner`;
-     - liga os segredos com `gnome-keyring-daemon --start --components=secrets`;
-     - grava cada item com `secret-tool store`, que pede o valor num prompt;
-     - antes de tudo, faz backup do `Login Data` do Chrome e anota quantas senhas ele
-       tem;
-  5. desfazer a montagem, um item por subseção (5a override, 5b ativação D-Bus,
-     5c autostart, 5d PAM com `diff` e console de root aberto, 5e sair e entrar).
-     Cada arquivo vai para `~/ward-migracao/` e não é apagado;
-  6. conferir as senhas do Chrome (número de senhas, "mostrar", um só item
-     `application chrome`). Termina com o aviso "Chrome manteve as senhas" para o
-     registro do V10.4;
-  7. instalar a skill `ward` pelo `skill/README.md` e mover a `cofre` e os
-     `cofre-*` para o backup;
-  8. só então desinstalar o KeePassXC e guardar o `.kdbx` cifrado.
-- **`dev/testes/migracao.py`** e **`make teste-migracao`**, fora do `make check`. O
-  script só lê o guia e confere o V10.1–V10.3: ordem e assunto dos passos, os 4 itens
-  da `montagem.md` em subseções próprias do passo 5, "Conferir" e "Voltar atrás" em
-  cada passo e subseção, as regras de V10.2 e a ausência de segredo em argv.
-  - Antes da conferência roda um autoteste com controle e 18 ataques plantados.
-- **CLAUDE.md**: linha nova do `make teste-migracao`.
+- `crates/ward-core/src/delivery.rs`: `WARD_ENTRADA`→`WARD_ENTRY`, `WARD_GRUPO`→`WARD_GROUP`,
+  `WARD_AMBIENTE`→`WARD_ENVIRONMENT`, `WARD_PROTOCOLO`→`WARD_PROTOCOL`,
+  `WARD_ARQUIVO_<NOME>`→`WARD_FILE_<NAME>`, `WARD_ARQUIVO_CHAVE`→`WARD_FILE_KEY`. Só os nomes
+  mudaram: zeroização, máscara, percent-encoding, ordem e conferência final (`check`) iguais. O
+  nome fixo do arquivo temporário da chave (`"chave"`, só o nome do arquivo em `<rt>tmp/`) ficou.
+- `crates/ward-core/src/entry/validation.rs`: nomes reservados acompanham a entrega
+  (`COMMON_VARIABLES` = `ENTRY`/`GROUP`/`ENVIRONMENT`; `PROTOCOL` no ftp/sftp; extra `FILE` e
+  `FILE_*` reservados; anexo `KEY` reservado em server e ftp/sftp). Comentários em inglês.
+- `crates/ward-core/src/entry.rs`: comentários com os nomes novos.
+- `dev/english-check/frozen.txt`: saem as 9 exceções da Fase 53 (8 de `entry.rs`/`validation.rs`
+  e a do `app/core/src/service.rs`). `make english-check` no repositório: 0 achado.
+- Testes (escritos; só os de unidade do `ward-core`/`app/core` rodados, sem daemon):
+  - `delivery/tests.rs`: expectativas pela tabela "Entrega esperada"; novos
+    `m2_v4_19_no_old_variable_name` e `m2_smtp_security_with_the_v5_name` (`none`/`starttls`/`tls`).
+  - `entry/tests.rs`: reservados com os nomes novos (inclui `File-Key` → `FILE_KEY` e anexo `key`);
+    novo `m2_dt11_old_names_are_not_reserved`; `WARD_ENTRY` na lista de variável perigosa da api.
+  - `crates/wardd/tests/run.rs` (não rodado, fala com daemon de teste): nomes novos e os nomes da
+    0.1.x na lista de proibidos do ambiente do filho.
+  - `app/core/src/service.rs`: o anexo reservado do teste passa de `chave` para `key`.
+  - `dev/tests/cli.py` (não rodado): tabela com `WARD_PROTOCOL`, `WARD_FILE_KEY`,
+    `WARD_FILE_APP_ENV` e as comuns novas; para cada entrada da tabela, `ward run <e> -- env -0`
+    confere que os `WARD_*` são exatamente os da tabela e que nenhum nome da 0.1.x aparece (só os
+    nomes são lidos; a saída passa pelo `no_variation`).
+- `app/src/screens/form.js`: textos de ajuda e `attachmentVariable` com `WARD_PROTOCOL`,
+  `WARD_FILE_KEY` e `WARD_FILE_<NOME>` (literais só; senão o formulário mostraria nomes que não
+  são mais entregues).
+- `docs/mission/validation-contract.md`: linha nova na tabela "Entrega esperada" para o
+  `SMTP_SECURITY` com o nome v5 (`none` no lugar de `nenhuma`), achado da Fase 48.
+- `make dev-vault`, `make dev-vault-verify`, `make dev-variations` e `variations_test.py` passam com
+  o `entries.json` atual. O oráculo (`dev/variations.py`), o parser do `dev-vault.sh` e o
+  `login.py` não citam nome de variável entregue: nada a mudar neles (o parser e as chaves do
+  `entries.json` já tinham mudado na Fase 48).
 
 ## Segurança
-- **Invariantes tocadas:**
-  - **V10.2 / R19.** O guia abre dizendo que quem executa é o usuário, num terminal
-    fora do Claude Code (nem com `!`). Também diz para nunca colar segredo nem a saída
-    dos comandos na conversa. A missão não executou nenhum passo: nada no `~/.ssh`,
-    no chaveiro, no KeePassXC, no `~/.aws` nem no cofre real foi tocado.
-    - A única leitura fora do repositório foi a da
-      `~/.claude/skills/cofre/references/montagem.md` e do `SKILL.md`, para listar os
-      itens a desfazer. Nenhum dos dois tem segredo.
-  - **S2/S3 no guia.**
-    - Segredo nunca em argv: `secret-tool store` lê o valor no prompt e `wl-copy`
-      recebe arquivo por `<`.
-    - Chave de servidor só passa pela pasta em tmpfs e é apagada logo depois. Nenhuma
-      exportação em claro (sem CSV, sem `keepassxc-cli export`).
-    - Conferência do chaveiro com `2>&1 >/dev/null`, que descarta o valor e mostra só
-      os atributos.
-  - **Volta segura do passo 4.** O guia manda conferir que o dono do
-    `org.freedesktop.secrets` é o gnome-keyring antes do `secret-tool clear`. Sem
-    isso, o `clear` apagaria a cópia do KeePassXC.
-  - **S15.** O guia não traz nenhum valor, nem falso.
-- **Testes de ataque** (`dev/testes/migracao.py` › `autoteste`): todos são recusados.
-  - Ordem dos passos: passos 4 e 5 trocados; KeePassXC sai antes da skill.
-  - Estrutura: passo 3 sem "Voltar atrás"; PAM fora do passo 5.
-  - Conversa com o Claude: "cole a passphrase na conversa com o Claude"; "peça para o
-    Claude rodar `ssh-add`"; regra de não colar removida; "quem executa é você"
-    removido; comando com `!`.
-  - Segredo em argv: `sshpass -p`; `echo … | secret-tool`; `secret-tool … <<<`;
-    `wl-copy <texto>`; `ssh-keygen -N`.
-  - Exportação em claro: `.csv`; `keepassxc-cli export`.
-  - Valor no guia: chave privada; padrão de `variacoes.txt`.
-- **Dependências novas:** nenhuma (só a biblioteca padrão do Python).
+- S2/S3/S4/S8 (m2:V4.19–V4.21): a lógica da entrega não mudou (diff só nos nomes); os valores
+  seguem em `Zeroizing`, sem `Debug` com valor; a conferência final ainda recusa nome repetido,
+  `LD_*` e byte nulo, então um extra que colida com um nome do tipo falha mesmo que a validação
+  deixasse passar.
+- Reservados: o que a entrega produz é exatamente o que a validação reserva
+  (`type_variables_match_the_reserved_ones` continua passando com o prefixo `FILE_`).
+- Testes de ataque: `delivery/tests.rs` › `m2_v4_19_no_old_variable_name`;
+  `entry/tests.rs` › `attack_extra_or_attachment_overrides_type_variable` (nomes novos),
+  `attack_dangerous_variable_in_api` (`WARD_ENTRY`); `crates/wardd/tests/run.rs` (proibidos da
+  0.1.x no ambiente do filho); `dev/tests/cli.py` (m2:V4.19, nenhum nome antigo e conjunto exato).
+- Nenhum segredo novo: só valores de D15 (`falso-SMTP-01`).
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **V10.4.** É do usuário: ele executa o guia e confirma. O registro no `plan.md` é
-  do orchestrator.
-- **Nada do guia foi executado.** Os nomes de menu do KeePassXC 2.7.6 em português e o
-  comportamento do `gnome-keyring-daemon --start --components=secrets` com o override
-  ativo saíram da documentação e da `montagem.md`, não de teste na máquina (ver
-  Problemas).
+- `skill/ward/SKILL.md`, `skill/README.md`, `skill/settings-deny.json` e `dev/tests/skill.py`
+  (ataques com `$WARD_ARQUIVO_CHAVE`): Fase 58. O deny deveria negar `WARD_FILE_KEY` nas mesmas
+  formas e manter `WARD_ARQUIVO_CHAVE` para a 0.1.x.
+- `docs/escopo.md` (`WARD_ARQUIVO_<NOME>` na linha 79) e `docs/glossario.md`: Fase 59.
+- `dev/fixtures/legacy/strings-0.1.4.txt`: linha de base, não muda.
+- Nenhuma suíte que fala com daemon foi rodada (regra 6): `wardd` `tests/run.rs` e
+  `dev/tests/cli.py` ficam para o Milestone 6.
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `python3 -I -B dev/testes/migracao.py <variacoes do checkout principal>` | 0 |
-| `make teste-migracao` (sem `.dev/variacoes.txt` no worktree) | 2 (falha esperada: "rode `make dev-variacoes`") |
-| `make teste-migracao` (com cópia do `variacoes.txt` de teste em `.dev/`) | 0 |
-| `make check` (1ª vez: parou no gitleaks, que faltava em `.dev/ferramentas/` do worktree) | 2 |
-| `make check` (com o gitleaks do checkout principal copiado; sha256 conferido pelo Makefile) | 0 |
+| `make compile` | 0 |
+| `cargo fmt --all --check` (depois de `cargo fmt --all`) | 0 |
+| `cargo clippy --locked -p ward-core -p wardd -p ward-app-core --all-targets -- -D warnings` | 0 |
+| `cargo test --locked -p ward-core --lib -- delivery:: entry::` | 0 (57 testes) |
+| `cargo test --locked -p ward-app-core --lib -- --exact service::tests::attack_large_empty_attachment_and_forged_id` | 0 |
+| `make dev-vault` | 0 |
+| `make dev-vault-verify` | 0 |
+| `make dev-variations` | 0 |
+| `python3 -I -B dev/tests/variations_test.py` | 0 (43 testes) |
+| `make english-check` | 0 (0 achado) |
+
+`make check` não rodado: inclui o `cargo test` do workspace, que tem testes que falam com daemon
+(regra 6 e Fase 54a).
 
 ## Problemas descobertos
-- **Ordem do V10.1 × a técnica.** O contrato põe "devolver o chaveiro" antes de
-  "desfazer a montagem". Para isso dar certo, o passo 4 liga os segredos do
-  gnome-keyring só na sessão, com o FdoSecrets do KeePassXC desligado, e o passo 5
-  torna isso permanente.
-  - Não foi testado na máquina, porque a missão não toca no chaveiro.
-  - Se `--start --components=secrets` não pegar o nome com o override ativo, o guia
-    manda parar e voltar. A alternativa seria fazer 5a–5e antes de gravar a chave.
-- **A skill `cofre` para no passo 4**, porque os `cofre-*` usam o Serviço Secreto do
-  KeePassXC. Até lá o escopo diz "até lá a skill antiga continua". O guia avisa para
-  fazer os passos 4–7 na mesma sessão. A troca da skill fica no passo 7, por exigência
-  do V10.1.
-- **Atributos do "Chrome Safe Storage".** O guia usa `application chrome` e
-  `xdg:schema chrome_libsecret_os_crypt_password_v2` só como exemplo. Ele manda copiar
-  os atributos que o KeePassXC mostra na entrada, porque a versão do esquema muda com
-  a do Chrome.
-- **Sem `.desktop` do app** (pendência da 51). O passo 1 diz "abra o app do Ward" sem
-  dizer como. Hoje ele abre pelo daemon ou por `ward-app` no terminal.
-- **`make teste-migracao` e o `.dev/` do worktree.** O alvo precisa de
-  `.dev/variacoes.txt`. No worktree usei uma cópia do arquivo de teste do checkout
-  principal (só valores falsos), apagada no fim. O gitleaks também foi copiado do
-  checkout principal para `.dev/ferramentas/bin/`; o `make check` confere o sha256 dele.
+- **Cofre que deixa de abrir.** A leitura do corpo valida cada entrada (`body.rs`, 2ª passada:
+  `Draft::validate`), e um corpo com uma entrada inválida não abre. Com os reservados novos, um
+  cofre 0.1.x (v4) ou v5 com um extra chamado `ENTRY`, `GROUP`, `ENVIRONMENT`, `FILE` ou `FILE_*`
+  (ou `PROTOCOL` num ftp/sftp), ou com um anexo `key` num server/ftp/sftp, passa a ser recusado
+  inteiro no destrave da 0.2.0. Na 0.1.x esses nomes eram livres. Não mexi: decidir entre
+  (a) aceitar na leitura e recusar só na gravação (a conferência da entrega já recusa nome
+  repetido), (b) avisar no roteiro de atualização (Fase 66 / `docs/instalacao.md`) ou (c) recusar
+  como hoje é do orchestrator/planner. Os nomes antigos (`ENTRADA`, `ARQUIVO_*`, anexo `chave`…)
+  passam a ser livres (teste `m2_dt11_old_names_are_not_reserved`), então nada que abria deixa de
+  abrir por eles.
+- O nome fixo do arquivo temporário da chave privada continua `chave` (`<rt>tmp/<n>-chave`). É
+  literal e não é variável; se a Fase 60 quiser trocar por `key`, muda `delivery.rs`, o teste
+  `v2_14_expected_delivery_of_the_contract` e nada mais.
+- O texto de validação "deve ser nenhuma, starttls ou tls" (achado da Fase 48) segue igual.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `docs/migracao.md` | criado |
-| `dev/testes/migracao.py` | criado |
-| `Makefile` | alterado (alvo `teste-migracao` e `.PHONY`) |
-| `CLAUDE.md` | alterado (linha do `make teste-migracao`) |
+| `crates/ward-core/src/delivery.rs` | alterado |
+| `crates/ward-core/src/delivery/tests.rs` | alterado |
+| `crates/ward-core/src/entry.rs` | alterado |
+| `crates/ward-core/src/entry/validation.rs` | alterado |
+| `crates/ward-core/src/entry/tests.rs` | alterado |
+| `crates/wardd/tests/run.rs` | alterado |
+| `app/core/src/service.rs` | alterado |
+| `app/src/screens/form.js` | alterado |
+| `dev/tests/cli.py` | alterado |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/mission/validation-contract.md` | alterado |
 | `docs/mission/handoffs/phase-53.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
+- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): não (regra 6); `make compile`, fmt, clippy e os testes de unidade do `delivery`/`entry` rodados
 - [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado (V10.2)
-- [ ] (UI/DESIGN) Conferido contra o FigCraft (fase DESIGN: `save_file` feito): não se aplica
-- [x] Ficou dentro do escopo da fase
+- [x] Teste de ataque para cada (SEG) tocado
+- [ ] (UI/DESIGN) Conferido contra o FigCraft: não se aplica
+- [x] Ficou dentro do escopo da fase (mais os textos do `form.js`, ver Implementado)

@@ -1,38 +1,39 @@
-//! App desktop do Ward (Tauri 2). Só a janela e a ligação dos comandos: o que cada
-//! comando faz está em `ward_app_nucleo::servico` (o mesmo que a ponte de teste usa).
+//! Ward desktop app (Tauri 2). Only the window and the command wiring: what each command
+//! does is in `ward_app_core::service` (the same one the test bridge uses).
 //!
-//! S11: capabilities só com os comandos próprios (`capabilities/principal.json` para a
-//! janela principal, `capabilities/aprovacao.json` para a janela de aprovação; manifesto
-//! no `build.rs`), CSP estrita no `tauri.conf.json`, interface embutida
-//! (`custom-protocol`), navegação só dentro do app, sem arrastar arquivo para a
-//! janela, devtools só com a feature `modo-teste`.
+//! S11: capabilities only with the app's own commands (`capabilities/main.json` for
+//! the main window, the approval capability file for the approval window; manifest in
+//! `build.rs`), strict CSP in `tauri.conf.json`, embedded interface (`custom-protocol`),
+//! navigation only inside the app, no file drag into the window, devtools only with the
+//! `test-mode` feature.
 //!
-//! D47/D57: a primeira coisa do `main` é a partida do app setgid
-//! (`ward_app_nucleo::partida`), antes do GTK: ambiente de D57 conferido, conexão ao
-//! daemon com o egid do grupo `ward-app`, grupo largado, não-dumpable de novo e o pai
-//! conferido. Fora disso o app sai com a mensagem, sem abrir janela.
+//! D47/D57: the first thing in `main` is the startup of the setgid app
+//! (`ward_app_core::startup`), before GTK: D57 environment checked, connection to the
+//! daemon with the egid of the `ward-app` group, group dropped, non-dumpable again and
+//! the parent checked. Otherwise the app exits with the message, without opening a
+//! window.
 //!
-//! Fase 36 (S10, D65 a): a vigia da fila de avisos tira cada `pedido_de_aprovacao` e
-//! abre (ou traz para a frente) a janela `aprovacao`, sempre no topo. Só ela responde
-//! (capability própria, e o comando confere o rótulo de novo); fechar a janela nega
-//! todo pedido pendente.
+//! Phase 36 (S10, D65 a): the notice queue watcher takes each approval request notice and
+//! opens (or brings to the front) the approval window, always on top. Only that window
+//! answers (its own capability, and the command checks the label again); closing the
+//! window denies every pending request.
 //!
-//! Fase 39 (V5.23): ícone e menu na bandeja (AppIndicator, `ward_app_nucleo::bandeja`):
-//! "Abrir o Ward", "Travar agora"/"Destravar…" e "Sair". Com a bandeja ativa, fechar a
-//! janela principal a destrói (a webview e o que a tela tinha somem) e o app fica na
-//! bandeja; "Abrir o Ward" ou um `pedido_de_destrave` a criam de novo. Sem a biblioteca
-//! do AppIndicator ou sem pasta segura para o ícone, o app abre sem bandeja e fechar a
-//! janela fecha o app, como antes.
+//! Phase 39 (V5.23): tray icon and menu (AppIndicator, `ward_app_core::tray`): open,
+//! lock now / unlock, and quit. With the tray active, closing the main
+//! window destroys it (the webview and what the screen had go away) and the app stays in
+//! the tray; the open item or an unlock request notice create it again. Without the
+//! AppIndicator library or without a safe folder for the icon, the app opens without a
+//! tray and closing the window closes the app, as before.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod area_gtk;
+mod gtk_clipboard;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use area_gtk::AreaGtk;
+use gtk_clipboard::GtkClipboard;
 use serde::Serialize;
 use tauri::image::Image;
 use tauri::ipc::Channel;
@@ -42,545 +43,565 @@ use tauri::{
     AppHandle, Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
-use ward_app_nucleo::ErroApp;
-use ward_app_nucleo::anexos::{EdicaoDosAnexos, Escolha, Seletor};
-use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
-use ward_app_nucleo::area_transferencia::Copiador;
-use ward_app_nucleo::backup_externo::{BackupExternoVisto, PendriveVisto};
-use ward_app_nucleo::bandeja::{self, Acao, EstadoBandeja, Icone};
-use ward_app_nucleo::chave::Carregamento;
-use ward_app_nucleo::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
-use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
-use ward_app_nucleo::daemon::DaemonSocket;
-use ward_app_nucleo::destrave::{self, InfoPedido, SenhaMestra};
-use ward_app_nucleo::formulario::Formulario;
-use ward_app_nucleo::gerador::Opcoes;
-use ward_app_nucleo::nivel::{NivelMudado, Pin};
-use ward_app_nucleo::partida;
-use ward_app_nucleo::primeiro_uso::NovoCofre;
-use ward_app_nucleo::restaurar::{Restauracao, Restaurado, VersaoVista};
-use ward_app_nucleo::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
-use ward_app_nucleo::terminal::TerminalDoSistema;
+use ward_app_core::AppError;
+use ward_app_core::approval::{self, ApprovalResult, DisplayedRequest};
+use ward_app_core::attachments::{AttachmentEdit, Choice, Picker};
+use ward_app_core::clipboard::Copier;
+use ward_app_core::credentials::{CredentialDetail, CredentialItem};
+use ward_app_core::daemon::DaemonSocket;
+use ward_app_core::external_backup::{ExternalBackupView, UsbDriveView};
+use ward_app_core::first_use::NewVault;
+use ward_app_core::form::Form;
+use ward_app_core::generator::Options;
+use ward_app_core::key::Loading;
+use ward_app_core::level::{LevelChanged, Pin};
+use ward_app_core::restore::{Restore, Restored, VersionView};
+use ward_app_core::service::{CreateResult, SaveResult, Service, TotpCode};
+use ward_app_core::settings::{ChangeResult, PasswordChange, PinChange, Settings};
+use ward_app_core::startup;
+use ward_app_core::terminal::SystemTerminal;
+use ward_app_core::tray::{self, Action, Icon, TrayState};
+use ward_app_core::unlock::{self, MasterPassword, RequestInfo};
 
-type ServicoApp = Servico<DaemonSocket, AreaGtk>;
+type AppService = Service<DaemonSocket, GtkClipboard>;
 
-/// O que a interface recebe num erro: código estável e mensagem fixa, sem valor.
+/// What the interface gets on an error: a stable code and a fixed message, no value.
 #[derive(Serialize)]
-struct Falha {
-    codigo: &'static str,
-    mensagem: String,
+struct Failure {
+    code: &'static str,
+    message: String,
 }
 
-impl From<ErroApp> for Falha {
-    fn from(e: ErroApp) -> Self {
-        Falha {
-            codigo: e.codigo(),
-            mensagem: e.to_string(),
+impl From<AppError> for Failure {
+    fn from(e: AppError) -> Self {
+        Failure {
+            code: e.code(),
+            message: e.to_string(),
         }
     }
 }
 
-/// Fase 31: com o cofre travado, `pedido` é o pedido do agente que espera o destrave
-/// (id, segundos que faltam e, Fase 39a, entrada, operação e comando com D51).
+/// Phase 31: with the vault locked, `request` is the agent's request waiting for the
+/// unlock (id, seconds left and, Phase 39a, entry, operation and command with D51).
 #[derive(Serialize)]
-struct RespostaEstado {
-    estado: &'static str,
-    pedido: Option<InfoPedido>,
+struct StatusResponse {
+    status: &'static str,
+    request: Option<RequestInfo>,
 }
 
-/// O que o canal de avisos leva à tela: só o nome do aviso, sem dado (D65 a).
+/// What the notice channel takes to the screen: only the notice name, no data (D65 a).
 #[derive(Clone, Serialize)]
-struct AvisoTela {
-    aviso: &'static str,
+struct ScreenNotice {
+    notice: &'static str,
 }
 
-/// Canais do Tauri que as telas abriram com `ouvir_avisos`, um por janela (o mais novo
-/// de cada uma vale). A principal recebe `pedido-de-destrave` (Fase 31); a de aprovação,
-/// `pedido-de-aprovacao` (Fase 36). Nenhum aviso leva dado: quem recebe consulta.
+/// Tauri channels the screens opened with the listen command, one per window (the newest
+/// of each one counts). The main one gets the unlock request notice (Phase 31); the
+/// approval one, the approval request notice (Phase 36). No notice carries data: whoever gets it asks.
 #[derive(Default)]
-struct Canais {
-    principal: Option<Channel<AvisoTela>>,
-    aprovacao: Option<Channel<AvisoTela>>,
+struct Channels {
+    main: Option<Channel<ScreenNotice>>,
+    approval: Option<Channel<ScreenNotice>>,
 }
 
-type CanalAvisos = Arc<Mutex<Canais>>;
+type NoticeChannels = Arc<Mutex<Channels>>;
 
-fn travar_canais(canais: &CanalAvisos) -> std::sync::MutexGuard<'_, Canais> {
-    canais.lock().unwrap_or_else(|e| e.into_inner())
+fn lock_channels(channels: &NoticeChannels) -> std::sync::MutexGuard<'_, Channels> {
+    channels.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Manda o aviso (só o nome) pelo canal da janela, se ela abriu um.
-fn avisar(canais: &CanalAvisos, janela: &str, aviso: &'static str) {
-    let c = travar_canais(canais);
-    let canal = match janela {
-        JANELA_PRINCIPAL => c.principal.as_ref(),
-        JANELA_APROVACAO => c.aprovacao.as_ref(),
+/// Sends the notice (only the name) through the window's channel, if it opened one.
+fn notify(channels: &NoticeChannels, window: &str, notice: &'static str) {
+    let c = lock_channels(channels);
+    let channel = match window {
+        MAIN_WINDOW => c.main.as_ref(),
+        APPROVAL_WINDOW => c.approval.as_ref(),
         _ => None,
     };
-    if let Some(canal) = canal {
-        let _ = canal.send(AvisoTela { aviso });
+    if let Some(channel) = channel {
+        let _ = channel.send(ScreenNotice { notice });
     }
 }
 
-/// Serviço montado na partida. Sem o daemon, os comandos respondem o erro (o app abre
-/// e mostra a falha). `Arc`: a vigia da conexão limpa a
-/// área de transferência antes de reexecutar o app.
-struct Estado {
-    servico: Arc<Result<ServicoApp, ErroApp>>,
-    canal: CanalAvisos,
-    /// O último estado do cofre que a vigia viu (Fase 39g), com ou sem bandeja: é por
-    /// ele que a trava vinda de fora limpa a área de transferência e o formulário na
-    /// hora. Antes ele só existia dentro da `Bandeja`, e sem bandeja nada limpava.
-    visto: Mutex<EstadoBandeja>,
+/// Service built at startup. Without the daemon, the commands answer the error (the app
+/// opens and shows the failure). `Arc`: the connection watcher clears the clipboard
+/// before re-executing the app.
+struct AppState {
+    service: Arc<Result<AppService, AppError>>,
+    channels: NoticeChannels,
+    /// The last vault status the watcher saw (Phase 39g), with or without a tray: it is
+    /// through it that a lock coming from outside clears the clipboard and the form right
+    /// away. Before, it only existed inside the `Tray`, and without a tray nothing
+    /// cleared.
+    seen: Mutex<TrayState>,
 }
 
-impl Estado {
-    fn novo(servico: Arc<Result<ServicoApp, ErroApp>>) -> Estado {
-        Estado {
-            servico,
-            canal: Arc::new(Mutex::new(Canais::default())),
-            visto: Mutex::new(EstadoBandeja::SemDaemon),
+impl AppState {
+    fn new(service: Arc<Result<AppService, AppError>>) -> AppState {
+        AppState {
+            service,
+            channels: Arc::new(Mutex::new(Channels::default())),
+            seen: Mutex::new(TrayState::NoDaemon),
         }
     }
 
-    fn servico(&self) -> Result<&ServicoApp, Falha> {
-        self.servico.as_ref().as_ref().map_err(|e| Falha::from(*e))
+    fn service(&self) -> Result<&AppService, Failure> {
+        self.service
+            .as_ref()
+            .as_ref()
+            .map_err(|e| Failure::from(*e))
     }
 }
 
 #[tauri::command]
-fn estado_do_cofre(estado: State<'_, Estado>) -> Result<RespostaEstado, Falha> {
-    let s = estado.servico()?;
-    let e = s.estado_do_cofre()?;
-    Ok(RespostaEstado {
-        estado: e.codigo(),
-        pedido: s.info_do_pedido(e),
+fn vault_status(state: State<'_, AppState>) -> Result<StatusResponse, Failure> {
+    let s = state.service()?;
+    let e = s.vault_status()?;
+    Ok(StatusResponse {
+        status: e.code(),
+        request: s.request_info(e),
     })
 }
 
-/// Destravar (Fase 31). A senha chega num `SenhaMestra` (zera ao sair; vazio ou acima
-/// do limite é recusado na leitura, sem eco) e só vai ao daemon; a resposta não a traz
-/// nem diz quantas tentativas houve (D20).
+/// Unlock (Phase 31). The password arrives in a `MasterPassword` (zeroed on drop; empty
+/// or above the limit is refused on reading, without echo) and only goes to the daemon;
+/// the response neither carries it nor says how many attempts there were (D20).
 #[tauri::command]
-fn destravar(senha: SenhaMestra, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.destravar(senha)?)
+fn unlock(password: MasterPassword, state: State<'_, AppState>) -> Result<(), Failure> {
+    Ok(state.service()?.unlock(password)?)
 }
 
-/// "Travar agora" da `Navegação lateral` (Fase 39): limpa a área de transferência e o
-/// formulário, trava, e a bandeja passa a mostrar travado.
+/// "Lock now" of the side navigation (Phase 39): clears the clipboard and the
+/// form, locks, and the tray starts showing locked.
 #[tauri::command]
-fn travar<R: Runtime>(app: AppHandle<R>, estado: State<'_, Estado>) -> Result<(), Falha> {
-    let r = estado.servico()?.travar();
-    atualizar_bandeja(&app);
+fn lock<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Result<(), Failure> {
+    let r = state.service()?.lock();
+    update_tray(&app);
     Ok(r?)
 }
 
-/// D65 a: a tela passa o canal por onde o lado Rust a avisa: a principal, de um
-/// `pedido_de_destrave`; a de aprovação (Fase 36), de um `pedido_de_aprovacao`. O canal
-/// fica com a janela que o abriu (rótulo dado pelo Tauri, não pela tela), e uma janela
-/// não recebe o aviso da outra. Canal do Tauri (não `emit`/`listen`): a capability não
-/// ganha permissão do núcleo (`core:event:*`).
+/// D65 a: the screen passes the channel through which the Rust side notifies it: the
+/// main one, of an unlock request; the approval one (Phase 36), of an approval
+/// request. The channel stays with the window that opened it (label given
+/// by Tauri, not by the screen), and a window does not get the other's notice. Tauri
+/// channel (not `emit`/`listen`): the capability gets no core permission
+/// (`core:event:*`).
 #[tauri::command]
-fn ouvir_avisos<R: Runtime>(
-    canal: Channel<AvisoTela>,
-    janela: WebviewWindow<R>,
-    estado: State<'_, Estado>,
-) -> Result<(), Falha> {
-    let mut c = travar_canais(&estado.canal);
-    match janela.label() {
-        JANELA_PRINCIPAL => c.principal = Some(canal),
-        JANELA_APROVACAO => c.aprovacao = Some(canal),
-        _ => return Err(Falha::from(ErroApp::NaoAutorizado)),
+fn listen_notices<R: Runtime>(
+    channel: Channel<ScreenNotice>,
+    window: WebviewWindow<R>,
+    state: State<'_, AppState>,
+) -> Result<(), Failure> {
+    let mut c = lock_channels(&state.channels);
+    match window.label() {
+        MAIN_WINDOW => c.main = Some(channel),
+        APPROVAL_WINDOW => c.approval = Some(channel),
+        _ => return Err(Failure::from(AppError::Unauthorized)),
     }
     Ok(())
 }
 
-/// A vigia da fila de avisos da conexão (D65 a): cada `pedido_de_destrave` marca o
-/// pedido no serviço e avisa a tela pelo canal, se ela já abriu um.
-/// Fase 39: com o app só na bandeja, o pedido também traz a janela principal de volta
-/// (D16: "o app abre e pede a senha mestra").
-fn vigiar_avisos<R: Runtime>(
+/// The connection's notice queue watcher (D65 a): each unlock request notice marks the
+/// request in the service and notifies the screen through the channel, if it already
+/// opened one. Phase 39: with the app only in the tray, the request also brings the main
+/// window back (D16: the app opens and asks for the master password).
+fn watch_notices<R: Runtime>(
     app: &AppHandle<R>,
-    estado: &Estado,
-    fila: Option<Arc<ward_app_nucleo::daemon::FilaAvisos>>,
+    state: &AppState,
+    queue: Option<Arc<ward_app_core::daemon::NoticeQueue>>,
 ) {
-    let (Some(fila), Ok(s)) = (fila, estado.servico()) else {
+    let (Some(queue), Ok(s)) = (queue, state.service()) else {
         return;
     };
-    // O menu achou o app já de pé (janela fechada, na bandeja): o daemon pede a janela.
+    // The menu found the app already up (window closed, in the tray): the daemon asks
+    // for the window (port of 0.1.5).
     let h = app.clone();
-    let na_vigia = Arc::clone(&fila);
+    let watched = Arc::clone(&queue);
     let r = std::thread::Builder::new()
-        .name("ward-app-mostrar".into())
+        .name("ward-app-show".into())
         .spawn(move || {
             loop {
-                if na_vigia.esperar_mostrar(Duration::from_secs(3600)) {
+                if watched.wait_show(Duration::from_secs(3600)) {
                     let h2 = h.clone();
-                    let _ = h.run_on_main_thread(move || mostrar_principal(&h2));
+                    let _ = h.run_on_main_thread(move || show_main(&h2));
                 }
             }
         });
     if r.is_err() {
         eprintln!("ward-app: não foi possível vigiar o pedido de mostrar a janela");
     }
-    let canais = Arc::clone(&estado.canal);
+    let channels = Arc::clone(&state.channels);
     let h = app.clone();
-    let r = destrave::vigiar(fila, s.pedido_de_destrave(), move || {
+    let r = unlock::watch(queue, s.unlock_request(), move || {
         let h2 = h.clone();
-        let _ = h.run_on_main_thread(move || mostrar_principal(&h2));
-        avisar(&canais, JANELA_PRINCIPAL, "pedido-de-destrave");
+        let _ = h.run_on_main_thread(move || show_main(&h2));
+        notify(&channels, MAIN_WINDOW, "unlock-request");
     });
     if r.is_err() {
         eprintln!("ward-app: não foi possível vigiar os avisos do daemon");
     }
 }
 
-/// D4: o valor vai do daemon para a área de transferência aqui; a resposta não o traz.
+/// D4: the value goes from the daemon to the clipboard here; the response does not carry
+/// it.
 #[tauri::command]
-fn copiar_campo(entrada: String, campo: String, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.copiar_campo(&entrada, &campo)?)
+fn copy_field(entry: String, field: String, state: State<'_, AppState>) -> Result<(), Failure> {
+    Ok(state.service()?.copy_field(&entry, &field)?)
 }
 
-/// Tela Credenciais (Fase 32): a lista, sem segredo.
+/// Credentials screen (Phase 32): the list, no secret.
 #[tauri::command]
-fn listar_credenciais(estado: State<'_, Estado>) -> Result<Vec<ItemCredencial>, Falha> {
-    Ok(estado.servico()?.listar_credenciais()?)
+fn list_credentials(state: State<'_, AppState>) -> Result<Vec<CredentialItem>, Failure> {
+    Ok(state.service()?.list_credentials()?)
 }
 
-/// Tela Credenciais (Fase 32): o detalhe de uma entrada, sem segredo (só os nomes dos
-/// campos secretos). O nome vem da interface e é validado no núcleo.
+/// Credentials screen (Phase 32): the detail of an entry, no secret (only the names of
+/// the secret fields). The name comes from the interface and is validated in the core.
 #[tauri::command]
-fn detalhe_credencial(
-    entrada: String,
-    estado: State<'_, Estado>,
-) -> Result<DetalheCredencial, Falha> {
-    Ok(estado.servico()?.detalhe_credencial(&entrada)?)
+fn credential_detail(
+    entry: String,
+    state: State<'_, AppState>,
+) -> Result<CredentialDetail, Failure> {
+    Ok(state.service()?.credential_detail(&entry)?)
 }
 
 #[derive(Serialize)]
-struct RespostaGerada {
-    tamanho: usize,
+struct GeneratedResponse {
+    size: usize,
     bits: u32,
-    forca: &'static str,
-    simbolos: &'static str,
+    strength: &'static str,
+    symbols: &'static str,
 }
 
-/// Gerador avulso (Fase 37): a senha nasce no `ward_core::gerador` e fica no Rust; a
-/// resposta não traz o valor. Os argumentos vêm da interface (não confiável) e são
-/// conferidos no núcleo (tamanho 8–64, pelo menos um conjunto).
+/// Standalone generator (Phase 37): the password is born in `ward_core::generator` and
+/// stays in Rust; the response does not carry the value. The arguments come from the
+/// interface (untrusted) and are checked in the core (size 8–64, at least one set).
 #[tauri::command]
-fn gerar_senha(
-    tamanho: u64,
-    minusculas: bool,
-    maiusculas: bool,
-    digitos: bool,
-    simbolos: bool,
-    estado: State<'_, Estado>,
-) -> Result<RespostaGerada, Falha> {
-    let g = estado.servico()?.gerar_senha(Opcoes {
-        tamanho,
-        minusculas,
-        maiusculas,
-        digitos,
-        simbolos,
+fn generate_password(
+    size: u64,
+    lowercase: bool,
+    uppercase: bool,
+    digits: bool,
+    symbols: bool,
+    state: State<'_, AppState>,
+) -> Result<GeneratedResponse, Failure> {
+    let g = state.service()?.generate_password(Options {
+        size,
+        lowercase,
+        uppercase,
+        digits,
+        symbols,
     })?;
-    Ok(RespostaGerada {
-        tamanho: g.tamanho,
+    Ok(GeneratedResponse {
+        size: g.size,
         bits: g.bits,
-        forca: g.forca.codigo(),
-        simbolos: g.simbolos,
+        strength: g.strength.code(),
+        symbols: g.symbols,
     })
 }
 
-/// D4: a senha avulsa vai para a área de transferência aqui; a resposta não a traz.
+/// D4: the standalone password goes to the clipboard here; the response does not carry
+/// it.
 #[tauri::command]
-fn copiar_senha_gerada(estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.copiar_senha_gerada()?)
+fn copy_generated_password(state: State<'_, AppState>) -> Result<(), Failure> {
+    Ok(state.service()?.copy_generated_password()?)
 }
 
 #[derive(Serialize)]
-struct RespostaRevelada {
-    valor: String,
+struct RevealedResponse {
+    value: String,
 }
 
-/// S11: o único comando que leva o valor à webview, no clique em "revelar".
+/// S11: the only command that takes the value to the webview, on the "reveal" click.
 #[tauri::command]
-fn revelar_senha_gerada(estado: State<'_, Estado>) -> Result<RespostaRevelada, Falha> {
-    let r = estado.servico()?.revelar_senha_gerada()?;
-    Ok(RespostaRevelada {
-        valor: r.expor().to_owned(),
+fn reveal_generated_password(state: State<'_, AppState>) -> Result<RevealedResponse, Failure> {
+    let r = state.service()?.reveal_generated_password()?;
+    Ok(RevealedResponse {
+        value: r.expose().to_owned(),
     })
 }
 
 #[tauri::command]
-fn descartar_senha_gerada(estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.descartar_senha_gerada()?)
+fn discard_generated_password(state: State<'_, AppState>) -> Result<(), Failure> {
+    Ok(state.service()?.discard_generated_password()?)
 }
 
-/// S11 (D65 b): o valor de um segredo da entrada, só no clique em "revelar".
+/// S11 (D65 b): the value of an entry secret, only on the "reveal" click.
 #[tauri::command]
-fn revelar_campo(
-    entrada: String,
-    campo: String,
-    estado: State<'_, Estado>,
-) -> Result<RespostaRevelada, Falha> {
-    let r = estado.servico()?.revelar_campo(&entrada, &campo)?;
-    Ok(RespostaRevelada {
-        valor: r.expor().to_owned(),
+fn reveal_field(
+    entry: String,
+    field: String,
+    state: State<'_, AppState>,
+) -> Result<RevealedResponse, Failure> {
+    let r = state.service()?.reveal_field(&entry, &field)?;
+    Ok(RevealedResponse {
+        value: r.expose().to_owned(),
     })
 }
 
-/// Formulário (Fase 33): o código TOTP atual; a semente não sai do daemon.
+/// Form (Phase 33): the current TOTP code; the seed does not leave the daemon.
 #[tauri::command]
-fn codigo_totp(entrada: String, estado: State<'_, Estado>) -> Result<CodigoTotp, Falha> {
-    Ok(estado.servico()?.codigo_totp(&entrada)?)
+fn totp_code(entry: String, state: State<'_, AppState>) -> Result<TotpCode, Failure> {
+    Ok(state.service()?.totp_code(&entry)?)
 }
 
-/// D4: o código TOTP vai para a área de transferência aqui.
+/// D4: the TOTP code goes to the clipboard here.
 #[tauri::command]
-fn copiar_codigo_totp(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.copiar_codigo_totp(&entrada)?)
+fn copy_totp_code(entry: String, state: State<'_, AppState>) -> Result<(), Failure> {
+    Ok(state.service()?.copy_totp_code(&entry)?)
 }
 
 #[derive(Serialize)]
-struct RespostaUsada {
-    tamanho: usize,
+struct UsedResponse {
+    size: usize,
 }
 
-/// "Usar esta senha": a senha gerada passa ao campo no lado Rust; volta só o tamanho.
+/// "Use this password": the generated password goes to the field on the Rust side; only
+/// the size comes back.
 #[tauri::command]
-fn usar_senha_gerada(campo: String, estado: State<'_, Estado>) -> Result<RespostaUsada, Falha> {
-    let tamanho = estado.servico()?.usar_senha_gerada(&campo)?;
-    Ok(RespostaUsada { tamanho })
+fn use_generated_password(
+    field: String,
+    state: State<'_, AppState>,
+) -> Result<UsedResponse, Failure> {
+    let size = state.service()?.use_generated_password(&field)?;
+    Ok(UsedResponse { size })
 }
 
 #[tauri::command]
-fn descartar_formulario(estado: State<'_, Estado>) -> Result<(), Falha> {
-    estado.servico()?.descartar_formulario();
+fn discard_form(state: State<'_, AppState>) -> Result<(), Failure> {
+    state.service()?.discard_form();
     Ok(())
 }
 
-/// Formulário (Fase 33): cria ou edita. O formulário vem da interface (não confiável)
-/// e é conferido no núcleo; a resposta é o nome salvo ou os erros por campo.
+/// Form (Phase 33): creates or edits. The form comes from the interface (untrusted) and
+/// is checked in the core; the response is the saved name or the errors per field.
 #[tauri::command]
-fn salvar_credencial(
-    anterior: Option<String>,
-    formulario: Formulario,
-    estado: State<'_, Estado>,
-) -> Result<ResultadoSalvar, Falha> {
-    Ok(estado
-        .servico()?
-        .salvar_credencial(anterior.as_deref(), formulario)?)
+fn save_credential(
+    previous: Option<String>,
+    form: Form,
+    state: State<'_, AppState>,
+) -> Result<SaveResult, Failure> {
+    Ok(state
+        .service()?
+        .save_credential(previous.as_deref(), form)?)
 }
 
-/// Nível de acesso (Fase 35, S9). O PIN chega num `Pin` (zera ao sair; o formato é
-/// conferido na leitura, antes do serviço) e só vai ao daemon; a resposta é o nível novo.
+/// Access level (Phase 35, S9). The PIN arrives in a `Pin` (zeroed on drop; the format is
+/// checked on reading, before the service) and only goes to the daemon; the response is
+/// the new level.
 #[tauri::command]
-fn mudar_nivel(
-    entrada: String,
-    nivel: String,
+fn set_level(
+    entry: String,
+    level: String,
     pin: Pin,
-    estado: State<'_, Estado>,
-) -> Result<NivelMudado, Falha> {
-    Ok(estado.servico()?.mudar_nivel(&entrada, &nivel, pin)?)
+    state: State<'_, AppState>,
+) -> Result<LevelChanged, Failure> {
+    Ok(state.service()?.set_level(&entry, &level, pin)?)
 }
 
-/// Anexo (Fase 34): o diálogo de arquivo do GTK escolhe o arquivo e o núcleo o lê; a
-/// resposta traz id, nome e tamanho ou o aviso, nunca o conteúdo (S11, V5.12). Comando
-/// síncrono: roda na thread principal, onde o GTK pode abrir o diálogo.
-/// Fase 39b: na edição, `edicao { entrada, mantidos }` (os anexos guardados que
-/// continuam contam nos limites; o serviço confere os nomes no detalhe).
+/// Attachment (Phase 34): the GTK file dialog chooses the file and the core reads it;
+/// the response carries id, name and size or the notice, never the content (S11, V5.12).
+/// Synchronous command: runs on the main thread, where GTK can open the dialog.
+/// Phase 39b: when editing, the edit argument (entry and kept attachments; the ones that
+/// remain count in the limits; the service checks the names in the detail).
 #[tauri::command]
-fn escolher_anexo(
-    edicao: Option<EdicaoDosAnexos>,
-    estado: State<'_, Estado>,
-) -> Result<Escolha, Falha> {
-    Ok(estado.servico()?.escolher_anexo(edicao.as_ref())?)
+fn choose_attachment(
+    edit: Option<AttachmentEdit>,
+    state: State<'_, AppState>,
+) -> Result<Choice, Failure> {
+    Ok(state.service()?.choose_attachment(edit.as_ref())?)
 }
 
 #[tauri::command]
-fn remover_anexo(id: u64, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.remover_anexo(id)?)
+fn remove_attachment(id: u64, state: State<'_, AppState>) -> Result<(), Failure> {
+    Ok(state.service()?.remove_attachment(id)?)
 }
 
-/// "Carregar de arquivo" da chave privada (Fase 53a, S2, S11): o diálogo do GTK escolhe
-/// o arquivo e o núcleo o lê e confere (sem link, só arquivo comum, até 64 KiB, só chave
-/// OpenSSH/PEM). A chave fica no lado Rust até salvar; a resposta traz só o tamanho ou
-/// o aviso. Síncrono, como o `escolher_anexo` (o GTK abre o diálogo na thread principal).
+/// "Load from file" of the private key (Phase 53a, S2, S11): the GTK dialog chooses
+/// the file and the core reads and checks it (no link, regular file only, up to 64 KiB,
+/// OpenSSH/PEM key only). The key stays on the Rust side until saving; the response
+/// carries only the size or the notice. Synchronous, like the choose attachment command (GTK opens
+/// the dialog on the main thread).
 #[tauri::command]
-fn carregar_chave(campo: String, estado: State<'_, Estado>) -> Result<Carregamento, Falha> {
-    Ok(estado.servico()?.carregar_chave(&campo)?)
+fn load_key(field: String, state: State<'_, AppState>) -> Result<Loading, Failure> {
+    Ok(state.service()?.load_key(&field)?)
 }
 
-/// "Conectar" (D3): token de uso único e o terminal padrão; o token não volta.
+/// "Connect" (D3): single-use token and the default terminal; the token does not come
+/// back.
 #[tauri::command]
-fn conectar(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.conectar(&entrada)?)
+fn connect(entry: String, state: State<'_, AppState>) -> Result<(), Failure> {
+    Ok(state.service()?.connect(&entry)?)
 }
 
-/// Primeiro uso (Fase 30): senha mestra, PIN e as confirmações, conferidos no núcleo;
-/// o daemon grava só o hash do PIN (D30). A resposta não traz valor.
+/// First use (Phase 30): master password, PIN and the confirmations, checked in the
+/// core; the daemon stores only the PIN hash (D30). The response carries no value.
 #[tauri::command]
-fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoCriar, Falha> {
-    Ok(estado.servico()?.criar_cofre(dados)?)
+fn create_vault(data: NewVault, state: State<'_, AppState>) -> Result<CreateResult, Failure> {
+    Ok(state.service()?.create_vault(data)?)
 }
 
-/// Configurações (Fase 38): tempo de trava e backup externo, sem hash nem UUID.
+/// Settings (Phase 38): lock timeout and external backup, no hash or UUID.
 #[tauri::command]
-fn configuracoes<R: Runtime>(
+fn settings<R: Runtime>(
     app: AppHandle<R>,
-    estado: State<'_, Estado>,
-) -> Result<Configuracoes, Falha> {
-    let c = estado.servico()?.configuracoes()?;
-    // Fase 39: a tela abriu (ação do usuário); a bandeja aproveita o tempo lido.
-    tempo_da_bandeja(&app, c.minutos_trava);
+    state: State<'_, AppState>,
+) -> Result<Settings, Failure> {
+    let c = state.service()?.settings()?;
+    // Phase 39: the screen opened (user action); the tray reuses the time read.
+    tray_lock_time(&app, c.lock_minutes);
     Ok(c)
 }
 
-/// Trocar o PIN (Fase 38, V5.22, S9): atual, novo e confirmação em `Digitado` (zera);
-/// conferidos no núcleo, o atual pelo daemon. A resposta não traz valor.
+/// Change the PIN (Phase 38, V5.22, S9): current, new and confirmation in `Typed`
+/// (zeroed); checked in the core, the current one by the daemon. The response carries no
+/// value.
 #[tauri::command]
-fn trocar_pin(dados: TrocaPin, estado: State<'_, Estado>) -> Result<ResultadoTroca, Falha> {
-    Ok(estado.servico()?.trocar_pin(dados)?)
+fn change_pin(data: PinChange, state: State<'_, AppState>) -> Result<ChangeResult, Failure> {
+    Ok(state.service()?.change_pin(data)?)
 }
 
-/// Trocar a senha mestra (Fase 38, V5.22): a atual conferida pelo daemon; a nova com a
-/// regra do primeiro uso. A resposta não traz valor.
+/// Change the master password (Phase 38, V5.22): the current one checked by the daemon;
+/// the new one with the first use rule. The response carries no value.
 #[tauri::command]
-fn trocar_senha_mestra(
-    dados: TrocaSenha,
-    estado: State<'_, Estado>,
-) -> Result<ResultadoTroca, Falha> {
-    Ok(estado.servico()?.trocar_senha_mestra(dados)?)
+fn change_master_password(
+    data: PasswordChange,
+    state: State<'_, AppState>,
+) -> Result<ChangeResult, Failure> {
+    Ok(state.service()?.change_master_password(data)?)
 }
 
-/// Tempo de trava (Fase 38, D30, D45): 1 a 1440 minutos, gravado no cofre pelo daemon.
+/// Lock timeout (Phase 38, D30, D45): 1 to 1440 minutes, stored in the vault by the
+/// daemon.
 #[tauri::command]
-fn definir_tempo_trava<R: Runtime>(
-    minutos: u64,
+fn set_lock_timeout<R: Runtime>(
+    minutes: u64,
     app: AppHandle<R>,
-    estado: State<'_, Estado>,
-) -> Result<Configuracoes, Falha> {
-    let c = estado.servico()?.definir_tempo_trava(minutos)?;
-    // Fase 39: o subtítulo da bandeja passa a dizer o tempo novo.
-    tempo_da_bandeja(&app, c.minutos_trava);
+    state: State<'_, AppState>,
+) -> Result<Settings, Failure> {
+    let c = state.service()?.set_lock_timeout(minutes)?;
+    // Phase 39: the tray subtitle starts saying the new time.
+    tray_lock_time(&app, c.lock_minutes);
     Ok(c)
 }
 
-/// Backup externo (Fase 48, V7.9): ligado ou não, o UUID e, se conectado, o pendrive
-/// (rótulo neutralizado, D51). Nenhum caminho de montagem.
+/// External backup (Phase 48, V7.9): on or off, the UUID and, if connected, the USB drive
+/// (neutralized label, D51). No mount path.
 #[tauri::command]
-fn backup_externo(estado: State<'_, Estado>) -> Result<BackupExternoVisto, Falha> {
-    Ok(estado.servico()?.backup_externo()?)
+fn external_backup(state: State<'_, AppState>) -> Result<ExternalBackupView, Failure> {
+    Ok(state.service()?.external_backup()?)
 }
 
-/// Os pendrives que o daemon vê, para escolher o do backup externo (Fase 48).
+/// The USB drives the daemon sees, to choose the external backup one (Phase 48).
 #[tauri::command]
-fn listar_pendrives(estado: State<'_, Estado>) -> Result<Vec<PendriveVisto>, Falha> {
-    Ok(estado.servico()?.listar_pendrives()?)
+fn list_usb_drives(state: State<'_, AppState>) -> Result<Vec<UsbDriveView>, Failure> {
+    Ok(state.service()?.list_usb_drives()?)
 }
 
-/// Ligar (com um pendrive que o daemon vê agora; o UUID da interface é conferido de novo
-/// no núcleo) ou desligar o backup externo (Fase 48, D17, D30).
+/// Turn on (with a USB drive the daemon sees now; the UUID from the interface is checked
+/// again in the core) or turn off the external backup (Phase 48, D17, D30).
 #[tauri::command]
-fn definir_backup_externo(
-    ligado: bool,
+fn set_external_backup(
+    enabled: bool,
     uuid: Option<String>,
-    estado: State<'_, Estado>,
-) -> Result<BackupExternoVisto, Falha> {
-    Ok(estado
-        .servico()?
-        .definir_backup_externo(ligado, uuid.as_deref())?)
+    state: State<'_, AppState>,
+) -> Result<ExternalBackupView, Failure> {
+    Ok(state
+        .service()?
+        .set_external_backup(enabled, uuid.as_deref())?)
 }
 
-/// Versões do backup local (Fase 47, V7.7): nome e instante (do nome), da mais nova
-/// para a mais antiga. Nenhum conteúdo nem caminho.
+/// Versions of the local backup (Phase 47, V7.7): name and instant (from the name), from
+/// the newest to the oldest. No content or path.
 #[tauri::command]
-fn listar_backups(estado: State<'_, Estado>) -> Result<Vec<VersaoVista>, Falha> {
-    Ok(estado.servico()?.listar_backups()?)
+fn list_backups(state: State<'_, AppState>) -> Result<Vec<VersionView>, Failure> {
+    Ok(state.service()?.list_backups()?)
 }
 
-/// Restaurar uma versão (Fase 47, V7.7; D17, D39, S9): a versão (formato conferido e
-/// presença na lista do daemon), a senha mestra dela (`SenhaMestra`, zera) e o PIN atual
-/// (`Pin`, zera). A resposta traz só `restaurado` e a contagem de entradas.
+/// Restore a version (Phase 47, V7.7; D17, D39, S9): the version (format checked and
+/// present in the daemon's list), its master password (`MasterPassword`, zeroed) and the
+/// current PIN (`Pin`, zeroed). The response carries only the restored flag and the entry
+/// count.
 #[tauri::command]
-fn restaurar_backup<R: Runtime>(
-    dados: Restauracao,
+fn restore_backup<R: Runtime>(
+    data: Restore,
     app: AppHandle<R>,
-    estado: State<'_, Estado>,
-) -> Result<Restaurado, Falha> {
-    let servico = estado.servico()?;
-    let r = servico.restaurar_backup(dados)?;
-    // A versão traz a configuração dela (D30): a bandeja passa a dizer o tempo dela.
-    if let Ok(c) = servico.configuracoes() {
-        tempo_da_bandeja(&app, c.minutos_trava);
+    state: State<'_, AppState>,
+) -> Result<Restored, Failure> {
+    let service = state.service()?;
+    let r = service.restore_backup(data)?;
+    // The version carries its own config (D30): the tray starts saying its time.
+    if let Ok(c) = service.settings() {
+        tray_lock_time(&app, c.lock_minutes);
     }
     Ok(r)
 }
 
-/// Rótulo da janela principal (capability `principal`).
-const JANELA_PRINCIPAL: &str = "principal";
-/// Rótulo da janela de aprovação: a capability `aprovacao` vale só para ela.
-const JANELA_APROVACAO: &str = "aprovacao";
+/// Label of the main window (capability `main`).
+const MAIN_WINDOW: &str = "main";
+/// Label of the approval window: the approval capability applies only to it.
+const APPROVAL_WINDOW: &str = "approval";
 
-/// Segunda camada além da ACL: os comandos da aprovação só respondem na janela certa.
-fn na_janela_de_aprovacao<R: Runtime>(janela: &WebviewWindow<R>) -> Result<(), Falha> {
-    if janela.label() == JANELA_APROVACAO {
+/// Second layer beyond the ACL: the approval commands only answer in the right window.
+fn in_approval_window<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), Failure> {
+    if window.label() == APPROVAL_WINDOW {
         Ok(())
     } else {
-        Err(Falha::from(ErroApp::NaoAutorizado))
+        Err(Failure::from(AppError::Unauthorized))
     }
 }
 
-/// Janela de aprovação (Fase 36): o pedido da vez, com o texto do agente já
-/// neutralizado (D51), ou `null`. Sem pedido, a janela fecha (não há o que negar).
+/// Approval window (Phase 36): the current request, with the agent's text already
+/// neutralized (D51), or `null`. Without a request, the window closes (there is nothing
+/// to deny).
 #[tauri::command]
-fn pedido_de_aprovacao<R: Runtime>(
-    janela: WebviewWindow<R>,
-    estado: State<'_, Estado>,
-) -> Result<Option<PedidoExibido>, Falha> {
-    na_janela_de_aprovacao(&janela)?;
-    let p = estado.servico()?.pedido_de_aprovacao()?;
+fn approval_request<R: Runtime>(
+    window: WebviewWindow<R>,
+    state: State<'_, AppState>,
+) -> Result<Option<DisplayedRequest>, Failure> {
+    in_approval_window(&window)?;
+    let p = state.service()?.approval_request()?;
     if p.is_none() {
-        let _ = janela.destroy();
+        let _ = window.destroy();
     }
     Ok(p)
 }
 
-/// Janela de aprovação (Fase 36, S9, S10): Negar sem PIN, os três Permitir com o PIN
-/// (num `Pin` que zera; fora do formato é recusado na leitura, sem eco). A resposta não
-/// traz o PIN. Sem outro pedido esperando, a janela fecha. Fase 54b (D68): `ciente` é a
-/// caixa da entrada padrão (ausente = desmarcada); o serviço e o daemon conferem.
+/// Approval window (Phase 36, S9, S10): Deny without a PIN, the three Allow with the PIN
+/// (in a `Pin` that is zeroed; out of format is refused on reading, without echo). The
+/// response does not carry the PIN. With no other request waiting, the window closes.
+/// Phase 54b (D68): the acknowledged argument is the stdin checkbox (absent = unchecked); the service and
+/// the daemon check it.
 #[tauri::command]
-fn responder_aprovacao<R: Runtime>(
+fn answer_approval<R: Runtime>(
     id: u64,
-    decisao: String,
+    decision: String,
     pin: Option<Pin>,
-    ciente: Option<bool>,
-    janela: WebviewWindow<R>,
-    estado: State<'_, Estado>,
-) -> Result<ResultadoAprovacao, Falha> {
-    na_janela_de_aprovacao(&janela)?;
-    let r = estado
-        .servico()?
-        .responder_aprovacao(id, &decisao, pin, ciente == Some(true))?;
-    if !r.ha_outro {
-        let _ = janela.destroy();
+    acknowledged: Option<bool>,
+    window: WebviewWindow<R>,
+    state: State<'_, AppState>,
+) -> Result<ApprovalResult, Failure> {
+    in_approval_window(&window)?;
+    let r = state
+        .service()?
+        .answer_approval(id, &decision, pin, acknowledged == Some(true))?;
+    if !r.has_other {
+        let _ = window.destroy();
     }
     Ok(r)
 }
 
-/// Abre a janela de aprovação ou a traz para a frente (S10: "abre em primeiro plano").
-/// Na thread principal (quem chama usa `run_on_main_thread`).
-fn abrir_janela_de_aprovacao<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(j) = app.get_webview_window(JANELA_APROVACAO) {
+/// Opens the approval window or brings it to the front (S10: it opens in the foreground).
+/// On the main thread (the caller uses `run_on_main_thread`).
+fn open_approval_window<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(j) = app.get_webview_window(APPROVAL_WINDOW) {
         let _ = j.unminimize();
         let _ = j.show();
         let _ = j.set_always_on_top(true);
         let _ = j.set_focus();
         return;
     }
-    let r = WebviewWindowBuilder::new(app, JANELA_APROVACAO, WebviewUrl::App("index.html".into()))
+    let r = WebviewWindowBuilder::new(app, APPROVAL_WINDOW, WebviewUrl::App("index.html".into()))
         .title("Pedido de aprovação · Ward")
         .inner_size(560.0, 880.0)
         .min_inner_size(480.0, 560.0)
@@ -589,240 +610,228 @@ fn abrir_janela_de_aprovacao<R: Runtime>(app: &AppHandle<R>) {
         .focused(true)
         .theme(Some(tauri::Theme::Dark))
         .disable_drag_drop_handler()
-        .devtools(cfg!(feature = "modo-teste"))
-        .on_navigation(navegacao_permitida)
+        .devtools(cfg!(feature = "test-mode"))
+        .on_navigation(navigation_allowed)
         .build();
     if r.is_err() {
-        // Sem a janela, ninguém responde: o pedido expira e nega no daemon (S10).
+        // Without the window, nobody answers: the request expires and is denied in the
+        // daemon (S10).
         eprintln!("ward-app: não foi possível abrir a janela de aprovação");
     }
 }
 
-/// Fechar a janela de aprovação nega (S10). Em outra thread: a conversa com o daemon
-/// não prende o laço de eventos.
-fn ao_fechar_a_aprovacao(servico: Arc<Result<ServicoApp, ErroApp>>) {
+/// Closing the approval window denies (S10). In another thread: the conversation with
+/// the daemon does not hold the event loop.
+fn on_approval_closed(service: Arc<Result<AppService, AppError>>) {
     let _ = std::thread::Builder::new()
-        .name("ward-app-negar".into())
+        .name("ward-app-deny".into())
         .spawn(move || {
-            if let Ok(s) = servico.as_ref() {
-                s.negar_aprovacoes_pendentes();
+            if let Ok(s) = service.as_ref() {
+                s.deny_pending_approvals();
             }
         });
 }
 
-/// O diálogo "Adicionar arquivo" do GTK, na janela do app.
-struct SeletorGtk;
+/// The GTK "Add file" dialog, in the app window.
+struct GtkPicker;
 
-impl Seletor for SeletorGtk {
-    fn escolher(&self) -> Result<Option<PathBuf>, ErroApp> {
-        dialogo_de_arquivo("Adicionar arquivo", "Anexar")
+impl Picker for GtkPicker {
+    fn choose(&self) -> Result<Option<PathBuf>, AppError> {
+        file_dialog("Adicionar arquivo", "Anexar")
     }
 
-    /// Fase 53a: o mesmo diálogo, com o título e o botão do "Carregar de arquivo".
-    fn escolher_chave(&self) -> Result<Option<PathBuf>, ErroApp> {
-        dialogo_de_arquivo("Carregar chave privada", "Carregar")
+    /// Phase 53a: the same dialog, with the title and the button of "Load from
+    /// file".
+    fn choose_key(&self) -> Result<Option<PathBuf>, AppError> {
+        file_dialog("Carregar chave privada", "Carregar")
     }
 }
 
-/// O diálogo de abrir arquivo do GTK, modal, um arquivo só, só local. `Ok(None)`:
-/// cancelado.
-fn dialogo_de_arquivo(titulo: &str, botao: &str) -> Result<Option<PathBuf>, ErroApp> {
+/// The GTK open file dialog, modal, a single file, local only. `Ok(None)`: canceled.
+fn file_dialog(title: &str, button: &str) -> Result<Option<PathBuf>, AppError> {
     use gtk::prelude::{DialogExt, FileChooserExt, GtkSettingsExt, GtkWindowExt};
     if !gtk::is_initialized_main_thread() {
-        return Err(ErroApp::SeletorIndisponivel);
+        return Err(AppError::PickerUnavailable);
     }
-    // Fase 53d: o diálogo não grava o caminho escolhido (a chave na pasta em memória,
-    // um anexo) no `recently-used.xbel` do usuário. O valor do app vence o do sistema
-    // (XSETTINGS, `settings.ini`); conferido de volta, e sem ele o diálogo não abre.
-    let Some(ajustes) = gtk::Settings::default() else {
-        return Err(ErroApp::SeletorIndisponivel);
+    // Phase 53d: the dialog does not store the chosen path (the key in the in-memory
+    // folder, an attachment) in the user's `recently-used.xbel`. The app's value beats
+    // the system's (XSETTINGS, `settings.ini`); checked back, and without it the dialog
+    // does not open.
+    let Some(gtk_settings) = gtk::Settings::default() else {
+        return Err(AppError::PickerUnavailable);
     };
-    ajustes.set_gtk_recent_files_enabled(false);
-    if ajustes.is_gtk_recent_files_enabled() {
-        return Err(ErroApp::SeletorIndisponivel);
+    gtk_settings.set_gtk_recent_files_enabled(false);
+    if gtk_settings.is_gtk_recent_files_enabled() {
+        return Err(AppError::PickerUnavailable);
     }
-    let dialogo = gtk::FileChooserDialog::with_buttons(
-        Some(titulo),
+    let dialog = gtk::FileChooserDialog::with_buttons(
+        Some(title),
         None::<&gtk::Window>,
         gtk::FileChooserAction::Open,
         &[
             ("Cancelar", gtk::ResponseType::Cancel),
-            (botao, gtk::ResponseType::Accept),
+            (button, gtk::ResponseType::Accept),
         ],
     );
-    dialogo.set_modal(true);
-    dialogo.set_select_multiple(false);
-    dialogo.set_local_only(true);
-    let resposta = dialogo.run();
-    let arquivo = (resposta == gtk::ResponseType::Accept)
-        .then(|| dialogo.filename())
+    dialog.set_modal(true);
+    dialog.set_select_multiple(false);
+    dialog.set_local_only(true);
+    let response = dialog.run();
+    let file = (response == gtk::ResponseType::Accept)
+        .then(|| dialog.filename())
         .flatten();
-    // `close` pede o fechamento como o botão da janela: o diálogo é destruído.
-    dialogo.close();
-    Ok(arquivo)
+    // `close` requests closing like the window button: the dialog is destroyed.
+    dialog.close();
+    Ok(file)
 }
 
-/// De quanto em quanto tempo a bandeja consulta o estado (só `estado`, que o daemon não
-/// conta como uso: a consulta não segura o cofre aberto). Pega a trava sozinha
-/// (inatividade, bloqueio de tela, suspensão, `ward travar`).
-const INTERVALO_DA_BANDEJA: Duration = Duration::from_secs(2);
+/// How often the tray asks for the status (only the status request, which the daemon does not count
+/// as use: the query does not keep the vault open). Catches the lock by itself
+/// (inactivity, screen lock, suspend, the CLI lock command).
+const TRAY_INTERVAL: Duration = Duration::from_secs(2);
 
-/// O menu da bandeja e o estado que ele mostra. Os itens de texto ficam desabilitados.
-struct Bandeja<R: Runtime> {
-    estado: Mutex<EstadoBandeja>,
-    /// Tempo de trava lido da configuração, só depois de uma ação do usuário
-    /// (`bandeja::ler_configuracao_na_passagem`, tela Configurações).
-    minutos: Mutex<Option<u32>>,
-    titulo: MenuItem<R>,
-    subtitulo: MenuItem<R>,
-    acao: MenuItem<R>,
-    icone: TrayIcon<R>,
+/// The tray menu and the status it shows. The text items stay disabled.
+struct Tray<R: Runtime> {
+    state: Mutex<TrayState>,
+    /// Lock timeout read from the config, only after a user action
+    /// (`tray::read_settings_on_transition`, Settings screen).
+    minutes: Mutex<Option<u32>>,
+    title: MenuItem<R>,
+    subtitle: MenuItem<R>,
+    action: MenuItem<R>,
+    icon: TrayIcon<R>,
 }
 
-fn icone_da_bandeja(i: Icone) -> Image<'static> {
+fn tray_icon_image(i: Icon) -> Image<'static> {
     match i {
-        Icone::Destravado => tauri::include_image!("icons/bandeja-destravado-32.png"),
-        Icone::Travado => tauri::include_image!("icons/bandeja-travado-32.png"),
+        Icon::Unlocked => tauri::include_image!("icons/tray-unlocked-32.png"),
+        Icon::Locked => tauri::include_image!("icons/tray-locked-32.png"),
     }
 }
 
-/// Cria o ícone e o menu (frames `Bandeja / Destravado` `17269` e `/ Travado` `17300`).
-/// Sem a biblioteca do AppIndicator (o `tray-icon` entraria em pânico, e o release
-/// aborta) ou sem pasta segura para o PNG do ícone, não cria: o app segue sem bandeja.
-fn criar_bandeja<R: Runtime>(
-    app: &AppHandle<R>,
-    inicial: EstadoBandeja,
-) -> Result<(), &'static str> {
-    if !bandeja::biblioteca_do_sistema() {
+/// Creates the icon and the menu (tray frames, unlocked `17269` and locked
+/// `17300`). Without the AppIndicator library (`tray-icon` would panic, and the release
+/// aborts) or without a safe folder for the icon PNG, does not create: the app goes on
+/// without a tray.
+fn create_tray<R: Runtime>(app: &AppHandle<R>, initial: TrayState) -> Result<(), &'static str> {
+    if !tray::system_library() {
         return Err("sem a biblioteca do AppIndicator");
     }
-    let pasta =
-        bandeja::pasta_dos_icones_da_sessao().map_err(|_| "sem pasta segura para o ícone")?;
-    let a = bandeja::aparencia(inicial);
-    let erro = |_| "menu da bandeja";
-    let titulo =
-        MenuItem::with_id(app, bandeja::ID_TITULO, a.titulo, false, None::<&str>).map_err(erro)?;
-    let subtitulo = MenuItem::with_id(app, bandeja::ID_SUBTITULO, a.subtitulo, false, None::<&str>)
-        .map_err(erro)?;
-    let abrir = MenuItem::with_id(
+    let dir = tray::session_icons_dir().map_err(|_| "sem pasta segura para o ícone")?;
+    let a = tray::appearance(initial);
+    let error = |_| "menu da bandeja";
+    let title =
+        MenuItem::with_id(app, tray::ID_TITLE, a.title, false, None::<&str>).map_err(error)?;
+    let subtitle = MenuItem::with_id(app, tray::ID_SUBTITLE, a.subtitle, false, None::<&str>)
+        .map_err(error)?;
+    let open = MenuItem::with_id(app, tray::ID_OPEN, tray::OPEN_TEXT, true, None::<&str>)
+        .map_err(error)?;
+    let action = MenuItem::with_id(
         app,
-        bandeja::ID_ABRIR,
-        bandeja::TEXTO_ABRIR,
-        true,
+        tray::ID_ACTION,
+        a.action,
+        a.action_enabled,
         None::<&str>,
     )
-    .map_err(erro)?;
-    let acao = MenuItem::with_id(
-        app,
-        bandeja::ID_ACAO,
-        a.acao,
-        a.acao_habilitada,
-        None::<&str>,
-    )
-    .map_err(erro)?;
-    let sair = MenuItem::with_id(
-        app,
-        bandeja::ID_SAIR,
-        bandeja::TEXTO_SAIR,
-        true,
-        None::<&str>,
-    )
-    .map_err(erro)?;
-    let sep1 = PredefinedMenuItem::separator(app).map_err(erro)?;
-    let sep2 = PredefinedMenuItem::separator(app).map_err(erro)?;
+    .map_err(error)?;
+    let quit = MenuItem::with_id(app, tray::ID_QUIT, tray::QUIT_TEXT, true, None::<&str>)
+        .map_err(error)?;
+    let sep1 = PredefinedMenuItem::separator(app).map_err(error)?;
+    let sep2 = PredefinedMenuItem::separator(app).map_err(error)?;
     let menu = Menu::with_items(
         app,
-        &[&titulo, &subtitulo, &sep1, &abrir, &acao, &sep2, &sair],
+        &[&title, &subtitle, &sep1, &open, &action, &sep2, &quit],
     )
-    .map_err(erro)?;
-    let icone = TrayIconBuilder::with_id("ward")
-        .icon(icone_da_bandeja(a.icone))
+    .map_err(error)?;
+    let icon = TrayIconBuilder::with_id("ward")
+        .icon(tray_icon_image(a.icon))
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .temp_dir_path(pasta)
-        .on_menu_event(|app, evento| ao_clicar_na_bandeja(app, evento.id().as_ref()))
+        .temp_dir_path(dir)
+        .on_menu_event(|app, event| on_tray_click(app, event.id().as_ref()))
         .build(app)
         .map_err(|_| "ícone da bandeja")?;
-    app.manage(Bandeja {
-        estado: Mutex::new(inicial),
-        minutos: Mutex::new(None),
-        titulo,
-        subtitulo,
-        acao,
-        icone,
+    app.manage(Tray {
+        state: Mutex::new(initial),
+        minutes: Mutex::new(None),
+        title,
+        subtitle,
+        action,
+        icon,
     });
     Ok(())
 }
 
-fn estado_mostrado<R: Runtime>(b: &Bandeja<R>) -> std::sync::MutexGuard<'_, EstadoBandeja> {
-    b.estado.lock().unwrap_or_else(|e| e.into_inner())
+fn shown_state<R: Runtime>(b: &Tray<R>) -> std::sync::MutexGuard<'_, TrayState> {
+    b.state.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Consulta o estado e, se mudou, troca textos e ícone da bandeja e avisa a janela
-/// principal (que relê o estado e vai para `Destravar` se travou). Sem bandeja, só avisa.
+/// Asks for the status and, if it changed, swaps the tray texts and icon and notifies the
+/// main window (which reads the status again and goes to the unlock screen if it locked).
+/// Without a tray, only notifies.
 ///
-/// Fase 53d e 39g: a trava que vem de fora (inatividade, `ward travar`, tela bloqueada)
-/// limpa a área de transferência e zera as senhas usadas e as chaves carregadas do
-/// formulário na hora, com ou sem bandeja: a passagem é medida pelo `Estado::visto`,
-/// antes de olhar se há bandeja.
-fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
-    let estado = app.state::<Estado>();
-    let Ok(s) = estado.servico() else { return };
-    let (antes, novo) = s.ver_passagem(&estado.visto);
-    let Some(b) = app.try_state::<Bandeja<R>>() else {
-        if antes != novo {
-            avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
+/// Phases 53d and 39g: a lock coming from outside (inactivity, the CLI lock command, locked
+/// screen) clears the clipboard and zeroes the used passwords and the loaded keys of the
+/// form right away, with or without a tray: the transition is measured by
+/// `AppState::seen`, before looking at whether there is a tray.
+fn update_tray<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<AppState>();
+    let Ok(s) = state.service() else { return };
+    let (before, new) = s.check_transition(&state.seen);
+    let Some(b) = app.try_state::<Tray<R>>() else {
+        if before != new {
+            notify(&state.channels, MAIN_WINDOW, "status-changed");
         }
         return;
     };
-    let mut atual = estado_mostrado(&b);
-    if *atual == novo {
+    let mut current = shown_state(&b);
+    if *current == new {
         return;
     }
-    let a = bandeja::aparencia(novo);
-    // `configuracao` conta como uso no daemon: só na passagem que o usuário fez
-    // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
-    let mut minutos = b.minutos.lock().unwrap_or_else(|e| e.into_inner());
-    if bandeja::ler_configuracao_na_passagem(*atual, novo) {
-        *minutos = s.configuracoes().ok().map(|c| c.minutos_trava);
+    let a = tray::appearance(new);
+    // The settings request counts as use in the daemon: only on the transition the user made
+    // (unlocked or created the vault), never on the periodic query nor at startup.
+    let mut minutes = b.minutes.lock().unwrap_or_else(|e| e.into_inner());
+    if tray::read_settings_on_transition(*current, new) {
+        *minutes = s.settings().ok().map(|c| c.lock_minutes);
     }
-    let subtitulo = match novo {
-        EstadoBandeja::Destravado => bandeja::subtitulo_destravado(*minutos),
-        _ => a.subtitulo.to_owned(),
+    let subtitle = match new {
+        TrayState::Unlocked => tray::unlocked_subtitle(*minutes),
+        _ => a.subtitle.to_owned(),
     };
-    drop(minutos);
-    let _ = b.titulo.set_text(a.titulo);
-    let _ = b.subtitulo.set_text(subtitulo);
-    let _ = b.acao.set_text(a.acao);
-    let _ = b.acao.set_enabled(a.acao_habilitada);
-    let _ = b.icone.set_icon(Some(icone_da_bandeja(a.icone)));
-    *atual = novo;
-    drop(atual);
-    avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
+    drop(minutes);
+    let _ = b.title.set_text(a.title);
+    let _ = b.subtitle.set_text(subtitle);
+    let _ = b.action.set_text(a.action);
+    let _ = b.action.set_enabled(a.action_enabled);
+    let _ = b.icon.set_icon(Some(tray_icon_image(a.icon)));
+    *current = new;
+    drop(current);
+    notify(&state.channels, MAIN_WINDOW, "status-changed");
 }
 
-/// O tempo de trava que a tela Configurações leu ou gravou (ação do usuário): o
-/// subtítulo do destravado passa a dizê-lo.
-fn tempo_da_bandeja<R: Runtime>(app: &AppHandle<R>, minutos_trava: u32) {
-    let Some(b) = app.try_state::<Bandeja<R>>() else {
+/// The lock timeout the Settings screen read or wrote (user action): the unlocked
+/// subtitle starts saying it.
+fn tray_lock_time<R: Runtime>(app: &AppHandle<R>, lock_minutes: u32) {
+    let Some(b) = app.try_state::<Tray<R>>() else {
         return;
     };
-    *b.minutos.lock().unwrap_or_else(|e| e.into_inner()) = Some(minutos_trava);
-    if *estado_mostrado(&b) == EstadoBandeja::Destravado {
+    *b.minutes.lock().unwrap_or_else(|e| e.into_inner()) = Some(lock_minutes);
+    if *shown_state(&b) == TrayState::Unlocked {
         let _ = b
-            .subtitulo
-            .set_text(bandeja::subtitulo_destravado(Some(minutos_trava)));
+            .subtitle
+            .set_text(tray::unlocked_subtitle(Some(lock_minutes)));
     }
 }
 
-/// A vigia da bandeja: consulta o estado a cada [`INTERVALO_DA_BANDEJA`].
-fn vigiar_bandeja<R: Runtime>(app: AppHandle<R>) {
+/// The tray watcher: asks for the status every [`TRAY_INTERVAL`].
+fn watch_tray<R: Runtime>(app: AppHandle<R>) {
     let r = std::thread::Builder::new()
-        .name("ward-app-bandeja".into())
+        .name("ward-app-tray".into())
         .spawn(move || {
             loop {
-                std::thread::sleep(INTERVALO_DA_BANDEJA);
-                atualizar_bandeja(&app);
+                std::thread::sleep(TRAY_INTERVAL);
+                update_tray(&app);
             }
         });
     if r.is_err() {
@@ -830,238 +839,241 @@ fn vigiar_bandeja<R: Runtime>(app: AppHandle<R>) {
     }
 }
 
-/// Clique num item (S10, S13): o id é conferido em `bandeja::acao` contra o estado que o
-/// menu mostrava; nenhuma ação revela, copia ou aprova. Na thread principal.
-fn ao_clicar_na_bandeja<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    let Some(b) = app.try_state::<Bandeja<R>>() else {
+/// Click on an item (S10, S13): the id is checked in `tray::action` against the status
+/// the menu showed; no action reveals, copies or approves. On the main thread.
+fn on_tray_click<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    let Some(b) = app.try_state::<Tray<R>>() else {
         return;
     };
-    let mostrado = *estado_mostrado(&b);
-    match bandeja::acao(id, mostrado) {
-        Some(Acao::Abrir | Acao::Destravar) => mostrar_principal(app),
-        Some(Acao::Travar) => {
-            // A conversa com o daemon fora da thread principal.
+    let shown = *shown_state(&b);
+    match tray::action(id, shown) {
+        Some(Action::Open | Action::Unlock) => show_main(app),
+        Some(Action::Lock) => {
+            // The conversation with the daemon off the main thread.
             let h = app.clone();
             let _ = std::thread::Builder::new()
-                .name("ward-app-travar".into())
+                .name("ward-app-lock".into())
                 .spawn(move || {
-                    if let Ok(s) = h.state::<Estado>().servico()
-                        && s.travar().is_err()
+                    if let Ok(s) = h.state::<AppState>().service()
+                        && s.lock().is_err()
                     {
                         eprintln!("ward-app: o daemon não respondeu ao travar");
                     }
-                    atualizar_bandeja(&h);
+                    update_tray(&h);
                 });
         }
-        Some(Acao::Sair) => app.exit(0),
+        Some(Action::Quit) => app.exit(0),
         None => {}
     }
 }
 
-/// Mostra a janela principal ou a cria de novo (fechada com a bandeja ativa). Na thread
-/// principal.
-fn mostrar_principal<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(j) = app.get_webview_window(JANELA_PRINCIPAL) {
+/// Shows the main window or creates it again (closed with the tray active). On the main
+/// thread.
+fn show_main<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(j) = app.get_webview_window(MAIN_WINDOW) {
         let _ = j.unminimize();
         let _ = j.show();
         let _ = j.set_focus();
         return;
     }
-    if criar_janela_principal(app).is_err() {
+    if create_main_window(app).is_err() {
         eprintln!("ward-app: não foi possível abrir a janela principal");
     }
 }
 
-/// A barra de título do GTK (CSD). O app sobe com o ambiente montado pelo daemon (D57),
-/// sem as configurações da sessão: o GTK 3 cai no layout padrão `menu:close` (só o
-/// fechar) e no tema claro. Aqui ficam os três botões, o tema escuro e a cor do fundo
-/// do app (`--primitiva-neutro-950`), para as duas janelas. CSS fixo, sem dado.
-fn ajustar_barra_de_titulo() {
+/// The GTK title bar (CSD). The app starts with the environment built by the daemon
+/// (D57), without the session settings: GTK 3 falls back to the default `menu:close`
+/// layout (close only) and to the light theme. Here go the three buttons, the dark theme
+/// and the app background color (the neutral 950 primitive token), for both windows. Fixed CSS,
+/// no data.
+fn adjust_title_bar() {
     use gtk::prelude::{CssProviderExt, GtkSettingsExt};
     if !gtk::is_initialized_main_thread() {
         return;
     }
-    if let Some(ajustes) = gtk::Settings::default() {
-        ajustes.set_gtk_decoration_layout(Some("menu:minimize,maximize,close"));
-        ajustes.set_gtk_application_prefer_dark_theme(true);
+    if let Some(gtk_settings) = gtk::Settings::default() {
+        gtk_settings.set_gtk_decoration_layout(Some("menu:minimize,maximize,close"));
+        gtk_settings.set_gtk_application_prefer_dark_theme(true);
     }
     let css = gtk::CssProvider::new();
-    let estilo = b"headerbar, .titlebar { background: #101114; background-image: none; \
+    let style = b"headerbar, .titlebar { background: #101114; background-image: none; \
 color: #F7F8FA; border: none; box-shadow: none; } \
 headerbar .title { color: #F7F8FA; } \
 headerbar button.titlebutton { color: #9AA1AE; background: none; border: none; \
 box-shadow: none; } \
 headerbar button.titlebutton:hover { color: #F7F8FA; background: #24282F; }";
-    if css.load_from_data(estilo).is_err() {
+    if css.load_from_data(style).is_err() {
         return;
     }
-    if let Some(tela) = gtk::gdk::Screen::default() {
+    if let Some(screen) = gtk::gdk::Screen::default() {
         gtk::StyleContext::add_provider_for_screen(
-            &tela,
+            &screen,
             &css,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
     }
 }
 
-fn criar_janela_principal<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<WebviewWindow<R>> {
-    WebviewWindowBuilder::new(app, JANELA_PRINCIPAL, WebviewUrl::App("index.html".into()))
+fn create_main_window<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<WebviewWindow<R>> {
+    WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
         .title("Ward")
         .inner_size(1280.0, 800.0)
         .min_inner_size(1024.0, 640.0)
         .theme(Some(tauri::Theme::Dark))
         .disable_drag_drop_handler()
-        .devtools(cfg!(feature = "modo-teste"))
-        .on_navigation(navegacao_permitida)
+        .devtools(cfg!(feature = "test-mode"))
+        .on_navigation(navigation_allowed)
         .focused(true)
         .build()
 }
 
-fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
+fn build_service(daemon: Result<DaemonSocket, AppError>) -> Result<AppService, AppError> {
     let daemon = daemon?;
-    // Fase 39f (S2): o valor copiado fica na memória do app (GTK), sem `wl-copy`.
-    Ok(Servico::novo(daemon, Copiador::novo(AreaGtk::nova()))
-        .com_seletor(SeletorGtk)
-        .com_terminal(TerminalDoSistema::default()))
+    // Phase 39f (S2): the copied value stays in the app memory (GTK), without `wl-copy`.
+    Ok(Service::new(daemon, Copier::new(GtkClipboard::new()))
+        .with_picker(GtkPicker)
+        .with_terminal(SystemTerminal::default()))
 }
 
-/// Só a interface embutida: `tauri://localhost` (Linux). Qualquer outra URL (link,
-/// `location = …`, formulário) é recusada pela webview.
-fn navegacao_permitida(url: &tauri::Url) -> bool {
+/// Only the embedded interface: `tauri://localhost` (Linux). Any other URL (link,
+/// `location = …`, form) is refused by the webview.
+fn navigation_allowed(url: &tauri::Url) -> bool {
     url.scheme() == "tauri" && url.host_str() == Some("localhost")
 }
 
-/// Estado e comandos. O teste de ataque monta o mesmo builder com o runtime falso do
-/// Tauri e as capabilities reais (`generate_context!`).
-fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
+/// State and commands. The attack test builds the same builder with Tauri's fake runtime
+/// and the real capabilities (`generate_context!`).
+fn with_commands<R: Runtime>(builder: Builder<R>, state: AppState) -> Builder<R> {
     builder
-        .manage(estado)
+        .manage(state)
         .invoke_handler(tauri::generate_handler![
-            estado_do_cofre,
-            copiar_campo,
-            listar_credenciais,
-            detalhe_credencial,
-            gerar_senha,
-            copiar_senha_gerada,
-            revelar_senha_gerada,
-            descartar_senha_gerada,
-            revelar_campo,
-            codigo_totp,
-            copiar_codigo_totp,
-            usar_senha_gerada,
-            descartar_formulario,
-            salvar_credencial,
-            mudar_nivel,
-            escolher_anexo,
-            remover_anexo,
-            carregar_chave,
-            conectar,
-            criar_cofre,
-            destravar,
-            ouvir_avisos,
-            configuracoes,
-            trocar_pin,
-            trocar_senha_mestra,
-            definir_tempo_trava,
-            backup_externo,
-            listar_pendrives,
-            definir_backup_externo,
-            listar_backups,
-            restaurar_backup,
-            pedido_de_aprovacao,
-            responder_aprovacao,
-            travar
+            vault_status,
+            copy_field,
+            list_credentials,
+            credential_detail,
+            generate_password,
+            copy_generated_password,
+            reveal_generated_password,
+            discard_generated_password,
+            reveal_field,
+            totp_code,
+            copy_totp_code,
+            use_generated_password,
+            discard_form,
+            save_credential,
+            set_level,
+            choose_attachment,
+            remove_attachment,
+            load_key,
+            connect,
+            create_vault,
+            unlock,
+            listen_notices,
+            settings,
+            change_pin,
+            change_master_password,
+            set_lock_timeout,
+            external_backup,
+            list_usb_drives,
+            set_external_backup,
+            list_backups,
+            restore_backup,
+            approval_request,
+            answer_approval,
+            lock
         ])
 }
 
 fn main() {
-    // Antes do GTK (D47, D57).
-    let mut partida = partida::iniciar().unwrap_or_else(|e| {
-        if matches!(e, partida::ErroPartida::Delegado) {
-            // Aberto pelo menu: o daemon abre a instância verdadeira (D57).
+    // Before GTK (D47, D57).
+    let mut app_startup = startup::start().unwrap_or_else(|e| {
+        if matches!(e, startup::StartupError::Delegated) {
+            // Opened from the menu: the daemon opens the real instance (D57).
             std::process::exit(0)
         }
         eprintln!("ward-app: {e}");
         std::process::exit(1)
     });
-    let daemon = partida.tomar_daemon().ok_or(ErroApp::ConexaoPerdida);
-    let fila = daemon.as_ref().ok().map(DaemonSocket::avisos);
-    let servico = Arc::new(montar_servico(daemon));
-    let na_aprovacao = Arc::clone(&servico);
-    let na_vigia = Arc::clone(&servico);
-    partida.vigiar(move || {
-        if let Ok(s) = na_vigia.as_ref() {
-            s.ao_sair();
+    let daemon = app_startup.take_daemon().ok_or(AppError::ConnectionLost);
+    let queue = daemon.as_ref().ok().map(DaemonSocket::notices);
+    let service = Arc::new(build_service(daemon));
+    let for_approval = Arc::clone(&service);
+    let for_watcher = Arc::clone(&service);
+    app_startup.watch(move || {
+        if let Ok(s) = for_watcher.as_ref() {
+            s.on_exit();
         }
     });
 
-    let estado = Estado::novo(servico);
-    let canais = Arc::clone(&estado.canal);
-    let app = com_comandos(tauri::Builder::default(), estado)
-        .on_window_event(|janela, evento| {
-            if janela.label() == JANELA_APROVACAO && matches!(evento, WindowEvent::Destroyed) {
-                let estado = janela.state::<Estado>();
-                travar_canais(&estado.canal).aprovacao = None;
-                ao_fechar_a_aprovacao(Arc::clone(&estado.servico));
+    let state = AppState::new(service);
+    let channels = Arc::clone(&state.channels);
+    let app = with_commands(tauri::Builder::default(), state)
+        .on_window_event(|window, event| {
+            if window.label() == APPROVAL_WINDOW && matches!(event, WindowEvent::Destroyed) {
+                let state = window.state::<AppState>();
+                lock_channels(&state.channels).approval = None;
+                on_approval_closed(Arc::clone(&state.service));
             }
-            // Fase 39: a janela principal fechada (com a bandeja o app continua): o canal
-            // dela sai e o que o formulário e o gerador guardavam é zerado. A área de
-            // transferência segue com o prazo de 30 s.
-            if janela.label() == JANELA_PRINCIPAL && matches!(evento, WindowEvent::Destroyed) {
-                let estado = janela.state::<Estado>();
-                travar_canais(&estado.canal).principal = None;
-                if let Ok(s) = estado.servico() {
-                    s.descartar_formulario();
+            // Phase 39: the main window closed (with the tray the app goes on): its
+            // channel goes away and what the form and the generator kept is zeroed. The
+            // clipboard keeps its 30 s delay.
+            if window.label() == MAIN_WINDOW && matches!(event, WindowEvent::Destroyed) {
+                let state = window.state::<AppState>();
+                lock_channels(&state.channels).main = None;
+                if let Ok(s) = state.service() {
+                    s.discard_form();
                 }
             }
         })
         .setup(move |app| {
-            vigiar_avisos(app.handle(), &app.state::<Estado>(), fila.clone());
-            // D65 a: cada `pedido_de_aprovacao` da fila abre (ou traz para a frente) a
-            // janela de aprovação e a avisa pelo canal dela (`ouvir_avisos`), sem dado.
-            if let (Some(fila), Ok(s)) = (fila, na_aprovacao.as_ref()) {
+            watch_notices(app.handle(), &app.state::<AppState>(), queue.clone());
+            // D65 a: each approval request notice of the queue opens (or brings to the
+            // front) the approval window and notifies it through its channel
+            // (the listen command), without data.
+            if let (Some(queue), Ok(s)) = (queue, for_approval.as_ref()) {
                 let h = app.handle().clone();
-                let r = aprovacao::vigiar(fila, s.aprovacoes(), move || {
+                let r = approval::watch(queue, s.approvals(), move || {
                     let h2 = h.clone();
-                    let _ = h.run_on_main_thread(move || abrir_janela_de_aprovacao(&h2));
-                    avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
+                    let _ = h.run_on_main_thread(move || open_approval_window(&h2));
+                    notify(&channels, APPROVAL_WINDOW, "approval-request");
                 });
                 if r.is_err() {
                     eprintln!("ward-app: não foi possível vigiar os pedidos de aprovação");
                 }
             }
-            ajustar_barra_de_titulo();
-            criar_janela_principal(app)?;
-            // Fase 39 (V5.23): a bandeja, com o estado de agora; sem ela o app segue.
-            let inicial = app
-                .state::<Estado>()
-                .servico()
-                .map(|s| s.estado_da_bandeja())
-                .unwrap_or(EstadoBandeja::SemDaemon);
-            *app.state::<Estado>()
-                .visto
+            adjust_title_bar();
+            create_main_window(app)?;
+            // Phase 39 (V5.23): the tray, with the current status; without it the app
+            // goes on.
+            let initial = app
+                .state::<AppState>()
+                .service()
+                .map(|s| s.tray_state())
+                .unwrap_or(TrayState::NoDaemon);
+            *app.state::<AppState>()
+                .seen
                 .lock()
-                .unwrap_or_else(|e| e.into_inner()) = inicial;
-            if let Err(motivo) = criar_bandeja(app.handle(), inicial) {
-                eprintln!("ward-app: sem bandeja ({motivo})");
+                .unwrap_or_else(|e| e.into_inner()) = initial;
+            if let Err(reason) = create_tray(app.handle(), initial) {
+                eprintln!("ward-app: sem bandeja ({reason})");
             }
-            // Fase 39g: a vigia roda mesmo sem bandeja, para a trava de fora limpar a
-            // área de transferência na hora.
-            vigiar_bandeja(app.handle().clone());
+            // Phase 39g: the watcher runs even without a tray, so a lock from outside
+            // clears the clipboard right away.
+            watch_tray(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("o app do Ward não pôde iniciar");
 
-    app.run(|handle, evento| match evento {
-        // Fase 39: com a bandeja, fechar a última janela não fecha o app ("Sair" fecha,
-        // com código).
+    app.run(|handle, event| match event {
+        // Phase 39: with the tray, closing the last window does not close the app
+        // ("Quit" closes, with a code).
         RunEvent::ExitRequested {
             code: None, api, ..
-        } if handle.try_state::<Bandeja<tauri::Wry>>().is_some() => api.prevent_exit(),
+        } if handle.try_state::<Tray<tauri::Wry>>().is_some() => api.prevent_exit(),
         RunEvent::Exit => {
-            if let Ok(s) = handle.state::<Estado>().servico() {
-                s.ao_sair();
+            if let Ok(s) = handle.state::<AppState>().service() {
+                s.on_exit();
             }
         }
         _ => {}
@@ -1069,46 +1081,46 @@ fn main() {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder};
     use tauri::webview::InvokeRequest;
 
-    /// Sem daemon: um socket num caminho que não existe, com as regras do daemon
-    /// instalado (pasta do root). Nunca o `DaemonSocket::padrao()`: no `modo-teste` ele
-    /// é o socket de teste do uid, `/run/user/<uid>/ward-teste/`, que pode ter um
-    /// `wardd` de teste de outro worktree no ar (e o teste falaria com ele).
-    fn sem_daemon() -> DaemonSocket {
-        let caminho = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    /// No daemon: a socket at a path that does not exist, with the installed daemon's
+    /// rules (root folder). Never `DaemonSocket::standard()`: in `test-mode` it is the
+    /// uid's test socket folder under `/run/user/<uid>/`, which may have a test `wardd` of
+    /// another worktree running (and the test would talk to it).
+    fn no_daemon() -> DaemonSocket {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
             .join(format!("sem-daemon-{}", std::process::id()))
             .join("wardd.sock");
-        assert!(!caminho.exists());
-        DaemonSocket::sistema_em(caminho)
+        assert!(!path.exists());
+        DaemonSocket::system_at(path)
     }
 
-    fn app_de_teste() -> tauri::App<MockRuntime> {
-        let estado = Estado::novo(Arc::new(montar_servico(Ok(sem_daemon()))));
-        com_comandos(mock_builder(), estado)
+    fn test_app() -> tauri::App<MockRuntime> {
+        let state = AppState::new(Arc::new(build_service(Ok(no_daemon()))));
+        with_commands(mock_builder(), state)
             .build(tauri::generate_context!())
             .expect("app de teste")
     }
 
-    fn chamar(
-        janela: &tauri::WebviewWindow<MockRuntime>,
-        comando: &str,
-        origem: &str,
-        corpo: serde_json::Value,
+    fn call(
+        window: &tauri::WebviewWindow<MockRuntime>,
+        command: &str,
+        origin: &str,
+        body: serde_json::Value,
     ) -> Result<serde_json::Value, serde_json::Value> {
         get_ipc_response(
-            janela,
+            window,
             InvokeRequest {
-                cmd: comando.into(),
+                cmd: command.into(),
                 callback: CallbackFn(0),
                 error: CallbackFn(1),
-                url: origem.parse().unwrap(),
-                body: InvokeBody::Json(corpo),
+                url: origin.parse().unwrap(),
+                body: InvokeBody::Json(body),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),
             },
@@ -1116,17 +1128,17 @@ mod testes {
         .map(|b| b.deserialize::<serde_json::Value>().unwrap())
     }
 
-    const ORIGEM: &str = "tauri://localhost";
+    const ORIGIN: &str = "tauri://localhost";
 
-    /// V5.1: plugin do sistema de arquivos, shell, http e comando inventado são negados
-    /// pela ACL (não há permissão de plugin nem do núcleo na capability).
+    /// V5.1: file system, shell and http plugins and a made-up command are denied by the
+    /// ACL (there is no plugin or core permission in the capability).
     #[test]
-    fn ataque_plugins_e_comando_inventado_sao_negados() {
-        let app = app_de_teste();
-        let janela = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_plugins_and_made_up_command_are_denied() {
+        let app = test_app();
+        let window = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        for comando in [
+        for command in [
             "plugin:fs|read_text_file",
             "plugin:shell|execute",
             "plugin:shell|open",
@@ -1140,198 +1152,251 @@ mod testes {
             "revelar_tudo",
             "inventado",
         ] {
-            let r = chamar(
-                &janela,
-                comando,
-                ORIGEM,
+            let r = call(
+                &window,
+                command,
+                ORIGIN,
                 serde_json::json!({ "path": "/etc/passwd" }),
             );
-            assert!(r.is_err(), "{comando} deveria ser negado: {r:?}");
+            assert!(r.is_err(), "{command} deveria ser negado: {r:?}");
         }
     }
 
-    /// Os comandos próprios passam pela ACL (a resposta é o erro do serviço, sem
-    /// daemon), mas só na janela `principal` e só com a origem local.
+    /// m2:V4.23 (m2:Phase 54): the 0.1.x (pt-BR) command names are denied by the ACL in both
+    /// windows (no alias, nothing runs: the error is the ACL one, not a service error),
+    /// and a window with an old (0.1.x) label gets no capability.
     #[test]
-    fn ataque_comandos_proprios_so_na_janela_e_origem_certas() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_old_command_names_and_window_labels_are_denied() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let r = chamar(&principal, "estado_do_cofre", ORIGEM, serde_json::json!({}));
-        let falha = r.expect_err("sem daemon o serviço responde erro");
+        let approval = WebviewWindowBuilder::new(&app, "approval", Default::default())
+            .build()
+            .unwrap();
+        for command in [
+            "estado_do_cofre",
+            "copiar_campo",
+            "listar_credenciais",
+            "detalhe_credencial",
+            "gerar_senha",
+            "revelar_senha_gerada",
+            "revelar_campo",
+            "codigo_totp",
+            "salvar_credencial",
+            "mudar_nivel",
+            "conectar",
+            "criar_cofre",
+            "destravar",
+            "travar",
+            "ouvir_avisos",
+            "configuracoes",
+            "trocar_pin",
+            "trocar_senha_mestra",
+            "restaurar_backup",
+            "pedido_de_aprovacao",
+            "responder_aprovacao",
+        ] {
+            for window in [&main, &approval] {
+                let r = call(
+                    window,
+                    command,
+                    ORIGIN,
+                    serde_json::json!({"entrada": "acme-pg-dev", "campo": "password"}),
+                );
+                assert!(
+                    r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                    "{command} em {}: {r:?}",
+                    window.label()
+                );
+            }
+        }
+        for label in ["principal", "aprovacao"] {
+            let window = WebviewWindowBuilder::new(&app, label, Default::default())
+                .build()
+                .unwrap();
+            for command in ["vault_status", "approval_request", "lock"] {
+                let r = call(&window, command, ORIGIN, serde_json::json!({}));
+                assert!(
+                    r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                    "{command} em {label}: {r:?}"
+                );
+            }
+        }
+    }
+
+    /// The app's own commands pass the ACL (the response is the service error, without a
+    /// daemon), but only in the `main` window and only with the local origin.
+    #[test]
+    fn attack_own_commands_only_in_the_right_window_and_origin() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let r = call(&main, "vault_status", ORIGIN, serde_json::json!({}));
+        let failure = r.expect_err("sem daemon o serviço responde erro");
         assert!(
-            falha["codigo"].is_string(),
-            "erro do serviço, não da ACL: {falha}"
+            failure["code"].is_string(),
+            "erro do serviço, não da ACL: {failure}"
         );
 
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let r = chamar(&outra, "estado_do_cofre", ORIGEM, serde_json::json!({}));
+        let r = call(&other, "vault_status", ORIGIN, serde_json::json!({}));
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "janela sem capability: {r:?}"
         );
 
-        let r = chamar(
-            &principal,
-            "copiar_campo",
+        let r = call(
+            &main,
+            "copy_field",
             "https://example.com",
-            serde_json::json!({"entrada":"acme-pg-dev","campo":"senha"}),
+            serde_json::json!({"entry":"acme-pg-dev","field":"password"}),
         );
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "origem remota: {r:?}"
         );
     }
 
-    /// Fase 37 (V5.21, S11): os comandos do gerador passam pela ACL só na janela
-    /// `principal` e com a origem local; "gerar" não devolve o valor; tamanho fora de
-    /// 8–64 ou de tipo errado é recusado.
+    /// Phase 37 (V5.21, S11): the generator commands pass the ACL only in the `main`
+    /// window and with the local origin; "generate" does not return the value; a size
+    /// outside 8–64 or of the wrong type is refused.
     #[test]
-    fn ataque_gerador_so_na_janela_certa_e_sem_valor_no_gerar() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_generator_only_in_the_right_window_and_no_value_on_generate() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let opcoes = serde_json::json!({
-            "tamanho": 24, "minusculas": true, "maiusculas": true,
-            "digitos": true, "simbolos": true
+        let options = serde_json::json!({
+            "size": 24, "lowercase": true, "uppercase": true,
+            "digits": true, "symbols": true
         });
-        match chamar(&principal, "gerar_senha", ORIGEM, opcoes.clone()) {
-            // Sem o daemon o serviço responde o erro dele.
-            Err(falha) => assert!(falha["codigo"].is_string(), "erro da ACL: {falha}"),
+        match call(&main, "generate_password", ORIGIN, options.clone()) {
+            // Without the daemon the service answers its error.
+            Err(failure) => assert!(failure["code"].is_string(), "erro da ACL: {failure}"),
             Ok(r) => {
-                let chaves: Vec<&String> = r.as_object().unwrap().keys().collect();
-                assert_eq!(chaves, ["bits", "forca", "simbolos", "tamanho"]);
-                let v = chamar(&principal, "revelar_senha_gerada", ORIGEM, opcoes.clone()).unwrap();
-                let valor = v["valor"].as_str().unwrap();
-                assert_eq!(valor.len(), 24);
-                assert!(!r.to_string().contains(valor));
-                for ruim in [
-                    serde_json::json!({ "tamanho": 7, "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
-                    serde_json::json!({ "tamanho": 65, "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
-                    serde_json::json!({ "tamanho": "24", "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
-                    serde_json::json!({ "tamanho": -1, "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
-                    serde_json::json!({ "tamanho": 24 }),
+                let keys: Vec<&String> = r.as_object().unwrap().keys().collect();
+                assert_eq!(keys, ["bits", "size", "strength", "symbols"]);
+                let v = call(&main, "reveal_generated_password", ORIGIN, options.clone()).unwrap();
+                let value = v["value"].as_str().unwrap();
+                assert_eq!(value.len(), 24);
+                assert!(!r.to_string().contains(value));
+                for bad in [
+                    serde_json::json!({ "size": 7, "lowercase": true, "uppercase": true, "digits": true, "symbols": true }),
+                    serde_json::json!({ "size": 65, "lowercase": true, "uppercase": true, "digits": true, "symbols": true }),
+                    serde_json::json!({ "size": "24", "lowercase": true, "uppercase": true, "digits": true, "symbols": true }),
+                    serde_json::json!({ "size": -1, "lowercase": true, "uppercase": true, "digits": true, "symbols": true }),
+                    serde_json::json!({ "size": 24 }),
                 ] {
                     assert!(
-                        chamar(&principal, "gerar_senha", ORIGEM, ruim.clone()).is_err(),
-                        "{ruim}"
+                        call(&main, "generate_password", ORIGIN, bad.clone()).is_err(),
+                        "{bad}"
                     );
                 }
             }
         }
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        for comando in [
-            "gerar_senha",
-            "revelar_senha_gerada",
-            "copiar_senha_gerada",
-            "descartar_senha_gerada",
+        for command in [
+            "generate_password",
+            "reveal_generated_password",
+            "copy_generated_password",
+            "discard_generated_password",
         ] {
-            let r = chamar(&outra, comando, ORIGEM, opcoes.clone());
+            let r = call(&other, command, ORIGIN, options.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} em janela sem capability: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} em janela sem capability: {r:?}"
             );
-            let r = chamar(&principal, comando, "https://example.com", opcoes.clone());
+            let r = call(&main, command, "https://example.com", options.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} com origem remota: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} com origem remota: {r:?}"
             );
         }
     }
 
-    /// Fase 33 (S11): os comandos do formulário e o `revelar_campo` só passam pela ACL
-    /// na janela `principal` com a origem local; formulário fora do formato é recusado
-    /// antes do serviço.
+    /// Phase 33 (S11): the form commands and reveal field only pass the ACL in the
+    /// `main` window with the local origin; a form out of format is refused before
+    /// the service.
     #[test]
-    fn ataque_formulario_so_na_janela_certa() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_form_only_in_the_right_window() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let formulario = serde_json::json!({
-            "anterior": null,
-            "formulario": {"tipo": "login", "nome": "x", "grupo": "g", "ambiente": "dev",
-                "projeto": "", "tags": [], "campos": {}, "segredos": {}, "extras": []},
-            "entrada": "acme-wp-dev", "campo": "senha", "id": 0
+        let form = serde_json::json!({
+            "previous": null,
+            "form": {"type": "login", "name": "x", "group": "g", "environment": "dev",
+                "project": "", "tags": [], "fields": {}, "secrets": {}, "extras": []},
+            "entry": "acme-wp-dev", "field": "password", "id": 0
         });
-        for comando in [
-            "revelar_campo",
-            "codigo_totp",
-            "copiar_codigo_totp",
-            "usar_senha_gerada",
-            "descartar_formulario",
-            "salvar_credencial",
-            // Fase 34: anexos e "Conectar" seguem a mesma regra.
-            "escolher_anexo",
-            "remover_anexo",
-            // Fase 53a: "Carregar de arquivo" da chave privada.
-            "carregar_chave",
-            "conectar",
+        for command in [
+            "reveal_field",
+            "totp_code",
+            "copy_totp_code",
+            "use_generated_password",
+            "discard_form",
+            "save_credential",
+            // Phase 34: attachments and "Connect" follow the same rule.
+            "choose_attachment",
+            "remove_attachment",
+            // Phase 53a: "Load from file" of the private key.
+            "load_key",
+            "connect",
         ] {
-            let r = chamar(&outra, comando, ORIGEM, formulario.clone());
+            let r = call(&other, command, ORIGIN, form.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} em janela sem capability: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} em janela sem capability: {r:?}"
             );
-            let r = chamar(
-                &principal,
-                comando,
-                "https://example.com",
-                formulario.clone(),
-            );
+            let r = call(&main, command, "https://example.com", form.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} com origem remota: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} com origem remota: {r:?}"
             );
         }
-        let forjado = serde_json::json!({
-            "formulario": {"tipo": "login", "nome": "x", "grupo": "g", "ambiente": "dev",
-                "projeto": "", "tags": [], "campos": {}, "segredos": {}, "extras": [],
-                "nivel": "livre"}
+        let forged = serde_json::json!({
+            "form": {"type": "login", "name": "x", "group": "g", "environment": "dev",
+                "project": "", "tags": [], "fields": {}, "secrets": {}, "extras": [],
+                "level": "free"}
         });
-        let r = chamar(&principal, "salvar_credencial", ORIGEM, forjado);
+        let r = call(&main, "save_credential", ORIGIN, forged);
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "campo a mais: {r:?}"
         );
     }
 
-    /// Fase 35 (S9): `mudar_nivel` só passa pela ACL na janela `principal` com a origem
-    /// local, e um PIN fora do formato (ou um campo a mais) é recusado na leitura dos
-    /// argumentos, antes do serviço, sem ecoar o valor.
+    /// Phase 35 (S9): set level only passes the ACL in the `main` window with the
+    /// local origin, and a PIN out of format (or an extra field) is refused when reading
+    /// the arguments, before the service, without echoing the value.
     #[test]
-    fn ataque_mudar_nivel_so_na_janela_certa_e_pin_no_formato() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_set_level_only_in_the_right_window_and_pin_in_format() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let pedido =
-            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "bloqueado", "pin": "135790"});
-        let r = chamar(&outra, "mudar_nivel", ORIGEM, pedido.clone());
+        let request =
+            serde_json::json!({"entry": "acme-pg-dev", "level": "blocked", "pin": "135790"});
+        let r = call(&other, "set_level", ORIGIN, request.clone());
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "janela sem capability: {r:?}"
         );
-        let r = chamar(
-            &principal,
-            "mudar_nivel",
-            "https://example.com",
-            pedido.clone(),
-        );
+        let r = call(&main, "set_level", "https://example.com", request.clone());
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "origem remota: {r:?}"
         );
         for pin in [
@@ -1341,497 +1406,494 @@ mod testes {
             serde_json::json!(135790),
             serde_json::Value::Null,
         ] {
-            let corpo =
-                serde_json::json!({"entrada": "acme-pg-dev", "nivel": "bloqueado", "pin": pin});
-            let r = chamar(&principal, "mudar_nivel", ORIGEM, corpo);
-            let texto = format!("{r:?}");
+            let body = serde_json::json!({"entry": "acme-pg-dev", "level": "blocked", "pin": pin});
+            let r = call(&main, "set_level", ORIGIN, body);
+            let text = format!("{r:?}");
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "PIN fora do formato passou da leitura: {texto}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "PIN fora do formato passou da leitura: {text}"
             );
             assert!(
-                !texto.contains("135790") && !texto.contains("13579a"),
-                "{texto}"
+                !text.contains("135790") && !text.contains("13579a"),
+                "{text}"
             );
         }
-        // Na janela certa, o pedido bem formado chega ao serviço (aqui sem daemon: o
-        // erro é do serviço, com código, e não traz o PIN).
-        let r = chamar(&principal, "mudar_nivel", ORIGEM, pedido);
-        let texto = format!("{r:?}");
+        // In the right window, the well-formed request reaches the service (here without
+        // a daemon: the error is the service's, with a code, and does not carry the PIN).
+        let r = call(&main, "set_level", ORIGIN, request);
+        let text = format!("{r:?}");
         assert!(
-            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
-            "{texto}"
+            r.as_ref().err().is_some_and(|e| e["code"].is_string()),
+            "{text}"
         );
-        assert!(!texto.contains("135790"), "{texto}");
+        assert!(!text.contains("135790"), "{text}");
     }
 
-    /// Fase 30: `criar_cofre` só na janela `principal` com a origem local; campo a mais
-    /// é recusado antes do serviço; PIN fora de 4 a 6 dígitos volta como erro de campo
-    /// sem ir ao daemon (que nem está rodando aqui) e sem valor na resposta.
+    /// Phase 30: create vault only in the `main` window with the local origin; an
+    /// extra field is refused before the service; a PIN outside 4 to 6 digits comes back
+    /// as a field error without going to the daemon (which is not even running here) and
+    /// without a value in the response.
     #[test]
-    fn ataque_criar_cofre_so_na_janela_certa_e_conferido_no_rust() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_create_vault_only_in_the_right_window_and_checked_in_rust() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let dados = |pin: &str| {
-            serde_json::json!({ "dados": {
-                "senha": "falso-mestra-ward-01", "confirmacao": "falso-mestra-ward-01",
-                "pin": pin, "confirmacao_pin": pin } })
+        let data = |pin: &str| {
+            serde_json::json!({ "data": {
+                "password": "falso-mestra-ward-01", "confirmation": "falso-mestra-ward-01",
+                "pin": pin, "pin_confirmation": pin } })
         };
-        let r = chamar(&outra, "criar_cofre", ORIGEM, dados("135790"));
+        let r = call(&other, "create_vault", ORIGIN, data("135790"));
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "janela sem capability: {r:?}"
         );
-        let r = chamar(
-            &principal,
-            "criar_cofre",
-            "https://example.com",
-            dados("135790"),
-        );
+        let r = call(&main, "create_vault", "https://example.com", data("135790"));
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "origem remota: {r:?}"
         );
         for pin in ["135", "1357901", "13579a"] {
-            let r = chamar(&principal, "criar_cofre", ORIGEM, dados(pin)).unwrap();
-            assert_eq!(r["criado"], false, "{pin}");
-            assert_eq!(r["erros"][0]["campo"], "pin", "{pin}");
-            let texto = r.to_string();
+            let r = call(&main, "create_vault", ORIGIN, data(pin)).unwrap();
+            assert_eq!(r["created"], false, "{pin}");
+            assert_eq!(r["errors"][0]["field"], "pin", "{pin}");
+            let text = r.to_string();
             assert!(
-                !texto.contains("falso-mestra") && !texto.contains(pin),
-                "{texto}"
+                !text.contains("falso-mestra") && !text.contains(pin),
+                "{text}"
             );
         }
-        let mut forjado = dados("135790");
-        forjado["dados"]["nivel"] = "livre".into();
-        let r = chamar(&principal, "criar_cofre", ORIGEM, forjado);
+        let mut forged = data("135790");
+        forged["data"]["level"] = "livre".into();
+        let r = call(&main, "create_vault", ORIGIN, forged);
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "campo a mais: {r:?}"
         );
     }
 
-    /// Fase 31 (S13, D65 a): `destravar` e `ouvir_avisos` só passam pela ACL na janela
-    /// `principal` com a origem local; a senha fora do formato é recusada na leitura dos
-    /// argumentos, sem eco; o canal de avisos não abre `plugin:event|*`.
+    /// Phase 31 (S13, D65 a): unlock and the listen command only pass the ACL in the
+    /// `main` window with the local origin; a password out of format is refused when
+    /// reading the arguments, without echo; the notice channel does not open
+    /// `plugin:event|*`.
     #[test]
-    fn ataque_destravar_so_na_janela_certa_e_senha_sem_eco() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_unlock_only_in_the_right_window_and_password_without_echo() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let pedido = serde_json::json!({"senha": "falso-mestra-ward-01"});
-        for comando in ["destravar", "ouvir_avisos"] {
-            let r = chamar(&outra, comando, ORIGEM, pedido.clone());
+        let request = serde_json::json!({"password": "falso-mestra-ward-01"});
+        for command in ["unlock", "listen_notices"] {
+            let r = call(&other, command, ORIGIN, request.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} em janela sem capability: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} em janela sem capability: {r:?}"
             );
-            let r = chamar(&principal, comando, "https://example.com", pedido.clone());
+            let r = call(&main, command, "https://example.com", request.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} com origem remota: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} com origem remota: {r:?}"
             );
         }
-        let longa = "x".repeat(ward_core_max_segredo() + 1);
-        for senha in [
+        let long = "x".repeat(ward_core_max_secret() + 1);
+        for password in [
             serde_json::json!(""),
-            serde_json::json!(longa),
+            serde_json::json!(long),
             serde_json::json!(135790),
             serde_json::Value::Null,
             serde_json::json!(["falso-mestra-ward-01"]),
         ] {
-            let r = chamar(
-                &principal,
-                "destravar",
-                ORIGEM,
-                serde_json::json!({"senha": senha}),
+            let r = call(
+                &main,
+                "unlock",
+                ORIGIN,
+                serde_json::json!({"password": password}),
             );
-            let texto = format!("{r:?}");
+            let text = format!("{r:?}");
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
                 "senha fora do formato passou da leitura: {}",
-                texto.len()
+                text.len()
             );
-            assert!(!texto.contains("falso-mestra") && !texto.contains("xxxx"));
+            assert!(!text.contains("falso-mestra") && !text.contains("xxxx"));
         }
-        // Bem formada, chega ao serviço (sem daemon: erro com código, sem a senha).
-        let r = chamar(&principal, "destravar", ORIGEM, pedido);
-        let texto = format!("{r:?}");
+        // Well formed, it reaches the service (without a daemon: error with a code,
+        // without the password).
+        let r = call(&main, "unlock", ORIGIN, request);
+        let text = format!("{r:?}");
         assert!(
-            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
-            "{texto}"
+            r.as_ref().err().is_some_and(|e| e["code"].is_string()),
+            "{text}"
         );
-        assert!(!texto.contains("falso-mestra"), "{texto}");
-        // O canal não libera os comandos de evento do núcleo.
-        for comando in [
+        assert!(!text.contains("falso-mestra"), "{text}");
+        // The channel does not allow the core event commands.
+        for command in [
             "plugin:event|listen",
             "plugin:event|emit",
             "plugin:event|emit_to",
         ] {
-            let r = chamar(
-                &principal,
-                comando,
-                ORIGEM,
-                serde_json::json!({"event": "pedido-de-destrave", "target": {"kind": "Any"}, "handler": 0}),
+            let r = call(
+                &main,
+                command,
+                ORIGIN,
+                serde_json::json!({"event": "unlock-request", "target": {"kind": "Any"}, "handler": 0}),
             );
-            assert!(r.is_err(), "{comando} deveria ser negado: {r:?}");
+            assert!(r.is_err(), "{command} deveria ser negado: {r:?}");
         }
     }
 
-    /// Fase 38 (V5.22, S9): os comandos da tela Configurações só passam pela ACL na
-    /// janela `principal` com a origem local; campo a mais e tipo errado são recusados
-    /// na leitura, e PIN ou senha fora da regra voltam como erro de campo sem ir ao
-    /// daemon e sem valor na resposta.
+    /// Phase 38 (V5.22, S9): the Settings screen commands only pass the ACL in the
+    /// `main` window with the local origin; an extra field and a wrong type are
+    /// refused on reading, and a PIN or password outside the rule comes back as a field
+    /// error without going to the daemon and without a value in the response.
     #[test]
-    fn ataque_configuracoes_so_na_janela_certa_e_conferidas_no_rust() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_settings_only_in_the_right_window_and_checked_in_rust() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let pin = |atual: &str, novo: &str| {
-            serde_json::json!({ "dados": {
-                "atual": atual, "novo": novo, "confirmacao": novo } })
+        let pin = |current: &str, new: &str| {
+            serde_json::json!({ "data": {
+                "current": current, "new": new, "confirmation": new } })
         };
-        let senha = |atual: &str, nova: &str| {
-            serde_json::json!({ "dados": {
-                "atual": atual, "nova": nova, "confirmacao": nova } })
+        let password = |current: &str, new: &str| {
+            serde_json::json!({ "data": {
+                "current": current, "new": new, "confirmation": new } })
         };
-        for (comando, corpo) in [
-            ("configuracoes", serde_json::json!({})),
-            ("trocar_pin", pin("135790", "2468")),
+        for (command, body) in [
+            ("settings", serde_json::json!({})),
+            ("change_pin", pin("135790", "2468")),
             (
-                "trocar_senha_mestra",
-                senha("falso-mestra-ward-01", "falso-nova-mestra-02"),
+                "change_master_password",
+                password("falso-mestra-ward-01", "falso-nova-mestra-02"),
             ),
-            ("definir_tempo_trava", serde_json::json!({ "minutos": 30 })),
+            ("set_lock_timeout", serde_json::json!({ "minutes": 30 })),
         ] {
-            let r = chamar(&outra, comando, ORIGEM, corpo.clone());
+            let r = call(&other, command, ORIGIN, body.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} em janela sem capability: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} em janela sem capability: {r:?}"
             );
-            let r = chamar(&principal, comando, "https://example.com", corpo.clone());
+            let r = call(&main, command, "https://example.com", body.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} com origem remota: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} com origem remota: {r:?}"
             );
         }
-        for (atual, novo, campo) in [
-            ("135", "2468", "atual"),
-            ("135790", "13579a", "novo"),
-            ("135790", "1357901", "novo"),
+        for (current, new, field) in [
+            ("135", "2468", "current"),
+            ("135790", "13579a", "new"),
+            ("135790", "1357901", "new"),
         ] {
-            let r = chamar(&principal, "trocar_pin", ORIGEM, pin(atual, novo)).unwrap();
-            assert_eq!(r["trocado"], false);
-            assert_eq!(r["erros"][0]["campo"], campo, "{atual} {novo}");
-            let texto = r.to_string();
-            assert!(!texto.contains(atual) && !texto.contains(novo), "{texto}");
+            let r = call(&main, "change_pin", ORIGIN, pin(current, new)).unwrap();
+            assert_eq!(r["changed"], false);
+            assert_eq!(r["errors"][0]["field"], field, "{current} {new}");
+            let text = r.to_string();
+            assert!(!text.contains(current) && !text.contains(new), "{text}");
         }
-        let r = chamar(
-            &principal,
-            "trocar_senha_mestra",
-            ORIGEM,
-            senha("falso-mestra-ward-01", "falso-curta"),
+        let r = call(
+            &main,
+            "change_master_password",
+            ORIGIN,
+            password("falso-mestra-ward-01", "falso-curta"),
         )
         .unwrap();
-        assert_eq!(r["erros"][0]["campo"], "nova");
+        assert_eq!(r["errors"][0]["field"], "new");
         assert!(!r.to_string().contains("falso"), "{r}");
-        let mut forjado = pin("135790", "2468");
-        forjado["dados"]["nivel"] = "livre".into();
-        let r = chamar(&principal, "trocar_pin", ORIGEM, forjado);
+        let mut forged = pin("135790", "2468");
+        forged["data"]["level"] = "livre".into();
+        let r = call(&main, "change_pin", ORIGIN, forged);
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "campo a mais: {r:?}"
         );
-        for minutos in [
+        for minutes in [
             serde_json::json!("30"),
             serde_json::json!(-1),
             serde_json::Value::Null,
         ] {
-            let r = chamar(
-                &principal,
-                "definir_tempo_trava",
-                ORIGEM,
-                serde_json::json!({ "minutos": minutos }),
+            let r = call(
+                &main,
+                "set_lock_timeout",
+                ORIGIN,
+                serde_json::json!({ "minutes": minutes }),
             );
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{minutos}: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{minutes}: {r:?}"
             );
         }
-        // Fora de 1 a 1440: recusado no serviço, antes do daemon (que nem existe aqui).
-        for minutos in [0, 1441] {
-            let r = chamar(
-                &principal,
-                "definir_tempo_trava",
-                ORIGEM,
-                serde_json::json!({ "minutos": minutos }),
+        // Outside 1 to 1440: refused in the service, before the daemon (which does not
+        // even exist here).
+        for minutes in [0, 1441] {
+            let r = call(
+                &main,
+                "set_lock_timeout",
+                ORIGIN,
+                serde_json::json!({ "minutes": minutes }),
             );
             assert!(
-                r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
-                "{minutos}: {r:?}"
+                r.as_ref().err().is_some_and(|e| e["code"].is_string()),
+                "{minutes}: {r:?}"
             );
         }
     }
 
-    /// Fase 48 (V7.9): os comandos do backup externo só na janela `principal` com a
-    /// origem local; o UUID forjado pela interface (fora do formato, ligar sem UUID,
-    /// desligar trocando o UUID, tipo errado) é recusado no Rust antes do daemon.
+    /// Phase 48 (V7.9): the external backup commands only in the `main` window with
+    /// the local origin; the UUID forged by the interface (out of format, turning on
+    /// without a UUID, turning off while changing the UUID, wrong type) is refused in
+    /// Rust before the daemon.
     #[test]
-    fn ataque_backup_externo_so_na_janela_certa_e_uuid_conferido_no_rust() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_external_backup_only_in_the_right_window_and_uuid_checked_in_rust() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let aprovacao = WebviewWindowBuilder::new(&app, "aprovacao", Default::default())
+        let approval = WebviewWindowBuilder::new(&app, "approval", Default::default())
             .build()
             .unwrap();
-        for (comando, corpo) in [
-            ("backup_externo", serde_json::json!({})),
-            ("listar_pendrives", serde_json::json!({})),
+        for (command, body) in [
+            ("external_backup", serde_json::json!({})),
+            ("list_usb_drives", serde_json::json!({})),
             (
-                "definir_backup_externo",
-                serde_json::json!({ "ligado": true, "uuid": "7C1E-42A9" }),
+                "set_external_backup",
+                serde_json::json!({ "enabled": true, "uuid": "7C1E-42A9" }),
             ),
         ] {
-            for janela in [&outra, &aprovacao] {
-                let r = chamar(janela, comando, ORIGEM, corpo.clone());
+            for window in [&other, &approval] {
+                let r = call(window, command, ORIGIN, body.clone());
                 assert!(
-                    r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                    "{comando} em {}: {r:?}",
-                    janela.label()
+                    r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                    "{command} em {}: {r:?}",
+                    window.label()
                 );
             }
-            let r = chamar(&principal, comando, "https://example.com", corpo.clone());
+            let r = call(&main, command, "https://example.com", body.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} com origem remota: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} com origem remota: {r:?}"
             );
         }
-        // Formato errado: o núcleo recusa antes de abrir o daemon (`pedido-invalido`,
-        // não `daemon-indisponivel`).
-        for corpo in [
-            serde_json::json!({ "ligado": true, "uuid": "../etc" }),
-            serde_json::json!({ "ligado": true, "uuid": "/media/usuario/WARD-BACKUP" }),
-            serde_json::json!({ "ligado": true, "uuid": "7C1E-42A9\u{202E}" }),
-            serde_json::json!({ "ligado": true, "uuid": "" }),
-            serde_json::json!({ "ligado": true }),
-            serde_json::json!({ "ligado": false, "uuid": "DEAD-BEEF" }),
+        // Wrong format: the core refuses before opening the daemon (invalid request code,
+        // not daemon unavailable).
+        for body in [
+            serde_json::json!({ "enabled": true, "uuid": "../etc" }),
+            serde_json::json!({ "enabled": true, "uuid": "/media/usuario/WARD-BACKUP" }),
+            serde_json::json!({ "enabled": true, "uuid": "7C1E-42A9\u{202E}" }),
+            serde_json::json!({ "enabled": true, "uuid": "" }),
+            serde_json::json!({ "enabled": true }),
+            serde_json::json!({ "enabled": false, "uuid": "DEAD-BEEF" }),
         ] {
-            let r = chamar(&principal, "definir_backup_externo", ORIGEM, corpo.clone());
+            let r = call(&main, "set_external_backup", ORIGIN, body.clone());
             assert_eq!(
-                r.as_ref().err().map(|e| e["codigo"].clone()),
-                Some(serde_json::json!("pedido-invalido")),
-                "{corpo}: {r:?}"
+                r.as_ref().err().map(|e| e["code"].clone()),
+                Some(serde_json::json!("invalid-request")),
+                "{body}: {r:?}"
             );
         }
-        for corpo in [
-            serde_json::json!({ "ligado": "sim", "uuid": "7C1E-42A9" }),
-            serde_json::json!({ "ligado": true, "uuid": 4242 }),
+        for body in [
+            serde_json::json!({ "enabled": "sim", "uuid": "7C1E-42A9" }),
+            serde_json::json!({ "enabled": true, "uuid": 4242 }),
             serde_json::json!({ "uuid": "7C1E-42A9" }),
         ] {
-            let r = chamar(&principal, "definir_backup_externo", ORIGEM, corpo.clone());
+            let r = call(&main, "set_external_backup", ORIGIN, body.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{corpo}: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{body}: {r:?}"
             );
         }
     }
 
-    /// Fase 47 (V7.7, V7.8): listar e restaurar backup só na janela `principal` com a
-    /// origem local; versão forjada (caminho, `..`, fora do formato), PIN fora do
-    /// formato, senha vazia e campo a mais (`geracao`) são recusados no Rust antes do
-    /// daemon.
+    /// Phase 47 (V7.7, V7.8): list and restore backup only in the `main` window with
+    /// the local origin; a forged version (path, `..`, out of format), a PIN out of
+    /// format, an empty password and an extra field (generation) are refused in Rust
+    /// before the daemon.
     #[test]
-    fn ataque_restaurar_backup_so_na_janela_certa_e_versao_conferida_no_rust() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_restore_backup_only_in_the_right_window_and_version_checked_in_rust() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let aprovacao = WebviewWindowBuilder::new(&app, "aprovacao", Default::default())
+        let approval = WebviewWindowBuilder::new(&app, "approval", Default::default())
             .build()
             .unwrap();
-        let dados = |versao: &str, senha: &str, pin: &str| serde_json::json!({ "dados": { "versao": versao, "senha": senha, "pin": pin } });
-        let bom = dados(
+        let data = |version: &str, password: &str, pin: &str| serde_json::json!({ "data": { "version": version, "password": password, "pin": pin } });
+        let good = data(
             "ward-20261108-143200.ward",
             "falso-mestra-ward-01",
             "135790",
         );
-        for (comando, corpo) in [
-            ("listar_backups", serde_json::json!({})),
-            ("restaurar_backup", bom.clone()),
+        for (command, body) in [
+            ("list_backups", serde_json::json!({})),
+            ("restore_backup", good.clone()),
         ] {
-            for janela in [&outra, &aprovacao] {
-                let r = chamar(janela, comando, ORIGEM, corpo.clone());
+            for window in [&other, &approval] {
+                let r = call(window, command, ORIGIN, body.clone());
                 assert!(
-                    r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                    "{comando} em {}: {r:?}",
-                    janela.label()
+                    r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                    "{command} em {}: {r:?}",
+                    window.label()
                 );
             }
-            let r = chamar(&principal, comando, "https://example.com", corpo.clone());
+            let r = call(&main, command, "https://example.com", body.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{comando} com origem remota: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{command} com origem remota: {r:?}"
             );
         }
-        // Na janela certa, sem daemon: passa da leitura e do formato e para no socket.
-        let r = chamar(&principal, "restaurar_backup", ORIGEM, bom.clone());
-        let codigo = r.as_ref().err().map(|e| e["codigo"].clone());
+        // In the right window, without a daemon: passes the reading and the format and
+        // stops at the socket.
+        let r = call(&main, "restore_backup", ORIGIN, good.clone());
+        let code = r.as_ref().err().map(|e| e["code"].clone());
         assert!(
-            codigo
-                .as_ref()
-                .is_some_and(|c| c.is_string() && c != "pedido-invalido"),
+            code.as_ref()
+                .is_some_and(|c| c.is_string() && c != "invalid-request"),
             "{r:?}"
         );
-        // Versão fora do formato: o núcleo recusa antes de abrir o daemon.
-        for versao in [
+        // Version out of format: the core refuses before opening the daemon.
+        for version in [
             "../cofre.ward",
             "/home/usuario/.local/share/ward/cofre.ward",
             "backups/ward-20261108-143200.ward",
             "ward-20261108-143200.ward\u{202E}",
             "",
         ] {
-            let corpo = dados(versao, "falso-mestra-ward-01", "135790");
-            let r = chamar(&principal, "restaurar_backup", ORIGEM, corpo);
+            let body = data(version, "falso-mestra-ward-01", "135790");
+            let r = call(&main, "restore_backup", ORIGIN, body);
             assert_eq!(
-                r.as_ref().err().map(|e| e["codigo"].clone()),
-                Some(serde_json::json!("pedido-invalido")),
-                "{versao:?}: {r:?}"
+                r.as_ref().err().map(|e| e["code"].clone()),
+                Some(serde_json::json!("invalid-request")),
+                "{version:?}: {r:?}"
             );
         }
-        // PIN e senha fora do formato, campo a mais ou faltando: recusados na leitura.
-        let mut a_mais = bom.clone();
-        a_mais["dados"]["geracao"] = serde_json::json!(9);
-        for corpo in [
-            dados("ward-20261108-143200.ward", "falso-mestra-ward-01", "12ab"),
-            dados("ward-20261108-143200.ward", "falso-mestra-ward-01", "123"),
-            dados("ward-20261108-143200.ward", "", "135790"),
-            a_mais,
-            serde_json::json!({ "dados": { "versao": "ward-20261108-143200.ward" } }),
-            serde_json::json!({ "versao": "ward-20261108-143200.ward" }),
+        // PIN and password out of format, extra or missing field: refused on reading.
+        let mut extra = good.clone();
+        extra["data"]["geracao"] = serde_json::json!(9);
+        for body in [
+            data("ward-20261108-143200.ward", "falso-mestra-ward-01", "12ab"),
+            data("ward-20261108-143200.ward", "falso-mestra-ward-01", "123"),
+            data("ward-20261108-143200.ward", "", "135790"),
+            extra,
+            serde_json::json!({ "data": { "version": "ward-20261108-143200.ward" } }),
+            serde_json::json!({ "version": "ward-20261108-143200.ward" }),
         ] {
-            let r = chamar(&principal, "restaurar_backup", ORIGEM, corpo.clone());
+            let r = call(&main, "restore_backup", ORIGIN, body.clone());
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{corpo}: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{body}: {r:?}"
             );
-            // A recusa não ecoa o que veio.
-            let texto = format!("{r:?}");
+            // The refusal does not echo what came in.
+            let text = format!("{r:?}");
             assert!(
-                !texto.contains("falso-mestra") && !texto.contains("135790"),
-                "{texto}"
+                !text.contains("falso-mestra") && !text.contains("135790"),
+                "{text}"
             );
         }
     }
 
-    fn ward_core_max_segredo() -> usize {
+    fn ward_core_max_secret() -> usize {
         64 * 1024
     }
 
-    /// D65 a, Fase 36: o canal de avisos é por janela. O aviso de aprovação não chega à
-    /// principal nem o de destrave à de aprovação, e nenhum leva dado além do nome.
+    /// D65 a, Phase 36: the notice channel is per window. The approval notice does not
+    /// reach the main window nor the unlock notice the approval one, and none carries
+    /// data besides the name.
     #[test]
-    fn ataque_aviso_de_uma_janela_nao_vai_para_a_outra() {
+    fn attack_notice_of_one_window_does_not_go_to_the_other() {
         use std::sync::mpsc;
-        let canal = |tx: mpsc::Sender<String>| {
-            Channel::<AvisoTela>::new(move |corpo| {
-                let texto = match corpo {
+        let channel = |tx: mpsc::Sender<String>| {
+            Channel::<ScreenNotice>::new(move |body| {
+                let text = match body {
                     tauri::ipc::InvokeResponseBody::Json(j) => j,
                     tauri::ipc::InvokeResponseBody::Raw(_) => "bruto".to_owned(),
                 };
-                let _ = tx.send(texto);
+                let _ = tx.send(text);
                 Ok(())
             })
         };
-        let (tx_p, rx_p) = mpsc::channel();
+        let (tx_m, rx_m) = mpsc::channel();
         let (tx_a, rx_a) = mpsc::channel();
-        let canais: CanalAvisos = Arc::default();
-        travar_canais(&canais).principal = Some(canal(tx_p));
-        travar_canais(&canais).aprovacao = Some(canal(tx_a));
-        avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
-        avisar(&canais, JANELA_PRINCIPAL, "pedido-de-destrave");
-        avisar(&canais, "outra", "pedido-de-aprovacao");
+        let channels: NoticeChannels = Arc::default();
+        lock_channels(&channels).main = Some(channel(tx_m));
+        lock_channels(&channels).approval = Some(channel(tx_a));
+        notify(&channels, APPROVAL_WINDOW, "approval-request");
+        notify(&channels, MAIN_WINDOW, "unlock-request");
+        notify(&channels, "outra", "approval-request");
         assert_eq!(
             rx_a.try_iter().collect::<Vec<_>>(),
-            vec![r#"{"aviso":"pedido-de-aprovacao"}"#]
+            vec![r#"{"notice":"approval-request"}"#]
         );
         assert_eq!(
-            rx_p.try_iter().collect::<Vec<_>>(),
-            vec![r#"{"aviso":"pedido-de-destrave"}"#]
+            rx_m.try_iter().collect::<Vec<_>>(),
+            vec![r#"{"notice":"unlock-request"}"#]
         );
-        // Janela de aprovação destruída: o canal dela sai, e o aviso não vai a ninguém.
-        travar_canais(&canais).aprovacao = None;
-        avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
-        assert!(rx_a.try_iter().next().is_none() && rx_p.try_iter().next().is_none());
+        // Approval window destroyed: its channel goes away, and the notice goes to
+        // nobody.
+        lock_channels(&channels).approval = None;
+        notify(&channels, APPROVAL_WINDOW, "approval-request");
+        assert!(rx_a.try_iter().next().is_none() && rx_m.try_iter().next().is_none());
     }
 
-    /// Fase 36 (S10, S11): responder aprovação só na janela `aprovacao`, com a origem
-    /// local. A janela principal (e qualquer outra) não lê o pedido nem responde; a de
-    /// aprovação não alcança nenhum outro comando nem plugin. Resposta forjada (id que o
-    /// daemon não mandou) é recusada pelo serviço; PIN fora do formato, na leitura, sem
-    /// eco.
+    /// Phase 36 (S10, S11): answering an approval only in the approval window, with the
+    /// local origin. The main window (and any other) neither reads the request nor
+    /// answers; the approval one reaches no other command or plugin. A forged answer (an
+    /// id the daemon did not send) is refused by the service; a PIN out of format, on
+    /// reading, without echo.
     #[test]
-    fn ataque_aprovacao_so_pela_janela_certa() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn attack_approval_only_through_the_right_window() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+        let other = WebviewWindowBuilder::new(&app, "outra", Default::default())
             .build()
             .unwrap();
-        let aprovacao = WebviewWindowBuilder::new(&app, JANELA_APROVACAO, Default::default())
+        let approval = WebviewWindowBuilder::new(&app, APPROVAL_WINDOW, Default::default())
             .build()
             .unwrap();
-        let negado_pela_acl = |r: &Result<serde_json::Value, serde_json::Value>| {
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string())
+        let denied_by_acl = |r: &Result<serde_json::Value, serde_json::Value>| {
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string())
         };
-        let resposta = serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": "135790"});
-        for janela in [&principal, &outra] {
-            for comando in ["pedido_de_aprovacao", "responder_aprovacao"] {
-                let r = chamar(janela, comando, ORIGEM, resposta.clone());
-                assert!(
-                    negado_pela_acl(&r),
-                    "{comando} em {}: {r:?}",
-                    janela.label()
-                );
+        let answer = serde_json::json!({"id": 1, "decision": "once", "pin": "135790"});
+        for window in [&main, &other] {
+            for command in ["approval_request", "answer_approval"] {
+                let r = call(window, command, ORIGIN, answer.clone());
+                assert!(denied_by_acl(&r), "{command} em {}: {r:?}", window.label());
                 assert!(!format!("{r:?}").contains("135790"));
             }
         }
-        for comando in ["pedido_de_aprovacao", "responder_aprovacao"] {
-            let r = chamar(&aprovacao, comando, "https://example.com", resposta.clone());
-            assert!(negado_pela_acl(&r), "{comando} com origem remota: {r:?}");
+        for command in ["approval_request", "answer_approval"] {
+            let r = call(&approval, command, "https://example.com", answer.clone());
+            assert!(denied_by_acl(&r), "{command} com origem remota: {r:?}");
         }
-        // A janela de aprovação não alcança mais nada.
-        for comando in [
-            "estado_do_cofre",
-            "copiar_campo",
-            "listar_credenciais",
-            "detalhe_credencial",
-            "revelar_campo",
-            "revelar_senha_gerada",
-            "mudar_nivel",
-            "salvar_credencial",
-            "conectar",
-            "criar_cofre",
+        // The approval window reaches nothing else.
+        for command in [
+            "vault_status",
+            "copy_field",
+            "list_credentials",
+            "credential_detail",
+            "reveal_field",
+            "reveal_generated_password",
+            "set_level",
+            "save_credential",
+            "connect",
+            "create_vault",
             "plugin:window|close",
             "plugin:window|set_always_on_top",
             "plugin:webview|create_webview_window",
@@ -1839,47 +1901,45 @@ mod testes {
             "plugin:fs|read_text_file",
             "plugin:shell|execute",
         ] {
-            let r = chamar(
-                &aprovacao,
-                comando,
-                ORIGEM,
-                serde_json::json!({"entrada": "acme-pg-aprovacao", "campo": "senha", "nivel": "livre", "pin": "135790"}),
+            let r = call(
+                &approval,
+                command,
+                ORIGIN,
+                serde_json::json!({"entry": "acme-pg-aprovacao", "field": "password", "level": "free", "pin": "135790"}),
             );
-            assert!(
-                negado_pela_acl(&r),
-                "{comando} na janela de aprovação: {r:?}"
-            );
+            assert!(denied_by_acl(&r), "{command} na janela de aprovação: {r:?}");
         }
-        // PIN fora do formato e decisão de outro tipo: recusados na leitura, sem eco.
-        for corpo in [
-            serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": "12"}),
-            serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": "13579a"}),
-            serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": 135790}),
-            serde_json::json!({"id": "1", "decisao": "uma_vez", "pin": "135790"}),
-            serde_json::json!({"id": -1, "decisao": "negar", "pin": null}),
-            serde_json::json!({"id": 1, "decisao": 1, "pin": null}),
+        // PIN out of format and a decision of another type: refused on reading, without
+        // echo.
+        for body in [
+            serde_json::json!({"id": 1, "decision": "once", "pin": "12"}),
+            serde_json::json!({"id": 1, "decision": "once", "pin": "13579a"}),
+            serde_json::json!({"id": 1, "decision": "once", "pin": 135790}),
+            serde_json::json!({"id": "1", "decision": "once", "pin": "135790"}),
+            serde_json::json!({"id": -1, "decision": "deny", "pin": null}),
+            serde_json::json!({"id": 1, "decision": 1, "pin": null}),
         ] {
-            let r = chamar(&aprovacao, "responder_aprovacao", ORIGEM, corpo);
-            let texto = format!("{r:?}");
-            assert!(negado_pela_acl(&r), "{texto}");
+            let r = call(&approval, "answer_approval", ORIGIN, body);
+            let text = format!("{r:?}");
+            assert!(denied_by_acl(&r), "{text}");
             assert!(
-                !texto.contains("135790") && !texto.contains("13579a"),
-                "{texto}"
+                !text.contains("135790") && !text.contains("13579a"),
+                "{text}"
             );
         }
-        // Bem formada, mas o daemon nunca mandou o pedido 1: o serviço recusa (ou nem
-        // montou, sem área de transferência). Erro com código, sem o PIN.
-        let r = chamar(&aprovacao, "responder_aprovacao", ORIGEM, resposta);
-        let texto = format!("{r:?}");
+        // Well formed, but the daemon never sent request 1: the service refuses (or did
+        // not even build, without a clipboard). Error with a code, without the PIN.
+        let r = call(&approval, "answer_approval", ORIGIN, answer);
+        let text = format!("{r:?}");
         assert!(
-            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
-            "{texto}"
+            r.as_ref().err().is_some_and(|e| e["code"].is_string()),
+            "{text}"
         );
-        assert!(!texto.contains("135790"), "{texto}");
+        assert!(!text.contains("135790"), "{text}");
     }
 
     #[test]
-    fn ataque_navegacao_para_fora_do_app_e_recusada() {
+    fn attack_navigation_out_of_the_app_is_refused() {
         for url in [
             "https://example.com/",
             "http://localhost/",
@@ -1889,78 +1949,109 @@ mod testes {
             "data:text/html,<script>1</script>",
             "javascript:alert(1)",
         ] {
-            assert!(!navegacao_permitida(&url.parse().unwrap()), "{url}");
+            assert!(!navigation_allowed(&url.parse().unwrap()), "{url}");
         }
-        assert!(navegacao_permitida(
+        assert!(navigation_allowed(
             &"tauri://localhost/index.html".parse().unwrap()
         ));
     }
 
     #[test]
-    fn ataque_falha_nao_carrega_valor() {
-        let f = Falha::from(ErroApp::PedidoInvalido);
-        assert_eq!(f.codigo, "pedido-invalido");
-        assert_eq!(f.mensagem, "pedido inválido");
+    fn attack_failure_carries_no_value() {
+        let f = Failure::from(AppError::InvalidRequest);
+        assert_eq!(f.code, "invalid-request");
+        assert_eq!(f.message, "pedido inválido");
     }
 
-    /// Fase 39 (V5.23): `travar` passa pela ACL só na janela principal e com a origem
-    /// local; a janela de aprovação e uma janela qualquer não travam (nem com argumento
-    /// inventado). Sem daemon, o serviço responde o erro dele, com código.
+    /// m2:V4.23 (m2:Phase 54): the webview `serde` keys are the English ones.
     #[test]
-    fn ataque_travar_so_na_janela_principal() {
-        let app = app_de_teste();
-        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+    fn webview_keys_are_the_english_ones() {
+        let f = serde_json::to_value(Failure::from(AppError::InvalidRequest)).unwrap();
+        assert!(f.get("code").is_some() && f.get("message").is_some(), "{f}");
+        let s = serde_json::to_value(StatusResponse {
+            status: "locked",
+            request: None,
+        })
+        .unwrap();
+        assert_eq!(s, serde_json::json!({"status": "locked", "request": null}));
+        let n = serde_json::to_value(ScreenNotice {
+            notice: "status-changed",
+        })
+        .unwrap();
+        assert_eq!(n, serde_json::json!({"notice": "status-changed"}));
+        let g = serde_json::to_value(GeneratedResponse {
+            size: 24,
+            bits: 150,
+            strength: "very-strong",
+            symbols: "!#",
+        })
+        .unwrap();
+        let mut keys: Vec<_> = g.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["bits", "size", "strength", "symbols"]);
+        let r = serde_json::to_value(RevealedResponse {
+            value: "falso-valor".into(),
+        })
+        .unwrap();
+        assert_eq!(r, serde_json::json!({"value": "falso-valor"}));
+        let u = serde_json::to_value(UsedResponse { size: 24 }).unwrap();
+        assert_eq!(u, serde_json::json!({"size": 24}));
+    }
+
+    /// Phase 39 (V5.23): lock passes the ACL only in the main window and with the
+    /// local origin; the approval window and any window do not lock (not even with a
+    /// made-up argument). Without a daemon, the service answers its error, with a code.
+    #[test]
+    fn attack_lock_only_in_the_main_window() {
+        let app = test_app();
+        let main = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let r = chamar(&principal, "travar", ORIGEM, serde_json::json!({}));
+        let r = call(&main, "lock", ORIGIN, serde_json::json!({}));
         assert!(
-            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| e["code"].is_string()),
             "erro do serviço, não da ACL: {r:?}"
         );
-        let r = chamar(
-            &principal,
-            "travar",
-            "https://example.com",
-            serde_json::json!({}),
-        );
+        let r = call(&main, "lock", "https://example.com", serde_json::json!({}));
         assert!(
-            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
             "origem remota: {r:?}"
         );
-        for rotulo in ["aprovacao", "outra"] {
-            let janela = WebviewWindowBuilder::new(&app, rotulo, Default::default())
+        for label in ["approval", "outra"] {
+            let window = WebviewWindowBuilder::new(&app, label, Default::default())
                 .build()
                 .unwrap();
-            let r = chamar(&janela, "travar", ORIGEM, serde_json::json!({}));
+            let r = call(&window, "lock", ORIGIN, serde_json::json!({}));
             assert!(
-                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
-                "{rotulo}: {r:?}"
+                r.as_ref().err().is_some_and(|e| !e["code"].is_string()),
+                "{label}: {r:?}"
             );
         }
     }
 
-    /// Fase 39: sem a bandeja (o teste não cria uma), atualizar só avisa a principal e
-    /// não entra em pânico; um clique forjado sem bandeja não faz nada.
+    /// Phase 39: without the tray (the test does not create one), updating only notifies
+    /// the main window and does not panic; a forged click without a tray does nothing.
     #[test]
-    fn bandeja_ausente_nao_quebra() {
-        let app = app_de_teste();
-        atualizar_bandeja(app.handle());
-        ao_clicar_na_bandeja(app.handle(), bandeja::ID_SAIR);
-        ao_clicar_na_bandeja(app.handle(), "inventado");
-        assert!(app.try_state::<Bandeja<MockRuntime>>().is_none());
+    fn missing_tray_does_not_break() {
+        let app = test_app();
+        update_tray(app.handle());
+        on_tray_click(app.handle(), tray::ID_QUIT);
+        on_tray_click(app.handle(), "inventado");
+        assert!(app.try_state::<Tray<MockRuntime>>().is_none());
     }
 
-    /// Ataque (Fase 39g): sem bandeja, a vigia ainda mede a passagem pelo
-    /// `Estado::visto` (a limpeza da área nessa passagem é testada no núcleo,
-    /// `ataque_trava_de_fora_sem_bandeja_limpa_a_area_na_hora`). Aqui o daemon some com
-    /// o cofre destravado: o `visto` passa a `SemDaemon`, sem bandeja nenhuma.
+    /// Attack (Phase 39g): without a tray, the watcher still measures the transition
+    /// through `AppState::seen` (clearing the clipboard on that transition is tested in
+    /// the core, `attack_outside_lock_without_tray_clears_the_clipboard_at_once`). Here
+    /// the daemon goes away with the vault unlocked: `seen` becomes `NoDaemon`, without
+    /// any tray.
     #[test]
-    fn sem_bandeja_a_vigia_mede_a_passagem() {
-        let app = app_de_teste();
-        assert!(app.try_state::<Bandeja<MockRuntime>>().is_none());
-        let estado = app.state::<Estado>();
-        *estado.visto.lock().unwrap() = EstadoBandeja::Destravado;
-        atualizar_bandeja(app.handle());
-        assert_eq!(*estado.visto.lock().unwrap(), EstadoBandeja::SemDaemon);
+    fn without_tray_the_watcher_measures_the_transition() {
+        let app = test_app();
+        assert!(app.try_state::<Tray<MockRuntime>>().is_none());
+        let state = app.state::<AppState>();
+        *state.seen.lock().unwrap() = TrayState::Unlocked;
+        update_tray(app.handle());
+        assert_eq!(*state.seen.lock().unwrap(), TrayState::NoDaemon);
     }
 }

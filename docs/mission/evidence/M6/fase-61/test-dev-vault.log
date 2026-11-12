@@ -1,0 +1,15 @@
+ok    acme-totp-dev (D28) no cofre
+ok    delta-api-simbolos (D59) no cofre
+ok    nomes, tipos e níveis não casam com a lista de segredos
+ok    nenhum segredo nem variação em claro no cofre
+ok    configuração do corpo v4: geração 1, hash Argon2id do PIN de teste, trava 240, backup desligado
+ok    PIN de teste e hash PHC fora do arquivo em claro
+ok    abre com a senha de teste (pelo stdin)
+ok    senha errada recusada
+ok    senha em argv recusada
+ok    V3.29: 14 formas de delta-api-simbolos na lista (literal, base64, percent, @Q, aspas duplas, %q, Go, PHP, Go + ensure_ascii)
+ok    V2.57: todo padrão do oráculo sai •••• pela máscara da entrada (os 527 padrões de 22 entradas)
+ok    dev-vault recusa 11 saídas fora de .dev/ (absoluta, '..', links, injeção) e nada é criado fora
+ok    dev-variations recusa 11 saídas fora de .dev/ (absoluta, '..', links, injeção) e nada é criado fora
+ok    VARIATIONS=.dev/<outro>.txt aceito
+test-dev-vault: tudo barrado/conferido

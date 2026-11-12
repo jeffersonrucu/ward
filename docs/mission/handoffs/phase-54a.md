@@ -1,101 +1,162 @@
-# Fase 54a — RA8 aceito, docs endurecidos
+# Fase 54a — Correção dos achados da Fase 51 (socket do sistema nos testes, gitleaks)
 
 ## Implementado
-- `docs/escopo.md`: RA8 entra em "Fora do modelo de ameaça" como "Sessão gráfica ou shell do
-  usuário adulterados por um processo do mesmo uid". O texto cobre o proxy no `wayland-<n>`/`bus`,
-  o `ward` falso no `PATH` (o caso da auditoria final), alias e função no rc do shell, e tema
-  GTK/dconf/fontes/perfil NVIDIA. Lista as reduções: D57, S5 (barra só o servidor falso), a skill
-  e o deny que não destravam, e os guias pelo caminho completo. Diz com clareza o que o caminho
-  completo não fecha. A pendência "a decidir antes do M4" virou "resolvida".
-- `docs/mission/prd.md`: RA8 "fechado em 2026-11-09: risco aceito pelo usuário", com o parágrafo
-  da decisão e da consequência. O resumo "Fora do modelo" (seção de ameaças) e o fluxo 2
-  ("Usuário no terminal") citam RA8 e `/usr/local/bin/ward destravar`.
-- `docs/instalacao.md`: o passo 3 usa `/usr/local/bin/ward destravar`, e uma nota "Senha mestra
-  só pelo caminho completo" explica o porquê e o limite.
-- `docs/migracao.md`: um item novo em "Antes de começar" manda destravar pelo app ou por
-  `/usr/local/bin/ward destravar`, explica o porquê e o limite, e diz que os outros comandos `ward`
-  do guia não pedem a senha mestra. O guia não tinha `ward destravar` antes.
-- `skill/ward/SKILL.md`: a mensagem de "travado" para o usuário fala em destravar pelo app ou com
-  /usr/local/bin/ward destravar (caminho completo), em prosa e sem crases, porque `destravar`
-  fica fora de V8.1. Ela também diz para nunca sugerir que o usuário digite a senha mestra num
-  comando rodado pelo Claude ou com `!`.
-- `skill/README.md`: seção nova "Destravar: só você, pelo caminho completo".
-- `docs/mission/roteiro-usuario.md`: nota de que a senha mestra só vai na janela do app, de que a
-  CLI de teste vai sempre por `target/debug/ward` e de que, instalado, o destrave é por
-  `/usr/local/bin/ward destravar`. O roteiro não tinha comando que digitasse a senha mestra.
-- `dev/testes/migracao.py` (item 7, Fase 54a): o guia tem de citar `/usr/local/bin/ward destravar`
-  e não pode ter `ward destravar` sem esse prefixo. Três ataques novos.
-- `dev/testes/skill.py` (item 8, Fase 54a): o SKILL.md tem de citar `/usr/local/bin/ward destravar`
-  e não pode ter `ward destravar` sem o prefixo; o `skill/README.md` tem de citar
-  `` `/usr/local/bin/ward destravar` ``. Quatro ataques novos.
+
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard 83b921e`
+  (master atual).
+- **(1) Nenhum teste alcança o socket do sistema.**
+  - Guarda em todo alvo de teste que roda um binário do Ward ou fala com um daemon:
+    `#[cfg(not(feature = "test-mode"))] compile_error!("este teste exige a feature
+    test-mode …")`. Sem a feature, a compilação para com essa mensagem, em vez de o
+    binário de release do teste falar com `/run/ward/<uid>/wardd.sock`:
+    - `crates/ward-nm/tests/binary.rs` (o caso da Fase 51: `no_daemon_answers_internal`
+      com o `ward-nm` sem `test-mode` pela unificação de features);
+    - `crates/ward/src/tests.rs` (testes da CLI contra servidores falsos);
+    - `crates/ward-test-bridge/tests/attacks.rs`, `crates/wardd/tests/test_app.rs` e
+      `app_value_binary.rs`: o `#![cfg(feature = "test-mode")]` (pulava calado) virou a
+      guarda;
+    - `crates/wardd/tests/socket.rs`, `lock.rs`, `run.rs`: esses já tinham
+      `required-features = ["test-mode"]` no `crates/wardd/Cargo.toml` (o cargo recusa
+      `--test <nome>` e um `cargo test -p wardd` simples os pula); a guarda é a 2ª camada
+      se alguém tirar o `required-features`.
+  - `cargo test -p ward -p ward-nm -p ward-test-bridge` (a combinação do achado) agora
+    não compila, com a mensagem da guarda.
+  - `crates/ward/src/tests.rs`: os 7 `ExpectedServer::system()` e os 2
+    `system_at("/run/ward/4294967294/wardd.sock")` viraram `unreachable_server()`
+    (regras de release num caminho que nunca existe, `/run/ward-nao-existe-falso/1/…`,
+    o mesmo dos testes do `ward-platform` e do `app/core`): um teste que conecte por
+    engano recebe "o daemon não está rodando", nunca o daemon instalado.
+  - Varredura do workspace: os demais testes que citam o caminho do sistema
+    (`ward-platform` `server.rs`/`socket.rs`, `app/core` `daemon.rs`) só comparam a string
+    do caminho; os do `wardd` sem `test-mode` não têm `LISTEN_FDS` nem conectam (o
+    `wardd` é servidor). Confirmado pelo teste de ataque abaixo, que roda todos.
+- **Teste de ataque `make test-system-socket`** (`dev/tests/system-socket.sh` +
+  `dev/container-system-socket/inside.sh`, reaproveita `dev/container-platform/fake.c`):
+  1. estático: todo `.rs` de `crates/` e `app/core` com `CARGO_BIN_EXE_` tem a guarda;
+     autoteste com uma cópia de `binary.rs` sem a guarda (tem de ser acusada);
+  2. sem `test-mode`, 9 combinações (a do achado, `-p ward-nm`, `-p ward`,
+     `-p ward-test-bridge` e os 5 testes do `wardd` que sobem o daemon) não compilam, com
+     a mensagem da guarda (ou a recusa do `required-features` do cargo);
+  3. monta os binários de teste de `--workspace --all-features` (o conjunto do
+     `make check`) e os que compilam sem a feature (`ward-core`, `ward-platform`,
+     `ward-app-core`, libs do `wardd` e do `ward-nm`), e o `ward-nm` de release (controle);
+  4. num contêiner `ubuntu:24.04` (mesmo digest dos outros) sem rede, com
+     `--pids-limit 2048 --memory 5g --cpus 4`, o root **planta um socket do sistema
+     falso**: `/run/ward/1000/` do root 0755, `wardd.sock` 0600 do uid 1000, ouvido pelo
+     `fake` como uid 0 e não-dumpable (passa todas as conferências de D46 do cliente de
+     release). Cada binário de teste roda como uid 1000 com ambiente limpo; o registro do
+     falso tem de ficar vazio. No fim, o controle: o `ward-nm` de release com um `fill`
+     conecta no falso e o registro pega (prova que o plantio funciona). O `/run` do host
+     não é montado: nada do teste alcança o daemon real.
+  Evidência em `.dev/logs/system-socket/` (sem segredo). Fora do `make check` (Docker).
+
+- **(2) gitleaks**: os 9 `generic-api-key` da árvore saíram. Cada valor falso novo foi
+  trocado por um valor de D15 (já na allowlist, casado inteiro); nada entrou no
+  `.gitleaks.toml`. O handoff da Fase 50 ficou sem o valor.
+
+  Literais alterados (regra 5):
+  | Arquivo | Antes (forma) | Depois | Motivo |
+  | --- | --- | --- | --- |
+  | `app/core/src/first_use.rs` (confirmação diferente) | senha mestra falsa fora de D15 | `falso-WP-senha-01` | gitleaks |
+  | `crates/ward-core/src/backup/tests.rs` (nova senha) | idem | `falso-SSH-senha-01` | gitleaks |
+  | `crates/wardd/tests/d62.rs` (nova senha) | idem | `falso-SALTO-01` | gitleaks |
+  | `crates/wardd/tests/backup.rs` (nova senha) | idem | `falso-passphrase-01` | gitleaks |
+  | `crates/wardd/tests/settings.rs:111` (troca recusada ao agente/extensão) | idem | `falso-aws-secret-01` | gitleaks |
+  | `crates/wardd/tests/settings.rs:461` (troca com o arquivo real) | idem | `falso-licenca-01` | gitleaks |
+  | `crates/ward-test-bridge/tests/attacks.rs` (corpo da chave carregada) | base64 de um valor fora de D15 | base64 de `falso-WP-senha-01` (já na allowlist) | gitleaks |
+  | `crates/ward-test-bridge/tests/attacks.rs` (confirmação diferente) | senha mestra falsa fora de D15 | `falso-WP-senha-01` | gitleaks |
+  | `docs/mission/handoffs/phase-50.md:181` | o valor citado | descrição sem o valor | gitleaks |
+  | `crates/ward/src/tests.rs` | `/run/ward/4294967294/wardd.sock` | `/run/ward-nao-existe-falso/1/wardd.sock` | fora do `/run/ward` do sistema |
+  | 8 arquivos de teste | — | mensagem do `compile_error!` da guarda | guarda do `test-mode` |
+
+  Todos os valores novos têm ≥ 12 caracteres (mínimo da senha mestra) e diferem da
+  senha mestra de teste; os testes só comparam por variável.
 
 ## Segurança
-- Invariantes tocadas: S3/S5 (a senha mestra só no TTY e para o `wardd` instalado) e o resíduo
-  RA8. É só documentação: nenhum código do Ward muda. O caminho completo fecha o ataque da
-  auditoria (`ward` falso antes no `PATH`). Testei no bash e no zsh, por script na scratchpad:
-  ele não fecha uma função com o nome `/usr/local/bin/ward` (vale nos dois shells) nem um alias
-  do zsh com esse nome. O bash recusa esse alias. O próprio `command` pode ser trocado por uma
-  função. Os docs dizem isso e o escopo deixa o shell adulterado como risco aceito.
+
+- **S1/S5 (D46)**: nenhum teste do workspace chega ao socket do `wardd` instalado; o
+  cliente de release só existe nos testes dentro do contêiner, contra o socket falso.
+- **S15 / V2.1**: árvore sem achado do gitleaks; allowlist intacta (só D15 inteiro).
 - Testes de ataque escritos:
-  - `dev/testes/migracao.py` › ataques `54a: destravar pelo PATH`, `54a: destravar por outro ward`,
-    `54a: destravar pelo PATH em outro passo`
-  - `dev/testes/skill.py` › ataques `skill manda destravar pelo PATH`, `skill manda destravar por
-    outro ward`, `skill cita destravar pelo PATH além do caminho completo`, `README sem o caminho
-    completo`
+  - `dev/tests/system-socket.sh` (+ `dev/container-system-socket/inside.sh`): socket do
+    sistema falso plantado; nenhum dos 59 binários de teste conecta; controle conecta;
+    autoteste da varredura estática; recusa de compilação sem `test-mode`.
+  - Guarda por `compile_error!` nos 8 arquivos citados (o ataque — compilar o teste sem
+    a feature — falha na compilação).
 - Dependências novas: nenhuma.
 
 ## Ficou de fora
-- A mensagem da própria CLI (veja Problemas): é código do `ward`, fora desta fase de docs.
-- Um `make teste-skill` completo, porque compila o `ward` em `target/sem-modo-teste` e o disco
-  tem ~2,9 GB livres, com outro worker compilando. Rodei o `dev/testes/skill.py` direto contra o
-  `target/debug/ward` do checkout principal. O script só usa o `ward --help` desse binário.
-- `make check`: não rodou, pelo disco e porque nenhum arquivo Rust mudou. Rodei à parte o
-  gitleaks das duas varreduras de árvore (o binário do checkout principal, com o sha256
-  conferido contra o `GITLEAKS_BIN_SHA256` do Makefile), sem achados. Não rodei as varreduras de
-  git/índice/histórico porque nada foi commitado.
-- O comentário do Makefile e a linha do CLAUDE.md de `teste-migracao`/`teste-skill` não citam a
-  Fase 54a. Deixei assim para não conflitar com a Fase 54 no checkout principal.
+
+- `app/src-tauri` (workspace próprio, precisa de WebKitGTK): fora do teste de ataque. Os
+  testes dele usam `DaemonSocket::system_at` com caminhos de teste (comentário em
+  `main.rs:1081`); não vi caminho para o socket do sistema.
+- Histórico do git: não se reescreve (pedido). Achados que só existem no histórico
+  (`gitleaks git --config .gitleaks.toml`, 12 achados, todos `generic-api-key`, valores
+  falsos de teste fora de D15; nenhum segredo real). O usuário decide (reescrever,
+  `.gitleaksignore` por fingerprint, ou aceitar): enquanto isso, o passo `gitleaks git` do
+  `make check` continua falhando.
+  | Commit | Arquivo:linha |
+  | --- | --- |
+  | `1ae5610` | `crates/ward-test-bridge/tests/attacks.rs:652`, `:786` |
+  | `0c09209` | `crates/ward-core/src/backup/tests.rs:369` |
+  | `c0d849e` | `crates/wardd/tests/configuracoes.rs:109`, `:459` |
+  | `81960fb` | `crates/wardd/tests/backup.rs:437`, `d62.rs:449`, `settings.rs:111`, `settings.rs:465` |
+  | `541720e` | `app/core/src/first_use.rs:199`, `:227` |
+  | `1b2820b` | `docs/mission/handoffs/phase-50.md:181` |
+- Linha da tabela de comandos do `CLAUDE.md` para `make test-system-socket`: não editei o
+  `CLAUDE.md` (arquivo de instruções); fica para o orchestrator/usuário.
+- Suítes inteiras (`make check`) não rodadas fora do contêiner (regra 6 e a regra do
+  pedido: só `test-mode`, nunca no host com risco de socket do sistema).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `python3 -I -B dev/testes/migracao.py <cópia 0600 de .dev/variacoes.txt>` (= `make teste-migracao`) | 0 |
-| `python3 -I -B dev/testes/skill.py /home/…/cofre/target/debug/ward` (com `.dev/variacoes.txt` copiado 0600 no worktree, apagado no fim) | 0 |
-| `gitleaks dir --config dev/gitleaks-arvore.toml …` | 0 |
-| `gitleaks dir --config dev/gitleaks-extra-arvore.toml … --max-archive-depth 3` | 0 |
-| `grep -c -F -f .dev/variacoes.txt` nas linhas acrescentadas | 0 ocorrências |
-| `make check` | não rodou (disco; só docs e Python de teste mudaram) |
+| gitleaks 8.30.1 (binário do checkout principal, sha256 conferido) `dir --config dev/gitleaks-tree.toml` antes (`.dev/logs/fase54a-leaks-tree-before.log`) | 1 (9 achados) |
+| idem depois (`.dev/logs/fase54a-leaks-tree-after.log`) | 0 |
+| gitleaks `git --config .gitleaks.toml` (`.dev/logs/fase54a-leaks-history.log`) | 1 (12 achados só no histórico, tabela acima) |
+| `make compile` (`.dev/logs/fase54a-make-compile.log`) | 0 |
+| `make english-check` (`.dev/logs/fase54a-english-check.log`) | 0 |
+| `make fmt-check` | 0 |
+| `make test-system-socket` 1ª rodada (`.dev/logs/fase54a-test-system-socket.log`) | 2: o ataque passou (0 conexões, controle ok); o passo 2 não aceitava a recusa do `required-features` do cargo para os testes do `wardd` (corrigido no script) |
+| `make test-system-socket` 2ª rodada (`.dev/logs/fase54a-test-system-socket-2.log`) | 0 (0 conexões no socket falso, controle conecta, 9 recusas de compilação, autoteste ok) |
+
+Na rodada do contêiner, 39 dos 59 binários passaram; os 20 que não passaram falham por
+falta do que o contêiner não tem (strace/ptrace, dbus-daemon, ssh, Chrome, tempo); só o
+registro do socket falso decide o teste.
 
 ## Problemas descobertos
-- **A CLI manda usar o `ward` do `PATH`.** `crates/ward/src/comandos.rs:143` responde
-  `travado: destrave com ` + "`ward destravar`" + ` ou pelo app`. A mensagem aparece no terminal
-  do usuário e também no do Claude. Deveria dizer `/usr/local/bin/ward destravar` (ou "pelo
-  app"). O `teste-cli` (V4.22) e as evidências do M3/M4 conferem o texto exato, então mudar
-  isso afeta os dois. Fica para o orchestrator decidir (é código do `ward`).
-- O caminho completo não fecha uma função do bash ou do zsh, nem um alias do zsh, com o nome
-  `/usr/local/bin/ward`. Testei e registrei no escopo e no PRD como parte do resíduo aceito. Se
-  o usuário quiser fechar mais, a opção é destravar só pelo app, mas o proxy Wayland também é
-  RA8. Volta ao usuário.
-- O `teste-skill` real (com o `ward` sem `modo-teste`) precisa rodar quando houver disco.
+
+- **gitleaks no histórico** (tabela acima): o `make check` (passo `gitleaks git`) segue
+  falhando até o usuário decidir.
+- `docs/mission/plan.md:392` (Fase 61) ainda cita o valor falso que saiu do handoff da
+  Fase 50; o gitleaks não acusa (sem contexto de atribuição), e o plano é do orchestrator.
+- Os outros testes do `wardd` sob `required-features` (`ssh`, `login`, `playwright`, com
+  `test-hooks`) e `ward-platform/tests/{activation,identification}.rs`
+  (`#![cfg(feature = "test-mode")]`) pulam calados sem a feature; não falam com o socket
+  do sistema, então ficaram como estão.
+- Conflito possível com a Fase 53 (paralela): só a guarda no topo de
+  `crates/wardd/tests/run.rs`, `socket.rs`, `lock.rs` e duas linhas de `settings.rs`,
+  `d62.rs`, `backup.rs`.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `docs/escopo.md` | alterado |
-| `docs/mission/prd.md` | alterado |
-| `docs/instalacao.md` | alterado |
-| `docs/migracao.md` | alterado |
-| `docs/mission/roteiro-usuario.md` | alterado |
-| `skill/ward/SKILL.md` | alterado |
-| `skill/README.md` | alterado |
-| `dev/testes/migracao.py` | alterado |
-| `dev/testes/skill.py` | alterado |
+| `Makefile` (alvo `test-system-socket`) | alterado |
+| `dev/tests/system-socket.sh` | criado |
+| `dev/container-system-socket/inside.sh` | criado |
+| `crates/ward-nm/tests/binary.rs` | alterado |
+| `crates/ward/src/tests.rs` | alterado |
+| `crates/ward-test-bridge/tests/attacks.rs` | alterado |
+| `crates/wardd/tests/{socket,lock,run,test_app,app_value_binary,settings,d62,backup}.rs` | alterado |
+| `crates/ward-core/src/backup/tests.rs` | alterado |
+| `app/core/src/first_use.rs` | alterado |
+| `docs/mission/handoffs/phase-50.md` | alterado |
 | `docs/mission/handoffs/phase-54a.md` | criado |
 
 ## Procedimentos
-- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): não rodou (disco); o
-  gitleaks das árvores rodou à parte, limpo; nenhum arquivo Rust mudou
+- [ ] `make check` rodado — não (regra 6); `make compile`, `fmt-check`, `english-check`,
+  gitleaks e `make test-system-socket` rodados
 - [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [ ] (UI/DESIGN) Conferido contra o FigCraft: não se aplica
+- [x] Teste de ataque para cada (SEG) tocado (S1/S5: `make test-system-socket`; S15: gitleaks)
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

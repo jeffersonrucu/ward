@@ -1,165 +1,197 @@
-# Fase 26 — `ward run`
+# Fase 26 — `wardd`: testes `external.rs`, `backup.rs`, `settings.rs`, `d62.rs` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- **CLI** (`crates/ward`):
-  - `ward run <entrada> -- <comando> [args…]`. O argv vai em bytes, sem shell, e o `--` que vier depois é do comando. Sem entrada, sem `--` ou sem comando, o uso sai 2.
-  - **D52:** o pedido é medido antes de conectar.
-    - Acima de 750 KiB, sai 125 com a mensagem fixa do limite.
-    - Campo acima de 128 KiB, ou argumentos/variáveis demais, também sai 125, com mensagem fixa.
-    - Nenhum valor é citado.
-  - Ambiente sem `LD_*` e cwd em bytes.
-  - Antes do `executar`, um `estado`: com o cofre travado, avisa no stderr que espera o destrave por até 2 min (V4.21).
-  - Na sessão:
-    - a entrada padrão vai em quadros `entrada_padrao` de até 64 KiB, e um vazio marca o fim;
-    - `saida` vai para stdout/stderr e `fim` dá o código de saída;
-    - erro do daemon sai 125 com a mensagem (como `env` e `docker run`);
-    - não há prazo de leitura nem de escrita.
-  - Ajuda atualizada.
-- **Plataforma** (`ward-plataforma::filho`, `sys`): fork/execve próprio no lugar do `std::process::Command`, para o segredo do ambiente não passar por buffer que não zera (S8). No filho:
-  - `setpgid` e `PR_SET_PDEATHSIG=SIGKILL`; se o pai mudou, sai;
-  - sinais no padrão e máscara vazia;
-  - `dup2` dos pipes, `chdir` e `close_range(CLOEXEC)` de todos os fds do daemon;
-  - busca no `PATH` do próprio filho (o padrão é `/bin:/usr/bin`), sem fallback para shell.
-
-  A falha antes do exec volta por um pipe de aviso: 127 para comando não encontrado, 126 para sem permissão, com mensagem fixa. O `Grupo`:
-  - espera com `waitid(WNOWAIT)`;
-  - mata o grupo inteiro (`kill(-pgid)`) quando o líder sai, e também no `Drop`;
-  - depois colhe o processo.
-
-  Código de saída: o do processo, ou 128+sinal.
-- **Daemon** (`wardd::execucao`, novo):
-  - Ordem do `executar`:
-    1. pré-checagem da nota segura visível (`tipo_sem_entrega`, sem pedir aprovação e sem revelar se uma bloqueada existe);
-    2. `autorizar_uso`, depois `registrar_uso`;
-    3. sob a trava, a entrada é encontrada de novo (pode ter mudado durante a aprovação) e a entrega (`ward_core::entrega::montar`) e a máscara são montadas;
-    4. a trava é solta e o ambiente é montado: o da CLI sem `LD_*`, a primeira de cada duplicata, os nomes da entrega por cima e o ajuste de locale;
-    5. lançamento.
-  - **Locale (handoff 22a, RA3):** se o `LC_CTYPE` efetivo (`LC_ALL` > `LC_CTYPE` > `LANG`) não é UTF-8, o filho recebe `C.UTF-8` só na variável que manda. Assim o bash usa aspas, que a máscara cobre, e não `$'…'`.
-  - **Anexos e chave (S2):** cada um vai para `<rt>tmp/s<pid>-<n>/<nome>`.
-    - Pasta 0700; arquivo `create_new`, 0600, `O_NOFOLLOW|O_CLOEXEC`.
-    - Ao sair (qualquer saída), cada arquivo é zerado (só se for o mesmo inode, regular e com `nlink==1`) e a pasta é apagada.
-    - A partida do `wardd` esvazia `<rt>tmp/` (V4.15) e loga só a contagem.
-    - `<rt>` é `/run/user/<uid>/ward/` no release (pelo uid efetivo) e o diretório do socket no daemon de teste.
-  - **Sessão:**
-    - threads de stdout/stderr com `poll` e passo de 100 ms, mascarando em fluxo e mandando `saida` de até 64 KiB;
-    - stdin por fila limitada (8), com contrapressão até a CLI;
-    - leitor da CLI: `EntradaPadrao` vai para a fila e `Janela` é ignorado. Qualquer outro quadro, ou o EOF da CLI, mata o grupo (D13).
-    - No fim, nesta ordem: espera o líder, mata o grupo, colhe, apaga os temporários, dá 2 s para o resto da saída, manda `fim` e fecha a conexão. O log só leva números.
-  - Novos erros de protocolo: `tipo_sem_entrega` ("tipo sem entrega") e `entrega_falhou` ("a entrega da credencial falhou; nada foi executado").
-  - `servidor.rs`: um gancho de 7 linhas manda o `executar` do papel agente para `execucao::sessao`. Se um processo foi lançado, a conexão acaba com a sessão. Se o pedido foi recusado antes (`erro`), a conexão segue, como nas outras operações; o `v3_20` da Fase 22 manda vários `executar` recusados na mesma conexão. Nada mais mudou ali.
-  - `config.rs`/`main.rs`: campo `rt`, `com_temporarios(rt)` e limpeza na partida.
-  - `aprovacao.rs`: `Motor::esperando_sem_app()`, ligado no `main`. Com o cofre travado e o app indisponível, o pedido espera o `ward destravar` por até 2 min em vez de responder `travado` na hora (V4.21; ver Problemas). O `Daemon::novo` dos testes continua com o comportamento antigo.
-- **Contêiner** (`make teste-units`, V4.38):
-  - grupos `ward-app`/`ward-nm` e cópias setgid 2755 do cliente mínimo, com o `ward` de release instalado;
-  - `ward run acme-pg-dev -- /usr/local/bin/ward-app … estado` (e `lista`, e o mesmo com o `ward-nm`), com o ambiente de D57, fica com papel agente;
-  - o journal tem "papel app recusado (pid N) … (D63)", e nenhum valor `falso-` aparece nele;
-  - o cliente mínimo agora imprime `resposta: estado papel=<papel>`.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard 55c4645`
+  (master atual). Fase em paralelo com as Fases 17, 25 e 33: só os nomes próprios destes
+  testes mudaram; os do `ward-core` (`protocolo`: `Papel`, `Resposta`, `ErroResposta`,
+  `Pedido`, `VersaoBackup` e os campos `nome`/`conferida`/`fora_de_ordem`/`ligado`/
+  `montado`/`minutos_trava`…), do `nucleo` (`Daemon::novo`, `com_pendrives`,
+  `sincronizar_externo`, `ligar_copia_externa`, `com_gancho_depois_de_gravar`, `travar`,
+  `travado`, `atender`, `Caminhos { cofre, estado }`, `Relogio` com `dormir`/`agora`,
+  `ESPERA_MAXIMA`, `espera_destrave`) e do `arquivos` (`Geracoes { vista, queimada }`,
+  `ler_estado_completo`, `gravar_estado`, `falhas_agente`) ficaram como no master.
+- **Arquivos** (glossário seção 4, `git mv`): `tests/externo.rs` → `tests/external.rs`,
+  `tests/configuracoes.rs` → `tests/settings.rs`; `backup.rs` e `d62.rs` mantêm o nome.
+  Nenhum deles tem `[[test]]` no `Cargo.toml`; nenhum alvo do Makefile nem script chama
+  estes testes pelo arquivo ou pelo nome da função (procurado fora de
+  `docs/mission/arquivo/` e dos handoffs).
+- **Comentários, locais, parâmetros, tipos auxiliares e nomes de teste** dos quatro
+  arquivos em inglês. Comentários que citavam nome pt-BR de fio ou de outro módulo
+  (`criar_cofre`, `configuracao`, `pendrives`, `pendrives_indisponiveis`,
+  `pedido_invalido`, `nucleo::backups`, `dormir`, `vista`/`queimada`, o conteúdo
+  `antiga`) foram reescritos com o sentido em inglês, sem o nome (como nas Fases 21, 24
+  e 27).
+- **Renomes (antigo → novo)**, todos no glossário (parágrafo "Fase 26", depois do da
+  Fase 27):
+  - `external.rs`: `Fonte { vistos, proximas, consultas }` → `Source { seen, next,
+    queries }` (`com`/`por` → `with`/`set`), `pendrive` → `usb_drive`, `montagem` →
+    `mount_point`, `ligar` → `turn_on`, `locais` → `local_versions`, `arvore` → `tree`,
+    `pasta_externa` → `external_dir`, `no_pendrive` → `on_drive`, `BarramentoFalso {
+    filho }` → `FakeBus { child }` (`subir`/`endereco` → `start`/`address`), `Objeto {
+    caminho, rotulo, dispositivo, montagem, sistema, de_loop }` → `Object { path, label,
+    device, mount, system, is_loop }`, `Objetos`/`objetos`/`objeto` →
+    `Objects`/`objects`/`object`, `Gerente` → `Manager`, `UdisksFalso` → `FakeUdisks`
+    (`novo`/`montou` → `new`/`mounted`), `cutucoes` → `nudges`.
+  - `backup.rs`: `pasta` → `backup_dir`, `modo` → `mode`, `versoes` → `versions`,
+    `restaurar` → `restore`, `nomes_da_lista` → `list_names`, `tempo_trava` →
+    `lock_timeout`, `versao_em` → `version_at`, `plantar` → `plant`.
+  - `settings.rs`: `configuracao` → `settings`, `tempo_trava` → `lock_timeout`,
+    `trocar_pin` → `change_pin`, `trocar_senha` → `change_password`.
+  - `d62.rs`: `RelogioMovel { agora, esperas }` → `MovableClock { now, waits }` (`andar`
+    → `advance`), `Preso { entrou, soltar, esperas }` → `Stuck { entered, release,
+    waits }`, `daemon_movel` → `movable_daemon`, `destravar_como` → `unlock_as`,
+    `texto_estado` → `state_text`, `falhas_no_disco` → `failures_on_disk`,
+    `cofre_travado` → `locked_vault`, `trocar_por_copia` → `swap_for_copy`.
+  - Testes (45): `v7_4_desligado_por_padrao_nao_grava_nada` →
+    `v7_4_off_by_default_writes_nothing`,
+    `v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo` →
+    `v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret`,
+    `ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada` →
+    `attack_swapped_drive_or_repeated_uuid_gets_nothing`,
+    `ataque_montagem_ou_pasta_que_e_link` → `attack_mount_or_folder_that_is_a_link`,
+    `ataque_versao_existente_no_pendrive_nao_e_sobrescrita` →
+    `attack_existing_version_on_the_drive_is_not_overwritten`,
+    `pendrive_fica_com_30_versoes` → `drive_keeps_30_versions`,
+    `f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais` →
+    `f54c_attack_names_planted_on_the_drive_do_not_delete_real_copies`,
+    `ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais` →
+    `attack_future_dated_versions_on_the_drive_do_not_delete_the_real_ones`,
+    `ataque_lixo_no_backup_local_nao_gira_o_pendrive` →
+    `attack_junk_in_the_local_backup_does_not_rotate_the_drive`,
+    `travado_ou_desligado_nao_copia` → `locked_or_off_does_not_copy`,
+    `v7_8_agente_e_extensao_nao_ligam_nem_leem` →
+    `v7_8_agent_and_extension_neither_turn_on_nor_read`,
+    `pendrives_sem_udisks_e_uuid_invalido` → `usb_drives_without_udisks_and_invalid_uuid`,
+    `udisks_falso_e_lido_com_as_conferencias` → `fake_udisks_is_read_with_the_checks`,
+    `v7_5_sinal_do_udisks_copia_para_o_pendrive_montado` →
+    `v7_5_udisks_signal_copies_to_the_mounted_drive`, `externo_nao_usa_link` →
+    `external_does_not_use_link`; `v7_1_cada_gravacao_do_daemon_vai_para_o_backup` →
+    `v7_1_each_daemon_write_goes_to_the_backup`, `v7_8_agente_e_extensao_nao_restauram`
+    → `v7_8_agent_and_extension_do_not_restore`,
+    `v7_11_restaurar_sela_geracao_nova_e_copia_a_mao_e_retrocesso` →
+    `v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback`,
+    `ataque_restaurar_sem_pin_senha_errada_e_travado` →
+    `attack_restore_without_pin_wrong_password_and_locked`,
+    `ataque_pasta_de_backups_trocada_por_link` → `attack_backups_folder_swapped_for_a_link`,
+    `ataque_versao_trocada_por_link` → `attack_version_swapped_for_a_link`,
+    `ataque_restaurar_com_cofre_trocado_fora_do_ward` →
+    `attack_restore_with_vault_swapped_outside_ward`,
+    `ataque_restaurar_sem_gravar_o_estado_nao_troca_o_cofre` →
+    `attack_restore_without_writing_the_state_does_not_swap_the_vault`,
+    `restaurar_pede_a_senha_da_versao` → `restore_asks_for_the_version_password`,
+    `ataque_versoes_com_data_futura_nao_apagam_as_reais_nem_restauram` →
+    `attack_future_dated_versions_neither_delete_the_real_ones_nor_restore`,
+    `restaurar_mantem_tempo_de_trava_e_backup_externo_atuais` →
+    `restore_keeps_the_current_lock_timeout_and_external_backup`,
+    `pasta_de_backups_insegura_aparece_na_configuracao` →
+    `unsafe_backups_folder_shows_in_the_settings`,
+    `temporarios_do_estado_somem_na_partida` → `state_temp_files_go_away_at_startup`,
+    `f54l_ataque_fifo_trocado_no_lugar_da_versao_nao_prende_o_daemon` →
+    `f54l_attack_fifo_swapped_in_place_of_the_version_does_not_hold_the_daemon`;
+    `v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre` →
+    `v5_22_default_4h_off_and_changeable_timeout_saved_in_the_vault`,
+    `ataque_agente_e_extensao_nao_leem_nem_mudam_a_configuracao` →
+    `attack_agent_and_extension_neither_read_nor_change_the_settings`,
+    `ataque_configuracao_com_o_cofre_travado` → `attack_settings_with_the_vault_locked`,
+    `ataque_resposta_configuracao_sem_hash_nem_pin` →
+    `attack_settings_reply_without_hash_or_pin`, `v5_22_trocar_pin_pede_o_pin_atual` →
+    `v5_22_change_pin_asks_for_the_current_pin`,
+    `ataque_adivinhar_pin_pela_troca_trava_no_quinto_erro` →
+    `attack_guessing_the_pin_through_the_change_locks_on_the_fifth_error`,
+    `v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao` →
+    `v5_22_change_password_asks_for_the_current_one_and_keeps_the_settings`,
+    `ataque_senha_mestra_nova_curta_recusada_pelo_daemon` →
+    `attack_short_new_master_password_refused_by_the_daemon`,
+    `senha_mestra_composta_abre_decomposta_pelo_daemon` →
+    `composed_master_password_opens_decomposed_through_the_daemon`,
+    `f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha` →
+    `f55_attack_fifo_in_place_of_the_vault_does_not_hold_the_password_change`;
+    `v3_33_espera_do_agente_sobrevive_ao_reinicio` →
+    `v3_33_agent_wait_survives_the_restart`,
+    `ataque_agente_no_meio_da_espera_nao_atrasa_o_app` →
+    `attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app`,
+    `v3_33_formato_antigo_e_estado_sem_segredo` →
+    `v3_33_old_format_and_state_without_secret`,
+    `v3_35_criar_cofre_com_estado_velho_e_copia_antiga` →
+    `v3_35_create_vault_with_old_state_and_old_copy`,
+    `v3_35_criar_cofre_sem_estado_e_com_estado_invalido` →
+    `v3_35_create_vault_without_state_and_with_invalid_state`,
+    `v3_35_troca_logo_depois_do_rename_e_recusada` →
+    `v3_35_swap_right_after_the_rename_is_refused`.
+- **Literais** (PRD regra 5): conferidos por script (multiconjunto dos literais de cada
+  arquivo contra o master). Só mudam nomes de captura de `format!`/`assert!` (achado da
+  Fase 7; o texto produzido é o mesmo): `{proibido}` → `{forbidden}` (`external.rs`);
+  `{versao}`/`{alvo}`/`{minutos}`/`{lista:?}`/`{outra:?}`/`{nome}` (8 nomes de
+  temporário)/`{trocas} trocas, {listas} listas` → `{version}`/`{target}`/`{minutes}`/
+  `{list:?}`/`{other:?}`/`{name}`/`{swaps} trocas, {lists} listas` (`backup.rs`);
+  `{minutos}`/`{fora}`/`{papel:?}`/`{agulha}: {texto}`/`{texto}`/`{novo:?}`/
+  `{curta:?}`/`{outra:?}`/`{trocas} trocas, {pedidos} pedidos, {lidos} lidos` →
+  `{minutes}`/`{out_of_range}`/`{role:?}`/`{needle}: {text}`/`{text}`/`{new:?}`/
+  `{short:?}`/`{other:?}`/`{swaps} trocas, {requests} pedidos, {read_ok} lidos`
+  (`settings.rs`); `{criar:?}` → `{create:?}` (`d62.rs`). O `"PEN\u{1b}[2J"` continua
+  escapado (nenhum caractere de controle cru nos arquivos), e as operações, campos de
+  fio, nomes de pasta (`backups`, `ward-backup`, `pendrive-a`…), mensagens e valores
+  falsos ficam iguais.
+- `external_does_not_use_link` continua lendo `../src/external.rs` e procurando
+  `rename_no_replace(destination.as_fd()` (presente 1 vez no `src/external.rs` atual) e os
+  mesmos quatro proibidos.
+- `allow.txt`/`frozen.txt`: nenhuma entrada nova.
 
 ## Segurança
-- **Invariantes tocadas:**
-  - **S1:** a CLI nunca recebe segredo. A sessão só manda `saida` (já mascarada), `fim` e `erro`. A `Resposta` do papel agente com credencial é recusada na codificação (`Cli::enviar`).
-  - **S2:** temporários só em `<rt>tmp/` (0700/0600), zerados e apagados em toda saída e esvaziados na partida. O `<rt>` aberto ou que é link é recusado.
-  - **S3:** o segredo só vai no ambiente, nunca em argv.
-  - **S4:** máscara em fluxo nos dois canais, com corte entre pedaços e a pausa de D34.
-  - **S8:** fork/exec com buffers `Zeroizing` de tamanho exato.
-  - **S9/D8:** o uso passa por `autorizar_uso` (níveis, aprovação, D19).
-  - **S13:** o log não leva valor.
-  - **D13/D60:** o ambiente vem só da CLI, sem `LD_*` e sem nada do daemon (`LISTEN_*`, `WARD_DEV_*`, `RUST_LOG`).
-  - **D63:** o filho do daemon com o grupo do app fica agente (V4.38).
-- **Testes de ataque:**
-  - `crates/wardd/tests/run.rs`:
-    - `v4_entrega_mascara_codigo_e_recusas` cobre: `LD_PRELOAD`/`LD_LIBRARY_PATH` tirados; variável do daemon não vaza; a `WARD_PASS` da CLI é sobrescrita; a senha em claro, em base64 e em pedaços com pausa, no stdout e no stderr; nota, aprovação sem app e bloqueada sem executar nada (marca ausente); quadro fora da sessão mata o comando; o log em `trace` sem segredo nem base64.
-    - `v4_15_cli_que_cai_e_daemon_morto`: a CLI cai e o grupo e o neto morrem em até 1 s, e o anexo some; o filho com SIGKILL dá 137 e o anexo some; o `wardd` com SIGKILL leva o filho junto (pdeathsig) e a partida seguinte limpa `<rt>tmp/` (0700).
-    - `ra1_registro_environ_do_filho_legivel_pelo_mesmo_uid`: prende o estado do RA1 (o `environ` do filho é legível pelo mesmo uid; o do `wardd` não é).
-    - `d52_pedido_grande_demais_recusado_pelo_daemon`: segunda camada, sem executar nada.
-    - `v4_21_travado_espera_o_destravar_da_cli`.
-  - `crates/wardd/src/execucao.rs` (unitários): `ataque_rt_aberto_ou_link_recusado`, `temporarios_0600_zerados_e_apagados` (um link no lugar do arquivo não é seguido nem zerado), `partida_limpa_o_que_ficou`, `ld_e_proibida`, `locale_utf8_fica_e_c_vira_c_utf8`.
-  - `crates/ward-plataforma/src/filho.rs` (11 testes):
-    - o ambiente não é herdado;
-    - os fds do daemon não chegam ao filho;
-    - os sinais ficam no padrão;
-    - matar o grupo leva os netos;
-    - pdeathsig;
-    - busca no `PATH` sem shell;
-    - `Debug` sem valor.
-  - `crates/ward/src/testes.rs`: `d52_run_grande_demais_recusado_antes_de_conectar` (nem conecta) e `run_pedido_saida_e_codigo` (o pedido sai sem `LD_*`).
-  - `crates/ward/src/args.rs` › `run`: a mensagem de uso não repete argumento.
-  - `dev/testes/cli.py` (`make teste-cli`, contra o `make dev-daemon`):
-    - V4.3–V4.8 e V4.10 por sha256 contra "Entrega esperada", com o TOTP calculado em Python;
-    - V4.11, V4.17 (as 8 formas), V4.19, V4.36;
-    - anexo 0600 em `<rt>tmp/` e apagado;
-    - D60, `LD_*`, entrada padrão;
-    - nenhum padrão de `.dev/variacoes.txt` em nenhuma saída;
-    - o log do daemon conferido à parte com `grep -F -f .dev/variacoes.txt` (0).
-  - `dev/conteiner-units/dentro.sh`: V4.38.
-- **Dependências novas:** nenhuma.
+- Invariantes tocadas: nenhuma lógica. Os testes de ataque de V3.33, V3.35, V5.22, V7.1,
+  V7.4–V7.6, V7.8, V7.11 e das Fases 49a, 54, 54c, 54l e 55 (S1, S7, S9, S13) mudaram só
+  nomes e comentários: mesmos passos, mesmos valores, mesmas asserções e as mesmas
+  mensagens.
+- Testes de ataque escritos: nenhum novo (fase de tradução); os existentes renomeados
+  acima. Não rodaram (PRD regra 6).
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **V4.9 (sftp) e V4.12 (psql):**
-  - O `make teste-home-real` reprovou neste worktree: os serviços de pé são de outro worktree (outras chaves de host e de login), e o git do worktree abre `.git/worktrees/…` no home.
-  - Por isso nenhum cliente ssh/sftp/curl foi rodado.
-  - Não há `psql` no host.
-  - Os dois ficam para o validador, com os serviços deste checkout. Para o V4.9, o cliente tem de entrar no `home-real.sh` (D56/V4.37 é da Fase 27).
-- **V4.13 (RA1):** sem mitigação genérica. O `execve` volta o `dumpable` a 1, o namespace de usuário não muda o `PTRACE_MODE_READ` e o Yama só cobre o `ATTACH`. Reprova e vai ao usuário; o teste `ra1_…` prende o estado.
-- **Túnel do banco (`acme-pg-tunel`, V4.29):** é da Fase 28. Hoje sai `entrega_falhou`, sem executar.
-- **V4.14** (laço em `/proc/*/cmdline`) e **V4.16** (`find ~ /tmp`) são do auditor do M4. Pelo desenho, o segredo nunca vai em argv nem em arquivo fora de `<rt>`.
-- **`revelar` do V4.38:** o cliente mínimo não manda `revelar`. Conferi o papel agente (no `estado`) e a linha do journal, que basta, porque `revelar` é só do app. Fica para o validador se ele quiser a resposta literal "não autorizado".
-- **V4.21 "sem destravar sai ≠0 em 120 s ± 2 s":** não foi cronometrado aqui (são 2 min). O motor é o da Fase 23 (prazo de D20).
+- Os nomes do `nucleo`, do `arquivos` (Fases 19–20) e do `ward-core::protocolo` (Fases
+  17–18) usados por estes testes: são dessas fases. O checador ainda acusa 667 linhas de
+  identificador nos quatro arquivos, todas desses nomes (lista no log).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas`, `make dev-servicos`, `make dev-cofre` | 0 |
-| `cargo test -p ward-plataforma --lib filho` | 0 |
-| `cargo test -p wardd --all-features --test run` | 0 |
-| `cargo test -p ward --all-features` | 0 |
-| `make dev-daemon` + `make teste-cli` (0 falha) + `make dev-daemon-parar` | 0 |
-| `make teste-units` (com V4.38) | 0 |
-| `make teste-home-real` | 2 (ambiente do worktree; ver Ficou de fora) |
-| `make fmt` | 0 |
-| `make check` | 2 nas duas primeiras rodadas (`v3_33` sensível a carga, load ~20; ver Problemas); 0 na última |
+| `make fmt` (log `.dev/f26/fmt-fase26.log`; só os quatro arquivos da fase mudaram) | 0 |
+| `make compile` (log `.dev/f26/compile-fase26.log`; 0 warning; inclui `cargo check --workspace --all-targets --all-features`, com `test-hooks`) | 0 |
+| `cargo clippy -p wardd --all-targets --all-features --locked -- -D warnings` (extra, log `.dev/f26/clippy-fase26.log`) | 0 |
+| `make english-check PATHS="crates/wardd/tests/external.rs crates/wardd/tests/backup.rs crates/wardd/tests/settings.rs crates/wardd/tests/d62.rs"` (log `.dev/f26/english-check-fase26.log`) | 2 (667 identificadores de outras fases; 0 comentário, 0 arquivo, 0 problema nas exceções) |
+
+`make check` não rodou: pelo plano (PRD regra 6), as fases dos Milestones 1–5 terminam
+com `make compile` e o checador; a bateria fica para o Milestone 6.
 
 ## Problemas descobertos
-- **RA1 / V4.13:** o `/proc/<pid>/environ` do filho e o anexo 0600 são legíveis por qualquer processo do mesmo uid enquanto o comando roda. Não há mitigação genérica; a decisão é do usuário.
-- **Ambiente da CLI muda o que o comando aprovado faz:** `BASH_ENV`, `PATH`, `NODE_OPTIONS`, `PYTHONSTARTUP`, `GIT_SSH_COMMAND` e outros vêm da CLI (D13 manda copiar, menos `LD_*`). Um agente pode pedir aprovação de `psql …` com `PATH` ou `BASH_ENV` próprios, e a janela de aprovação não mostra nem o ambiente nem o cwd. O escopo não pede filtrar nada além de `LD_*`. Registro para o usuário, sem escolher lado.
-- **Comportamento novo para V4.21:** com o cofre travado e sem app, o daemon de produção agora espera até 2 min pelo `ward destravar`. A Fase 23 respondia `travado` na hora. Mudei pelo V4.21 e pelo D16; o `Daemon::novo` dos testes antigos (v3_10) segue respondendo `travado`.
-- **O grupo inteiro morre no fim:** processo em segundo plano do comando (`cmd &`) morre quando o líder sai. Isso é intencional (anexo e segredo não sobrevivem ao comando), mas difere de um shell comum.
-- **Neto com `setsid`:** sai do grupo e não é morto. As threads de leitura dele param por `poll` com prazo de 2 s, e a sessão termina mesmo assim. O neto segue vivo com o segredo no ambiente, como em RA1.
-- **Travar durante um `ward run`** não mata o comando em andamento. O escopo só exige isso para o agente do `ward ssh` (D12, Fase 27).
-- **`<rt>` no release:** é `/run/user/<uid>/ward/`, que só existe com a sessão do logind. No contêiner de units (sem logind), o `wardd` loga "pasta de temporários do ward run indisponível (permission denied)" e um `ward run` com anexo ou chave sairia `entrega_falhou`. Na máquina real, com sessão, existe. Vale decidir se o `wardd` cria `/run/user/<uid>` (não pode: é do root) ou se a unit ganha `RuntimeDirectory=`.
-- **`v3_33_kill_9_entre_as_senhas_erradas` (Fase 22b) é sensível a carga.** Numa rodada do `make check`, a primeira espera deu 1,005 s contra o limite de 900 ms. Com load average ~20 (testes de outros worktrees a 976% de CPU), chegou a 1,1–1,4 s também rodado sozinho, e às vezes passa. O caminho do `destravar` não passa por código desta fase; o tempo é do Argon2 sob carga. Não é desta fase: só registro.
-- **Worktree:** o `make teste-home-real` acusa o git do worktree (abre `…/.git/worktrees/<nome>/HEAD`, fora da lista permitida) e não loga nos serviços de outro checkout. É do ambiente, não desta fase.
+- O worktree nasceu em `b4d5e1b`, não em `55c4645`; reset com a árvore limpa.
+- `docs/mission/plan.md` (linha da Fase 26) ainda cita `externo.rs`, `configuracoes.rs` e
+  o teste `externo_nao_usa_link` (agora `tests/external.rs`, `tests/settings.rs` e
+  `external_does_not_use_link`); o plano é do orchestrator.
+- Homônimos em `app/core/src/configuracoes.rs` (`v5_22_padrao_4h_desligado_e_tempo_alteravel`,
+  `v5_22_trocar_pin_pede_o_pin_atual`) e em `crates/wardd/src/arquivos.rs`
+  (`f54l_ataque_fifo_no_lugar_nao_prende_a_leitura`) são outros testes (Fases 33 e 19) e
+  não mudaram.
+- **Arquivo compartilhado**: `docs/glossario.md` (parágrafo novo depois do da Fase 27;
+  conflito de merge trivial se a Fase 25 também escrever ali).
+- Quando as Fases 17–20 renomearem `Papel`, `Resposta`, `nucleo`, `arquivos` etc., estes
+  quatro arquivos mudam só nos usos (nada local depende desses nomes).
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-plataforma/src/filho.rs` | criado |
-| `crates/ward-plataforma/src/sys.rs` | alterado |
-| `crates/ward-plataforma/src/lib.rs` | alterado |
-| `crates/ward-core/src/protocolo/erros.rs` | alterado |
-| `crates/wardd/src/execucao.rs` | criado |
-| `crates/wardd/src/lib.rs` | alterado |
-| `crates/wardd/src/servidor.rs` | alterado (gancho de 7 linhas) |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/src/aprovacao.rs` | alterado |
-| `crates/wardd/src/config.rs` | alterado |
-| `crates/wardd/src/main.rs` | alterado |
-| `crates/wardd/tests/run.rs` | criado |
-| `crates/wardd/examples/cliente-teste.rs` | alterado |
-| `crates/ward/src/args.rs` | alterado |
-| `crates/ward/src/cliente.rs` | alterado |
-| `crates/ward/src/comandos.rs` | alterado |
-| `crates/ward/src/testes.rs` | alterado |
-| `dev/testes/cli.py` | alterado |
-| `dev/testes/units.sh` | alterado |
-| `dev/conteiner-units/dentro.sh` | alterado |
-| `Makefile` | alterado (`teste-units` compila e passa o `ward`) |
-| `CLAUDE.md` | alterado (linhas de `teste-units` e `teste-cli`) |
+| `crates/wardd/tests/externo.rs` → `crates/wardd/tests/external.rs` | renomeado e alterado |
+| `crates/wardd/tests/configuracoes.rs` → `crates/wardd/tests/settings.rs` | renomeado e alterado |
+| `crates/wardd/tests/backup.rs` | alterado |
+| `crates/wardd/tests/d62.rs` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-26.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado (V4.13 só como registro do RA1)
-- [ ] (UI/DESIGN) Conferido contra o FigCraft (não se aplica)
+- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks) — não, pela regra 6
+  do PRD; rodaram `make compile`, `make fmt`, `cargo clippy -p wardd -D warnings` e o
+  checador
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes, renomeados; não rodaram
+  (regra 6)
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

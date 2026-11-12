@@ -1,0 +1,5 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+WARD_DEV_APP="<repo>/target/debug/ward-test-bridge" dev/daemon.sh up
+daemon de teste no ar: pid 1905266, socket /run/user/1000/ward-test/wardd.sock, log <repo>/.dev/logs/wardd.log

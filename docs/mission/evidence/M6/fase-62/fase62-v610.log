@@ -1,0 +1,28 @@
+
+## V2.6 daemon de teste (pid do .dev/wardd.pid): cmdline e dumpable
+<repo>/target/debug/wardd 
+TracerPid:	0
+NoNewPrivs:	0
+
+## V2.6 strace -p no daemon do mesmo uid
+strace: attach: ptrace(PTRACE_SEIZE, 1857643): Operação não permitida
+exit=1
+
+## V2.6 /proc/<pid>/mem e environ ilegíveis
+environ legível: não
+
+## V2.7 ward lock com um ward run em curso (filho com setsid)
+descendente setsid vivo: sim
+cofre travado
+lock exit=0
+ward run exit=137
+ward: o cofre travou; o comando foi encerrado
+descendente setsid depois da trava: morto
+
+## V6.10 travado: ward list
+ward: travado: destrave com `/usr/local/bin/ward unlock` ou pelo app
+exit=1
+
+## V6.10 travado: ward run acme-pg-dev -- true espera o destrave (corte em 5 s pelo timeout)
+ward: cofre travado: o comando espera o destrave por até 2 min (`/usr/local/bin/ward unlock` em outro terminal, ou pelo app)
+exit=124 (124 = ainda esperava)

@@ -1,0 +1,38 @@
+[package]
+name = "ward-test-bridge"
+description = "Ponte HTTP de teste do Ward (só com a feature test-mode; nunca em release)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# D7: the bridge only exists with this feature. Without it the crate builds empty and the
+# binary is not even produced (`required-features`).
+test-mode = ["dep:ward-app-core", "dep:serde_json", "dep:getrandom", "dep:ctutils", "dep:zeroize", "ward-app-core/test-mode"]
+
+# Reason for each dependency in the Phase 29 handoff (S14). All optional: they only come
+# in with `test-mode`.
+[dependencies]
+# The same commands and the same service as the Tauri app.
+ward-app-core = { workspace = true, optional = true }
+# JSON body of the interface calls (no derive: only `Value`).
+serde_json = { version = "1.0.150", optional = true, default-features = false, features = ["std"] }
+# Random token of the bridge (already in the lockfile through `ward-core`).
+getrandom = { version = "0.4.3", optional = true, default-features = false }
+# Constant-time comparison of the token (already in the lockfile through `ward-core`).
+ctutils = { version = "0.4.8", optional = true, default-features = false }
+zeroize = { version = "1.9.1", optional = true, default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+ward-app-core = { workspace = true, features = ["test-mode"] }
+serde_json = { version = "1.0.150", default-features = false, features = ["std"] }
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
+[[bin]]
+name = "ward-test-bridge"
+path = "src/main.rs"
+required-features = ["test-mode"]
+
+[lints]
+workspace = true

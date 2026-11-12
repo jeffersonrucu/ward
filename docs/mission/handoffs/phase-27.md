@@ -1,170 +1,245 @@
-# Fase 27 — `ward ssh` com senha e com chave
+# Fase 27 — `wardd`: testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`, `app_valor.rs`, `valor_app.rs`, `app_teste.rs`, `anexos_edicao.rs` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- **CLI `ward ssh [--token <t>] <entrada> [--] [comando remoto…]`** (`crates/ward/src/args.rs`, `comandos.rs`, `cliente.rs`).
-  - O token tem formato fixo `[A-Za-z0-9_-]{16,64}` e não pode começar com `-`.
-  - Os limites do comando são os mesmos do `ward run` (D52).
-  - Um erro do Ward sai 125. Com o cofre travado, a CLI avisa e espera, como no `run`.
-  - Sem comando e com stdin/stdout em terminal, a sessão é interativa:
-    - o terminal fica em modo cru (`ModoCru`, que volta no `Drop`);
-    - a janela inicial vai no pedido;
-    - uma thread olha o tamanho a cada 250 ms e manda `janela` quando ele muda.
-- **Daemon** (`crates/wardd/src/ssh.rs`): o `Pedido::Ssh` do papel agente é atendido no `servidor.rs` pelo mesmo executor do `ward run`. O `execucao::sessao_com` foi refatorado para aceitar pty e agente.
-  - **Argv** (`montar_argv`): `execve` sem shell.
-    - Senha: `sshpass -e`, com a senha só em `SSHPASS`.
-    - Sempre: `-F /dev/null`, `IdentitiesOnly=yes`, `CertificateFile=/dev/null`, `UserKnownHostsFile=<pasta do cofre>/known_hosts`, `GlobalKnownHostsFile=/dev/null` e `StrictHostKeyChecking=accept-new`.
-    - Também sempre: `UpdateHostKeys=no`, `ControlMaster=no`, `ControlPath=none`, `ForwardAgent=no`, `ForwardX11=no`, `PermitLocalCommand=no` e `ProxyCommand=none`.
-    - Por senha: `PubkeyAuthentication=no`, `IdentityAgent=none` e `IdentityFile=none`.
-    - Por chave: `IdentityAgent=<socket>`, `IdentityFile=<id.pub>`, `PasswordAuthentication=no`, `KbdInteractiveAuthentication=no` e `BatchMode=yes`.
-    - `ssh`: `-p <porta> -l <usuário> -- <host> [comando…]` (D43).
-    - `sftp`: `-o User=<usuário> -P <porta> -- <host>` (D56).
-    - Usuário e host são conferidos de novo: o conjunto de D43, sem `-` no começo e sem `@` no host. Valor fora do formato não monta argv.
-  - **Ambiente do filho do zero**: `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, `TERM=xterm-256color` (só no pty) e `SSHPASS` (só por senha). O cwd é o home do passwd.
-  - **Tipos**:
-    - `servidor` é aceito.
-    - `ftp/sftp` com protocolo `sftp` é aceito sem comando; os comandos vêm pela entrada padrão. Com comando, dá `pedido_invalido`.
-    - O resto dá `tipo_sem_entrega`.
-    - `servidor` com salto responde `entrega_falhou` até a Fase 28.
-    - O tipo é conferido depois do nível, sob a trava do estado. Assim o V4.32 numa entrada `banco` responde pelo nível.
-- **Agente SSH temporário de D12** (`crates/wardd/src/agente_ssh.rs`).
-  - Cria a pasta `<rt>ssh-<16 aleatórios>/` (0700) com `agent.sock` (0600) e `id.pub` (0600).
-  - A chave é decifrada com a passphrase pelo `ssh-key` e só Ed25519 é aceita.
-  - Só responde lista (11→12) e assina (13→14). Qualquer outra mensagem recebe FAILURE (5).
-  - Só atende o pid do filho. No `sftp`, atende também o `ssh` que é filho do filho; quem confere é o SO_PEERCRED + ppid.
-  - Qualquer outro processo é fechado sem nenhum byte. O limite é 4 conexões e 256 KiB por mensagem.
-  - O agente some no fim da sessão, quando a CLI morre (o grupo é morto) e quando o cofre trava (contador `travas` no `Estado`).
-- **Pty** (`ward-plataforma`):
-  - `Comando::lancar_em_pty`: `setsid` + `TIOCSCTTY` no filho e janela por `TIOCSWINSZ`.
-  - Também: `Pty::definir_janela`, `terminal::{e_terminal, tamanho, ModoCru}`, `pasta_pessoal()` e `ProcessoPar::pid_do_pai()`.
-  - Todo `unsafe` está em `sys.rs`, com `// SAFETY:` e testes.
-- **D34**: `Fluxo::segurando()` e `Fluxo::soltar()` em `ward-core::mascara`.
-  - No pty, um fim segurado que fica 300 ms (`PAUSA_INTERATIVA`) sem saída nova sai como `••••`.
-  - O trecho vira intervalo coberto, então o resto do mesmo segredo, quando chega, continua escondido. Uma saída que diverge sai normal.
-- **Token do "Conectar" (D3, V5.24)**: `Daemon::emitir_token`.
-  - Só o papel app pede, só para `servidor` e só com o cofre destravado.
-  - São 32 letras e dígitos (`gerador::token_conectar`), válidos por 30 s no relógio do motor.
-  - Cabem no máximo 16 tokens; o mais antigo sai. Ficam em `Aberto`, então somem ao travar.
-  - `usar_token` compara em tempo constante (`gerador::tokens_iguais` → `cripto::iguais_em_tempo_constante`).
-  - Todo token apresentado que existe é queimado, mesmo usado na entrada errada.
-  - Com token válido para a entrada, o nível e a aprovação são pulados. Inválido, vencido, repetido ou de outra entrada: vale o nível.
-- **Testes de integração**:
-  - `make teste-cli` (`dev/testes/cli.py`, seção 4) roda contra os SSH de teste reais.
-  - `crates/wardd/tests/ssh.rs` usa `ssh`/`sshpass`/`sftp` falsos (`tests/ssh_falso.py`, que registram argv e ambiente e nunca conectam).
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard 5162340`
+  (master atual). Fase adiantada em paralelo com as Fases 16, 23 e 32: só os nomes
+  próprios destes testes mudaram; os que vêm do `comum` (Fase 23), do `nucleo`/
+  `aprovacao`/`trava`/`arquivos` (Fases 19–20) e do `ward-core` (`protocolo`, Fases 17–18)
+  ficaram como no master.
+- **Arquivos** (glossário seção 4, `git mv`): `extensao.rs` → `extension.rs`,
+  `app_teste.rs` → `test_app.rs`, `app_valor.rs` → `app_value_binary.rs`, `valor_app.rs`
+  → `app_value_core.rs`, `anexos_edicao.rs` → `attachment_edit.rs`, `chrome_falso.py` →
+  `fake_chrome.py`. `playwright.rs` e `login.rs` mantêm o nome (glossário: "ficam").
+- **`Cargo.toml`** do `wardd` (achado da Fase 4): `[[test]]` `app_teste` → `test_app` e
+  `app_valor` → `app_value_binary` (glossário seção 3). Os binários `wardd-app-teste` e
+  `wardd-aprovador-teste` ficam (não são desta fase).
+- **Usos fora dos arquivos**: `playwright.rs` (caminho `tests/fake_chrome.py`) e
+  `docs/mission/plan.md` (Fase 52 cita `fake_chrome.py`). Nenhum alvo do Makefile nem script
+  chama estes testes por nome de arquivo renomeado: o `make test-playwright` usa
+  `--test playwright -- --ignored` (nome igual); nenhum script cita nome de função de teste
+  (procurado com `grep -r` fora de `docs/mission/arquivo/`). O rótulo
+  `excecao_chrome_falso` de `dev/tests/extension.py` é um literal daquele script, não o
+  arquivo; fica.
+- **Comentários, locais, parâmetros e nomes de teste** dos oito arquivos em inglês.
+  Comentários que citavam nome pt-BR de fio ou de outra fase (`revelar`, `copiar`,
+  `lista`, `abrir_app`, `sugerir`, `preencher`, `salvar_login`, `salvar_entrada`,
+  `manter_anexos`, `aguardar_login`, `atender`, `origem_diferente`, `navegador_falhou`,
+  `ocupado`, `travado`, `t-livre`/`t-aprov`/`t-bloq`, `gama-bloqueada`, `igual`,
+  `comum::cofre_de_teste`, `SEGREDOS`, `/entrar`, os modos e os arquivos `modo`/`registro`
+  do Chrome falso) foram reescritos com o sentido em inglês, sem o nome (como nas Fases 21
+  e 24).
+- O doc "`https` livre segue sem janela nenhuma." que estava colado ao do teste
+  `https_loopback` de `playwright.rs` foi para o teste `playwright_https_free_without_window`,
+  que estava sem doc. Só comentário.
+- **Renomes (antigo → novo)**, todos no glossário (parágrafo "Fase 27", depois do da
+  Fase 24):
+  - `playwright.rs`: `SENHA_LOGIN` → `LOGIN_PASSWORD`, `Rt::novo` → `Rt::new`, `Cena`/`cena`
+    → `Scene`/`scene` (`registro`/`eventos`/`sessao`/`sem_perfil` → `records`/`events`/
+    `session`/`no_profile`), `formas_da_senha` → `password_forms`, `site::{Pedido { metodo,
+    caminho, corpo }, porta, pedidos, Rota, subir, atender}` → `site::{Request { method,
+    path, body }, port, requests, Route, start, serve}`, `formulario` → `form`,
+    `com_clobber` → `with_clobber`, `login_em` → `login_at`, `CenaReal`/`cena_real` →
+    `RealScene`/`real_scene` (`phish_limpo`/`senha_fora_da_url` → `phish_clean`/
+    `password_out_of_url`), `CASOS` → `CASES`, `pagina` → `page`.
+  - `extension.rs`: `SEMENTE`/`AGORA` → `SEED`/`NOW`, `RelogioFixo` → `FixedClock`, `cofre`
+    → `vault`, `sugerir` → `suggest`, `preencher_cru`/`preencher` → `fill_raw`/`fill`,
+    `nomes` → `names`, `sem_segredo` → `no_secret`, `salvar_login` → `save_login`,
+    `nivel_na_lista` → `level_in_list`, `SENHA_NOVA` → `NEW_PASSWORD`, `SaiLogo` →
+    `LeavesSoon`.
+  - `login.rs`: `ORIGEM` → `ORIGIN`, `prazos` → `deadlines` (`retirada_ms` → `pickup_ms`),
+    `cofre` → `vault`, `login_do_agente` → `agent_login`, `aguardar` → `await_login`,
+    `pegar` → `take`, `preencher` → `fill`, `resultado` → `outcome`, `sem_valor` →
+    `no_value`, `ClienteQueSai` → `LeavingClient`, `RelogioParado` → `StoppedClock`,
+    `AppFalso` → `FakeApp`, `SemAbrir` → `NoOpen`, `responder` → `answer`, `login_http`/
+    `login_na_url`/`login_http_completo` → `http_login`/`login_at_url`/`full_http_login`,
+    `CaiDepois` → `DropsLater`.
+  - `app_value_binary.rs` e `test_app.rs`: `APP_TESTE` → `TEST_APP`, `CLIENTE` → `CLIENT`,
+    `DirSocket::novo` → `SocketDir::new`, `esperar` → `wait_for`, `ler` → `read`,
+    `agulhas` → `needles`, `sem_segredo` → `no_secret`, `cliente_python` →
+    `python_client`, `mandar` → `send`, `pedir` (local de `test_app.rs`) → `request`,
+    `a_mao` → `by_hand`.
+  - `app_value_core.rs`: `SEMENTE` → `SEED`, `RelogioFixo` → `FixedClock`, `com_totp` →
+    `with_totp`, `cofre` → `vault`, `alvo_campo` → `field_target`, `valor` → `value`,
+    `pedido_valor` → `value_request`.
+  - `attachment_edit.rs`: `ANEXO_A`/`ANEXO_B` → `ATTACHMENT_A`/`ATTACHMENT_B`, `generico`
+    → `generic`, `editar` → `edit`, `no_disco`/`anexos_no_disco` → `on_disk`/
+    `attachments_on_disk`.
+  - `fake_chrome.py`: `PASTA`/`MODO` → `FOLDER`/`MODE`, `registrar(**kw)` →
+    `record(fields)` (as chamadas passam um dict com as mesmas chaves, na mesma ordem: o
+    JSON gravado é byte a byte o mesmo), `origem` → `origin`, `ler`/`escrever` →
+    `read_message`/`write_message`, `responder` → `reply`, `evento` → `event`,
+    `pendentes`/`contador` → `pending`/`counter`, `pausar` → `pause`, `url_atual` →
+    `current_url`, `usuario_senha` → `credentials`, `proximo` → `next_command`.
+  - Testes: `v6_12_sessao_gravada_so_o_caminho_volta` →
+    `v6_12_session_saved_only_the_path_comes_back`,
+    `v6_15_redirecionamento_para_outra_origem_recusado` →
+    `v6_15_redirect_to_another_origin_refused`, `d9_origem_da_pagina_e_do_envio` →
+    `d9_origin_of_the_page_and_of_the_submission`, `s1_sessao_com_a_senha_nao_e_gravada`
+    → `s1_session_with_the_password_is_not_saved`, `navegador_que_cai_ou_manda_lixo` →
+    `browser_that_crashes_or_sends_garbage`, `d6_travar_durante_a_sessao_nada_gravado` →
+    `d6_lock_during_the_session_nothing_saved`, `recusas_sem_abrir_o_navegador` →
+    `refusals_without_opening_the_browser`, `d6_partida_limpa_sessoes_e_perfis` →
+    `d6_startup_cleans_sessions_and_profiles`, `chrome_real_login_e_ataques` →
+    `real_chrome_login_and_attacks`, `ataque_playwright_http_livre_so_com_confirmacao` →
+    `attack_playwright_http_free_only_with_confirmation`,
+    `ataque_playwright_https_loopback_livre_so_com_confirmacao` →
+    `attack_playwright_https_loopback_free_only_with_confirmation`,
+    `playwright_https_livre_sem_janela` → `playwright_https_free_without_window`;
+    `sugestao_traz_ambiente_e_se_tem_totp` →
+    `suggestion_carries_environment_and_whether_it_has_totp`,
+    `v6_2_sugerir_so_a_origem_da_aba` → `v6_2_suggest_only_the_tab_origin`,
+    `v6_2_preencher_so_na_origem_certa` → `v6_2_fill_only_on_the_right_origin`,
+    `v6_1_agente_e_app_nao_sugerem_nem_preenchem` →
+    `v6_1_agent_and_app_neither_suggest_nor_fill`,
+    `ataque_extensao_sem_operacoes_de_app_nem_de_agente` →
+    `attack_extension_without_app_or_agent_operations`,
+    `v6_8_salvar_login_nasce_com_aprovacao` → `v6_8_save_login_starts_with_approval`,
+    `ataque_salvar_login_nao_sobrescreve_entrada` →
+    `attack_save_login_does_not_overwrite_entry`,
+    `ataque_salvar_login_so_os_campos_do_popup` → `attack_save_login_only_the_popup_fields`,
+    `ataque_salvar_login_so_extensao_e_destravado` →
+    `attack_save_login_extension_only_and_unlocked`,
+    `ataque_preencher_http_sem_confirmar_nada_sai` →
+    `attack_fill_http_without_confirming_nothing_leaves`,
+    `ataque_preencher_https_loopback_sem_confirmar_nada_sai` →
+    `attack_fill_https_loopback_without_confirming_nothing_leaves`;
+    `v6_10_login_livre_preenche_na_origem_certa_e_volta_ok` →
+    `v6_10_free_login_fills_on_the_right_origin_and_returns_ok`,
+    `v6_3_v6_15_ataque_origem_diferente_nao_preenche` →
+    `v6_3_v6_15_attack_different_origin_does_not_fill`, `ataque_id_forjado_nao_preenche` →
+    `attack_forged_id_does_not_fill`, `desfechos_da_extensao` → `extension_outcomes`,
+    `ataque_agente_e_app_nas_operacoes_da_extensao` →
+    `attack_agent_and_app_on_the_extension_operations`, `recusas_antes_da_extensao` →
+    `refusals_before_the_extension`, `sem_extensao_o_pedido_morre` →
+    `without_extension_the_request_dies`, `um_pedido_por_vez` → `one_request_at_a_time`,
+    `travar_no_meio_mata_o_pedido` → `lock_in_the_middle_kills_the_request`,
+    `cli_que_cai_mata_o_pedido` → `cli_that_drops_kills_the_request`,
+    `aguardar_nao_conta_como_uso` → `await_does_not_count_as_use`,
+    `v6_11_com_aprovacao_negar_nao_chega_a_extensao_e_permitir_chega` →
+    `v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does`,
+    `ataque_login_http_livre_so_com_confirmacao` →
+    `attack_login_http_free_only_with_confirmation`,
+    `ataque_login_http_com_aprovacao_pede_pin_e_mostra_a_origem` →
+    `attack_login_http_approval_asks_pin_and_shows_the_origin`,
+    `ataque_login_https_loopback_livre_so_com_confirmacao` →
+    `attack_login_https_loopback_free_only_with_confirmation`,
+    `login_https_livre_sem_janela` → `login_https_free_without_window`;
+    `v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste` →
+    `v3_39_v3_40_app_values_and_list_through_the_test_daemon`;
+    `v3_39_app_revela_e_copia_sem_pin_nem_aprovacao_ate_a_bloqueada` →
+    `v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one`,
+    `v3_39_totp_do_app_pelo_relogio_do_daemon` → `v3_39_app_totp_by_the_daemon_clock`,
+    `ataque_v3_39_agente_e_extensao_nao_revelam_nem_copiam_nem_tiram_totp` →
+    `attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp`,
+    `v3_40_lista_do_app_com_resumo_e_do_agente_sem_nivel_nem_resumo` →
+    `v3_40_app_list_with_summary_and_agent_list_without_level_or_summary`;
+    `v3_37_so_o_app_aberto_pelo_daemon_de_teste_e_app` →
+    `v3_37_only_the_app_opened_by_the_test_daemon_is_app`;
+    `v5_12_editar_mantem_adiciona_e_remove_anexo` →
+    `v5_12_edit_keeps_adds_and_removes_attachment`,
+    `v5_12_ataque_manter_anexos_forjado` → `v5_12_attack_forged_keep_attachments`.
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`.
+
+## Literais alterados (PRD regra 5)
+Multiconjunto de literais por arquivo, fora de comentários, comparado com `5162340`
+(extrator próprio no scratchpad; Rust por um léxico de strings normais e cruas, Python
+pelo `tokenize`). Nenhum escape `\u` nos originais nem nos novos (aviso do orchestrator,
+achado da Fase 16: conferido, nada a restaurar).
+- `"tests/chrome_falso.py"` → `"tests/fake_chrome.py"` (caminho do arquivo renomeado).
+- Só capturas de `format!` (valor igual): `{rotulo}` → `{label}`, `{caso}` → `{case}`,
+  `{entrada}` → `{entry}`, `{nome}` → `{name}`, `{modo}` → `{mode}`, `{outra:?}` →
+  `{other:?}`, `{fora}` → `{outside}`, `{atributos}` → `{attributes}`, `{inicio}` →
+  `{start}`, `{vistos:?}` → `{seen:?}`, `{decisoes:?}` → `{decisions:?}`, `{aba}`/
+  `{aba:?}` → `{tab}`/`{tab:?}`, `{origem}` → `{origin}`, `{ORIGEM}` → `{ORIGIN}`,
+  `{decisao}` → `{decision}`, `{criar:?}` → `{create:?}`, `{valor}` → `{value}`,
+  `{semente}` → `{seed}`, `{usuario}` → `{user}`, `{o_que}` → `{what}`, `{nao}` →
+  `{not_authorized}`, `{dados}` → `{data}`, `{texto}` → `{text}`, `{saida}` → `{output}`,
+  `{linha:?}` → `{line:?}`, `{onde}` → `{place}`, `{lista}` → `{list}`, `{pedido}` →
+  `{request}`, `{proibido}` → `{forbidden}`, `{alvo}` → `{target}`, `{anterior}` →
+  `{previous}`, `{papel:?}` → `{role:?}`.
+- `fake_chrome.py`: as chaves do registro (`evento`, `argv`, `ambiente`, `home`, `cwd`,
+  `fds`, `alvos`, `metodo`, `url`, `seguiu`, `sha256`, `origem`, `contexto`) eram nomes de
+  argumento (`registrar(evento=…)`) e viraram chaves de dict literais com o mesmo texto;
+  o JSON gravado é o mesmo. Nenhuma outra string mudou (arquivos `modo`/`registro`, modos,
+  `"usuario, senha"` que o falso procura no script do daemon, chaves `senha`/`ls`, cookie
+  `sessao`…).
+- **Ficaram**: todas as mensagens que os testes procuram (log do daemon, saída do app de
+  teste `papel=app`, `revelar=…`, `) saiu com código 0`…), as mensagens de `assert!`, os
+  nomes de entrada, de arquivos e de pastas de teste (`wpw-…`, `wardd-v-…`,
+  `copia-do-app`, `grande.bin`…), o HTML dos sites locais (`/entrar`, `recusa=1`…), o
+  Python embutido no `CLIENT` de `app_value_binary.rs` e os JSON do protocolo (fio
+  congelado).
 
 ## Segurança
-- **Invariantes tocadas e como a fase as respeita**:
-  - **S1**: a senha e a chave nunca vão à CLI. O agente nunca exporta a chave e só assina.
-  - **S2**: o único arquivo é `id.pub` (público), em `<rt>ssh-*/`. Nada vai para `/tmp`.
-  - **S3**: nenhum segredo em argv.
-  - **S4**: a saída é mascarada, com a pausa de D34 no pty.
-  - **S8**: o token é comparado em tempo constante.
-  - **S13**: os logs não têm valores. O token é logado só como evento.
-  - Decisões tocadas: D3, D12, D13, D34, D43 e D56.
-- **Testes de ataque, `crates/wardd/tests/ssh.rs`**:
-  - `v4_35_d43_usuario_com_arroba_e_senha_so_no_ambiente`: `deploy@cliente.com.br` vai inteiro depois de `-l`. O comando remoto `-- -l x@y` fica depois do host, sem `User=` e sem `@host`. A senha não aparece em argv (só sha256 em `SSHPASS`). O ambiente tem exatamente LANG, PATH e SSHPASS. O filho que imprime a senha aparece como `••••`.
-  - `v4_37_d56_sftp_com_user_e_host_depois_de_traco_traco`: `sftp` com comando é recusado sem executar nada.
-  - `recusas_sem_executar_nada`: tipo errado, `ftp`, bloqueada, inexistente, com aprovação sem app e salto.
-  - `v4_24_d12_agente_so_do_filho`: adicionar, remover e travar recebem 5. O neto do `ssh` é recusado. O processo de teste (mesmo uid) conecta e recebe 0 bytes. Pasta 0700, socket e pública 0600, sem `SSH_AUTH_SOCK`, e tudo some no fim.
-  - `d12_travar_derruba_o_agente`.
-  - `d12_sftp_com_chave_atende_o_ssh_do_sftp`: o neto do `ssh` é recusado.
-  - `d34_pty_prefixo_parado_vira_marca_e_o_resto_nao_sai`: nenhuma janela de 6+ bytes da senha na saída, e a marca chega entre 250 e 950 ms.
-  - `v5_24_token_do_conectar`: só o app emite; testa token reusado, inventado, de outra entrada (queimado), vencido com 31 s (com 29 s vale), apagado ao travar, bloqueada com token válido (continua inexistente) e o 17º token derrubando o 1º.
-- **Testes de ataque, unidade**:
-  - `crates/wardd/src/ssh_testes.rs` › `d43_usuario_com_arroba_so_depois_de_l` (o `-oProxyCommand=x` do pedido nunca vira opção), `ataque_valores_fora_do_formato_recusados`, `d56_sftp` e `chave_usa_o_agente_da_sessao`.
-  - `crates/wardd/src/agente_ssh.rs` › `ataque_adicionar_remover_travar_e_lixo_recusados`.
-  - `crates/ward-core/src/mascara/testes.rs` › `d34_ataque_prefixo_em_base64_e_percent_tambem_vira_marca` e os outros três `d34_*`.
-  - `crates/ward/src/args.rs` › `ssh`: tokens fora do formato, e a mensagem de uso não repete argumento.
-  - Pty em `ward-plataforma`: `filho.rs` › `pty_terminal_de_controle_janela_e_entrada` e `pty_matar_o_grupo_leva_a_sessao_e_o_ambiente_e_exato`; `terminal.rs` › `modo_cru_liga_e_volta_e_tamanho_do_pty`.
-- **Ponta a ponta (`make teste-cli`, seção 4, tudo `ok`)**:
-  - V4.23: `whoami` → `deploy`, com `sshpass -e`, `PubkeyAuthentication=no` e `IdentityAgent=none` vistos em `/proc/<pid>/cmdline`.
-  - V4.24 e V4.37: login real do `sftpuser`.
-  - V4.26: `ssh-add -L`, `ssh-add <chave>` e `ssh-add -D` de outro processo recusados; o agente some no fim, com SIGKILL na CLI e ao travar.
-  - V4.28: uma linha falsa no `.dev/known_hosts` faz o `ssh` recusar; o arquivo é restaurado no fim.
-  - V4.31 e V4.34: num pty, `P:••••` em cerca de 0,3 s; o resto não aparece e o `Q:` que diverge sai normal.
-  - V4.32: o token inventado é ignorado.
-  - V4.14: varredura de `/proc/*/cmdline` a cada 50 ms, 97 mil leituras e 0 achados.
-  - V4.35 e V4.37 pelo argv em `/proc/<pid>/cmdline`, com o pai do `sshpass` sendo o `wardd` (sem `sh -c`).
-  - Nenhum padrão de `.dev/variacoes.txt` em nenhuma saída.
-- **Dependência nova**: `ssh-key =0.7.0-rc.12` (RustCrypto), com features `alloc`, `ed25519` e `encryption`, no `wardd`.
-  - **Por quê**: ler a chave OpenSSH da entrada, decifrar a passphrase (bcrypt-pbkdf + aes-ctr) e assinar Ed25519 no agente de D12. Sem ela, isso seria cripto feita à mão, o que o projeto proíbe.
-  - Sem `rsa`, por causa do RUSTSEC-2023-0071 (Marvin).
-  - Crates transitivas novas: aes, aes-gcm, bcrypt-pbkdf, blowfish, ctr, des, ed25519, ed25519-dalek, curve25519-dalek, ghash, polyval, pbkdf2, pem-rfc7468, sha2, signature, ssh-cipher, ssh-encoding, subtle e algumas de build.
-  - Divide `cipher 0.5` e `digest 0.11` com as atuais. `cargo audit` e `cargo deny` estão limpos.
-  - É uma versão `rc`, fixada com `=`.
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários): os testes de
+  ataque de S1 (nenhum valor à CLI/agente/extensão; storage state sem a senha), S2/S3
+  (argv e ambiente do Chrome, perfil apagado), S13 (log do daemon sem padrão), D4/D65
+  (valores só pelo app), D6 (trava apaga sessão), D9 (origem, redirecionamento, `action`/
+  `formaction`, clobbering, confirmação `http` e `https` de loopback), D29 (anexos
+  mantidos), D63 (só o app aberto pelo daemon é app), V3.17, V3.37–V3.40, V5.12, V6.1–V6.15.
+  Mesma lógica, mesmas asserções, mesmos valores, prazos e contagens.
+- **Conferência**: multiconjunto de literais (acima) e leitura lado a lado; o
+  `make compile` passa (0 warnings).
+- **Testes de ataque**: nenhum novo (só rename); os existentes acompanham os nomes. Não
+  rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- **V4.27** (HOME de sentinela com `~/.ssh/config` + `inotifywait`):
-  - O `inotifywait` não está instalado.
-  - O `ssh` usa o home do passwd, não `$HOME`, então um HOME falso não testa nada. O teste de verdade exige o daemon num bwrap com o home em tmpfs.
-  - O que está coberto: `-F /dev/null` (o `ssh` não lê config nem cria `~/.ssh` com `-F`), ambiente sem `SSH_AUTH_SOCK` e identidades só as do Ward.
-  - Fica para o auditor ou para uma fase de ferramentas.
-- **V4.35/V4.37 "por strace"**: o `wardd` recusa subir sob depurador ("processo sob depurador (TracerPid ≠ 0); não sobe"), e `ptrace_scope=1` impede anexar.
-  - A conferência foi feita pelo argv de `/proc/<pid>/cmdline` de cada `sshpass`/`ssh`/`sftp` vivo, que é o argv do `execve`.
-  - O caso `deploy@cliente.com.br` foi conferido só com o `ssh` falso, porque o cofre de teste não tem essa entrada.
-- **V4.35 com salto** (`acme-ssh-interno`): fica para a Fase 28. Por enquanto responde `entrega_falhou`.
-- **V5.24 pela interface**: o app (Fase 34) já chama `emitir_token` + `ward ssh --token`. O teste pela UI é do M5. O núcleo está coberto por `v5_24_token_do_conectar`.
-- **`scp`**: não é usado nesta fase.
-- **RA2**: a confirmação com o usuário é do orchestrator.
+- Os nomes que estes testes usam e que são de outras fases: `comum` e o que ele exporta
+  (`Dir::novo`, `cofre_de_teste`, `ped`, `pedir`, `erro`, `ok`, `codificado`, `contem`,
+  `mudar_nivel`, `destravar`, `com_janela`, `login`, `servidor`, `banco`, `SENHA`,
+  `SEGREDOS`, `PIN`; Fase 23), `nucleo::{Daemon, Relogio}` e os métodos `novo`,
+  `com_chrome`, `com_temporarios`, `com_prazos_login`, `com_motor`, `motor`, `atender`,
+  `atender_de`, `travar`, `caminhos` (Fases 19–20), `aprovacao` (`Motor`, `RelogioMotor`,
+  `Assinante`, `AbridorApp`, `ErroAbrirApp`, `Cliente::{cadeia, saiu}`, `SemCliente`;
+  Fase 20), `trava::conta_como_uso`, `arquivos::{gravar_estado, Geracoes}` (Fase 19) e o
+  `ward_core::protocolo` (`Papel`, `Resposta`, `ErroResposta`, `Operacao`, `Pedido`,
+  `Alvo`, campos `nome`/`usuario`/`nivel`/`resumo`/`origem`/`confirmacao`…; Fases 17–18).
+  O checador ainda acusa esses identificadores (todos de nomes de fora; 0 de comentário;
+  `fake_chrome.py` limpo).
+- Os binários `wardd-app-teste` e `wardd-aprovador-teste` (o glossário os põe em outra
+  fase).
+- `make check` e testes: não rodaram (PRD regra 6).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make dev-servicos` / `make dev-cofre` / `make dev-variacoes` | 0 |
-| `make dev-daemon` (daemon desta worktree; só eu o subi, parei e subi de novo) | 0 |
-| `cargo test -p wardd --test ssh` (8 testes) | 0 |
-| `cargo test -p ward --features modo-teste` | 0 |
-| `make fmt` | 0 |
-| `make check` (fmt, clippy, testes, audit, deny, gitleaks) | 0 |
-| `make teste-cli` (seções 1–4) | 0 |
-| `make teste-ataques-servicos` | 2 (aborta no `teste-home-real`: o `git check-ignore` abre `.git/worktrees/<agente>/HEAD`; ambiente de worktree, ver Problemas) |
+| `git reset --hard 5162340` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `make fmt` (log `.dev/logs/fase27-make-fmt.log`) | 0 |
+| `make compile` (log `.dev/logs/fase27-make-compile.log`; 0 warnings) | 0 |
+| `python3 -I dev/english_check.py --paths crates/wardd/tests/fake_chrome.py` | 0 |
+| `python3 -I dev/english_check.py --paths` nos sete `.rs` da fase | 1 (só identificadores de outras fases; 0 de comentário) |
+| comparação de literais com `5162340` (script no scratchpad) | só as diferenças listadas acima |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **`make teste-ataques-servicos` não roda numa worktree.** O `teste-home-real` acusa o `git` ("o cliente devia ter entrado e não entrou" e "check-ignore abriu `/home/…/cofre/.git/worktrees/agent-…/HEAD`"). Numa worktree, o `.git` é um arquivo que aponta para o repositório principal, fora do permitido pelo detector. O defeito não é desta fase. Os outros clientes passaram, e a suíte aborta ali.
-- **O protocolo `Pedido::Ssh` não traz cwd nem ambiente, e o D13 fala do ambiente da CLI.**
-  - Escolhi a opção segura: o filho do `ssh` recebe um ambiente fixo, montado do zero, com `TERM=xterm-256color` fixo no pty, e cwd = home do passwd. O home é para o `get`/`put` do `sftp` interativo; `/` seria a alternativa neutra.
-  - É uma divergência pequena do escopo. O orchestrator decide se o protocolo deve levar `TERM`/cwd.
-- **D13 diz `IdentityFile=none`.** No modo chave, o argv usa `IdentityFile=<id.pub do Ward>` com `IdentitiesOnly=yes`, para o `ssh` oferecer só a chave do agente. No modo senha continua `none`.
-- **Só Ed25519 no agente.** RSA ficou de fora por causa do RUSTSEC-2023-0071, e uma entrada com chave RSA dá `entrega_falhou`. Precisa de decisão se o escopo exigir RSA.
-- **`emitir_token` responde também para `servidor` bloqueado.** O app vê tudo, então não há vazamento para o agente. O uso do token continua dando `entrada_inexistente`.
-- **O `known_hosts` fica ao lado do cofre.** No release é `~/.local/share/ward/known_hosts`; no teste, `.dev/known_hosts`. O escopo não fixa o caminho.
-- **R19 residual:** o `ssh` ainda resolve o home pelo passwd (por exemplo, para expandir `~`). Com `-F /dev/null` ele não lê `~/.ssh/config` nem cria `~/.ssh`. Sem `inotifywait`, não deu para provar a ausência total de acesso (ver V4.27).
-- **O V3.15 (`tests/aprovacao.rs`) lê só os arquivos do primeiro nível de `wardd/src/`.** Um módulo em subpasta quebra o teste (EISDIR) e também fica fora da varredura. Por isso os testes do `ssh` estão em `src/ssh_testes.rs` com `#[path]`. Vale o V3.15 passar a percorrer subpastas, mas não mexi porque está fora do escopo.
-- **`ssh-key` é `rc`** (`0.7.0-rc.12`). Fica a acompanhar a versão estável.
+- O worktree nasceu em `b4d5e1b`, não em `5162340`; reset com a árvore limpa.
+- **Checador não limpo** nos `.rs` da fase: sobram só identificadores dos módulos ainda
+  não traduzidos (lista em "Ficou de fora"); somem com as Fases 17–20 e 23.
+- **Conflitos prováveis no merge**: `docs/glossario.md` (parágrafo "Fase 27" depois do da
+  Fase 24, antes de "Funções e métodos…"). A Fase 23 (`comum/` → `common/`) vai mexer no
+  `mod comum`/`use comum::*` destes testes; as 19–20, nos construtores do `Daemon`, no
+  `aprovacao` e no `trava`; as 17–18, no `protocolo`.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `Cargo.lock` | alterado |
-| `CLAUDE.md` | alterado (linha do `make teste-cli`) |
-| `crates/ward-core/src/cripto.rs` | alterado |
-| `crates/ward-core/src/gerador.rs` | alterado |
-| `crates/ward-core/src/mascara.rs` | alterado |
-| `crates/ward-core/src/mascara/testes.rs` | alterado |
-| `crates/ward-plataforma/src/filho.rs` | alterado |
-| `crates/ward-plataforma/src/lib.rs` | alterado |
-| `crates/ward-plataforma/src/processo.rs` | alterado |
-| `crates/ward-plataforma/src/sys.rs` | alterado |
-| `crates/ward-plataforma/src/terminal.rs` | alterado |
-| `crates/ward/src/args.rs` | alterado |
-| `crates/ward/src/cliente.rs` | alterado |
-| `crates/ward/src/comandos.rs` | alterado |
-| `crates/ward/src/testes.rs` | alterado |
-| `crates/wardd/Cargo.toml` | alterado |
-| `crates/wardd/src/agente_ssh.rs` | criado |
-| `crates/wardd/src/ssh.rs` | criado |
-| `crates/wardd/src/ssh_testes.rs` | criado |
-| `crates/wardd/src/execucao.rs` | alterado |
-| `crates/wardd/src/lib.rs` | alterado |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/src/servidor.rs` | alterado |
-| `crates/wardd/tests/ssh.rs` | criado |
-| `crates/wardd/tests/ssh_falso.py` | criado |
-| `dev/testes/cli.py` | alterado |
+| `crates/wardd/Cargo.toml` | alterado (`[[test]]` `test_app`, `app_value_binary`) |
+| `crates/wardd/tests/extension.rs` (era `extensao.rs`) | renomeado e reescrito |
+| `crates/wardd/tests/test_app.rs` (era `app_teste.rs`) | renomeado e reescrito |
+| `crates/wardd/tests/app_value_binary.rs` (era `app_valor.rs`) | renomeado e reescrito |
+| `crates/wardd/tests/app_value_core.rs` (era `valor_app.rs`) | renomeado e reescrito |
+| `crates/wardd/tests/attachment_edit.rs` (era `anexos_edicao.rs`) | renomeado e reescrito |
+| `crates/wardd/tests/fake_chrome.py` (era `chrome_falso.py`) | renomeado e reescrito |
+| `crates/wardd/tests/playwright.rs` | reescrito |
+| `crates/wardd/tests/login.rs` | reescrito |
+| `docs/glossario.md` | alterado (parágrafo "Fase 27") |
+| `docs/mission/plan.md` | alterado (`fake_chrome.py` na Fase 52) |
 | `docs/mission/handoffs/phase-27.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados (a chave dos testes de cargo é gerada na hora, com passphrase aleatória)
-- [x] Teste de ataque para cada (SEG) tocado (V4.27 parcial, ver "Ficou de fora")
-- [ ] (UI/DESIGN) Conferido contra o FigCraft: não se aplica
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make fmt` e `make compile` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

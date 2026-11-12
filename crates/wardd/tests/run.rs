@@ -1,12 +1,21 @@
-//! `ward run` pelo binário `wardd` (modo de teste), de ponta a ponta pelo socket (Fase
-//! 26): entrega de D10, máscara (S4), código de saída, ambiente só da CLI sem `LD_*`
-//! (D13, D60), anexos 0600 em `<rt>tmp/` apagados em toda saída e na partida (S2,
-//! V4.15), a CLI que cai mata o grupo do filho (D13) e o registro de RA1.
+//! `ward run` through the `wardd` binary (test mode), end to end over the socket (Phase
+//! 26): D10 delivery, mask (S4), exit code, environment only from the CLI without `LD_*`
+//! (D13, D60), attachments 0600 in `<rt>tmp/` deleted on every exit and at startup (S2,
+//! V4.15), a CLI that drops kills the child's group (D13) and the RA1 record.
 //!
-//! O cofre é de teste, criado neste diretório pelo próprio núcleo, só com valores
-//! falsos; o socket (e o `<rt>`) fica num diretório só deste teste em `/run/user/<uid>/`.
+//! The vault is a test one, created in this directory by the core itself, only with
+//! fake values; the socket (and the `<rt>`) lives in a directory of this test only in
+//! `/run/user/<uid>/`.
 
-mod comum;
+// m2:Phase 54a: without `test-mode` the binaries this test runs are the release ones,
+// which only know the system socket (`/run/ward/<uid>/wardd.sock`, the installed
+// daemon). The build fails, loudly, instead of a test reaching it.
+#[cfg(not(feature = "test-mode"))]
+compile_error!(
+    "este teste exige a feature test-mode (cargo test --all-features ou --features test-mode): sem ela os binários do teste são os de release, que só conhecem o socket do sistema"
+);
+
+mod common;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -16,58 +25,58 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use comum::*;
-use ward_core::protocolo::{self, ErroResposta, Fluxo, Papel, Resposta};
+use common::*;
+use ward_core::protocol::{self, Response, ResponseError, Role, Stream};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
-/// Senha do `t-livre` (falsa).
-const SENHA_LIVRE: &str = SEGREDOS[3];
-const LICENCA: &str = "falso-licenca-run-26";
-const ANEXO: &str = "FALSO_ENV=falso-anexo-run-26";
+/// Password of the free test entry (fake).
+const FREE_PASSWORD: &str = SECRETS[3];
+const LICENSE: &str = "falso-licenca-run-26";
+const ATTACHMENT: &str = "FALSO_ENV=falso-anexo-run-26";
 
-struct DirSocket(PathBuf);
+struct SocketDir(PathBuf);
 
-impl DirSocket {
-    fn novo(rotulo: &str) -> DirSocket {
-        let p = ward_plataforma::socket::diretorio_runtime()
-            .join(format!("wardd-r-{}-{rotulo}", std::process::id()));
+impl SocketDir {
+    fn new(label: &str) -> SocketDir {
+        let p = ward_platform::socket::runtime_dir()
+            .join(format!("wardd-r-{}-{label}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
-        DirSocket(p)
+        SocketDir(p)
     }
 }
 
-impl Drop for DirSocket {
+impl Drop for SocketDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
 
 struct Wardd {
-    filho: Child,
+    child: Child,
     log: PathBuf,
     socket: PathBuf,
 }
 
 impl Drop for Wardd {
     fn drop(&mut self) {
-        let _ = self.filho.kill();
-        let _ = self.filho.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
-fn subir(dev: &Dir, sock: &DirSocket) -> Wardd {
-    subir_com(dev, sock, &[])
+fn start(dev: &Dir, sock: &SocketDir) -> Wardd {
+    start_with(dev, sock, &[])
 }
 
-/// O `wardd` de teste com variáveis a mais (Fase 54b: `WARD_DEV_APP`).
-fn subir_com(dev: &Dir, sock: &DirSocket, extra: &[(&str, &std::ffi::OsStr)]) -> Wardd {
+/// The test `wardd` with extra variables (Phase 54b: `WARD_DEV_APP`).
+fn start_with(dev: &Dir, sock: &SocketDir, extra: &[(&str, &std::ffi::OsStr)]) -> Wardd {
     let log = dev.0.join("wardd.log");
     let mut cmd = Command::new(WARDD);
     cmd.env_clear();
     for (k, v) in extra {
         cmd.env(k, v);
     }
-    let filho = cmd
+    let child = cmd
         .env("PATH", "/usr/bin:/bin")
         .env("WARD_DEV_DIR", &dev.0)
         .env("WARD_DEV_SOCKET_DIR", &sock.0)
@@ -84,178 +93,180 @@ fn subir_com(dev: &Dir, sock: &DirSocket, extra: &[(&str, &std::ffi::OsStr)]) ->
         )
         .spawn()
         .unwrap();
-    let socket = sock.0.join(ward_plataforma::socket::NOME_SOCKET);
-    let fim = Instant::now() + Duration::from_secs(20);
+    let socket = sock.0.join(ward_platform::socket::SOCKET_NAME);
+    let end = Instant::now() + Duration::from_secs(20);
     while UnixStream::connect(&socket).is_err() {
-        assert!(Instant::now() < fim, "o wardd não criou o socket");
+        assert!(Instant::now() < end, "o wardd não criou o socket");
         std::thread::sleep(Duration::from_millis(20));
     }
-    Wardd { filho, log, socket }
+    Wardd { child, log, socket }
 }
 
-fn mandar(s: &mut UnixStream, json: &str) {
+fn send(s: &mut UnixStream, json: &str) {
     s.write_all(&(json.len() as u32).to_be_bytes()).unwrap();
     s.write_all(json.as_bytes()).unwrap();
 }
 
-fn receber(s: &mut UnixStream) -> Option<Resposta> {
+fn receive(s: &mut UnixStream) -> Option<Response> {
     let mut n = [0u8; 4];
     s.read_exact(&mut n).ok()?;
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
     s.read_exact(&mut b).ok()?;
-    Some(protocolo::decodificar_resposta(Papel::Agente, &b).unwrap())
+    Some(protocol::decode_response(Role::Agent, &b).unwrap())
 }
 
-fn conectar(w: &Wardd) -> UnixStream {
+fn connect(w: &Wardd) -> UnixStream {
     let s = UnixStream::connect(&w.socket).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(60))).unwrap();
     s
 }
 
-fn destravar_por(w: &Wardd) {
-    let mut s = conectar(w);
-    mandar(
+fn unlock_through(w: &Wardd) {
+    let mut s = connect(w);
+    send(
         &mut s,
         &format!(
-            r#"{{"v":1,"op":"destravar","dados":{{"senha":"{}"}}}}"#,
-            b64(SENHA.as_bytes())
+            r#"{{"v":2,"op":"unlock","data":{{"password":"{}"}}}}"#,
+            b64(PASSWORD.as_bytes())
         ),
     );
-    assert!(matches!(receber(&mut s), Some(Resposta::Ok)));
+    assert!(matches!(receive(&mut s), Some(Response::Ok)));
 }
 
-fn pedido_executar(entrada: &str, argv: &[&str], amb: &[(&str, &str)]) -> String {
-    pedido_executar_com(entrada, argv, amb, "pipe")
+fn run_request(entry: &str, argv: &[&str], env_vars: &[(&str, &str)]) -> String {
+    run_request_with(entry, argv, env_vars, "pipe")
 }
 
-/// O `executar` com o tipo da entrada padrão (Fase 54b).
-fn pedido_executar_com(entrada: &str, argv: &[&str], amb: &[(&str, &str)], tipo: &str) -> String {
+/// The run request with the stdin kind (Phase 54b).
+fn run_request_with(entry: &str, argv: &[&str], env_vars: &[(&str, &str)], kind: &str) -> String {
     let argv: Vec<String> = argv
         .iter()
         .map(|a| format!("\"{}\"", b64(a.as_bytes())))
         .collect();
-    let amb: Vec<String> = amb
+    let env_vars: Vec<String> = env_vars
         .iter()
         .map(|(k, v)| {
             format!(
-                r#"{{"nome":"{}","valor":"{}"}}"#,
+                r#"{{"name":"{}","value":"{}"}}"#,
                 b64(k.as_bytes()),
                 b64(v.as_bytes())
             )
         })
         .collect();
     format!(
-        r#"{{"v":1,"op":"executar","dados":{{"entrada":"{entrada}","argv":[{}],"cwd":"{}","tipo_entrada":"{tipo}","ambiente":[{}]}}}}"#,
+        r#"{{"v":2,"op":"run","data":{{"entry":"{entry}","argv":[{}],"cwd":"{}","stdin_kind":"{kind}","environment":[{}]}}}}"#,
         argv.join(","),
         b64(b"/"),
-        amb.join(",")
+        env_vars.join(",")
     )
 }
 
-fn entrada_padrao(s: &mut UnixStream, dados: &[u8]) {
-    mandar(
+fn send_stdin(s: &mut UnixStream, data: &[u8]) {
+    send(
         s,
         &format!(
-            r#"{{"v":1,"op":"entrada_padrao","dados":{{"dados":"{}"}}}}"#,
-            b64(dados)
+            r#"{{"v":2,"op":"stdin","data":{{"data":"{}"}}}}"#,
+            b64(data)
         ),
     );
 }
 
-/// O que a sessão devolveu: stdout, stderr e o código (ou o erro).
+/// What the session returned: stdout, stderr and the code (or the error).
 #[derive(Debug, Default)]
-struct Sessao {
-    saida: Vec<u8>,
-    erro: Vec<u8>,
-    fim: Option<u8>,
-    falha: Option<ErroResposta>,
+struct Session {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    end: Option<u8>,
+    failure: Option<ResponseError>,
 }
 
-fn ler_sessao(s: &mut UnixStream) -> Sessao {
-    let mut r = Sessao::default();
+fn read_session(s: &mut UnixStream) -> Session {
+    let mut r = Session::default();
     loop {
-        match receber(s) {
-            Some(Resposta::Saida { fluxo, dados }) => match fluxo {
-                Fluxo::Saida => r.saida.extend_from_slice(&dados),
-                Fluxo::Erro => r.erro.extend_from_slice(&dados),
+        match receive(s) {
+            Some(Response::Output { stream, data }) => match stream {
+                Stream::Stdout => r.stdout.extend_from_slice(&data),
+                Stream::Stderr => r.stderr.extend_from_slice(&data),
             },
-            Some(Resposta::Fim { codigo }) => {
-                r.fim = Some(codigo);
+            Some(Response::Exit { code }) => {
+                r.end = Some(code);
                 break;
             }
-            Some(Resposta::Erro(e)) => {
-                r.falha = Some(e);
+            Some(Response::Error(e)) => {
+                r.failure = Some(e);
                 break;
             }
-            Some(outra) => panic!("resposta inesperada: {outra:?}"),
+            Some(other) => panic!("resposta inesperada: {other:?}"),
             None => break,
         }
     }
-    // Depois do fim, o daemon fecha a conexão; recusado antes de lançar, ela segue.
-    if r.fim.is_some() {
-        assert!(receber(s).is_none());
+    // After the end, the daemon closes the connection; refused before launching, it
+    // goes on.
+    if r.end.is_some() {
+        assert!(receive(s).is_none());
     }
     r
 }
 
-fn run(w: &Wardd, entrada: &str, argv: &[&str], amb: &[(&str, &str)]) -> Sessao {
-    let mut s = conectar(w);
-    mandar(&mut s, &pedido_executar(entrada, argv, amb));
-    entrada_padrao(&mut s, b"");
-    ler_sessao(&mut s)
+fn run(w: &Wardd, entry: &str, argv: &[&str], env_vars: &[(&str, &str)]) -> Session {
+    let mut s = connect(w);
+    send(&mut s, &run_request(entry, argv, env_vars));
+    send_stdin(&mut s, b"");
+    read_session(&mut s)
 }
 
 fn sh(script: &str) -> Vec<&str> {
     vec!["/bin/sh", "-c", script]
 }
 
-fn sha256(dados: &[u8]) -> String {
+fn sha256(data: &[u8]) -> String {
     let mut c = Command::new("sha256sum")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    c.stdin.take().unwrap().write_all(dados).unwrap();
+    c.stdin.take().unwrap().write_all(data).unwrap();
     let out = c.wait_with_output().unwrap();
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// Cofre de teste com, além do de `comum`, `t-nota` (nota segura) e `t-gen` (genérico
-/// com extra secreto e anexo), os dois livres. Travado no fim (o binário o abre).
-fn cofre(dev: &Dir) {
-    let (d, _) = cofre_de_teste(dev);
+/// Test vault with, besides the shared test entries, a secure note and a generic
+/// entry (with a secret extra and an attachment), both free. Locked at the end (the
+/// binary opens it).
+fn vault(dev: &Dir) {
+    let (d, _) = test_vault(dev);
     for q in [
         format!(
-            r#"{{"entrada":{{"nome":"t-nota","grupo":"clientex","ambiente":"dev","tipo":"nota-segura","campos":{{"texto":"{}"}}}}}}"#,
+            r#"{{"entry":{{"name":"t-nota","group":"clientex","environment":"dev","type":"secure-note","fields":{{"text":"{}"}}}}}}"#,
             b64(b"falso-nota-run-26")
         ),
         format!(
-            r#"{{"entrada":{{"nome":"t-gen","grupo":"clientex","ambiente":"stage","tipo":"generico","extras":[{{"nome":"REGIAO","valor":"{}","segredo":false}},{{"nome":"CHAVE_LICENCA","valor":"{}","segredo":true}}],"anexos":[{{"nome":"app.env","conteudo":"{}"}}]}}}}"#,
+            r#"{{"entry":{{"name":"t-gen","group":"clientex","environment":"stage","type":"generic","extras":[{{"name":"REGIAO","value":"{}","secret":false}},{{"name":"CHAVE_LICENCA","value":"{}","secret":true}}],"attachments":[{{"name":"app.env","content":"{}"}}]}}}}"#,
             b64(b"r-01"),
-            b64(LICENCA.as_bytes()),
-            b64(ANEXO.as_bytes())
+            b64(LICENSE.as_bytes()),
+            b64(ATTACHMENT.as_bytes())
         ),
     ] {
-        let r = pedir(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "save_entry", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-nota", "t-gen"] {
-        assert!(ok(&mudar_nivel(&d, Papel::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Role::App, n, "free", PIN)));
     }
-    d.travar();
+    d.lock();
 }
 
-fn texto(b: &[u8]) -> String {
+fn text(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
 }
 
-fn tmp_vazio(sock: &DirSocket) -> bool {
+fn tmp_empty(sock: &SocketDir) -> bool {
     fs::read_dir(sock.0.join("tmp")).map_or(true, |mut d| d.next().is_none())
 }
 
-fn esperar(prazo: Duration, mut cond: impl FnMut() -> bool) -> bool {
-    let fim = Instant::now() + prazo;
-    while Instant::now() < fim {
+fn wait_for(deadline: Duration, mut cond: impl FnMut() -> bool) -> bool {
+    let end = Instant::now() + deadline;
+    while Instant::now() < end {
         if cond() {
             return true;
         }
@@ -264,42 +275,43 @@ fn esperar(prazo: Duration, mut cond: impl FnMut() -> bool) -> bool {
     cond()
 }
 
-fn vivo(pid: u32) -> bool {
+fn alive(pid: u32) -> bool {
     fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| !s.contains(") Z "))
 }
 
-/// V4.3–V4.11, V4.17, V4.19, V4.20 com as entradas deste teste, mais D13, D60 e o
+/// V4.3–V4.11, V4.17, V4.19, V4.20 with the entries of this test, plus D13, D60 and the
 /// locale (handoff 22a).
 #[test]
-fn v4_entrega_mascara_codigo_e_recusas() {
-    let dev = Dir::novo("run");
-    cofre(&dev);
-    let sock = DirSocket::novo("run");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
+fn v4_delivery_mask_code_and_refusals() {
+    let dev = Dir::new("run");
+    vault(&dev);
+    let sock = SocketDir::new("run");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
 
-    // Entrega: o hash da senha bate (V4.3); a senha impressa sai `••••` (S4).
+    // Delivery: the hash of the password matches (V4.3); the printed password comes out
+    // `••••` (S4).
     let r = run(
         &w,
         "t-livre",
         &sh("printf %s \"$WARD_PASS\" | sha256sum"),
         &[],
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida), sha256(SENHA_LIVRE.as_bytes()));
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert_eq!(text(&r.stdout), sha256(FREE_PASSWORD.as_bytes()));
     let r = run(
         &w,
         "t-livre",
         &sh(
-            "printf '%s|%s|%s|%s' \"$WARD_ENTRADA\" \"$WARD_GRUPO\" \"$WARD_AMBIENTE\" \"$WARD_USER\"",
+            "printf '%s|%s|%s|%s' \"$WARD_ENTRY\" \"$WARD_GROUP\" \"$WARD_ENVIRONMENT\" \"$WARD_USER\"",
         ),
         &[],
     );
-    assert_eq!(texto(&r.saida), "t-livre|clientex|dev|admin");
+    assert_eq!(text(&r.stdout), "t-livre|clientex|dev|admin");
 
-    // V4.17: puro, base64, percent, em dois pedaços com pausa e no stderr. Em dois
-    // pedaços (D34 revisto), o começo sai como saiu e o pedaço que completa a senha
-    // vira marca: a senha inteira nunca sai.
+    // V4.17: plain, base64, percent, in two chunks with a pause and on stderr. In two
+    // chunks (D34 revised), the start comes out as it came out and the chunk that
+    // completes the password becomes a mark: the whole password never comes out.
     for script in [
         "printf %s \"$WARD_PASS\"",
         "printf %s \"$WARD_PASS\" | base64",
@@ -308,28 +320,28 @@ fn v4_entrega_mascara_codigo_e_recusas() {
         "printf 'falso-li' >&2; sleep 0.2; printf 'vre-ward-09' >&2",
     ] {
         let r = run(&w, "t-livre", &sh(script), &[]);
-        assert_eq!(r.fim, Some(0), "{script}: {r:?}");
-        let tudo = [r.saida.as_slice(), r.erro.as_slice()].concat();
-        assert!(!contem(&tudo, b"falso-livre"), "{script}: {}", texto(&tudo));
-        assert!(!contem(&tudo, b"ZmFsc28tbGl2cmU"), "{script}");
+        assert_eq!(r.end, Some(0), "{script}: {r:?}");
+        let all = [r.stdout.as_slice(), r.stderr.as_slice()].concat();
+        assert!(!contains(&all, b"falso-livre"), "{script}: {}", text(&all));
+        assert!(!contains(&all, b"ZmFsc28tbGl2cmU"), "{script}");
         assert!(
-            contem(&tudo, "••••".as_bytes()),
+            contains(&all, "••••".as_bytes()),
             "{script}: {}",
-            texto(&tudo)
+            text(&all)
         );
     }
 
-    // V4.19: código do comando; morto por SIGTERM, 143.
-    assert_eq!(run(&w, "t-livre", &sh("exit 7"), &[]).fim, Some(7));
-    assert_eq!(run(&w, "t-livre", &sh("kill -TERM $$"), &[]).fim, Some(143));
-    // Comando que não existe: como o shell (127), com mensagem fixa.
+    // V4.19: the command code; killed by SIGTERM, 143.
+    assert_eq!(run(&w, "t-livre", &sh("exit 7"), &[]).end, Some(7));
+    assert_eq!(run(&w, "t-livre", &sh("kill -TERM $$"), &[]).end, Some(143));
+    // A command that does not exist: like the shell (127), with a fixed message.
     let r = run(&w, "t-livre", &["comando-que-nao-existe-26"], &[]);
-    assert_eq!(r.fim, Some(127));
-    assert!(texto(&r.erro).contains("comando não encontrado"), "{r:?}");
+    assert_eq!(r.end, Some(127));
+    assert!(text(&r.stderr).contains("comando não encontrado"), "{r:?}");
 
-    // D13, D60 e Fase 26a: o ambiente é montado do zero (só a lista da CLI, sem `LD_*`,
-    // e nada do daemon); locale C vira LC_CTYPE=C.UTF-8; a entrega por cima do mesmo
-    // nome vindo da CLI.
+    // D13, D60 and Phase 26a: the environment is built from scratch (only the CLI list,
+    // without `LD_*`, and nothing from the daemon); locale C becomes LC_CTYPE=C.UTF-8;
+    // the delivery goes over a same name that came from the CLI.
     let r = run(
         &w,
         "t-livre",
@@ -342,9 +354,9 @@ fn v4_entrega_mascara_codigo_e_recusas() {
             ("WARD_PASS", "valor-da-cli"),
         ],
     );
-    let env = texto(&r.saida);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    for proibido in [
+    let env = text(&r.stdout);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    for forbidden in [
         "LD_",
         "VARIAVEL_DO_DAEMON",
         "WARD_DEV_",
@@ -352,23 +364,29 @@ fn v4_entrega_mascara_codigo_e_recusas() {
         "LISTEN_",
         "valor-da-cli",
         "DA_CLI",
+        // m2:V4.19: none of the 0.1.x delivery names.
+        "WARD_ENTRADA",
+        "WARD_GRUPO",
+        "WARD_AMBIENTE",
+        "WARD_PROTOCOLO",
+        "WARD_ARQUIVO_",
     ] {
         assert!(
-            !env.contains(proibido),
-            "{proibido} no ambiente do filho:\n{env}"
+            !env.contains(forbidden),
+            "{forbidden} no ambiente do filho:\n{env}"
         );
     }
-    for esperado in [
+    for expected in [
         "LANG=C\n",
         "LC_CTYPE=C.UTF-8",
         "WARD_PASS=••••",
-        "WARD_ENTRADA=t-livre",
+        "WARD_ENTRY=t-livre",
         "PATH=/usr/local/bin:/usr/bin:/bin\n",
     ] {
-        assert!(env.contains(esperado), "{esperado} faltando:\n{env}");
+        assert!(env.contains(expected), "{expected} faltando:\n{env}");
     }
-    // Locale UTF-8: o `${X@Q}` do bash com acento usa aspas (a máscara cobre); fica
-    // `$'…'` (RA3) só em locale C.
+    // UTF-8 locale: bash's `${X@Q}` with an accent uses quotes (the mask covers it); it
+    // stays `$'…'` (RA3) only in locale C.
     let r = run(
         &w,
         "t-livre",
@@ -379,153 +397,158 @@ fn v4_entrega_mascara_codigo_e_recusas() {
         ],
         &[("LANG", "C")],
     );
-    assert!(texto(&r.saida).contains("UTF-8"), "{r:?}");
-    assert!(!contem(&r.saida, b"falso-livre"), "{r:?}");
+    assert!(text(&r.stdout).contains("UTF-8"), "{r:?}");
+    assert!(!contains(&r.stdout, b"falso-livre"), "{r:?}");
 
-    // Entrada padrão (D13).
-    let mut s = conectar(&w);
-    mandar(&mut s, &pedido_executar("t-livre", &["/bin/cat"], &[]));
-    entrada_padrao(&mut s, b"linha 1\n");
-    entrada_padrao(&mut s, b"linha 2\n");
-    entrada_padrao(&mut s, b"");
-    let r = ler_sessao(&mut s);
+    // Stdin (D13).
+    let mut s = connect(&w);
+    send(&mut s, &run_request("t-livre", &["/bin/cat"], &[]));
+    send_stdin(&mut s, b"linha 1\n");
+    send_stdin(&mut s, b"linha 2\n");
+    send_stdin(&mut s, b"");
+    let r = read_session(&mut s);
     assert_eq!(
-        (r.fim, texto(&r.saida).as_str()),
+        (r.end, text(&r.stdout).as_str()),
         (Some(0), "linha 1\nlinha 2\n")
     );
 
-    // Anexo e extra secreto (V4.10, V4.5): arquivo 0600 em <rt>tmp/, conteúdo e
-    // licença mascarados, e o arquivo some no fim (V4.15).
+    // Attachment and secret extra (V4.10, V4.5): a 0600 file in <rt>tmp/, the content
+    // and the license masked, and the file goes away at the end (V4.15).
     let r = run(
         &w,
         "t-gen",
         &sh(
-            "f=\"$WARD_ARQUIVO_APP_ENV\"; stat -c '%a %U' \"$f\"; stat -c '%a' \"$(dirname \"$f\")\"; \
+            "f=\"$WARD_FILE_APP_ENV\"; stat -c '%a %U' \"$f\"; stat -c '%a' \"$(dirname \"$f\")\"; \
              printf '%s\\n' \"$f\"; cat \"$f\"; echo; printf '%s|%s\\n' \"$WARD_REGIAO\" \"$WARD_CHAVE_LICENCA\"; \
              sha256sum < \"$f\"",
         ),
         &[],
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let out = texto(&r.saida);
-    let linhas: Vec<&str> = out.lines().collect();
-    assert!(linhas[0].starts_with("600 "), "{out}");
-    assert_eq!(linhas[1], "700", "{out}");
-    let caminho = PathBuf::from(linhas[2]);
-    assert!(caminho.starts_with(sock.0.join("tmp")), "{out}");
-    assert!(caminho.ends_with("app.env"), "{out}");
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let out = text(&r.stdout);
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(lines[0].starts_with("600 "), "{out}");
+    assert_eq!(lines[1], "700", "{out}");
+    let path = PathBuf::from(lines[2]);
+    assert!(path.starts_with(sock.0.join("tmp")), "{out}");
+    assert!(path.ends_with("app.env"), "{out}");
     assert!(
-        !out.contains("falso-anexo") && !out.contains(LICENCA),
+        !out.contains("falso-anexo") && !out.contains(LICENSE),
         "{out}"
     );
     assert!(out.contains("r-01|••••"), "{out}");
     assert!(
-        out.contains(sha256(ANEXO.as_bytes()).split(' ').next().unwrap()),
+        out.contains(sha256(ATTACHMENT.as_bytes()).split(' ').next().unwrap()),
         "{out}"
     );
-    assert!(!caminho.exists(), "o anexo ficou depois do fim");
-    assert!(tmp_vazio(&sock));
+    assert!(!path.exists(), "o anexo ficou depois do fim");
+    assert!(tmp_empty(&sock));
 
-    // V4.11: nota segura não executa nada.
-    let marca = dev.0.join("marca-nota");
+    // V4.11: a secure note runs nothing.
+    let mark = dev.0.join("marca-nota");
     let r = run(
         &w,
         "t-nota",
-        &["/usr/bin/touch", marca.to_str().unwrap()],
+        &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(r.falha, Some(ErroResposta::TipoSemEntrega), "{r:?}");
-    assert_eq!(ErroResposta::TipoSemEntrega.mensagem(), "tipo sem entrega");
-    assert!(!marca.exists());
-    // V4.20: com aprovação e sem app → "aprovação indisponível", nada executado.
+    assert_eq!(r.failure, Some(ResponseError::TypeWithoutDelivery), "{r:?}");
+    assert_eq!(
+        ResponseError::TypeWithoutDelivery.message(),
+        "tipo sem entrega"
+    );
+    assert!(!mark.exists());
+    // V4.20: needs approval and no app → approval unavailable, nothing run.
     let r = run(
         &w,
         "t-aprov",
-        &["/usr/bin/touch", marca.to_str().unwrap()],
+        &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(r.falha, Some(ErroResposta::AprovacaoIndisponivel), "{r:?}");
-    assert!(!marca.exists());
-    // Bloqueada = inexistente (V3.17); o túnel do banco é da Fase 28 (nada executado).
+    assert_eq!(r.failure, Some(ResponseError::ApprovalUnavailable), "{r:?}");
+    assert!(!mark.exists());
+    // Blocked = nonexistent (V3.17); the database tunnel is Phase 28 (nothing run).
     let r = run(
         &w,
         "t-bloq",
-        &["/usr/bin/touch", marca.to_str().unwrap()],
+        &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(r.falha, Some(ErroResposta::EntradaInexistente), "{r:?}");
-    assert!(!marca.exists());
-    // Recusado antes de lançar, a conexão segue para o próximo pedido.
-    let mut s = conectar(&w);
-    mandar(&mut s, &pedido_executar("t-nota", &["/bin/true"], &[]));
+    assert_eq!(r.failure, Some(ResponseError::EntryNotFound), "{r:?}");
+    assert!(!mark.exists());
+    // Refused before launching, the connection goes on to the next request.
+    let mut s = connect(&w);
+    send(&mut s, &run_request("t-nota", &["/bin/true"], &[]));
     assert!(matches!(
-        receber(&mut s),
-        Some(Resposta::Erro(ErroResposta::TipoSemEntrega))
+        receive(&mut s),
+        Some(Response::Error(ResponseError::TypeWithoutDelivery))
     ));
-    mandar(&mut s, &pedido_executar("t-livre", &sh("exit 4"), &[]));
-    entrada_padrao(&mut s, b"");
-    assert_eq!(ler_sessao(&mut s).fim, Some(4));
+    send(&mut s, &run_request("t-livre", &sh("exit 4"), &[]));
+    send_stdin(&mut s, b"");
+    assert_eq!(read_session(&mut s).end, Some(4));
 
-    // Um quadro fora da sessão (outra operação no meio) encerra o comando.
-    let mut s = conectar(&w);
-    mandar(&mut s, &pedido_executar("t-livre", &sh("sleep 30"), &[]));
+    // A frame outside the session (another operation in the middle) ends the command.
+    let mut s = connect(&w);
+    send(&mut s, &run_request("t-livre", &sh("sleep 30"), &[]));
     std::thread::sleep(Duration::from_millis(300));
-    mandar(&mut s, r#"{"v":1,"op":"lista","dados":{}}"#);
+    send(&mut s, r#"{"v":2,"op":"list","data":{}}"#);
     let t = Instant::now();
-    let r = ler_sessao(&mut s);
-    assert_eq!(r.fim, Some(137), "{r:?}");
+    let r = read_session(&mut s);
+    assert_eq!(r.end, Some(137), "{r:?}");
     assert!(t.elapsed() < Duration::from_secs(5));
 
-    // S13: nada de segredo no log (`RUST_LOG=trace`).
+    // S13: no secret in the log (`RUST_LOG=trace`).
     let log = fs::read(&w.log).unwrap();
-    for segredo in [SENHA, SENHA_LIVRE, LICENCA, ANEXO, "falso-nota-run-26"] {
-        assert!(!contem(&log, segredo.as_bytes()), "{segredo} no log");
+    for secret in [
+        PASSWORD,
+        FREE_PASSWORD,
+        LICENSE,
+        ATTACHMENT,
+        "falso-nota-run-26",
+    ] {
+        assert!(!contains(&log, secret.as_bytes()), "{secret} no log");
         assert!(
-            !contem(&log, b64(segredo.as_bytes()).as_bytes()),
-            "{segredo} (b64) no log"
+            !contains(&log, b64(secret.as_bytes()).as_bytes()),
+            "{secret} (b64) no log"
         );
     }
 }
 
-/// D13 e V4.15: a CLI que cai mata o grupo inteiro do filho (e os netos) e o anexo some
-/// em até 1 s; o filho morto por SIGKILL também apaga o anexo; o `wardd` morto por
-/// SIGKILL leva o filho junto (`PR_SET_PDEATHSIG`) e, ao subir de novo, esvazia
-/// `<rt>tmp/`.
-/// Fase 26a (achado médio da auditoria do M3): o ambiente da CLI não muda o comando
-/// aprovado. `PATH` com a pasta do atacante na frente, `BASH_ENV`/`ENV`,
+/// Phase 26a (medium finding of the M3 audit): the CLI environment does not change the
+/// approved command. `PATH` with the attacker's folder in front, `BASH_ENV`/`ENV`,
 /// `NODE_OPTIONS=--require`, `GIT_SSH_COMMAND`, `PYTHONSTARTUP`, `PGSERVICEFILE`,
-/// `HOME` e locale/fuso/terminal apontando para arquivo do atacante: nada disso chega
-/// ao filho, e o comando sem `/` é achado só pelo `PATH` fixo. O diretório de
-/// trabalho continua o da CLI.
+/// `HOME` and locale/timezone/terminal pointing to an attacker's file: none of that
+/// reaches the child, and a command without `/` is found only through the fixed `PATH`.
+/// The working directory is still the CLI's.
 #[test]
-fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
-    let dev = Dir::novo("f26a");
-    cofre(&dev);
-    let sock = DirSocket::novo("f26a");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
+fn f26a_attack_cli_environment_does_not_change_the_command() {
+    let dev = Dir::new("f26a");
+    vault(&dev);
+    let sock = SocketDir::new("f26a");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
 
-    // A pasta do atacante: `true`, `sh`, `env` e `wardfalso-26a` falsos que deixam uma
-    // marca; um rc para o `BASH_ENV`/`ENV`; um módulo para o `--require`.
-    let atacante = dev.0.join("atacante");
-    fs::create_dir_all(&atacante).unwrap();
-    let marca = dev.0.join("marca-26a");
-    let falso = format!("#!/bin/sh\necho pego >> '{}'\n", marca.display());
-    for nome in ["true", "sh", "env", "id", "wardfalso-26a"] {
-        let p = atacante.join(nome);
-        fs::write(&p, &falso).unwrap();
+    // The attacker's folder: fake `true`, `sh`, `env` and `wardfalso-26a` that leave a
+    // mark; an rc for `BASH_ENV`/`ENV`; a module for `--require`.
+    let attacker = dev.0.join("atacante");
+    fs::create_dir_all(&attacker).unwrap();
+    let mark = dev.0.join("marca-26a");
+    let fake = format!("#!/bin/sh\necho pego >> '{}'\n", mark.display());
+    for name in ["true", "sh", "env", "id", "wardfalso-26a"] {
+        let p = attacker.join(name);
+        fs::write(&p, &fake).unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let rc = atacante.join("rc.sh");
-    fs::write(&rc, format!("echo pego >> '{}'\n", marca.display())).unwrap();
-    let a = |n: &str| atacante.join(n).display().to_string();
-    let path_atacante = format!("{}:/usr/bin:/bin", atacante.display());
+    let rc = attacker.join("rc.sh");
+    fs::write(&rc, format!("echo pego >> '{}'\n", mark.display())).unwrap();
+    let a = |n: &str| attacker.join(n).display().to_string();
+    let attacker_path = format!("{}:/usr/bin:/bin", attacker.display());
     let rc_s = rc.display().to_string();
     let require = format!("--require {}", a("mod.js"));
     let ssh_cmd = format!("{} -x", a("true"));
-    let home = atacante.display().to_string();
-    let amb: Vec<(&str, &str)> = vec![
-        ("PATH", path_atacante.as_str()),
+    let home = attacker.display().to_string();
+    let env_vars: Vec<(&str, &str)> = vec![
+        ("PATH", attacker_path.as_str()),
         ("BASH_ENV", rc_s.as_str()),
         ("ENV", rc_s.as_str()),
         ("NODE_OPTIONS", require.as_str()),
@@ -546,39 +569,39 @@ fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
         ("NO_COLOR", "1"),
     ];
 
-    // O comando sem `/` vem do `PATH` fixo: `true`, `sh` e `env` do sistema; o que só
-    // existe na pasta do atacante não é achado (127).
-    let r = run(&w, "t-livre", &["true"], &amb);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let r = run(&w, "t-livre", &["wardfalso-26a"], &amb);
-    assert_eq!(r.fim, Some(127), "{r:?}");
-    // `bash -c` (não interativo) leria o `BASH_ENV`; `sh -c` com `ENV`.
-    let r = run(&w, "t-livre", &["bash", "-c", "exit 0"], &amb);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let r = run(&w, "t-livre", &["sh", "-c", "exit 0"], &amb);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let r = run(&w, "t-livre", &["sh", "-i", "-c", "exit 0"], &amb);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert!(!marca.exists(), "o comando do atacante rodou");
+    // A command without `/` comes from the fixed `PATH`: the system `true`, `sh` and
+    // `env`; what only exists in the attacker's folder is not found (127).
+    let r = run(&w, "t-livre", &["true"], &env_vars);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let r = run(&w, "t-livre", &["wardfalso-26a"], &env_vars);
+    assert_eq!(r.end, Some(127), "{r:?}");
+    // `bash -c` (not interactive) would read `BASH_ENV`; `sh -c` with `ENV`.
+    let r = run(&w, "t-livre", &["bash", "-c", "exit 0"], &env_vars);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let r = run(&w, "t-livre", &["sh", "-c", "exit 0"], &env_vars);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let r = run(&w, "t-livre", &["sh", "-i", "-c", "exit 0"], &env_vars);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert!(!mark.exists(), "o comando do atacante rodou");
 
-    // O ambiente do filho: só o fixo, a lista e a entrega.
-    let r = run(&w, "t-livre", &["env"], &amb);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let env = texto(&r.saida);
-    let (usuario, pessoal) = ward_plataforma::conta_do_usuario().unwrap();
-    for esperado in [
+    // The child's environment: only the fixed part, the list and the delivery.
+    let r = run(&w, "t-livre", &["env"], &env_vars);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let env = text(&r.stdout);
+    let (user, home_dir) = ward_platform::user_account().unwrap();
+    for expected in [
         "PATH=/usr/local/bin:/usr/bin:/bin\n".to_owned(),
-        format!("HOME={}\n", pessoal.to_string_lossy()),
-        format!("USER={}\n", usuario.to_string_lossy()),
-        format!("LOGNAME={}\n", usuario.to_string_lossy()),
+        format!("HOME={}\n", home_dir.to_string_lossy()),
+        format!("USER={}\n", user.to_string_lossy()),
+        format!("LOGNAME={}\n", user.to_string_lossy()),
         "COLORTERM=truecolor\n".to_owned(),
         "NO_COLOR=1\n".to_owned(),
         "LC_CTYPE=C.UTF-8\n".to_owned(),
-        "WARD_ENTRADA=t-livre\n".to_owned(),
+        "WARD_ENTRY=t-livre\n".to_owned(),
     ] {
-        assert!(env.contains(&esperado), "{esperado:?} faltando:\n{env}");
+        assert!(env.contains(&expected), "{expected:?} faltando:\n{env}");
     }
-    for proibido in [
+    for forbidden in [
         "atacante",
         "BASH_ENV",
         "ENV=",
@@ -596,16 +619,16 @@ fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
     ] {
         assert!(
             !env.lines()
-                .any(|l| l.starts_with(proibido) || l.contains("atacante")),
-            "{proibido} no ambiente do filho:\n{env}"
+                .any(|l| l.starts_with(forbidden) || l.contains("atacante")),
+            "{forbidden} no ambiente do filho:\n{env}"
         );
     }
-    let linhas: Vec<&str> = env.lines().collect();
-    let nomes: Vec<&str> = linhas
+    let lines: Vec<&str> = env.lines().collect();
+    let names: Vec<&str> = lines
         .iter()
         .map(|l| l.split_once('=').map_or(*l, |(n, _)| n))
         .collect();
-    for n in &nomes {
+    for n in &names {
         assert!(
             [
                 "PATH",
@@ -622,7 +645,7 @@ fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
         );
     }
 
-    // Valores aceitos passam como vieram; o diretório de trabalho é o da CLI.
+    // Accepted values pass as they came; the working directory is the CLI's.
     let r = run(
         &w,
         "t-livre",
@@ -638,92 +661,98 @@ fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
         ],
     );
     assert_eq!(
-        texto(&r.saida),
+        text(&r.stdout),
         "America/Sao_Paulo|xterm-256color|pt_BR.UTF-8|/\n",
         "{r:?}"
     );
-    assert!(!marca.exists(), "o comando do atacante rodou");
-    // O log do daemon conta as variáveis tiradas, sem nome nem valor.
+    assert!(!mark.exists(), "o comando do atacante rodou");
+    // The daemon log counts the removed variables, without name or value.
     let log = fs::read_to_string(&w.log).unwrap();
     assert!(!log.contains("atacante"), "{log}");
 }
 
+/// D13 and V4.15: a CLI that drops kills the child's whole group (and the
+/// grandchildren) and the attachment goes away within 1 s; a child killed by SIGKILL
+/// also deletes the attachment; a `wardd` killed by SIGKILL takes the child along
+/// (`PR_SET_PDEATHSIG`) and, when it starts again, empties `<rt>tmp/`.
 #[test]
-fn v4_15_cli_que_cai_e_daemon_morto() {
-    let dev = Dir::novo("cai");
-    cofre(&dev);
-    let sock = DirSocket::novo("cai");
-    let mut w = subir(&dev, &sock);
-    destravar_por(&w);
-    let script = "echo \"$$ $WARD_ARQUIVO_APP_ENV\"; sleep 60 & echo $!; wait";
+fn v4_15_cli_that_drops_and_killed_daemon() {
+    let dev = Dir::new("cai");
+    vault(&dev);
+    let sock = SocketDir::new("cai");
+    let mut w = start(&dev, &sock);
+    unlock_through(&w);
+    let script = "echo \"$$ $WARD_FILE_APP_ENV\"; sleep 60 & echo $!; wait";
 
-    // 1. A CLI cai (fecha a conexão) com o comando e um neto rodando.
-    let mut s = conectar(&w);
-    mandar(&mut s, &pedido_executar("t-gen", &sh(script), &[]));
-    let mut lido = Vec::new();
-    while lido.iter().filter(|b| **b == b'\n').count() < 2 {
-        match receber(&mut s) {
-            Some(Resposta::Saida { dados, .. }) => lido.extend_from_slice(&dados),
+    // 1. The CLI drops (closes the connection) with the command and a grandchild
+    //    running.
+    let mut s = connect(&w);
+    send(&mut s, &run_request("t-gen", &sh(script), &[]));
+    let mut read = Vec::new();
+    while read.iter().filter(|b| **b == b'\n').count() < 2 {
+        match receive(&mut s) {
+            Some(Response::Output { data, .. }) => read.extend_from_slice(&data),
             r => panic!("{r:?}"),
         }
     }
-    let t = texto(&lido);
+    let t = text(&read);
     let mut it = t.split_whitespace();
-    let filho: u32 = it.next().unwrap().parse().unwrap();
-    let arquivo = PathBuf::from(it.next().unwrap());
-    let neto: u32 = it.next().unwrap().parse().unwrap();
-    assert!(vivo(filho) && vivo(neto) && arquivo.exists());
+    let child: u32 = it.next().unwrap().parse().unwrap();
+    let file = PathBuf::from(it.next().unwrap());
+    let grandchild: u32 = it.next().unwrap().parse().unwrap();
+    assert!(alive(child) && alive(grandchild) && file.exists());
     drop(s);
     assert!(
-        esperar(Duration::from_secs(1), || !vivo(filho) && !vivo(neto)),
+        wait_for(Duration::from_secs(1), || !alive(child)
+            && !alive(grandchild)),
         "o grupo segue vivo"
     );
     assert!(
-        esperar(Duration::from_secs(1), || !arquivo.exists()),
+        wait_for(Duration::from_secs(1), || !file.exists()),
         "o anexo ficou"
     );
 
-    // 2. O filho leva SIGKILL: 137, e o anexo some.
+    // 2. The child gets SIGKILL: 137, and the attachment goes away.
     let r = run(
         &w,
         "t-gen",
-        &sh("test -f \"$WARD_ARQUIVO_APP_ENV\" && kill -9 $$"),
+        &sh("test -f \"$WARD_FILE_APP_ENV\" && kill -9 $$"),
         &[],
     );
-    assert_eq!(r.fim, Some(137), "{r:?}");
-    assert!(tmp_vazio(&sock));
+    assert_eq!(r.end, Some(137), "{r:?}");
+    assert!(tmp_empty(&sock));
 
-    // 3. O `wardd` leva SIGKILL no meio: o filho morre junto; o anexo fica até a
-    //    próxima partida, que o apaga.
-    let mut s = conectar(&w);
-    mandar(&mut s, &pedido_executar("t-gen", &sh(script), &[]));
-    let mut lido = Vec::new();
-    while !lido.contains(&b'\n') {
-        match receber(&mut s) {
-            Some(Resposta::Saida { dados, .. }) => lido.extend_from_slice(&dados),
+    // 3. The `wardd` gets SIGKILL in the middle: the child dies along; the attachment
+    //    stays until the next startup, which deletes it.
+    let mut s = connect(&w);
+    send(&mut s, &run_request("t-gen", &sh(script), &[]));
+    let mut read = Vec::new();
+    while !read.contains(&b'\n') {
+        match receive(&mut s) {
+            Some(Response::Output { data, .. }) => read.extend_from_slice(&data),
             r => panic!("{r:?}"),
         }
     }
-    let filho: u32 = texto(&lido)
+    let child: u32 = text(&read)
         .split_whitespace()
         .next()
         .unwrap()
         .parse()
         .unwrap();
-    w.filho.kill().unwrap();
-    let _ = w.filho.wait();
+    w.child.kill().unwrap();
+    let _ = w.child.wait();
     assert!(
-        esperar(Duration::from_secs(2), || !vivo(filho)),
+        wait_for(Duration::from_secs(2), || !alive(child)),
         "o filho sobreviveu ao daemon"
     );
     assert!(
-        !tmp_vazio(&sock),
+        !tmp_empty(&sock),
         "sem o daemon, o temporário ainda está lá"
     );
     drop(s);
     drop(w);
-    let w = subir(&dev, &sock);
-    assert!(tmp_vazio(&sock), "a partida não limpou <rt>tmp/");
+    let w = start(&dev, &sock);
+    assert!(tmp_empty(&sock), "a partida não limpou <rt>tmp/");
     assert_eq!(
         fs::metadata(sock.0.join("tmp"))
             .unwrap()
@@ -735,351 +764,361 @@ fn v4_15_cli_que_cai_e_daemon_morto() {
     drop(w);
 }
 
-/// RA1 (registro, sem mitigação genérica): enquanto o filho roda, outro processo do
-/// mesmo uid lê `/proc/<pid>/environ` dele e o anexo 0600. O `execve` volta o
-/// `dumpable` a 1 para qualquer programa comum; nem namespace de usuário nem o Yama
-/// (só o modo `ATTACH`) mudam a leitura do `environ` (`PTRACE_MODE_READ`). O que vale:
-/// o `wardd` (não-dumpable) não é legível, e a janela é só a do comando. Este teste
-/// prende o estado registrado no handoff (V4.13 reprova e vai ao usuário): se um dia o
-/// `environ` do filho deixar de ser legível, ele falha e o registro muda.
+/// RA1 (record, no generic mitigation): while the child runs, another process of the
+/// same uid reads its `/proc/<pid>/environ` and the 0600 attachment. `execve` sets
+/// `dumpable` back to 1 for any ordinary program; neither a user namespace nor Yama
+/// (only the `ATTACH` mode) change the reading of `environ` (`PTRACE_MODE_READ`). What
+/// holds: the `wardd` (not dumpable) is not readable, and the window is only the
+/// command's. This test pins the state recorded in the handoff (V4.13 fails and goes to
+/// the user): if one day the child's `environ` stops being readable, it fails and the
+/// record changes.
 #[test]
-fn ra1_registro_environ_do_filho_legivel_pelo_mesmo_uid() {
-    let dev = Dir::novo("ra1");
-    cofre(&dev);
-    let sock = DirSocket::novo("ra1");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
-    let mut s = conectar(&w);
-    mandar(
-        &mut s,
-        &pedido_executar("t-gen", &sh("echo $$; sleep 30"), &[]),
-    );
-    let pid: u32 = match receber(&mut s) {
-        Some(Resposta::Saida { dados, .. }) => texto(&dados).trim().parse().unwrap(),
+fn ra1_record_child_environ_readable_by_same_uid() {
+    let dev = Dir::new("ra1");
+    vault(&dev);
+    let sock = SocketDir::new("ra1");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
+    let mut s = connect(&w);
+    send(&mut s, &run_request("t-gen", &sh("echo $$; sleep 30"), &[]));
+    let pid: u32 = match receive(&mut s) {
+        Some(Response::Output { data, .. }) => text(&data).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
     let environ = fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
     assert!(
-        contem(&environ, LICENCA.as_bytes()),
+        contains(&environ, LICENSE.as_bytes()),
         "RA1 mudou: o environ do filho deixou de ser legível pelo mesmo uid"
     );
-    // O daemon, não-dumpable (S8), não é legível.
-    let daemon = w.filho.id();
+    // The daemon, not dumpable (S8), is not readable.
+    let daemon = w.child.id();
     assert!(fs::read(format!("/proc/{daemon}/environ")).is_err());
     assert!(fs::File::open(format!("/proc/{daemon}/mem")).is_err());
     drop(s);
-    assert!(esperar(Duration::from_secs(1), || !vivo(pid)));
+    assert!(wait_for(Duration::from_secs(1), || !alive(pid)));
     drop(w);
 }
 
-/// O tamanho do pedido (D52): acima do quadro, o daemon recusa com `quadro_invalido` e
-/// não executa nada (a CLI mede antes; aqui é a segunda camada).
+/// The request size (D52): above the frame, the daemon refuses with the invalid frame
+/// error and runs nothing (the CLI measures first; this is the second layer).
 #[test]
-fn d52_pedido_grande_demais_recusado_pelo_daemon() {
-    let dev = Dir::novo("d52");
-    cofre(&dev);
-    let sock = DirSocket::novo("d52");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
-    let marca = dev.0.join("marca-d52");
-    let grande = "x".repeat(100 * 1024);
-    let amb: Vec<(String, String)> = (0..9).map(|i| (format!("V{i}"), grande.clone())).collect();
-    let amb: Vec<(&str, &str)> = amb.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    let mut s = conectar(&w);
-    let json = pedido_executar(
+fn d52_oversized_request_refused_by_daemon() {
+    let dev = Dir::new("d52");
+    vault(&dev);
+    let sock = SocketDir::new("d52");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
+    let mark = dev.0.join("marca-d52");
+    let large = "x".repeat(100 * 1024);
+    let env_vars: Vec<(String, String)> =
+        (0..9).map(|i| (format!("V{i}"), large.clone())).collect();
+    let env_vars: Vec<(&str, &str)> = env_vars
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    let mut s = connect(&w);
+    let json = run_request(
         "t-livre",
-        &["/usr/bin/touch", marca.to_str().unwrap()],
-        &amb,
+        &["/usr/bin/touch", mark.to_str().unwrap()],
+        &env_vars,
     );
-    // O daemon pode fechar antes de ler o corpo todo (pipe quebrado aqui).
+    // The daemon may close before reading the whole body (broken pipe here).
     let _ = s
         .write_all(&(json.len() as u32).to_be_bytes())
         .and_then(|()| s.write_all(json.as_bytes()));
-    let r = ler_sessao(&mut s);
-    assert!(r.fim.is_none(), "{r:?}");
+    let r = read_session(&mut s);
+    assert!(r.end.is_none(), "{r:?}");
     assert!(
-        matches!(r.falha, None | Some(ErroResposta::QuadroInvalido)),
+        matches!(r.failure, None | Some(ResponseError::InvalidFrame)),
         "{r:?}"
     );
     std::thread::sleep(Duration::from_millis(200));
-    assert!(!marca.exists());
-    assert!(tmp_vazio(&sock));
+    assert!(!mark.exists());
+    assert!(tmp_empty(&sock));
 }
 
-/// V4.21 (D16): com o cofre travado e sem app, o `ward run` espera; o `destravar` por
-/// outra conexão (o `ward destravar`) solta o pedido, que roda com a entrega.
+/// V4.21 (D16): with the vault locked and no app, `ward run` waits; an unlock through
+/// another connection (the CLI unlock) releases the request, which runs with the
+/// delivery.
 #[test]
-fn v4_21_travado_espera_o_destravar_da_cli() {
-    let dev = Dir::novo("v421");
-    cofre(&dev);
-    let sock = DirSocket::novo("v421");
-    let w = subir(&dev, &sock);
-    let mut s = conectar(&w);
-    mandar(
+fn v4_21_locked_waits_for_cli_unlock() {
+    let dev = Dir::new("v421");
+    vault(&dev);
+    let sock = SocketDir::new("v421");
+    let w = start(&dev, &sock);
+    let mut s = connect(&w);
+    send(
         &mut s,
-        &pedido_executar("t-livre", &sh("printf %s \"$WARD_PASS\" | wc -c"), &[]),
+        &run_request("t-livre", &sh("printf %s \"$WARD_PASS\" | wc -c"), &[]),
     );
-    entrada_padrao(&mut s, b"");
+    send_stdin(&mut s, b"");
     std::thread::sleep(Duration::from_millis(1500));
-    destravar_por(&w);
-    let r = ler_sessao(&mut s);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida).trim(), SENHA_LIVRE.len().to_string());
+    unlock_through(&w);
+    let r = read_session(&mut s);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert_eq!(text(&r.stdout).trim(), FREE_PASSWORD.len().to_string());
 }
 
-/// Fase 28g, ataque da 2ª auditoria do M4: um `write` único de `n` bytes + a senha, com
-/// `n` em volta das fronteiras de 16 KiB (buffer antigo) e 64 KiB (pipe padrão), saía
-/// com o começo da senha em claro (o leitor cortava no tamanho do buffer). Agora o
-/// pipe tem 256 KiB e o daemon lê o lote inteiro antes de mascarar: a senha sai só
-/// `••••`, na saída e no erro.
+/// Phase 28g, attack of the 2nd M4 audit: a single `write` of `n` bytes + the password,
+/// with `n` around the 16 KiB (old buffer) and 64 KiB (default pipe) boundaries, came
+/// out with the start of the password in clear (the reader cut at the buffer size). Now
+/// the pipe has 256 KiB and the daemon reads the whole batch before masking: the
+/// password comes out only `••••`, on stdout and on stderr.
 #[test]
-fn f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha() {
-    let dev = Dir::novo("run-28g");
-    cofre(&dev);
-    let sock = DirSocket::novo("28g");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
-    let mut casos: Vec<usize> = (16_370..16_390).collect();
-    casos.extend(65_520..65_540);
-    casos.extend([131_067, 200_000]);
+fn f28g_attack_single_large_write_does_not_show_password_start() {
+    let dev = Dir::new("run-28g");
+    vault(&dev);
+    let sock = SocketDir::new("28g");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
+    let mut cases: Vec<usize> = (16_370..16_390).collect();
+    cases.extend(65_520..65_540);
+    cases.extend([131_067, 200_000]);
     for fd in [1, 2] {
-        for &n in &casos {
+        for &n in &cases {
             let script = format!(
                 "import os\nos.write({fd}, b'b' * {n} + os.environ['WARD_PASS'].encode() + b'\\n')\n"
             );
             let r = run(&w, "t-livre", &["/usr/bin/python3", "-c", &script], &[]);
-            assert_eq!(r.fim, Some(0), "fd={fd} n={n}: {:?}", r.falha);
-            let tudo = if fd == 1 { &r.saida } else { &r.erro };
+            assert_eq!(r.end, Some(0), "fd={fd} n={n}: {:?}", r.failure);
+            let all = if fd == 1 { &r.stdout } else { &r.stderr };
             assert!(
-                !contem(tudo, b"falso-"),
+                !contains(all, b"falso-"),
                 "fd={fd} n={n}: o começo da senha saiu em claro"
             );
-            let mut esperado = vec![b'b'; n];
-            esperado.extend_from_slice("••••\n".as_bytes());
-            assert!(*tudo == esperado, "fd={fd} n={n}: saída inesperada");
+            let mut expected = vec![b'b'; n];
+            expected.extend_from_slice("••••\n".as_bytes());
+            assert!(*all == expected, "fd={fd} n={n}: saída inesperada");
         }
     }
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
+    assert!(!contains(&log, FREE_PASSWORD.as_bytes()));
 }
 
-/// Fase 54 (S8), ataque da auditoria final: o comando do `ward run` recebeu a senha no
-/// ambiente e espera a trava para usá-la (`sleep; printenv … > arquivo`, fora da
-/// máscara). Travar no meio mata o grupo inteiro (o `sh` e o neto): o arquivo nunca
-/// nasce, a sessão termina com 137 e o aviso, o anexo some. Um `ward run` depois da
-/// trava espera o destravar, como o V4.21.
+/// Phase 54 (S8), attack of the final audit: the `ward run` command got the password in
+/// the environment and waits for the lock to use it (`sleep; printenv … > file`, outside
+/// the mask). Locking in the middle kills the whole group (the `sh` and the
+/// grandchild): the file is never born, the session ends with 137 and the notice, the
+/// attachment goes away. A `ward run` after the lock waits for the unlock, like V4.21.
 #[test]
-fn f54_ataque_ward_run_morre_na_trava() {
-    let dev = Dir::novo("run-54");
-    cofre(&dev);
-    let sock = DirSocket::novo("54");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
-    let marca = dev.0.join("marca-f54");
-    let neto = dev.0.join("marca-f54-neto");
+fn f54_attack_ward_run_dies_on_lock() {
+    let dev = Dir::new("run-54");
+    vault(&dev);
+    let sock = SocketDir::new("54");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
+    let mark = dev.0.join("marca-f54");
+    let grandchild = dev.0.join("marca-f54-neto");
     let script = format!(
         "echo $$; (sleep 4; printenv WARD_PASS > '{n}') & sleep 4; printenv WARD_PASS > '{m}'; wait",
-        n = neto.display(),
-        m = marca.display()
+        n = grandchild.display(),
+        m = mark.display()
     );
-    let mut s = conectar(&w);
-    mandar(&mut s, &pedido_executar("t-livre", &sh(&script), &[]));
-    entrada_padrao(&mut s, b"");
-    let pid: u32 = match receber(&mut s) {
-        Some(Resposta::Saida { dados, .. }) => texto(&dados).trim().parse().unwrap(),
+    let mut s = connect(&w);
+    send(&mut s, &run_request("t-livre", &sh(&script), &[]));
+    send_stdin(&mut s, b"");
+    let pid: u32 = match receive(&mut s) {
+        Some(Response::Output { data, .. }) => text(&data).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
-    assert!(vivo(pid));
-    let antes = Instant::now();
-    let mut t = conectar(&w);
-    mandar(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
-    assert!(matches!(receber(&mut t), Some(Resposta::Ok)));
-    let r = ler_sessao(&mut s);
+    assert!(alive(pid));
+    let before = Instant::now();
+    let mut t = connect(&w);
+    send(&mut t, r#"{"v":2,"op":"lock","data":{}}"#);
+    assert!(matches!(receive(&mut t), Some(Response::Ok)));
+    let r = read_session(&mut s);
     assert!(
-        antes.elapsed() < Duration::from_secs(3),
+        before.elapsed() < Duration::from_secs(3),
         "a sessão só acabou com o fim do comando"
     );
-    assert_eq!(r.fim, Some(137), "{r:?}");
+    assert_eq!(r.end, Some(137), "{r:?}");
     assert!(
-        texto(&r.erro).contains("o cofre travou"),
+        text(&r.stderr).contains("o cofre travou"),
         "sem o aviso: {r:?}"
     );
-    assert!(!vivo(pid));
-    // Depois do prazo do `sleep`, nada escreveu a senha.
+    assert!(!alive(pid));
+    // After the `sleep` deadline, nothing wrote the password.
     std::thread::sleep(Duration::from_secs(5));
-    assert!(!marca.exists(), "o comando usou a senha depois da trava");
-    assert!(!neto.exists(), "o neto usou a senha depois da trava");
-    assert!(tmp_vazio(&sock));
+    assert!(!mark.exists(), "o comando usou a senha depois da trava");
+    assert!(!grandchild.exists(), "o neto usou a senha depois da trava");
+    assert!(tmp_empty(&sock));
 
-    // Travado, um `ward run` novo não roda até destravar (V4.21): solto pelo destravar,
-    // e uma trava antes do lançamento também o pega (o registro confere a contagem).
-    let mut s = conectar(&w);
-    mandar(
+    // Locked, a new `ward run` does not run until the unlock (V4.21): released by the
+    // unlock, and a lock before the launch catches it too (the registration checks the
+    // count).
+    let mut s = connect(&w);
+    send(
         &mut s,
-        &pedido_executar("t-livre", &sh("printf %s \"$WARD_PASS\" | wc -c"), &[]),
+        &run_request("t-livre", &sh("printf %s \"$WARD_PASS\" | wc -c"), &[]),
     );
-    entrada_padrao(&mut s, b"");
+    send_stdin(&mut s, b"");
     std::thread::sleep(Duration::from_millis(500));
-    destravar_por(&w);
-    let r = ler_sessao(&mut s);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida).trim(), SENHA_LIVRE.len().to_string());
+    unlock_through(&w);
+    let r = read_session(&mut s);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert_eq!(text(&r.stdout).trim(), FREE_PASSWORD.len().to_string());
 
-    // Um `ward run` que termina antes da trava não leva aviso nem muda de código.
+    // A `ward run` that ends before the lock gets no notice and keeps its code.
     let r = run(&w, "t-livre", &sh("exit 3"), &[]);
-    assert_eq!(r.fim, Some(3), "{r:?}");
-    assert!(r.erro.is_empty(), "{r:?}");
+    assert_eq!(r.end, Some(3), "{r:?}");
+    assert!(r.stderr.is_empty(), "{r:?}");
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
-    assert!(contem(&log, "encerrado(s) ao travar".as_bytes()));
+    assert!(!contains(&log, FREE_PASSWORD.as_bytes()));
+    assert!(contains(&log, "encerrado(s) ao travar".as_bytes()));
 }
 
-/// Fase 55 (S8), os dois passos da reauditoria final contra o `wardd` de verdade:
-/// 1. `setsid -f`: o comando deixa um neto com sessão própria e termina; o neto
-///    escreveria a senha 3 s depois;
-/// 2. `setpgid(0, 0)`: o filho sai do grupo, o comando dorme e o cofre trava; o filho
-///    escreveria a senha 3 s depois.
+/// Phase 55 (S8), the two steps of the final re-audit against the real `wardd`:
+/// 1. `setsid -f`: the command leaves a grandchild with its own session and ends; the
+///    grandchild would write the password 3 s later;
+/// 2. `setpgid(0, 0)`: the child leaves the group, the command sleeps and the vault
+///    locks; the child would write the password 3 s later.
 ///
-/// Antes da correção, os dois escreviam (o grupo morria, eles não). Agora: nada
-/// escreve, nenhum processo sobra, a CLI ouve "encerrado" na trava. O controle sem a
-/// correção (o fugitivo sobrevive) está em `ward-plataforma/tests/subreaper.rs`.
+/// Before the fix, both wrote (the group died, they did not). Now: nothing writes, no
+/// process is left, the CLI hears the ended notice on the lock. The control without the fix
+/// (the runaway survives) is in `ward-platform/tests/subreaper.rs`.
 #[test]
-fn f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava() {
-    let dev = Dir::novo("run-55");
-    cofre(&dev);
-    let sock = DirSocket::novo("55");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
+fn f55_attack_descendant_outside_group_dies_at_end_and_on_lock() {
+    let dev = Dir::new("run-55");
+    vault(&dev);
+    let sock = SocketDir::new("55");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
 
-    // 1. `setsid -f` e o comando termina.
-    let marca1 = dev.0.join("marca-f55-setsid");
+    // 1. `setsid -f` and the command ends.
+    let mark1 = dev.0.join("marca-f55-setsid");
     let script = format!(
         "setsid -f /bin/sh -c 'echo $$ > \"{p}\"; sleep 3; printenv WARD_PASS > \"{m}\"'; \
          i=0; while [ ! -s \"{p}\" ] && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; cat \"{p}\"",
         p = dev.0.join("pid-f55-setsid").display(),
-        m = marca1.display()
+        m = mark1.display()
     );
     let r = run(&w, "t-livre", &sh(&script), &[]);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let fugitivo: u32 = texto(&r.saida).trim().parse().unwrap();
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let runaway: u32 = text(&r.stdout).trim().parse().unwrap();
     assert!(
-        esperar(Duration::from_secs(3), || !vivo(fugitivo)),
+        wait_for(Duration::from_secs(3), || !alive(runaway)),
         "o neto com setsid sobreviveu ao fim do comando"
     );
-    assert!(r.erro.is_empty(), "{r:?}");
+    assert!(r.stderr.is_empty(), "{r:?}");
 
-    // 2. `setpgid(0, 0)` e a trava com o comando vivo.
-    let marca2 = dev.0.join("marca-f55-setpgid");
+    // 2. `setpgid(0, 0)` and the lock with the command alive.
+    let mark2 = dev.0.join("marca-f55-setpgid");
     let py = format!(
         "import os,time\npid=os.fork()\nif pid==0:\n os.setpgid(0,0)\n time.sleep(3)\n open({m:?},'w').write(os.environ.get('WARD_PASS',''))\n os._exit(0)\nprint(pid,flush=True)\ntime.sleep(30)\n",
-        m = marca2.display().to_string()
+        m = mark2.display().to_string()
     );
-    let mut s = conectar(&w);
-    mandar(
+    let mut s = connect(&w);
+    send(
         &mut s,
-        &pedido_executar("t-livre", &["/usr/bin/python3", "-I", "-c", &py], &[]),
+        &run_request("t-livre", &["/usr/bin/python3", "-I", "-c", &py], &[]),
     );
-    entrada_padrao(&mut s, b"");
-    let filho: u32 = match receber(&mut s) {
-        Some(Resposta::Saida { dados, .. }) => texto(&dados).trim().parse().unwrap(),
+    send_stdin(&mut s, b"");
+    let child: u32 = match receive(&mut s) {
+        Some(Response::Output { data, .. }) => text(&data).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
-    assert!(vivo(filho));
-    let mut t = conectar(&w);
-    mandar(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
-    assert!(matches!(receber(&mut t), Some(Resposta::Ok)));
-    let r = ler_sessao(&mut s);
-    assert_eq!(r.fim, Some(137), "{r:?}");
+    assert!(alive(child));
+    let mut t = connect(&w);
+    send(&mut t, r#"{"v":2,"op":"lock","data":{}}"#);
+    assert!(matches!(receive(&mut t), Some(Response::Ok)));
+    let r = read_session(&mut s);
+    assert_eq!(r.end, Some(137), "{r:?}");
     assert!(
-        texto(&r.erro).contains("o comando foi encerrado"),
+        text(&r.stderr).contains("o comando foi encerrado"),
         "sem o aviso de encerrado: {r:?}"
     );
-    assert!(!vivo(filho), "o filho fora do grupo sobreviveu à trava");
+    assert!(!alive(child), "o filho fora do grupo sobreviveu à trava");
 
-    // Depois do prazo dos dois, nada escreveu a senha.
+    // After the deadline of both, nothing wrote the password.
     std::thread::sleep(Duration::from_secs(4));
     assert!(
-        !marca1.exists(),
+        !mark1.exists(),
         "o neto com setsid usou a senha depois do fim"
     );
     assert!(
-        !marca2.exists(),
+        !mark2.exists(),
         "o filho com setpgid usou a senha depois da trava"
     );
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
+    assert!(!contains(&log, FREE_PASSWORD.as_bytes()));
 }
 
-/// Fase 54b (D68): quem declara a entrada padrão nula não manda nada depois. A entrada
-/// do filho fecha no lançamento (o `cat` acaba na hora, sem esperar o fim da CLI) e um
-/// `entrada_padrao` com dados mata o grupo, sem o dado chegar ao comando.
+/// Phase 54b (D68): whoever declares a null stdin sends nothing afterwards. The child's
+/// input closes at launch (`cat` ends at once, without waiting for the end of the CLI)
+/// and a stdin frame with data kills the group, without the data reaching the
+/// command.
 #[test]
-fn f54b_ataque_entrada_nula_com_dado_mata_o_comando() {
-    let dev = Dir::novo("run-54b-nula");
-    cofre(&dev);
-    let sock = DirSocket::novo("54b-nula");
-    let w = subir(&dev, &sock);
-    destravar_por(&w);
-    // Sem dado: o `cat` vê o fim já, antes do quadro vazio da CLI.
-    let mut s = conectar(&w);
-    mandar(
+fn f54b_attack_null_stdin_with_data_kills_the_command() {
+    let dev = Dir::new("run-54b-nula");
+    vault(&dev);
+    let sock = SocketDir::new("54b-nula");
+    let w = start(&dev, &sock);
+    unlock_through(&w);
+    // No data: `cat` sees the end already, before the empty frame from the CLI.
+    let mut s = connect(&w);
+    send(
         &mut s,
-        &pedido_executar_com("t-livre", &sh("cat; echo fim"), &[], "nula"),
+        &run_request_with("t-livre", &sh("cat; echo fim"), &[], "null"),
     );
-    let r = ler_sessao(&mut s);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida), "fim\n");
-    // Com dado: o comando morre e o dado não chega.
-    let mut s = conectar(&w);
-    mandar(
+    let r = read_session(&mut s);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert_eq!(text(&r.stdout), "fim\n");
+    // With data: the command dies and the data does not arrive.
+    let mut s = connect(&w);
+    send(
         &mut s,
-        &pedido_executar_com("t-livre", &sh("sleep 3; cat; echo fim"), &[], "nula"),
+        &run_request_with("t-livre", &sh("sleep 3; cat; echo fim"), &[], "null"),
     );
-    let antes = Instant::now();
-    entrada_padrao(&mut s, b"falso-script-do-agente-54b\n");
-    let r = ler_sessao(&mut s);
-    assert!(antes.elapsed() < Duration::from_secs(3), "o comando seguiu");
-    assert_eq!(r.fim, Some(137), "{r:?}");
-    let tudo = [r.saida.as_slice(), r.erro.as_slice()].concat();
-    assert!(!contem(&tudo, b"falso-script-do-agente"), "{r:?}");
-    assert!(!contem(&tudo, b"fim"), "{r:?}");
+    let before = Instant::now();
+    send_stdin(&mut s, b"falso-script-do-agente-54b\n");
+    let r = read_session(&mut s);
+    assert!(
+        before.elapsed() < Duration::from_secs(3),
+        "o comando seguiu"
+    );
+    assert_eq!(r.end, Some(137), "{r:?}");
+    let all = [r.stdout.as_slice(), r.stderr.as_slice()].concat();
+    assert!(!contains(&all, b"falso-script-do-agente"), "{r:?}");
+    assert!(!contains(&all, b"fim"), "{r:?}");
     let log = fs::read(&w.log).unwrap();
-    assert!(contem(&log, "entrada padrão declarada nula".as_bytes()));
-    assert!(!contem(&log, b"falso-script-do-agente"));
+    assert!(contains(&log, "entrada padrão declarada nula".as_bytes()));
+    assert!(!contains(&log, b"falso-script-do-agente"));
 }
 
-const APROVADOR: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
+const APPROVER: &str = env!("CARGO_BIN_EXE_wardd-test-approver");
 
-/// Ataque da auditoria final, de ponta a ponta pelo binário (D68): `printf <script> |
-/// ward run t-aprov -- python3`, com a janela de teste (`wardd-aprovador-teste`, aberta
-/// pelo daemon por `WARD_DEV_APP`) respondendo "Permitir uma vez" com o PIN certo. Sem
-/// a caixa da entrada padrão, o daemon recusa a resposta, o `python3` nunca roda e nada
-/// sai; com a caixa, roda. Com terminal, "Permitir uma vez" passa como antes.
+/// Attack of the final audit, end to end through the binary (D68): `printf <script> |
+/// ward run <entry that needs approval> -- python3`, with the test approval window
+/// (opened by the daemon through `WARD_DEV_APP`) answering "allow once" with the right
+/// PIN. Without the stdin box, the daemon refuses the answer, the `python3` never runs
+/// and nothing comes out; with the box, it runs. With a terminal, "allow once" passes
+/// as before.
 #[test]
-fn f54b_ataque_script_por_pipe_na_aprovacao() {
-    let dev = Dir::novo("run-54b-aprov");
-    cofre(&dev);
-    let app = dev.0.join("wardd-aprovador-teste");
-    fs::hard_link(APROVADOR, &app).unwrap();
-    let modo = dev.0.join("aprovador.modo");
-    let log_app = dev.0.join("logs/wardd-aprovador-teste.log");
-    let sock = DirSocket::novo("54b-aprov");
-    let w = subir_com(&dev, &sock, &[("WARD_DEV_APP", app.as_os_str())]);
-    destravar_por(&w);
-    // O script mede a senha (nada dela sai, nem mascarado).
+fn f54b_attack_piped_script_on_approval() {
+    let dev = Dir::new("run-54b-aprov");
+    vault(&dev);
+    let app = dev.0.join("wardd-test-approver");
+    fs::hard_link(APPROVER, &app).unwrap();
+    let mode_file = dev.0.join("approver.mode");
+    let app_log = dev.0.join("logs/wardd-test-approver.log");
+    let sock = SocketDir::new("54b-aprov");
+    let w = start_with(&dev, &sock, &[("WARD_DEV_APP", app.as_os_str())]);
+    unlock_through(&w);
+    // The script measures the password (nothing of it comes out, not even masked).
     let script =
         b"import os, sys\nsys.stdout.write('ENTREGUE:%d' % len(os.environ['WARD_PASS']))\n";
-    let respostas = |m: &str| {
-        fs::read_to_string(&log_app)
+    let answers = |m: &str| {
+        fs::read_to_string(&app_log)
             .unwrap_or_default()
             .matches(m)
             .count()
     };
 
-    // 1. Sem a caixa: recusado; o pedido segue pendente e nada roda. O `python3` da
-    // auditoria e um leitor de comandos pela entrada (o `sh`, no lugar do `psql`, que
-    // lê o SQL do mesmo jeito; a decisão não olha o argv), por pipe e por arquivo.
-    let casos: [(&[&str], &[u8], &str); 3] = [
+    // 1. Without the box: refused; the request stays pending and nothing runs. The
+    // audit's `python3` and a reader of commands from stdin (`sh`, in place of `psql`,
+    // which reads SQL the same way; the decision does not look at the argv), by pipe
+    // and by file.
+    let cases: [(&[&str], &[u8], &str); 3] = [
         (&["/usr/bin/python3", "-I"], script, "pipe"),
         (
             &["/bin/sh"],
@@ -1089,35 +1128,35 @@ fn f54b_ataque_script_por_pipe_na_aprovacao() {
         (
             &["/bin/sh"],
             b"printf 'ENTREGUE:%s' \"${#WARD_PASS}\"\n",
-            "arquivo",
+            "file",
         ),
     ];
-    for (n, (argv, dados, tipo)) in casos.iter().enumerate() {
-        fs::write(&modo, format!("uma_vez {PIN}\n")).unwrap();
-        let mut s = conectar(&w);
-        mandar(&mut s, &pedido_executar_com("t-aprov", argv, &[], tipo));
-        entrada_padrao(&mut s, dados);
-        entrada_padrao(&mut s, b"");
+    for (n, (argv, data, kind)) in cases.iter().enumerate() {
+        fs::write(&mode_file, format!("uma_vez {PIN}\n")).unwrap();
+        let mut s = connect(&w);
+        send(&mut s, &run_request_with("t-aprov", argv, &[], kind));
+        send_stdin(&mut s, data);
+        send_stdin(&mut s, b"");
         assert!(
-            esperar(Duration::from_secs(20), || respostas(
-                "resposta=pedido_invalido"
+            wait_for(Duration::from_secs(20), || answers(
+                "resposta=invalid_request"
             ) > n),
             "a janela de teste não respondeu: {}",
-            fs::read_to_string(&log_app).unwrap_or_default()
+            fs::read_to_string(&app_log).unwrap_or_default()
         );
-        let linhas = fs::read_to_string(&log_app).unwrap();
+        let lines = fs::read_to_string(&app_log).unwrap();
         assert!(
-        linhas.contains("pedido operacao=executar entradas=t-aprov origem=- confirmacao=0 entrada_oculta=1 decisao=uma_vez"),
-        "{linhas}"
+        lines.contains("pedido operacao=run entradas=t-aprov origem=- confirmacao=0 entrada_oculta=1 decisao=once"),
+        "{lines}"
     );
         s.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
         assert!(
-            receber(&mut s).is_none(),
+            receive(&mut s).is_none(),
             "o comando rodou sem a confirmação"
         );
-        // A CLI desiste: o pedido é cancelado, nada rodou.
+        // The CLI gives up: the request is cancelled, nothing ran.
         drop(s);
-        assert!(esperar(Duration::from_secs(5), || {
+        assert!(wait_for(Duration::from_secs(5), || {
             String::from_utf8_lossy(&fs::read(&w.log).unwrap())
                 .matches("o cliente saiu; cancelada")
                 .count()
@@ -1125,42 +1164,42 @@ fn f54b_ataque_script_por_pipe_na_aprovacao() {
         }));
     }
 
-    // 2. Com a caixa: roda.
-    fs::write(&modo, format!("uma_vez_ciente {PIN}\n")).unwrap();
-    let mut s = conectar(&w);
-    mandar(
+    // 2. With the box: it runs.
+    fs::write(&mode_file, format!("uma_vez_ciente {PIN}\n")).unwrap();
+    let mut s = connect(&w);
+    send(
         &mut s,
-        &pedido_executar_com("t-aprov", &["/usr/bin/python3", "-I"], &[], "pipe"),
+        &run_request_with("t-aprov", &["/usr/bin/python3", "-I"], &[], "pipe"),
     );
-    entrada_padrao(&mut s, script);
-    entrada_padrao(&mut s, b"");
-    let r = ler_sessao(&mut s);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida), format!("ENTREGUE:{}", SEGREDOS[0].len()));
+    send_stdin(&mut s, script);
+    send_stdin(&mut s, b"");
+    let r = read_session(&mut s);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert_eq!(text(&r.stdout), format!("ENTREGUE:{}", SECRETS[0].len()));
 
-    // 3. Terminal: "Permitir uma vez" sem a caixa, como antes.
-    fs::write(&modo, format!("uma_vez {PIN}\n")).unwrap();
-    let mut s = conectar(&w);
-    mandar(
+    // 3. Terminal: "allow once" without the box, as before.
+    fs::write(&mode_file, format!("uma_vez {PIN}\n")).unwrap();
+    let mut s = connect(&w);
+    send(
         &mut s,
-        &pedido_executar_com(
+        &run_request_with(
             "t-aprov",
             &sh("printf %s \"$WARD_PASS\" | wc -c"),
             &[],
             "terminal",
         ),
     );
-    entrada_padrao(&mut s, b"");
-    let r = ler_sessao(&mut s);
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida).trim(), SEGREDOS[0].len().to_string());
+    send_stdin(&mut s, b"");
+    let r = read_session(&mut s);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert_eq!(text(&r.stdout).trim(), SECRETS[0].len().to_string());
 
     let log = fs::read(&w.log).unwrap();
-    for segredo in SEGREDOS {
-        assert!(!contem(&log, segredo.as_bytes()));
-        assert!(!contem(&fs::read(&log_app).unwrap(), segredo.as_bytes()));
+    for secret in SECRETS {
+        assert!(!contains(&log, secret.as_bytes()));
+        assert!(!contains(&fs::read(&app_log).unwrap(), secret.as_bytes()));
     }
-    assert!(contem(
+    assert!(contains(
         &log,
         b"confirma\xc3\xa7\xc3\xa3o da entrada padr\xc3\xa3o"
     ));

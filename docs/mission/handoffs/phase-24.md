@@ -1,129 +1,182 @@
-# Fase 24 — Trava automática (logind e inatividade) e units de teste do systemd
+# Fase 24 — `wardd`: testes `ssh.rs`, `run.rs`, `ssh_falso.py` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- **`crates/wardd/src/trava.rs`** (módulo novo):
-  - **Inatividade.** `venceu(ultimo, agora, minutos)` (função pura) e `conta_como_uso(op, resposta)`.
-    - Conta como uso toda operação que deu certo, menos `estado`, `travar` e `destravar`. O destravar que abre já marca o início; com o cofre aberto, ele responde `ok` sem olhar a senha.
-    - Erro não conta como uso.
-    - Relógio ilegível, relógio que volta ou conta que estoura: trava (falha fechada).
-  - `vigiar_inatividade(daemon, 10 s)`: thread que chama `Daemon::travar_se_inativo`.
-  - **logind** no barramento do **sistema** (o `wardd` é serviço do sistema, D46). `vigiar_logind(daemon, socket, pronto)` é uma thread com uma `MatchRule` só: sinais de `org.freedesktop.login1` em `path_namespace=/org/freedesktop/login1`. `evento_do_sinal` lê cada sinal:
-    - `Session.Lock` (`loginctl lock-session`) trava;
-    - `PropertiesChanged` de sessão com `LockedHint` verdadeiro, invalidado, de tipo estranho ou com corpo ilegível trava;
-    - `Manager.PrepareForSleep(true)` trava. O daemon segura um inibidor `delay` de `sleep` (`Inhibit`) e só fecha o fd **depois** de travar. `PrepareForSleep(false)` pega outro inibidor.
-  - O que vem do logind só trava. Qualquer sessão trava, e não só as do uid; isso fica registrado em "Problemas".
-  - Conexão perdida depois de aberta: trava e reconecta com espera de 1 s a 60 s. Sem barramento desde a partida: um aviso só, e a inatividade continua valendo.
-  - **Endereço.** Release: sempre `/run/dbus/system_bus_socket`, nunca tirado do ambiente. `modo-teste`: só `WARD_DEV_DBUS_SISTEMA`, conferida por `caminho_de_teste`. Ela precisa ser absoluta, sem `.`/`..`/`//`, com até 107 bytes e só `[A-Za-z0-9/._-]`, porque vai para o endereço D-Bus sem escape. Sem a variável, o daemon de teste não liga o logind, e assim nunca toca o logind real sem pedido.
-- **`nucleo.rs`** (mudança mínima):
-  - `Relogio::agora() -> Option<Duration>`, com padrão `ward_plataforma::tempo_desde_boot()`. Os relógios de teste que já existiam continuam compilando.
-  - `Estado.ultimo_uso`: zera no `travar`. É marcado no destravar e no `criar_cofre`, e depois de cada uso em `atender`.
-  - `Daemon::travar_se_inativo()` lê o `minutos_trava()` da configuração do cofre (D30). Os dois relógios são lidos com o estado travado no mutex: um uso de outra thread nunca fica "no futuro".
-  - O contador do D20 (`falhas_senha`) não é tocado (D62).
-- **`main.rs`**: liga as duas threads depois de criar o `Daemon`. Se não der para criar uma delas, o daemon sai com código ≠ 0. `WARD_DEV_DBUS_SISTEMA` inválida também faz sair ≠ 0. `servidor.rs` não mudou.
-- **`ward-plataforma`**: `relogio::tempo_desde_boot()` sobre `sys::relogio_boot()` (`clock_gettime(CLOCK_BOOTTIME)`, com `// SAFETY:`). Esse relógio anda durante a suspensão, ao contrário do `Instant`. Uma suspensão que o `PrepareForSleep` não pegou continua contando como tempo sem uso.
-- **Units de teste** `dev/systemd/wardd@.socket` e `dev/systemd/wardd@.service`:
-  - `.socket`: `ListenStream=/run/ward/%i/wardd.sock`, `SocketUser=%i`, `SocketMode=0600`, `DirectoryMode=0755`, `Accept=no`.
-  - `.service`: `User=%i`, `ExecStart=/usr/local/bin/wardd`, `UMask=0077`, `LimitCORE=0`, `LimitMEMLOCK=infinity` (D62) e `Restart=on-failure`.
-  - Sem `Environment*`. Sem `NoNewPrivileges=` nem opção que o implique (D57), e sem `Protect*`/`PrivateTmp`. O motivo está nos comentários das units.
-- **`make teste-units`** (`dev/testes/units.sh`, `dev/conteiner-units/`), fora do `make check`:
-  1. `systemd-analyze verify` da instância `wardd@1000` numa cópia em `.dev/`, com um controle: uma cópia com diretiva inválida tem de ser acusada.
-  2. Imagem `ubuntu:24.04` (mesma digest da 21b) mais o `systemd`. A rede só é usada no build. O contêiner roda com `--network none`, `--cgroupns=private` e `--ulimit memlock=-1:-1`. Ele também recebe `CAP_SYS_ADMIN` e roda sem AppArmor, só para o `iniciar.sh` remontar rw a própria subárvore de cgroup (ver "Problemas").
-  3. O `dentro.sh` instala as units e o `wardd` **sem** `modo-teste` (`--target-dir target/sem-modo-teste`) e confere 17 pontos:
-     - socket ativo, serviço parado, `/run/ward` e `/run/ward/1000` root:root 0755, socket do uid 1000 em 0600;
-     - **a primeira conexão sobe o `wardd`**, que responde `estado`;
-     - o daemon roda com os quatro `Uid` 1000, `NoNewPrivs: 0`, core 0/0, memlock unlimited e sem `LD_*` no ambiente;
-     - morto com `kill -9`, ele sobe de novo na conexão seguinte;
-     - o uid 1000 não apaga o socket nem cria arquivo em `/run/ward/1000`.
-- `dev/daemon.sh`: repassa `WARD_DEV_DBUS_SISTEMA` só se ela vier definida. `CLAUDE.md`: a linha do `dev-daemon` ganhou a variável, e entrou a linha do `make teste-units`.
-- Merge do master (D61–D64) feito antes de terminar. As notas de D62 foram aplicadas: `LimitMEMLOCK=infinity` e o D20 intocado.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard e70805b`
+  (master atual). Fase adiantada em paralelo com as Fases 15, 22 e 31: só os nomes
+  próprios destes três testes mudaram; os que vêm do `comum` (Fase 23), do
+  `nucleo`/`aprovacao` (Fase 20) e do `ward-core` (`protocolo`, Fases 17–18) ficaram como
+  no master.
+- **Arquivo** (glossário seção 4, `git mv`): `crates/wardd/tests/ssh_falso.py` →
+  `fake_ssh.py`; o único uso (`tests/ssh.rs`, caminho do script) acompanha. `ssh.rs` e
+  `run.rs` mantêm o nome (glossário: "ficam").
+- **Comentários, locais, parâmetros e nomes de teste** dos três arquivos em inglês.
+  Comentários que citavam nome pt-BR de fio, de entrada ou de outra fase (`aprovacao_indisponivel`,
+  `quadro_invalido`, `destravar`, `entrada_padrao`, `executar`, `t-livre`/`t-aprov`,
+  `wardd-aprovador-teste`, "Permitir uma vez", "encerrado", `comum::servidor`,
+  `Daemon::com_programas_ssh`, `acme-ssh-interno`, `tempo.py`, os arquivos `modo`/
+  `registro-…` e as chaves `agente.x`/`eco:`) foram reescritos com o sentido em inglês,
+  sem o nome (como nas Fases 13 e 21).
+- O parágrafo do V4.15 que estava colado no doc do teste da Fase 26a (os dois viravam
+  doc do `f26a…`) foi para o teste `v4_15_…`, que estava sem doc. Só comentário.
+- **Renomes (antigo → novo)**, todos no glossário (parágrafo "Fase 24", depois do da
+  Fase 21):
+  - `ssh.rs`: `SENHA_SSH`/`SENHA_BANCO` → `SSH_PASSWORD`/`DB_PASSWORD`; `RelogioManual` →
+    `ManualClock` (`avancar` → `advance`); `Rt::novo` → `Rt::new`; `Cena { d, dir, rt, base,
+    relogio }` → `Scene { …, clock }` (`cena` → `scene`; `modo`/`registros`/`registro`/
+    `nada_executado` → `set_mode`/`records`/`record`/`nothing_ran`); `Reg` → `Rec`
+    (`todos`/`um` → `all`/`one`); `Sessao { saida, erro, pedacos, fim, falha }` → `Session
+    { stdout, stderr, chunks, end, failure }` (`texto` → `text`); `salvar` → `save`,
+    `servidor_json` → `server_json`, `auth_senha` → `password_auth`, `gerar_chave` →
+    `generate_key`, `pedido_ssh` → `ssh_request`, `mandar` → `send`, `sessao`/`sessao_de`
+    → `session`/`session_of`, `fechar_entrada` → `close_stdin`, `opcoes` → `options`,
+    `esperar` → `wait_for`, `rt_sem_agente` → `rt_without_agent`, `esperar_registro` →
+    `wait_record`, `depois_de` → `after`, `estranho_e_recusado` → `stranger_is_refused`,
+    `inode_da_escuta`/`escuta_fechada` → `listener_inode`/`listener_closed`,
+    `ninguem_com_w` → `nobody_with_w`, `conferir_argv_da_ponte` → `verify_bridge_argv`.
+  - `run.rs`: `SENHA_LIVRE`/`LICENCA`/`ANEXO`/`APROVADOR` → `FREE_PASSWORD`/`LICENSE`/
+    `ATTACHMENT`/`APPROVER`; `DirSocket::novo` → `SocketDir::new`; `Wardd { filho }` →
+    `Wardd { child }`; `subir`/`subir_com` → `start`/`start_with`, `mandar` → `send`,
+    `receber` → `receive`, `conectar` → `connect`, `destravar_por` → `unlock_through`,
+    `pedido_executar(_com)` → `run_request(_with)`, `entrada_padrao` → `send_stdin`,
+    `Sessao { saida, erro, fim, falha }` → `Session { stdout, stderr, end, failure }`,
+    `ler_sessao` → `read_session`, `cofre` → `vault`, `texto` → `text`, `tmp_vazio` →
+    `tmp_empty`, `esperar` → `wait_for`, `vivo` → `alive` (`run`, `sh`, `sha256` ficam).
+  - `fake_ssh.py`: `NOME` → `NAME`, `ler` → `read_file`, `registrar` → `record`, `opcao`
+    → `option`, `pedir` → `ask`, `cliente_do_agente` → `agent_client`, `NETO` →
+    `GRANDCHILD`, `esperar_continuar`/`esperar_arquivo` → `wait_continue`/`wait_file`,
+    `valor` → `value`, `ponte_do_lado_do_salto` → `bridge_on_the_jump_side`, `conversar`
+    → `talk`, `principal` → `main` (`string`, `bang` ficam).
+  - Testes: `v4_35_d43_usuario_com_arroba_e_senha_so_no_ambiente` →
+    `v4_35_d43_user_with_at_sign_and_password_only_in_env`,
+    `v4_37_d56_sftp_com_user_e_host_depois_de_traco_traco` →
+    `v4_37_d56_sftp_with_user_and_host_after_double_dash`, `recusas_sem_executar_nada` →
+    `refusals_without_running_anything`, `v4_24_d12_agente_so_do_filho` →
+    `v4_24_d12_agent_only_for_the_child`, `d12_travar_derruba_o_agente` →
+    `d12_lock_brings_down_the_agent`, `f54c_ataque_ward_ssh_morre_na_trava` →
+    `f54c_attack_ward_ssh_dies_on_lock`, `f54l_ataque_cli_cai_no_ward_ssh_nenhum_ssh_sobra`
+    → `f54l_attack_cli_drops_in_ward_ssh_no_ssh_left`,
+    `d12_sftp_com_chave_atende_o_ssh_do_sftp` → `d12_sftp_with_key_serves_the_ssh_of_sftp`,
+    `d34_ataque_pty_prefixo_certo_e_errado_saem_iguais_e_na_hora` →
+    `d34_attack_pty_right_and_wrong_prefix_come_out_alike_and_at_once`,
+    `d34_ataque_tempo_sem_pty_prefixo_nao_atrasa` →
+    `d34_attack_timing_without_pty_prefix_not_delayed`,
+    `ataque_known_hosts_frouxo_recusa_sem_executar` →
+    `attack_loose_known_hosts_refused_without_running`,
+    `ataque_sftp_bang_nao_usa_o_agente` → `attack_sftp_bang_does_not_use_the_agent`,
+    `v5_24_token_do_conectar` → `v5_24_connect_token`,
+    `fase28_salto_com_senha_pela_ponte` → `phase28_jump_with_password_through_the_bridge`,
+    `fase28_salto_com_chave_agente_de_cada_ssh` → `phase28_jump_with_key_agent_per_ssh`,
+    `fase28_tunel_do_banco_no_run` → `phase28_database_tunnel_in_run`,
+    `fase28_travar_fecha_o_tunel_para_conexoes_novas` →
+    `phase28_lock_closes_the_tunnel_to_new_connections`;
+    `v4_entrega_mascara_codigo_e_recusas` → `v4_delivery_mask_code_and_refusals`,
+    `f26a_ataque_ambiente_da_cli_nao_muda_o_comando` →
+    `f26a_attack_cli_environment_does_not_change_the_command`,
+    `v4_15_cli_que_cai_e_daemon_morto` → `v4_15_cli_that_drops_and_killed_daemon`,
+    `ra1_registro_environ_do_filho_legivel_pelo_mesmo_uid` →
+    `ra1_record_child_environ_readable_by_same_uid`,
+    `d52_pedido_grande_demais_recusado_pelo_daemon` →
+    `d52_oversized_request_refused_by_daemon`, `v4_21_travado_espera_o_destravar_da_cli`
+    → `v4_21_locked_waits_for_cli_unlock`,
+    `f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha` →
+    `f28g_attack_single_large_write_does_not_show_password_start`,
+    `f54_ataque_ward_run_morre_na_trava` → `f54_attack_ward_run_dies_on_lock`,
+    `f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava` →
+    `f55_attack_descendant_outside_group_dies_at_end_and_on_lock`,
+    `f54b_ataque_entrada_nula_com_dado_mata_o_comando` →
+    `f54b_attack_null_stdin_with_data_kills_the_command`,
+    `f54b_ataque_script_por_pipe_na_aprovacao` → `f54b_attack_piped_script_on_approval`.
+    Nenhum script, alvo do Makefile nem outro teste cita esses nomes (procurado com
+    `grep -r` fora de `docs/mission/arquivo/`).
+- **Usos fora dos três arquivos**: `docs/mission/plan.md` (Fase 52 cita `fake_ssh.py`).
+  O `chrome_falso.py` da mesma linha fica (Fase 27).
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`.
+
+## Literais alterados (PRD regra 5)
+Multiconjunto de literais por arquivo, fora de comentários, comparado com `e70805b`
+(extrator próprio no scratchpad; Python pelo `tokenize`):
+- `"tests/ssh_falso.py"` → `"tests/fake_ssh.py"` (caminho do arquivo renomeado).
+- Só capturas de `format!` (valor igual): em `ssh.rs`, `{rotulo}` → `{label}`, `{nome}`
+  → `{name}`, `{entrada}` → `{entry}`, `{porta}` → `{port}`, `{marca}` → `{mark}`,
+  `{campo}` → `{field}`, `{esperado}` → `{expected}`, `{modo:o}` → `{mode:o}`,
+  `{papel:?}` → `{role:?}`, `{outra:?}` → `{other:?}`, `{erro}` → `{stderr}`,
+  `{publica}` → `{public_key}`, `{principal:?}`/`{salto:?}` → `{main:?}`/`{jump:?}`,
+  `{depois:?}` → `{after:?}`, `{linha_do_tempo:?}` → `{timeline:?}`, `<{errado}` →
+  `<{wrong}`, `{certo}••••]` → `{right}••••]`; no JSON das entradas, `{usuario}`/
+  `{protocolo}`/`{campos_auth}` → `{user}`/`{protocol}`/`{auth_fields}`; nos scripts
+  Python dos testes de túnel, os argumentos nomeados `{arq:?}`/`{marca:?}`/`{servidor}`
+  → `{file:?}`/`{mark:?}`/`{server}`. Em `run.rs`, `{rotulo}` → `{label}`, `{entrada}`/
+  `{tipo}` → `{entry}`/`{kind}` no JSON do `executar`, `{esperado}` → `{expected}`,
+  `{proibido}` → `{forbidden}`, `{segredo}` → `{secret}`, `{linhas}` → `{lines}`,
+  `{outra:?}` → `{other:?}`.
+- `fake_ssh.py`: só as docstrings (comentários para o checador); nenhuma string de
+  código mudou (os arquivos `registro-<nome>-<pid>.txt`, `modo`, `esperar`,
+  `continuar`, `pty-pronto`, `esperar-ponte`, as chaves `agente.*`, `neto`, `depois`,
+  `bang_*` e as saídas `eco:`, `ponte=`, `erro-salto`, `conectado`… ficam).
+- **Ficaram**: todas as mensagens que os testes procuram (log do daemon, avisos da CLI,
+  "o cofre travou…", `resposta=pedido_invalido`…), as mensagens de `assert!`, os nomes de
+  entrada (`s-livre`, `t-aprov`…), os nomes de arquivos e pastas de teste (`falsos`,
+  `marca-*`, `atacante`, `chave_teste`…) e os JSON do protocolo (fio congelado).
 
 ## Segurança
-- **Invariantes tocadas**
-  - **S8:** a trava automática usa o `Estado::travar` de sempre: a chave e as entradas zeram (V3.8 continua passando). A unit tem `LimitCORE=0` (conferido no contêiner) e `LimitMEMLOCK=infinity` para o `mlockall` da 22b.
-  - **S5/D46:** as pastas são criadas pelo systemd root:root 0755, e o socket fica do uid em 0600 (conferido no contêiner).
-  - **D57:** nenhuma diretiva que ligue `no_new_privs`. O `NoNewPrivs: 0` foi lido do processo real.
-  - **S9/D20:** a trava automática não mexe na espera do destravar.
-  - **S13:** o log só tem textos fixos (motivo e minutos). O teste do binário procura senha, PIN e segredos no log com `RUST_LOG=trace`.
-  - **Entrada não confiável:** o barramento só consegue travar. Nenhum sinal destrava, e o sinal forjado de outro par é ignorado ou trava (o agente já pode pedir `travar`). Corpo ilegível trava. O caminho do barramento do daemon de teste é validado.
-- **Testes de ataque** (todos falham do lado do atacante):
-  - `crates/wardd/tests/trava.rs`:
-    - `ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro`: durante 4 h, `estado`, `executar` de entrada inexistente, `destravar` repetido com senha qualquer, `detalhe` pelo agente e PIN errado. O cofre trava às 4h00 do mesmo jeito.
-    - `ataque_relogio_que_volta_ou_ilegivel_trava`.
-    - `ataque_barramento_cai_com_o_cofre_aberto_trava`: o `dbus-daemon` falso é morto e o cofre trava em até 2 s.
-    - `ataque_sinal_forjado_nao_destrava_nem_segura`: `Unlock`, `PrepareForSleep(false)` e `LockedHint=false` vindos de um par qualquer. O cofre segue travado.
-    - `v3_19_prepare_for_sleep_trava_antes_de_soltar_o_inibidor`: quando o fd do inibidor fecha, o cofre já está travado. O inibidor é `sleep`/`delay` e é pego de novo ao acordar.
-    - `d62_trava_automatica_nao_mexe_na_espera_do_d20`.
-    - Caminho feliz do V3.19: `v3_19_inatividade_com_relogio_injetado` (3h59 não trava, 4h00 trava, um uso às 3h zera), `v3_19_tempo_lido_da_configuracao_do_cofre` (30 min, que continua valendo depois de reabrir), `v3_19_lock_e_locked_hint_travam_em_ate_2s` e `v3_19_binario_trava_com_lock_session_do_logind_falso` (binário real, `Lock` → `estado` travado em até 2 s, log sem segredo).
-    - `daemon_de_teste_sem_barramento_falso_nao_liga_o_logind`: sem a variável, o logind fica desligado; com o caminho `/run/dbus/../x;unix:path=/tmp/x`, recusa subir.
-  - `crates/wardd/tests/units.rs`: `d57_ataque_nenhuma_diretiva_que_liga_no_new_privs` (21 diretivas proibidas), `v3_21_servico_com_user_limitcore_e_sem_ld` (inclui `LimitMEMLOCK` e nenhum `Environment*`) e `v3_21_socket_do_sistema`.
-  - `crates/wardd/src/trava.rs`: `ataque_caminho_do_barramento_estranho` (`,guid=`, `;unix:`, `%`, espaço, `..`, `//`, relativo, longo), `venceu_no_limite_e_falha_fechada` e `estado_travar_e_erro_nao_contam_como_uso`.
-  - `crates/ward-plataforma/src/relogio.rs`: `nao_volta_e_bate_com_o_uptime`, que cobre o `unsafe` novo.
-  - Barramento falso: um `dbus-daemon` privado em `$XDG_RUNTIME_DIR/wardd-bus-<pid>-<n>/` (0700), com config própria e `env_clear`. O logind falso é feito com o próprio `zbus` (dono de `org.freedesktop.login1`, `Inhibit` devolve a ponta de escrita de um pipe). O barramento do sistema e o logind real não foram usados.
-- **Dependência nova: `zbus = "=6.2.1"`** (`default-features = false`, só `default-rt`; nos testes também `service`), mais `futures-core` direto (já vinha com o zbus) para o trait `Stream`.
-  - **Motivo:** o logind só fala D-Bus. `zbus` é o cliente D-Bus em Rust puro mais usado, licença MIT, mantido pelo projeto z-galaxy (freedesktop/GNOME). As alternativas foram descartadas: `dbus` (bindings da libdbus, exige `libdbus-1-dev`, ausente aqui, e traz C) e `rustbus` (pouco uso, sem release desde 2023).
-  - **Por que a 6 e não a 5.19:** comecei pela 5.19 (linha madura, 13 M de downloads). O `cargo audit --deny warnings` recusou: RUSTSEC-2026-0370/0371/0372 marcam `zvariant`, `zvariant_derive` e `zbus_names` como sem manutenção, porque foram fundidos no `zbus` 6. Seguir na 5 exigiria uma exceção no `deny.toml` e no audit para código que não recebe mais correção. Fui para a 6.2.1.
-  - **Risco da 6:** ela é nova. A 6.0.0 saiu em 2026-10-16 e a 6.2.1 em 2026-11-01. O runtime `zruntime` 0.2.2 é do mesmo projeto e foi criado em 2026-10-13. A auditoria deve olhar isso. O ganho é uma árvore menor: 83 pacotes no `Cargo.lock`, contra cerca de 45 antes. Entram `zbus`, `zbus_macros`, `zbus_utils`, `zruntime`, `zcheapstr`, `endi`, `ordered-stream`, `async-trait`, `serde_repr`, `rustix`, `linux-raw-sys`, `socket2`, `uuid`, `hex`, `bitflags`, `winnow`, `futures-core`/`futures-io`, `pin-project-lite` e `syn` 3, além de crates só de Windows/WASI que não compilam aqui.
-  - **Uso:**
-    - só o endereço `unix:path=` (nada de `unixexec`/`launchd`, então o runtime não cria processo);
-    - autenticação `EXTERNAL`, prazo de 5 s por chamada e fila de 256;
-    - `zbus::block_on` só na thread do vigia.
-  - **Teste novo no binário:** depois de o vigia conectar, o `SigCgt` do `wardd` não tem `SIGCHLD`. O runtime não toma o sinal dos filhos que o `ward run` e o lançador do app esperam.
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários): os testes de
+  ataque de S1–S4, S8, S13, D3 (token do "Conectar"), D12 (agente só do filho, `!cmd`
+  do `sftp`), D13/D60 (ambiente do zero, `known_hosts` próprio, Fase 26a), D19 (ponte e
+  túnel), D34 (oráculo de prefixo e de tempo), D43/D56 (argv), D52, D68 (entrada nula e
+  caixa da aprovação), RA1, Fases 28g/54/54c/54l/55 (trava e CLI que cai). Mesma
+  lógica, mesmas asserções, mesmos valores e prazos.
+- **Conferência**: multiconjunto de literais (acima) e leitura lado a lado; o
+  `make compile` passa (os tipos e a ordem dos campos dos pedidos não mudaram).
+- **Testes de ataque**: nenhum novo (só rename); os existentes acompanham os nomes. Não
+  rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- **Conferir o dono de cada sessão** (`Session.User`): o daemon trava com o bloqueio de qualquer sessão. Isso é mais seguro e mais simples, mas trava demais numa máquina com vários usuários.
-- **Ler o `LockedHint` atual na partida ou na reconexão:** o daemon sobe travado, e a reconexão só acontece depois de travar.
-- **Fase 51:** instalar as units no host e o `tmpfiles.d`. Aqui só há as units de teste e o contêiner.
+- Os nomes que estes testes usam e que são de outras fases: `comum` e o que ele exporta
+  (`Dir::novo`, `cofre_de_teste`, `pedir`, `mudar_nivel`, `destravar`, `contem`, `erro`,
+  `SENHA`, `SEGREDOS`, `PIN`; Fase 23), `nucleo::Daemon` e os construtores
+  `com_motor`/`com_programas_ssh`/`com_temporarios`/`atender`/`travar` (Fase 20),
+  `aprovacao` (`Motor`, `RelogioMotor::agora`, `SemApp`, `SemCliente`; Fase 20) e o
+  `ward_core::protocolo` (`Pedido`, `Resposta`, `ErroResposta`, `Papel`, `Janela`,
+  `quadro`…; Fases 17–18). O checador ainda acusa esses identificadores (360 achados em
+  `ssh.rs`/`run.rs`, todos de nomes de fora; 0 de comentário; `fake_ssh.py` limpo).
+- `make check` e testes: não rodaram (PRD regra 6).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `make dev-cofre` | 0 |
-| `cargo test -p wardd --all-features --test trava --test units` / `--lib` (com o zbus 5.19 e depois com o 6.2.1) | 0 / 0 |
-| `make check` com o zbus 5.19 | 2 (`cargo audit`: RUSTSEC-2026-0370/0371/0372; trocado pelo 6.2.1) |
-| `cargo clippy -p wardd -p ward-plataforma --all-targets --all-features -- -D warnings` | 0 |
-| `git merge master` | 0 |
-| `make teste-units` (17/17 ok, mais o verify e o controle) | 0 |
-| `make dev-daemon` / `make dev-daemon-parar` (log: "logind desligado") | 0 / 0 |
-| `make check` | 0 |
+| `git reset --hard e70805b` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `make fmt` | 0 |
+| `make compile` (log `.dev/logs/fase24-make-compile.log`; 0 warnings) | 0 |
+| `python3 -I dev/english_check.py --paths crates/wardd/tests/fake_ssh.py` | 0 |
+| `python3 -I dev/english_check.py --paths crates/wardd/tests/ssh.rs crates/wardd/tests/run.rs` | 1 (360 identificadores de outras fases; 0 de comentário) |
+| `cargo clippy` à parte | não rodado (o ambiente negou a chamada direta) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **O contêiner do `make teste-units` recebe `CAP_SYS_ADMIN` e `apparmor=unconfined`.** O systemd não sobe com o `/sys/fs/cgroup` somente leitura que o Docker monta sem `--privileged`. Com `--cgroupns=private`, o remount só abre a subárvore do próprio contêiner. Mesmo assim, é um root com `CAP_SYS_ADMIN` sem namespace de usuário, rodando só os nossos scripts, sem rede, sem montar nada do host além de `/opt/teste` (somente leitura), e o contêiner é apagado no fim. O build da imagem usa rede (apt do Ubuntu, `systemd` 255.4-1ubuntu8.18). Fica a critério do orchestrator/auditor manter isso ou ficar só com o `systemd-analyze verify` e o `tests/units.rs`.
-- **Agente em uso contínuo segura o cofre aberto.** `lista`/`run` do agente contam como uso ("cada uso zera", escopo). Um agente que pede `lista` a cada hora impede a trava por inatividade. O bloqueio de tela e a suspensão continuam travando. Se o planner quiser, pode contar só os usos do papel app e das aprovações.
-- **O inibidor `delay` depende do polkit do logind real** (`org.freedesktop.login1.inhibit-delay-sleep`) para um serviço do sistema com `User=`. Isso não foi testado com o logind real (proibido na fase). Se o polkit negar, o daemon avisa uma vez e continua: a trava na suspensão segue pelo sinal, só que sem garantia de chegar antes do sono. O QA da 51 deve conferir com `systemd-inhibit --list`.
-- **V3.19 com `loginctl lock-session` de verdade:** o `make dev-daemon` só vigia o logind com `WARD_DEV_DBUS_SISTEMA=/run/dbus/system_bus_socket`, e isso trava a tela do usuário. O validador decide se faz isso ou fica com o teste do barramento falso.
-- **`LISTEN_FDS`/`LISTEN_PID`/`LISTEN_FDNAMES` ficam no ambiente do `wardd`** (lido do `/proc` no contêiner). Não é segredo, e o lançador do app (D57) monta o ambiente do zero. O `ward run` (Fase 26) não pode herdar essas variáveis; anoto para essa fase.
-- **`MEMORY_PRESSURE_WATCH`/`MEMORY_PRESSURE_WRITE`** vêm do systemd 255 no ambiente do serviço. Não são `LD_*` nem da lista insegura da glibc. Registro só para a auditoria do ambiente (D48).
-- **Resto no host:** a pasta `.dev/conteiner-units.*` é apagada pelo `trap`, mas a imagem `ward-teste/units-systemd:1` fica no Docker do host, como a `ward-teste/ssh:1`.
+- O worktree nasceu em `b4d5e1b`, não em `e70805b`; reset com a árvore limpa.
+- **Checador não limpo** em `ssh.rs`/`run.rs`: sobram só identificadores dos módulos
+  ainda não traduzidos (lista em "Ficou de fora"); somem com as Fases 17–20 e 23.
+- "estranho" no glossário é `odd`; aqui é o processo de fora da sessão e virou
+  `stranger` (registrado no parágrafo "Fase 24" do glossário).
+- **Conflitos prováveis no merge**: `docs/glossario.md` (parágrafo "Fase 24" depois do da
+  Fase 21, antes de "Funções e métodos…"). A Fase 23 (`comum/` → `common/`) vai mexer no
+  `mod comum`/`use comum::*` destes dois testes; a 20, nos construtores do `Daemon`; a
+  17–18, no `protocolo`.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/wardd/src/trava.rs` | criado |
-| `crates/wardd/src/nucleo.rs` | alterado (relógio `agora`, `ultimo_uso`, `travar_se_inativo`, registro de uso) |
-| `crates/wardd/src/lib.rs` | alterado |
-| `crates/wardd/src/main.rs` | alterado |
-| `crates/wardd/Cargo.toml` | alterado (`zbus`, `futures-core`) |
-| `crates/wardd/tests/trava.rs` | criado |
-| `crates/wardd/tests/units.rs` | criado |
-| `crates/ward-plataforma/src/relogio.rs` | criado |
-| `crates/ward-plataforma/src/sys.rs` | alterado (`relogio_boot`) |
-| `crates/ward-plataforma/src/lib.rs` | alterado |
-| `Cargo.lock` | alterado (`zbus` 6 e dependências) |
-| `dev/systemd/wardd@.socket` | criado |
-| `dev/systemd/wardd@.service` | criado |
-| `dev/testes/units.sh` | criado |
-| `dev/conteiner-units/Dockerfile` | criado |
-| `dev/conteiner-units/iniciar.sh` | criado |
-| `dev/conteiner-units/dentro.sh` | criado |
-| `dev/daemon.sh` | alterado |
-| `Makefile` | alterado (`teste-units`) |
-| `CLAUDE.md` | alterado (linhas do `dev-daemon` e do `teste-units`) |
+| `crates/wardd/tests/fake_ssh.py` (era `ssh_falso.py`) | renomeado e reescrito |
+| `crates/wardd/tests/ssh.rs` | reescrito |
+| `crates/wardd/tests/run.rs` | reescrito |
+| `docs/glossario.md` | alterado |
+| `docs/mission/plan.md` | alterado (`fake_ssh.py` na Fase 52) |
 | `docs/mission/handoffs/phase-24.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [ ] (UI/DESIGN) Conferido contra o FigCraft (não se aplica: fase sem UI)
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make fmt` e `make compile` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

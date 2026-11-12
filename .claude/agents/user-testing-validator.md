@@ -28,7 +28,7 @@ O orchestrator passa o **modo** (milestone ou final) e a **pasta de evidência**
    Salve o `screenshot` de cada tela na pasta de evidência. O Figma só para ler a
    Inspirações `1:3` (V0.21). Pule os passos 3–5.
 3. Suba o ambiente de teste com os comandos do `CLAUDE.md`.
-4. **CLI e Claude**: rode cada fluxo do contrato como o Claude rodaria (`ward lista`,
+4. **CLI e Claude**: rode cada fluxo do contrato como o Claude rodaria (`ward list`,
    `run`, `ssh`, `login`, `playwright`) contra os serviços de teste. Confira o
    resultado, o código de saída e que a saída não contém segredo. Teste negar e
    expirar a aprovação; o "aprovar" usa o PIN de teste.

@@ -1,42 +1,43 @@
-//! Daemon do Ward (`wardd`): único processo que toca em segredo (R1, Fase 22).
+//! Ward daemon (`wardd`): the only process that touches secrets (R1, Phase 22).
 //!
-//! - [`nucleo`]: estado travado/destravado e a regra de cada operação.
-//! - [`servidor`]: o laço do socket (uid do par, papel, quadros, limites).
-//! - [`arquivos`]: leitura do cofre com identidade por `fstat` e o arquivo de estado
+//! - [`core`](crate::core): locked/unlocked state and the rule of each operation.
+//! - [`server`]: the socket loop (peer uid, role, frames, limits).
+//! - [`files`]: reading the vault with identity by `fstat` and the state file
 //!   (D39, D53).
-//! - [`config`]: caminhos de release e do daemon de teste (D7).
-//! - [`aprovacao`]: motor de aprovação e espera do destrave (Fase 23); [`uso`]: o
-//!   uso do agente (nível combinado, liberação de 1 hora, botões com PIN);
-//!   [`lancamento`]: o daemon abre o app pelo lançador (D57).
-//! - [`trava`]: trava automática por inatividade e pelo logind (Fase 24).
-//! - [`execucao`]: o `ward run` (Fase 26): entrega, máscara, filho e temporários.
-//! - [`ssh`]: o `ward ssh` (Fase 27); [`ponte`]: o salto e o túnel sem shell (Fase 28).
-//! - [`login`]: o `ward login` (Fase 43), levado à extensão do Chrome.
-//! - [`playwright`]: o `ward playwright` (Fase 44) pelo Chrome com o pipe de
-//!   depuração ([`cdp`]).
-//! - [`externo`]: backup externo em pendrive (Fase 46); [`udisks`]: os pendrives pelo
-//!   udisks2 no barramento do sistema.
+//! - [`config`]: release and test daemon paths (D7).
+//! - [`approval`]: approval engine and the wait for the unlock (Phase 23); [`usage`]:
+//!   the agent's use (combined level, 1 hour grant, buttons with PIN);
+//!   [`launch`]: the daemon opens the app through the launcher (D57).
+//! - [`lock`]: automatic lock on inactivity and through logind (Phase 24).
+//! - [`execution`]: `ward run` (Phase 26): delivery, mask, child and temp files.
+//! - [`ssh`]: `ward ssh` (Phase 27); [`bridge`]: the jump and the tunnel without a shell
+//!   (Phase 28).
+//! - [`login`]: `ward login` (Phase 43), taken to the Chrome extension.
+//! - [`playwright`]: `ward playwright` (Phase 44) through Chrome with the debugging
+//!   pipe ([`cdp`]).
+//! - [`external`]: external backup on a USB drive (Phase 46); [`udisks`]: the USB drives
+//!   through udisks2 on the system bus.
 //!
-//! Sem `unsafe`: o que depende do sistema está no `ward-plataforma`.
+//! No `unsafe`: what depends on the system is in `ward-platform`.
 
 #![forbid(unsafe_code)]
 
 pub mod log;
 
-pub mod agente_ssh;
-pub mod aprovacao;
-pub mod arquivos;
+pub mod approval;
+pub mod bridge;
 pub mod cdp;
 pub mod config;
-pub mod execucao;
-pub mod externo;
-pub mod lancamento;
+pub mod core;
+pub mod execution;
+pub mod external;
+pub mod files;
+pub mod launch;
+pub mod lock;
 pub mod login;
-pub mod nucleo;
 pub mod playwright;
-pub mod ponte;
-pub mod servidor;
+pub mod server;
 pub mod ssh;
-pub mod trava;
+pub mod ssh_agent;
 pub mod udisks;
-pub mod uso;
+pub mod usage;

@@ -1,0 +1,707 @@
+//! Minimal HTTP server of the test bridge (standard library only). See the top of the crate.
+
+use std::fs;
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
+use std::time::Duration;
+
+use serde_json::{Value, json};
+use ward_app_core::AppError;
+use ward_app_core::attachments::AttachmentEdit;
+use ward_app_core::clipboard::Clipboard;
+use ward_app_core::commands::Command;
+use ward_app_core::daemon::Daemon;
+use ward_app_core::first_use::NewVault;
+use ward_app_core::form::Form;
+use ward_app_core::generator::Options;
+use ward_app_core::level::Pin;
+use ward_app_core::restore::Restore;
+use ward_app_core::service::Service;
+use ward_app_core::settings::{PasswordChange, PinChange};
+use ward_app_core::unlock::MasterPassword;
+use zeroize::Zeroizing;
+
+/// Request head (line + headers).
+pub const MAX_HEADER: usize = 8 * 1024;
+/// Body of a `POST` to a bridge command.
+pub const MAX_BODY: usize = 16 * 1024;
+/// Connections open at the same time.
+pub const MAX_CONNECTIONS: usize = 16;
+const TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Same CSP as the app (`tauri.conf.json`), with `connect-src 'self'` in place of the IPC.
+pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; \
+font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; \
+frame-src 'none'; worker-src 'none'; object-src 'none'; media-src 'none'; manifest-src 'none'";
+
+/// Bridge bound to an app service and to the directory of the test-mode build.
+pub struct Bridge<D: Daemon, A: Clipboard> {
+    service: Service<D, A>,
+    dist: PathBuf,
+    token: Zeroizing<String>,
+    host: String,
+    origin: String,
+    open_conns: AtomicUsize,
+}
+
+impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
+    /// Opens `127.0.0.1:0` and draws the token.
+    pub fn open(service: Service<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
+        let dist = fs::canonicalize(dist)?;
+        if !dist.join("index.html").is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "dist sem index.html",
+            ));
+        }
+        let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;
+        let port = listener.local_addr()?.port();
+        let mut raw = Zeroizing::new([0u8; 32]);
+        getrandom::fill(&mut *raw).map_err(|_| io::Error::other("sem aleatório do sistema"))?;
+        let mut token = Zeroizing::new(String::with_capacity(64));
+        for b in raw.iter() {
+            token.push(char::from(b"0123456789abcdef"[usize::from(b >> 4)]));
+            token.push(char::from(b"0123456789abcdef"[usize::from(b & 0xf)]));
+        }
+        let host = format!("127.0.0.1:{port}");
+        let origin = format!("http://{host}");
+        let bridge = Arc::new(Bridge {
+            service,
+            dist,
+            token,
+            host,
+            origin,
+            open_conns: AtomicUsize::new(0),
+        });
+        Ok((bridge, listener))
+    }
+
+    /// URL that Chrome opens (with the token in the fragment).
+    pub fn opening_url(&self) -> String {
+        format!("{}/#token={}", self.origin, *self.token)
+    }
+
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    /// Only for the bridge tests.
+    #[doc(hidden)]
+    pub fn token_for_test(&self) -> &str {
+        &self.token
+    }
+
+    /// Serves until the process ends.
+    pub fn serve(self: &Arc<Self>, listener: TcpListener) {
+        for conn in listener.incoming() {
+            let Ok(conn) = conn else { continue };
+            if self.open_conns.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+                self.open_conns.fetch_sub(1, Ordering::SeqCst);
+                continue; // drops the connection
+            }
+            let bridge = Arc::clone(self);
+            let r = thread::Builder::new()
+                .name("ward-bridge".into())
+                .spawn(move || {
+                    let _ = bridge.handle(conn);
+                    bridge.open_conns.fetch_sub(1, Ordering::SeqCst);
+                });
+            if r.is_err() {
+                self.open_conns.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn handle(&self, conn: TcpStream) -> io::Result<()> {
+        conn.set_read_timeout(Some(TIMEOUT))?;
+        conn.set_write_timeout(Some(TIMEOUT))?;
+        let mut output = conn.try_clone()?;
+        let response = match read_request(conn) {
+            Ok(p) => self.respond(&p),
+            Err(status) => Response::text(status),
+        };
+        response.write_to(&mut output)
+    }
+
+    /// Decides the response to an already read request.
+    pub fn respond(&self, p: &Request) -> Response {
+        if p.header("host") != Some(self.host.as_str()) {
+            return Response::text(421);
+        }
+        match (p.method.as_str(), p.path.as_str()) {
+            ("GET", path) => self.static_file(path),
+            ("POST", path) if path.starts_with("/test-bridge/") => {
+                self.command(p, &path["/test-bridge/".len()..])
+            }
+            _ => Response::text(405),
+        }
+    }
+
+    fn static_file(&self, path: &str) -> Response {
+        let file = match path {
+            "/" | "/index.html" => self.dist.join("index.html"),
+            c => match c.strip_prefix("/assets/") {
+                Some(name) if valid_asset_name(name) => self.dist.join("assets").join(name),
+                _ => return Response::text(404),
+            },
+        };
+        // Without following a link out of the dist.
+        let Ok(real) = fs::canonicalize(&file) else {
+            return Response::text(404);
+        };
+        if !real.starts_with(&self.dist) || !real.is_file() {
+            return Response::text(404);
+        }
+        match fs::read(&real) {
+            Ok(body) => Response {
+                status: 200,
+                content_type: content_type_of(&real),
+                body,
+            },
+            Err(_) => Response::text(404),
+        }
+    }
+
+    fn command(&self, p: &Request, name: &str) -> Response {
+        if p.header("origin") != Some(self.origin.as_str()) {
+            return Response::text(403);
+        }
+        let authorized = p
+            .header("authorization")
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .is_some_and(|t| ct_equal(t.as_bytes(), self.token.as_bytes()));
+        if !authorized {
+            return Response::text(401);
+        }
+        if !p
+            .header("content-type")
+            .is_some_and(|t| t == "application/json" || t.starts_with("application/json;"))
+        {
+            return Response::text(415);
+        }
+        let Some(command) = Command::from_name(name) else {
+            return Response::error(404, AppError::InvalidRequest);
+        };
+        let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.body) else {
+            return Response::error(400, AppError::InvalidRequest);
+        };
+        // Phase 35: the PIN leaves the map (ownership, no copy) and becomes a `Pin` that zeroes.
+        let pin = match command {
+            Command::SetLevel => args.remove("pin").map(serde_json::from_value::<Pin>),
+            // Phase 36: `null` (Deny) stays `None`; the rest becomes `Pin` or an error.
+            Command::AnswerApproval => match args.remove("pin") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(serde_json::from_value::<Pin>(v)),
+            },
+            _ => None,
+        };
+        // Phase 31: the master password also leaves the map (ownership) and becomes the
+        // master password type of the app core, which zeroes.
+        let password = match command {
+            Command::Unlock => args
+                .remove("password")
+                .map(serde_json::from_value::<MasterPassword>),
+            _ => None,
+        };
+        // Phase 38: the data of the changes also leave the map (ownership) and become typed
+        // values that zero.
+        let pin_change = match command {
+            Command::ChangePin => args.remove("data").map(serde_json::from_value::<PinChange>),
+            _ => None,
+        };
+        let password_change = match command {
+            Command::ChangeMasterPassword => args
+                .remove("data")
+                .map(serde_json::from_value::<PasswordChange>),
+            _ => None,
+        };
+        // Phase 47: the version password and the current PIN also leave the map (ownership).
+        let restore = match command {
+            Command::RestoreBackup => args.remove("data").map(serde_json::from_value::<Restore>),
+            _ => None,
+        };
+        let text = |key: &str| args.get(key).and_then(Value::as_str);
+        let flag = |key: &str| args.get(key).and_then(Value::as_bool);
+        let result = match command {
+            // Phase 31: with the vault locked, the request of the waiting agent (only id and the
+            // seconds left).
+            Command::VaultStatus => self
+                .service
+                .vault_status()
+                .map(|e| json!({ "status": e.code(), "request": self.service.request_info(e) })),
+            Command::CopyField => match (text("entry"), text("field")) {
+                (Some(e), Some(c)) => self.service.copy_field(e, c).map(|()| Value::Null),
+                _ => Err(AppError::InvalidRequest),
+            },
+            Command::ListCredentials => self
+                .service
+                .list_credentials()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+            Command::CredentialDetail => match text("entry") {
+                Some(e) => self
+                    .service
+                    .credential_detail(e)
+                    .and_then(|d| serde_json::to_value(d).map_err(|_| AppError::InvalidResponse)),
+                None => Err(AppError::InvalidRequest),
+            },
+            Command::GeneratePassword => match (
+                args.get("size").and_then(Value::as_u64),
+                flag("lowercase"),
+                flag("uppercase"),
+                flag("digits"),
+                flag("symbols"),
+            ) {
+                (Some(length), Some(lowercase), Some(uppercase), Some(digits), Some(symbols)) => {
+                    self.service
+                        .generate_password(Options {
+                            size: length,
+                            lowercase,
+                            uppercase,
+                            digits,
+                            symbols,
+                        })
+                        .map(|g| {
+                            json!({
+                                "size": g.size,
+                                "bits": g.bits,
+                                "strength": g.strength.code(),
+                                "symbols": g.symbols,
+                            })
+                        })
+                }
+                _ => Err(AppError::InvalidRequest),
+            },
+            Command::CopyGeneratedPassword => {
+                self.service.copy_generated_password().map(|()| Value::Null)
+            }
+            // S11: the value only comes out on "reveal", as in the app.
+            Command::RevealGeneratedPassword => self
+                .service
+                .reveal_generated_password()
+                .map(|r| json!({ "value": r.expose() })),
+            Command::DiscardGeneratedPassword => self
+                .service
+                .discard_generated_password()
+                .map(|()| Value::Null),
+            // S11 (D65 b): the value only on "reveal", as in the app.
+            Command::RevealField => match (text("entry"), text("field")) {
+                (Some(e), Some(c)) => self
+                    .service
+                    .reveal_field(e, c)
+                    .map(|r| json!({ "value": r.expose() })),
+                _ => Err(AppError::InvalidRequest),
+            },
+            Command::TotpCode => match text("entry") {
+                Some(e) => self
+                    .service
+                    .totp_code(e)
+                    .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
+                None => Err(AppError::InvalidRequest),
+            },
+            Command::CopyTotpCode => match text("entry") {
+                Some(e) => self.service.copy_totp_code(e).map(|()| Value::Null),
+                None => Err(AppError::InvalidRequest),
+            },
+            Command::UseGeneratedPassword => match text("field") {
+                Some(c) => self
+                    .service
+                    .use_generated_password(c)
+                    .map(|t| json!({ "size": t })),
+                None => Err(AppError::InvalidRequest),
+            },
+            Command::DiscardForm => {
+                self.service.discard_form();
+                Ok(Value::Null)
+            }
+            Command::SaveCredential => {
+                let previous = match args.get("previous") {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(Value::String(a)) => Ok(Some(a.as_str())),
+                    Some(_) => Err(AppError::InvalidRequest),
+                };
+                let form = args
+                    .get("form")
+                    .cloned()
+                    .map(serde_json::from_value::<Form>)
+                    .and_then(Result::ok)
+                    .ok_or(AppError::InvalidRequest);
+                match (previous, form) {
+                    (Ok(a), Ok(f)) => self.service.save_credential(a, f).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    _ => Err(AppError::InvalidRequest),
+                }
+            }
+            Command::SetLevel => match (text("entry"), text("level"), pin) {
+                (Some(e), Some(n), Some(Ok(pin))) => self
+                    .service
+                    .set_level(e, n, pin)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
+            },
+            // Phase 34: the file is picked and read on the Rust side; returns id, name and
+            // size, or the notice (S11, V5.12).
+            // Phase 39b: when editing, the edit object with the entry and the kept ids (the
+            // stored attachments that remain count in the limits).
+            Command::ChooseAttachment => {
+                let edit = match args.get("edit") {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(v) => serde_json::from_value::<AttachmentEdit>(v.clone())
+                        .map(Some)
+                        .map_err(|_| AppError::InvalidRequest),
+                };
+                edit.and_then(|ed| self.service.choose_attachment(ed.as_ref()))
+                    .and_then(|e| serde_json::to_value(e).map_err(|_| AppError::InvalidResponse))
+            }
+            Command::RemoveAttachment => match args.get("id").and_then(Value::as_u64) {
+                Some(id) => self.service.remove_attachment(id).map(|()| Value::Null),
+                None => Err(AppError::InvalidRequest),
+            },
+            // Phase 53a: "load from file" of the private key; the file is picked,
+            // read and checked on the Rust side; returns only the size, or the notice (S2, S11).
+            Command::LoadKey => match text("field") {
+                Some(c) if args.len() == 1 => self
+                    .service
+                    .load_key(c)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
+            },
+            // D3: the token does not go back to the interface.
+            Command::Connect => match text("entry") {
+                Some(e) => self.service.connect(e).map(|()| Value::Null),
+                None => Err(AppError::InvalidRequest),
+            },
+            // Phase 31: the response carries neither the password nor how many attempts there were.
+            Command::Unlock => match password {
+                Some(Ok(password)) if args.is_empty() => {
+                    self.service.unlock(password).map(|()| Value::Null)
+                }
+                _ => Err(AppError::InvalidRequest),
+            },
+            // Phase 39: "lock now"; clears the clipboard and the form first.
+            Command::Lock if args.is_empty() => self.service.lock().map(|()| Value::Null),
+            Command::Lock => Err(AppError::InvalidRequest),
+            // The Tauri channel does not exist in the bridge: the test screen polls the status
+            // (`test-bridge.js` › `listenByPolling`).
+            Command::ListenNotices => Err(AppError::InvalidRequest),
+            // Phase 36: the approval window. The bridge has no separate windows (the per-window
+            // ACL is Tauri's); the service checks id, decision and PIN the same way.
+            Command::ApprovalRequest => self
+                .service
+                .approval_request()
+                .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+            // Phase 54b: the acknowledgement field (the stdin checkbox) only as
+            // `true`/`false`.
+            Command::AnswerApproval => match (
+                args.get("id").and_then(Value::as_u64),
+                text("decision"),
+                pin,
+                args.get("acknowledged").map(Value::as_bool),
+            ) {
+                (Some(id), Some(d), None, None | Some(Some(false))) => {
+                    self.service.answer_approval(id, d, None, false)
+                }
+                (Some(id), Some(d), Some(Ok(p)), c @ (None | Some(Some(_)))) => self
+                    .service
+                    .answer_approval(id, d, Some(p), c == Some(Some(true))),
+                _ => Err(AppError::InvalidRequest),
+            }
+            .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+            // Phase 30: master password and PIN checked on the Rust side; the response carries
+            // no value. The data field leaves the object through `remove`, without copying
+            // the text.
+            Command::CreateVault => {
+                match args.remove("data").map(serde_json::from_value::<NewVault>) {
+                    Some(Ok(n)) => self.service.create_vault(n).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    _ => Err(AppError::InvalidRequest),
+                }
+            }
+            // Phase 38 (V5.22): no response carries a PIN, a password or a hash.
+            Command::Settings if args.is_empty() => self
+                .service
+                .settings()
+                .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
+            Command::Settings => Err(AppError::InvalidRequest),
+            Command::ChangePin => match pin_change {
+                Some(Ok(t)) if args.is_empty() => self
+                    .service
+                    .change_pin(t)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
+            },
+            Command::ChangeMasterPassword => match password_change {
+                Some(Ok(t)) if args.is_empty() => self
+                    .service
+                    .change_master_password(t)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
+            },
+            Command::SetLockTimeout => match args.get("minutes").and_then(Value::as_u64) {
+                Some(m) if args.len() == 1 => self
+                    .service
+                    .set_lock_timeout(m)
+                    .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
+            },
+            // Phase 48 (V7.9): no mount path; the UUID is checked in the service
+            // (format and the daemon's list).
+            Command::ExternalBackup if args.is_empty() => self
+                .service
+                .external_backup()
+                .and_then(|b| serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)),
+            Command::ListUsbDrives if args.is_empty() => self
+                .service
+                .list_usb_drives()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+            Command::ExternalBackup | Command::ListUsbDrives => Err(AppError::InvalidRequest),
+            // Phase 47 (V7.7): only name and instant of the versions; the restore response only
+            // says restored and how many entries. The version is checked in the service
+            // (format and the daemon's list).
+            Command::ListBackups if args.is_empty() => self
+                .service
+                .list_backups()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+            Command::ListBackups => Err(AppError::InvalidRequest),
+            Command::RestoreBackup => match restore {
+                Some(Ok(r)) if args.is_empty() => self
+                    .service
+                    .restore_backup(r)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
+            },
+            Command::SetExternalBackup => {
+                let uuid = match args.get("uuid") {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(Value::String(u)) => Ok(Some(u.as_str())),
+                    Some(_) => Err(AppError::InvalidRequest),
+                };
+                let only_known = args.keys().all(|k| k == "enabled" || k == "uuid");
+                match (flag("enabled"), uuid) {
+                    (Some(l), Ok(u)) if only_known => {
+                        self.service.set_external_backup(l, u).and_then(|b| {
+                            serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)
+                        })
+                    }
+                    _ => Err(AppError::InvalidRequest),
+                }
+            }
+        };
+        match result {
+            Ok(value) => Response::json(200, &json!({ "ok": true, "value": value })),
+            Err(e) => Response::error(200, e),
+        }
+    }
+}
+
+fn ct_equal(a: &[u8], b: &[u8]) -> bool {
+    use ctutils::CtEq;
+    a.ct_eq(b).to_bool()
+}
+
+fn valid_asset_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && !name.starts_with('.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+}
+
+fn content_type_of(p: &Path) -> &'static str {
+    match p.extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("woff2") => "font/woff2",
+        Some("woff") => "font/woff",
+        Some("png") => "image/png",
+        _ => "application/octet-stream",
+    }
+}
+
+/// HTTP request already read and within the limits.
+pub struct Request {
+    pub method: String,
+    pub path: String,
+    headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl Request {
+    /// Builds a request (tests).
+    pub fn new(method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Request {
+        Request {
+            method: method.into(),
+            path: path.into(),
+            headers: headers
+                .iter()
+                .map(|(n, v)| (n.to_ascii_lowercase(), (*v).into()))
+                .collect(),
+            body: body.to_vec(),
+        }
+    }
+
+    /// Header value; a repeated one counts as absent (there is no way to know which one holds).
+    pub fn header(&self, name: &str) -> Option<&str> {
+        let mut found = self.headers.iter().filter(|(n, _)| n == name);
+        let first = found.next()?;
+        if found.next().is_some() {
+            None
+        } else {
+            Some(first.1.as_str())
+        }
+    }
+}
+
+/// Reads line, headers and body within the limits; the error is the HTTP status.
+pub fn read_request<R: Read>(input: R) -> Result<Request, u16> {
+    let mut reader = BufReader::new(input);
+    let mut used = 0usize;
+    // One line, without going past what is left of the head limit.
+    let mut read_line = |reader: &mut BufReader<R>| -> Result<String, u16> {
+        let mut raw = Vec::new();
+        let remaining = (MAX_HEADER - used) as u64;
+        let n = (&mut *reader)
+            .take(remaining)
+            .read_until(b'\n', &mut raw)
+            .map_err(|_| 400u16)?;
+        used += n;
+        if n == 0 || !raw.ends_with(b"\n") {
+            return Err(431); // head limit or connection closed midway
+        }
+        let text = String::from_utf8(raw).map_err(|_| 400u16)?;
+        Ok(text.trim_end_matches(['\r', '\n']).to_owned())
+    };
+    let line = read_line(&mut reader)?;
+    let mut parts = line.split(' ');
+    let (Some(method), Some(path), Some("HTTP/1.1"), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err(400);
+    };
+    if !path.starts_with('/') || path.contains(['?', '#', '%', '\\']) || path.contains("..") {
+        return Err(400);
+    }
+    let mut headers = Vec::new();
+    loop {
+        let l = read_line(&mut reader)?;
+        if l.is_empty() {
+            break;
+        }
+        let (n, v) = l.split_once(':').ok_or(400u16)?;
+        if n.is_empty() || !n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+            return Err(400);
+        }
+        headers.push((n.to_ascii_lowercase(), v.trim().to_owned()));
+    }
+    let mut request = Request {
+        method: method.into(),
+        path: path.into(),
+        headers,
+        body: Vec::new(),
+    };
+    if request
+        .headers
+        .iter()
+        .any(|(n, _)| n == "transfer-encoding")
+    {
+        return Err(501);
+    }
+    let length = match request.header("content-length") {
+        None if request.headers.iter().any(|(n, _)| n == "content-length") => return Err(400),
+        None => 0,
+        Some(v) if !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) => {
+            v.parse::<usize>().map_err(|_| 413u16)?
+        }
+        Some(_) => return Err(400),
+    };
+    if length > MAX_BODY {
+        return Err(413);
+    }
+    let mut body = Vec::with_capacity(length);
+    reader
+        .take(length as u64)
+        .read_to_end(&mut body)
+        .map_err(|_| 400u16)?;
+    if body.len() != length {
+        return Err(400);
+    }
+    request.body = body;
+    Ok(request)
+}
+
+/// Response ready to be written.
+pub struct Response {
+    pub status: u16,
+    content_type: &'static str,
+    pub body: Vec<u8>,
+}
+
+impl Response {
+    fn text(status: u16) -> Response {
+        Response {
+            status,
+            content_type: "text/plain; charset=utf-8",
+            body: reason(status).as_bytes().to_vec(),
+        }
+    }
+
+    fn json(status: u16, v: &Value) -> Response {
+        Response {
+            status,
+            content_type: "application/json",
+            body: v.to_string().into_bytes(),
+        }
+    }
+
+    fn error(status: u16, e: AppError) -> Response {
+        Response::json(
+            status,
+            &json!({ "ok": false, "code": e.code(), "message": e.to_string() }),
+        )
+    }
+
+    pub fn body_json(&self) -> Option<Value> {
+        serde_json::from_slice(&self.body).ok()
+    }
+
+    fn write_to<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let header = format!(
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Security-Policy: {CSP}\r\n\
+X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n\
+Cross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\n\
+X-Frame-Options: DENY\r\nConnection: close\r\n\r\n",
+            self.status,
+            reason(self.status),
+            self.content_type,
+            self.body.len()
+        );
+        w.write_all(header.as_bytes())?;
+        w.write_all(&self.body)?;
+        w.flush()
+    }
+}
+
+fn reason(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        413 => "Payload Too Large",
+        415 => "Unsupported Media Type",
+        421 => "Misdirected Request",
+        431 => "Request Header Fields Too Large",
+        501 => "Not Implemented",
+        _ => "Internal Server Error",
+    }
+}

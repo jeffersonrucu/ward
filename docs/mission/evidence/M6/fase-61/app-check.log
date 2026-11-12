@@ -1,0 +1,50 @@
+/usr/bin/python3 -I -B dev/tests/app-dist.py
+app-dist: sem URL remota, sem inline, sem código de teste no pacote de produção
+PATH="<home>/.nvm/versions/node/v26.13.0/bin:/usr/bin:/bin" "<home>/.nvm/versions/node/v26.13.0/bin/node" dev/tests/bidi.mjs
+bidi: ok
+/usr/bin/python3 -I -B dev/tests/bidi_icu.py
+bidi_icu: ok (libicuuc.so.74)
+found 0 vulnerabilities
+deepmerge  >=4.2.0
+deepmerge mergeObject() allows prototype poisoning of returned objects - https://github.com/advisories/GHSA-gcqx-w48m-w2h4
+node_modules/deepmerge
+  Depends on vulnerable versions of deepmerge
+2 low severity vulnerabilities
+   Compiling thiserror v2.0.21
+   Compiling proc-macro-error-attr v1.0.4
+   Compiling proc-macro-error v1.0.4
+   Compiling thiserror v1.0.69
+   Compiling thiserror-impl v1.0.69
+   Compiling thiserror-impl v2.0.21
+   Compiling thiserror v1.0.69
+   Compiling thiserror v2.0.21
+test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+      Loaded 1458 security advisories (from <home>/.cargo/advisory-db)
+    Scanning Cargo.lock for vulnerabilities (424 crate dependencies)
+      └── proc-macro-error v1.0.4
+      ├── thiserror-impl v1.0.69
+      │   └── thiserror v1.0.69
+      ├── thiserror-impl v2.0.21
+      │   └── thiserror v2.0.21
+warning[duplicate]: found 2 duplicate entries for crate 'thiserror'
+298 │ ╭ thiserror 1.0.69 registry+https://github.com/rust-lang/crates.io-index
+299 │ │ thiserror 2.0.21 registry+https://github.com/rust-lang/crates.io-index
+    ├ thiserror v1.0.69
+    ├ thiserror v2.0.21
+warning[duplicate]: found 2 duplicate entries for crate 'thiserror-impl'
+300 │ ╭ thiserror-impl 1.0.69 registry+https://github.com/rust-lang/crates.io-index
+301 │ │ thiserror-impl 2.0.21 registry+https://github.com/rust-lang/crates.io-index
+    ├ thiserror-impl v1.0.69
+      └── thiserror v1.0.69
+    ├ thiserror-impl v2.0.21
+      └── thiserror v2.0.21
+advisories ok, bans ok, licenses ok, sources ok
+   Compiling thiserror v2.0.21
+   Compiling proc-macro-error-attr v1.0.4
+   Compiling proc-macro-error v1.0.4
+   Compiling thiserror v1.0.69
+   Compiling thiserror-impl v1.0.69
+   Compiling thiserror-impl v2.0.21
+dev/tests/app-release.sh app/src-tauri/target/release/ward-app
+app-release: sem ponte, sem caminho de teste e sem WARD_DEV_* no binário de release
+exit=0

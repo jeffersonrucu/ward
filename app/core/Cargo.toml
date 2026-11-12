@@ -1,0 +1,45 @@
+[package]
+name = "ward-app-core"
+description = "Lado Rust do app do Ward sem Tauri: comandos próprios, cliente do daemon e copiar (D4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# No Tauri and no GTK: builds and tests in the `make check` of the root workspace. The
+# Tauri crate (`app/src-tauri`, its own workspace) and the test bridge
+# (`ward-test-bridge`) only call the `Service` from here, so both expose exactly the same
+# commands.
+[features]
+# D7: socket of the test daemon (a 0700 folder of the user under `/run/user/<uid>/`,
+# and a peer with the same uid). Without the feature, the test path and this exception
+# do not even exist in the binary: only the socket of the system's systemd (D46).
+test-mode = ["ward-platform/test-mode"]
+
+[dependencies]
+# Limits of entry name and field (D32), in a single source.
+ward-core.workspace = true
+# Server check before any byte (S5, D46): the same as the CLI's, in a single source.
+# Workspace crate; the `libc` it uses is already in the lockfile.
+ward-platform.workspace = true
+# Constant-time comparison of the copied value with what is in the clipboard (the same
+# crate that `ward-core` already uses; nothing new in the lockfile).
+ctutils = { version = "0.4.8", default-features = false }
+# Responses of the Credentials screen (Phase 32) serialized only once, for Tauri and for
+# the test bridge. Only types without a secret derive `Serialize` (the secret type does
+# not). Already in the lockfile (serde_json, a dev-dependency, pulls `serde`;
+# `serde_derive` is there too).
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+# Phase 53a: only the `O_NOFOLLOW`/`O_NONBLOCK`/`O_NOCTTY` constants and `ELOOP`, to read
+# the private key file without following a link or getting stuck on a FIFO (the same
+# version that `ward-platform` and `wardd` already use; nothing new in the lockfile).
+libc = { version = "0.2.191", default-features = false }
+# Secret in memory cleared on drop (already in the lockfile through `ward-core`).
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# Only in the tests: reads `tauri.conf.json` and the capabilities for the S11 attack tests.
+serde_json = { version = "1.0.150", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

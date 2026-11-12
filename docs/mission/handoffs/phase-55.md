@@ -1,160 +1,131 @@
-# Fase 55 — Achados da reauditoria final
+# Fase 55 — Subcomandos da CLI (DT10)
 
 ## Implementado
-- **Médio (S8): descendente que sai do grupo não sobrevive.**
-  - `wardd` liga `PR_SET_CHILD_SUBREAPER` na partida (`main.rs`); sem ele, não sobe
-    (falha fechada). Todo órfão de um `ward run`/`ward ssh`/ponte/Chrome do playwright
-    vira filho do daemon em vez de sumir para o `init`/`systemd --user`.
-  - Módulo novo `ward-plataforma/src/descendentes.rs`: o fim de uma sessão
-    (`Grupo::matar_com_sessoes_filhas`, usado no fim do comando, na CLI que cai, no
-    `Drop` e na trava) mata **a árvore inteira do líder** pela cadeia de `ppid` em
-    `/proc` e, no daemon, os **órfãos da sessão** (`sid` = líder) e os **órfãos sem dono**
-    (filho do daemon fora do registro, com sessão que não é de líder vivo nem a do
-    daemon: quem fez `setsid`), mais os descendentes deles. Tudo leva `SIGSTOP` em
-    rodadas até nenhum novo aparecer; depois `SIGKILL`; todo sinal por `pidfd`, conferido
-    pelo `starttime` do `stat` (nunca acerta quem herdou o pid). O órfão zumbi é colhido
-    (`waitpid` só de pid fora do registro e fora da sessão do daemon).
-  - Registro dos líderes vivos (`LIDERES`): travado do `fork` ao registro e na colheita,
-    para a varredura nunca tomar um líder novo por órfão.
-  - A trava também chama `descendentes::matar_orfaos()` (haja sessão em curso ou não).
-  - `Relatorio { mortos, sobraram }`; `Grupo::sobraram()`. A CLI só ouve "o comando foi
-    encerrado" quando nada sobrou; senão, "N processo(s) do comando continuam vivos"
-    (`execucao::aviso_do_fim`).
-  - `filhos_com_sessao_propria` (Fase 54c/54l) saiu: a varredura nova o cobre.
-- **Baixo: trava.** `conta_como_uso` não conta mais, do papel app, `detalhe` (a janela de
-  aprovação pede para mostrar o pedido), `totp` (o formulário renova sozinho) nem
-  `responder_aprovacao` (o "Negar" a um `ward run` repetido). O pedido permitido segue
-  anotando o uso ele mesmo depois da autorização (`registrar_uso`).
-- **Baixo: troca de senha.** O daemon lê o cofre para a troca por `arquivos::ler_cofre`
-  (`O_NOFOLLOW | O_NONBLOCK | O_NOCTTY`, só arquivo comum do usuário, identidade do
-  mesmo fd conferida com a do cofre aberto) e passa os bytes ao núcleo:
-  `gravacao::trocar_senha_lido` / `trocar_senha_com_backup_lido`. As versões que liam
-  por caminho com `File::open` ficaram só nos testes do núcleo (`#[cfg(test)]`). Fecha a
-  janela entre a conferência da identidade e a 2.ª abertura.
-- `processo.rs`: o teste `ataque_processo_com_u202e_no_nome_chega_inteiro_na_cadeia`
-  passou a repetir o `spawn` em `ETXTBSY` (corrida antiga com `fork` de outro teste em
-  paralelo, que ficou mais frequente com os testes novos de `fork`).
+- Renomes de subcomando na CLI `ward` (`crates/ward/src/args.rs`), sem alias (DT10, PRD regra 12):
+  `lista` → `list` (com `--json`), `travar` → `lock`, `destravar` → `unlock`, `ajuda` → `help`
+  (`-h`/`--help`/`-V`/`--version` iguais). Os quatro nomes antigos caem no braço
+  `UnknownCommand`: saída 2, "comando desconhecido", antes de conectar.
+- `ward --help` (`HELP`): só os três nomes trocados; o espaço depois do nome foi ajustado para a
+  descrição ficar na mesma coluna (24). Conferido por script: a ajuda nova é igual a
+  `dev/fixtures/legacy/help-0.1.4.txt` com as três trocas (mesmo texto pt-BR). `ward help` não
+  entrou na ajuda (a 0.1.4 também não listava `ajuda`), para o V5.2 ficar só nos nomes.
+- `UnexpectedArgument` passa a citar `list`/`lock`/`unlock`.
+- Mensagens que citam subcomando (`crates/ward/src/commands.rs`): `MSG_RUN_LOCKED`, a dica de
+  `ResponseError::Locked` (`/usr/local/bin/ward unlock`) e "`ward unlock` precisa de um terminal".
+  O daemon (`wardd`) e o `app/core`/`app/src-tauri` não têm mensagem com subcomando da CLI
+  (conferido por grep); só o texto do nível bloqueado no `app/src` cita `ward lista` (ver abaixo).
+- App: "ela some do ward lista" → "ela some do ward list" em `app/src/lib/components/levels.js`
+  (2) e `app/src/screens/credentials.js` (1), por ser texto que cita subcomando (nota do plano).
+- Testes Rust (`crates/ward/src/args.rs`, `crates/ward/src/tests.rs`) com os nomes novos, mais
+  testes de ataque novos (abaixo).
+- Scripts que chamam a CLI: `dev/tests/cli.py` (todas as chamadas, as etiquetas e a dica
+  `/usr/local/bin/ward unlock`, mais a seção nova `1c` para V5.1/V5.2), `dev/tests/app_e2e.py`,
+  `dev/tests/extension.py`, `dev/tests/playwright.py`, `dev/tests/ssh_home.py`,
+  `dev/container-platform/inside.sh` (V4.2 com `unlock list lock`) e
+  `dev/container-install/inside.sh` (V9.3 com `ward unlock`).
+- `CLAUDE.md`: a linha do `make test-cli` com `ward unlock` e `list --json`, e o que a seção nova
+  confere.
+
+### Literais alterados (PRD regra 5)
+| Arquivo | Antigo → novo | Motivo |
+| --- | --- | --- |
+| `crates/ward/src/args.rs` | match `"ajuda"`/`"travar"`/`"destravar"`/`"lista"` → `"help"`/`"lock"`/`"unlock"`/`"list"`; `UnexpectedArgument("travar"/"destravar"/"lista")` → `"lock"/"unlock"/"list"` | nome de subcomando (DT10) |
+| `crates/ward/src/args.rs` | `HELP`: `ward lista [--json]   `, `ward destravar        `, `ward travar           ` → `ward list [--json]    `, `ward unlock           `, `ward lock             ` | nome de subcomando; espaço mantém a coluna |
+| `crates/ward/src/commands.rs` | `/usr/local/bin/ward destravar` (2×) e `` `ward destravar` `` → `unlock` | mensagem que cita subcomando |
+| `app/src/lib/components/levels.js`, `app/src/screens/credentials.js` | "some do ward lista." → "some do ward list." | texto que cita subcomando |
+| `crates/ward/src/tests.rs`, `dev/tests/*.py`, `dev/container-*/inside.sh` | argv e etiquetas com os nomes novos | uso do subcomando renomeado |
+| `CLAUDE.md` | `ward destravar` → `ward unlock`, `lista --json` → `list --json` | doc operacional da suíte |
+
+`allow.txt`/`frozen.txt`: nenhuma entrada nova; o `frozen.txt` não tinha entradas da Fase 55.
 
 ## Segurança
-- Invariantes tocadas:
-  - **S8** (segredo não segue em uso depois da trava/fim): o ambiente com segredo não
-    sobra em processo nenhum que descenda da sessão; a varredura não toca processo de
-    fora (outra sessão em curso, filho comum do daemon sem `setsid`, estranho do uid).
-    O `sid` não é forjável: o kernel não reusa um pid enquanto ele é id de sessão de
-    alguém vivo, e ninguém entra na sessão do líder ou do daemon de fora.
-  - **Trava por inatividade (D30/R23)**: tráfego automático da interface e um `ward run`
-    negado/expirado não seguram o cofre aberto.
-  - **Leitura do cofre** (D39/D62, Fase 54l): sem seguir link nem travar em FIFO também
-    na troca de senha.
-- Testes de ataque escritos:
-  - `crates/ward-plataforma/tests/subreaper.rs` › `ataque_f55_descendente_fora_do_grupo_nao_sobrevive`
-    (binário próprio: controle **sem** o subreaper — `setsid` duplo e `setpgid` sobrevivem
-    ao fim do comando —, depois com ele: morrem e são colhidos; trava com o comando vivo;
-    `matar_orfaos` não leva o líder nem outra sessão; o fim de uma sessão não leva a
-    árvore de outra; órfão de filho comum do processo (como o app) não leva sinal).
-  - `crates/ward-plataforma/src/filho.rs` › `ataque_f55_neto_fora_do_grupo_morre_na_trava`
-    (2.º passo: neto com `setpgid(0,0)` e bisneto com `setsid`, líder vivo; controle com
-    `matar` e correção com `matar_com_sessoes_filhas`).
-  - `crates/ward-plataforma/src/descendentes.rs` › `alvos_da_sessao_com_subreaper`,
-    `sem_subreaper_so_a_arvore_do_lider`, `zumbi_nao_e_alvo`, `stat_com_parenteses_no_nome`.
-  - `crates/wardd/tests/run.rs` › `f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava`
-    (`wardd` de verdade: `setsid -f` que escreveria a senha 3 s depois do fim e
-    `setpgid` que a escreveria depois da trava; nada escreve, CLI ouve "encerrado").
-    Conferido: com o `virar_subreaper` desligado no `main.rs`, o teste falha ("o neto com
-    setsid usou a senha depois do fim").
-  - `crates/wardd/tests/trava.rs` › `ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava`
-    (a cada 10 min por 4 h: `ward run` numa entrada com aprovação negado, `detalhe` e
-    `totp` do app; a 4h00 trava). Conferido: falha com o `trava.rs` de antes.
-  - `crates/wardd/src/trava.rs` › `ataque_f55_detalhe_totp_e_resposta_da_janela_nao_contam`.
-  - `crates/wardd/tests/configuracoes.rs` › `f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha`
-    (FIFO parado no lugar: `CofreMudou` na hora; FIFO entrando e saindo do lugar durante
-    os pedidos: cada pedido volta em < 5 s). Conferido: com o `gravacao.rs`/`nucleo.rs` de
-    antes, o pedido fica preso no FIFO ("a troca de senha ficou presa num FIFO").
-  - `crates/wardd/src/execucao.rs` › `aviso_do_fim_so_diz_encerrado_sem_sobra`.
+- Invariantes tocadas: S1/S3 (nenhum argumento ecoado; a senha digitada por engano depois de
+  `unlock` ou do nome antigo não volta), S5/V4.2 (a CLI continua recusando servidor falso antes
+  da senha e parando antes da senha com servidor que não fala v2: o `client.rs` e a ordem
+  conectar → conferir → endurecer → ler senha não mudaram; o diff em `commands.rs` é só de
+  literais). DT10: sem alias; nome antigo nunca conecta.
+- Testes de ataque escritos (não rodados, regra 6):
+  - `crates/ward/src/args.rs` › `tests::old_names_are_unknown_commands` (os quatro nomes antigos,
+    com argumento e em outra caixa, dão `UnknownCommand`; a ajuda não cita nome antigo e cita os
+    novos).
+  - `crates/ward/src/args.rs` › `tests::attack_argument_not_echoed_in_message` (agora com `unlock`
+    e com o nome antigo + senha).
+  - `crates/ward/src/tests.rs` › `attack_old_subcommands_unknown_without_talking_to_the_daemon`
+    (servidor ouvindo no socket de teste: cada nome antigo sai 2 com "comando desconhecido",
+    nenhum evento — nem conectar, nem endurecer, nem ler senha —, zero conexões e zero bytes,
+    a senha não aparece).
+  - `crates/ward/src/tests.rs` › `v4_2_attack_*` e `daemon_missing` com os nomes novos.
+  - `dev/tests/cli.py` › seção `1c` (m2:V5.1/V5.2): nomes antigos saem 2 sem conexão num socket
+    próprio em `/run/user/<uid>/ward-cli-old-<pid>`, sem eco; `help`/`-h`/`--help` saem 0;
+    `ward --help` = ajuda da 0.1.4 com só os nomes trocados; `--version` sai 0.
+  - `dev/container-install/inside.sh`: o V9.3 com `ward unlock` agora também exige que a saída
+    não seja "comando desconhecido" (sem a troca, o V9.3 passaria só porque o nome antigo
+    sai 2, sem testar a recusa do servidor falso). O mesmo risco existia no V4.2 do
+    `dev/container-platform/inside.sh`, que já tem conferência positiva da mensagem.
 - Dependências novas: nenhuma.
-- `unsafe` novo só em `sys.rs` (`prctl` do subreaper, `getpid`/`getsid`,
-  `pidfd_send_signal`, `waitpid(WNOHANG)`), cada um com `// SAFETY:` e coberto pelos
-  testes acima.
 
 ## Ficou de fora
-- cgroup v2 por sessão: o daemon de teste não roda sob o systemd, e o `wardd@` não tem
-  `Delegate=`; o subreaper com a varredura vale nos dois. Fica como reforço possível.
-- Controle "sem a correção" contra o `wardd` inteiro só foi rodado à mão (desligando o
-  `virar_subreaper` no `main.rs`); no repositório, o controle automático está no
-  `subreaper.rs` (a mesma varredura sem o subreaper). Não pus variável `WARD_DEV_*` para
-  desligar o subreaper: seria mais uma porta no daemon de teste.
-- Docs atualizados depois do código (2.ª rodada, sem mudar código): ver "Docs".
+- Skill e deny (Fase 58): `skill/ward/SKILL.md` (linhas com `ward lista`, `ward travar`,
+  `/usr/local/bin/ward destravar`), `skill/README.md`, `skill/settings-deny.json` (negar `ward unlock`
+  em todas as formas e manter as antigas) e `dev/tests/skill.py` (`ALLOWED`, `UNLOCK`, exemplos
+  `ward lista`/`ward travar`, lista de ataques com as duas formas). Até lá o `make test-skill` falha:
+  ele confere que todo `ward <sub>` da skill está no `ward --help`.
+- Documentação (Fase 59): `docs/migracao.md` (4 citações) junto com `dev/tests/migration-guide.py`
+  (espera `/usr/local/bin/ward destravar` e `ward lista`; o `make test-migration-guide` precisa das
+  duas mudanças juntas), `docs/instalacao.md` (5), `docs/escopo.md` (6), `README.md` (1),
+  `.claude/agents/planner.md` (2) e `.claude/agents/user-testing-validator.md` (1).
+- `ward --version` ainda diz 0.1.4 (DT19, Fase 60).
+- `wardd-test-client` (`crates/wardd/examples/test-client.rs`) mantém os argumentos próprios
+  `estado|lista|destravar` (documentados como nomes do cliente, não da CLI `ward`); são chamados por
+  `dev/container-platform/inside.sh`, `dev/tests/units.sh` e `dev/tests/deb.sh`. Se for para traduzir,
+  é uma fase com todos os chamadores (56 ou 60).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make check` (967 testes, audit, deny, gitleaks) | 0 |
-| `make dev-servicos-subir` | 0 |
-| `make dev-daemon WARD_DEV_APP= WARD_DEV_SOCKET_DIR=/run/user/1000/ward-55` | 0 |
-| `make teste-cli WARD_DEV_SOCKET_DIR=/run/user/1000/ward-55` (157 ok, 0 falhas) | 0 |
-| `make dev-daemon-parar WARD_DEV_SOCKET_DIR=/run/user/1000/ward-55` | 0 |
-| `make dev-servicos-parar` | 0 |
-| `make teste-ataques-fundacao` (2.ª rodada, `target/` limpo, build do zero; 167 `ok`, "Todos os ataques foram barrados") | 0 |
+| `make compile` (log `.dev/logs/fase55-compile.log`) | 0 |
+| `cargo fmt -p ward --check` (depois de `cargo fmt -p ward`) | 0 |
+| `cargo clippy --locked -p ward --all-targets --features test-mode -- -D warnings` (log `.dev/logs/fase55-clippy.log`) | 0 |
+| `make english-check PATHS="crates/ward dev/tests/cli.py dev/tests/app_e2e.py dev/tests/extension.py dev/tests/playwright.py dev/tests/ssh_home.py dev/container-install/inside.sh dev/container-platform/inside.sh app/src/lib/components/levels.js app/src/screens/credentials.js"` (log `.dev/logs/fase55-english-paths.log`) | 0 |
+| `make english-check` (repositório inteiro; log `.dev/logs/fase55-english.log`) | 0 |
+
+Nenhum teste rodou (PRD regra 6); nenhum daemon, cofre real ou daemon instalado foi tocado.
 
 ## Problemas descobertos
-- **Órfão sem dono morre no fim de qualquer sessão** (decisão por segurança): quem sai de
-  uma sessão com `setsid` não diz de qual veio. Efeitos: o `chrome_crashpad_handler` do
-  Chrome do `ward playwright` (faz `fork` duplo com `setsid`, medido) morre quando
-  qualquer `ward run` termina — o Chrome segue, só perde o relatório de crash; um
-  descendente do **app** que faça `setsid` e fique órfão (o app fechou) também morre no
-  próximo fim de sessão. O terminal do "Conectar" (filho do app, sem `setsid`) não é
-  afetado.
-- Zumbi de órfão do app (sessão do daemon) depois que o app fecha não é colhido pela
-  varredura (para não roubar o status de um filho `std::process` do daemon); fica até o
-  daemon sair. Só acontece quando um filho do app sobrevive ao app.
-- `detalhe`/`totp` do app não contam mais como uso também quando o usuário clica numa
-  entrada ou copia o TOTP (o daemon não distingue o clique do pedido automático); só
-  `revelar`, `copiar` e as gravações contam. Segurança antes de conveniência.
-- **Disco (resolvido pelo usuário):** na 1.ª rodada o `teste-ataques-fundacao` não
-  terminou por falta de espaço. O usuário liberou espaço e rodou `cargo clean`; na 2.ª
-  rodada havia 51 GB livres e o alvo saiu 0. No fim, `target/debug/incremental` apagado;
-  `df -h /` final: 104G, 59G usados, **41G livres** (60%). Nenhuma `~/.cache/ward-*`
-  sobrou; nenhum processo auxiliar (daemon de teste, strace) ficou vivo.
-- Docs (antes atrasados, agora em dia):
-  - `docs/mission/validation-contract.md` › V2.50: os `pub fn` que gravam passam a ser
-    `gravar_entradas`/`gravar_entradas_com_backup` e `gravacao::trocar_senha_lido`/
-    `trocar_senha_com_backup_lido`.
-  - `docs/escopo.md` › S8: subreaper, varredura de descendentes (árvore do líder, órfãos
-    da sessão, órfão sem dono), `SIGSTOP`→`SIGKILL` por `pidfd`, "encerrado" só sem
-    sobra e o efeito aceito no `chrome_crashpad_handler` e em descendente do app.
-  - `docs/escopo.md` › "Destravar e travar": `detalhe`, TOTP e resposta da janela do app
-    e `ward run` negado/expirado não contam como uso.
-  - `docs/mission/prd.md`: D69 nova (os três achados) e nota em D44 com o nome novo.
-  - Ficaram com o nome antigo, por serem histórico de fases já feitas: `plan.md`
-    (Fases 19e/22 e o item da Fase 55) e as menções de D45/Fase 22 no PRD
-    (`trocar_senha(destino, …)`); o orchestrator decide se reescreve.
+- Divergência PRD regra 2 × nota do plano: a regra 2 diz que nenhum texto de tela muda, e a nota da
+  Fase 55 manda trocar as mensagens do app que citam subcomando. Segui o plano só no texto do nível
+  bloqueado ("some do ward list"), que cita o subcomando. Efeitos: (1) o
+  `docs/mission/design-nodes.md` (linha 854, `Nível=bloqueado`) e o `Ward.figcraft` continuam com
+  "ward lista"; (2) a comparação de capturas da Fase 65 com `docs/mission/arquivo/m1/evidence/final/`
+  vai mostrar essa diferença no diálogo de nível e no formulário. O orchestrator decide se o
+  design-nodes acompanha (Fase 59) ou se o texto volta.
+- Risco de merge: `app/src/lib/components/levels.js` e `app/src/screens/credentials.js` (Fase 54) e
+  `dev/container-install/inside.sh` (Fase 57) têm hunks de uma a três linhas desta fase.
+- O `ward --help` não cita `ward help` (como a 0.1.4 não citava `ajuda`); se o contrato quiser o
+  subcomando listado, o V5.2 passa a ter uma linha a mais além dos nomes.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-plataforma/src/descendentes.rs` | criado |
-| `crates/ward-plataforma/tests/subreaper.rs` | criado |
-| `crates/ward-plataforma/src/filho.rs` | alterado |
-| `crates/ward-plataforma/src/lib.rs` | alterado |
-| `crates/ward-plataforma/src/sys.rs` | alterado |
-| `crates/ward-plataforma/src/processo.rs` | alterado |
-| `crates/wardd/src/main.rs` | alterado |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/src/execucao.rs` | alterado |
-| `crates/wardd/src/trava.rs` | alterado |
-| `crates/wardd/tests/run.rs` | alterado |
-| `crates/wardd/tests/trava.rs` | alterado |
-| `crates/wardd/tests/configuracoes.rs` | alterado |
-| `crates/ward-core/src/gravacao.rs` | alterado |
-| `crates/ward-core/tests/fontes.rs` | alterado |
+| `crates/ward/src/args.rs` | alterado |
+| `crates/ward/src/commands.rs` | alterado |
+| `crates/ward/src/tests.rs` | alterado |
+| `app/src/lib/components/levels.js` | alterado |
+| `app/src/screens/credentials.js` | alterado |
+| `dev/tests/cli.py` | alterado |
+| `dev/tests/app_e2e.py` | alterado |
+| `dev/tests/extension.py` | alterado |
+| `dev/tests/playwright.py` | alterado |
+| `dev/tests/ssh_home.py` | alterado |
+| `dev/container-install/inside.sh` | alterado |
+| `dev/container-platform/inside.sh` | alterado |
+| `CLAUDE.md` | alterado |
 | `docs/mission/handoffs/phase-55.md` | criado |
-| `docs/mission/validation-contract.md` | alterado (V2.50) |
-| `docs/escopo.md` | alterado (S8, trava por inatividade) |
-| `docs/mission/prd.md` | alterado (D69, nota em D44) |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
+- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks) — não: regra 6 (só
+  `make compile` e `english-check`); fmt e clippy do crate `ward` rodados à parte, limpos
 - [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
+- [x] Teste de ataque para cada (SEG) tocado (escritos; rodam no Milestone 6)
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — n/a (só o texto do nível; ver Problemas)
 - [x] Ficou dentro do escopo da fase

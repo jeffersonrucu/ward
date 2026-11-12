@@ -1,0 +1,22 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --features test-mode --bin ward
+PW_PYTHONPATH="<home>/projetos/cofre/.dev/pw-lib/site" WARD_DEV_SOCKET_DIR="" dev/tests/app-e2e.sh
+==> daemon de teste em /run/user/1000/ward-test-e2e com a ponte (D63)
+daemon de teste no ar: pid 2391190, socket /run/user/1000/ward-test-e2e/wardd.sock, log <home>/projetos/cofre/.dev/logs/wardd.log
+==> app de ponta a ponta (Chrome headless)
+ok - Chrome sem nenhuma extensão (guarda da Fase 65a)
+FALHOU - passo sem exceção (TimeoutError: Page.wait_for_selector: Timeout 20000ms exceeded.
+Call log:
+  - waiting for locator("#master-password") to be visible
+)
+app-e2e: 1 de 2 checagens ok
+==> varredura de logs (V5.27): .dev/logs com .dev/variations.txt
+limpo    .dev/logs/known_hosts.antes-f54 (387 bytes)
+limpo    .dev/logs/ward-app.log (561 bytes)
+limpo    .dev/logs/ward-test-bridge.log (4627 bytes)
+limpo    .dev/logs/wardd-aprovador-teste.log (119 bytes)
+limpo    .dev/logs/wardd.log (368121 bytes)
+5 arquivo(s), 0 com segredo
+make: *** [Makefile:373: test-app-e2e] Erro 1

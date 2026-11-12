@@ -1,1789 +1,441 @@
 # Plano — Ward
 
-Status: concluído
+Status: aprovado
 
-Fontes: `docs/mission/prd.md` (regras R*, decisões D*, riscos RA*) e
-`docs/mission/validation-contract.md` (asserções V*). Cada fase cabe em ~100k tokens:
-um assunto, poucos arquivos, verificável sozinha e com testes. **(DESIGN)** desenha no
-FigCraft pelo MCP (`mcp__figcraft__*`) no arquivo
-`/home/jeffersonoliveira/documentos/Ward.figcraft` (páginas Inspirações só leitura,
-Design System, Layout), registra os ids em `docs/mission/design-nodes.md` e termina com
-`save_file` (D22). Regra (Fase 49b, 2026-11-09): o MCP `figcraft` headless é compartilhado e guarda abas velhas; abra sempre uma cópia com caminho próprio, confira o sha256 do original antes de salvar por cima e confira o resultado no `document.json`. O Figma `bzu9PxxFur2tU3vlNCHvsY` é só leitura (histórico e
-Inspirações `1:3`). **(UI)** monta uma tela a partir dos nodes de
-`docs/mission/design-nodes.md`. Direção visual arredondada e premium (D23). Regra de respiro (usuário, 2026-11-08):
-padding vertical simétrico e generoso em todo contêiner (cartões, opções, itens,
-modais: mínimo 16 em cima e embaixo, 20–24 em cartões e opções com duas linhas), o
-texto nunca encosta na borda; conferir por screenshot com zoom em cada variante; Referência-alvo do layout (usuário,
-2026-11-08): `docs/design/referencias/alvo-layout-app.png` — janela escura com cantos
-grandes; três colunas em painéis arredondados separados por respiro (navegação lateral
-com logo, seções recolhíveis e cartão do usuário no pé; lista com ícone/avatar por
-entrada, título + subtítulo e botão primário no pé; painel de detalhe com cabeçalho,
-campos em caixas escuras com ações embutidas à direita — copiar, revelar, abrir — e
-rodapé com metadados e ações Editar/Duplicar/Excluir); busca em pílula no topo;
-superfícies em camadas com bordas sutis e brilho/gradiente leve; pastas/grupos com cor
-própria (tint suave). Frames de formulário podem ser mais altos que 800 para mostrar o formulário inteiro (usuário,
-2026-11-08); no app o corpo do detalhe rola com cabeçalho e rodapé fixos. Selos/badges pequenos e discretos (usuário, 2026-11-08): ~20 de altura, texto 11–12, tint
-translúcido, sem borda forte, texto sempre em minúsculo (nunca caixa alta). Usar como estilo, sem copiar marca, textos ou ícones. Toda fase
-(DESIGN) e (UI) segue isso. As Fases 1–4 (marcadas **(FIGMA)**) foram feitas no Figma
-antes da troca de ferramenta e são migradas para o `Ward.figcraft` pelas Fases 4a–4f. Toda
-fase a partir da 11 termina com `make check` limpo e escreve o teste do ataque de cada (SEG) que toca. Nenhuma fase lê ou mexe em
-`~/.ssh`, `ssh_config`, `SSH_AUTH_SOCK`, `~/.aws`, no cofre real ou no KeePassXC (R19,
-`CLAUDE.md`).
+Missão 2: código em inglês (PRD `docs/mission/prd.md`; contrato
+`docs/mission/validation-contract.md`; escopo "Missão 2 — Código em inglês"). A missão
+1 está em `docs/mission/arquivo/m1/`.
 
-Crates previstos: `ward-core` (núcleo, sem dependência de Linux), `ward-plataforma`
-(Linux), `wardd`, `ward` (CLI), `ward-nm` (native messaging), `app/` (Tauri + Svelte),
-`extensao/` (Chrome MV3), `ward-ponte-teste` (só `modo-teste`).
+## Como as fases trabalham (vale para todas)
+
+- **Sem suíte por fase nem por milestone** (pedido do usuário, 2026-11-10; PRD regra 6).
+  Cada fase termina com **uma** compilação, `make compile` (a partir da Fase 2), e com
+  `make english-check PATHS="<caminhos da fase>"` limpo. Testes novos ou alterados são
+  escritos, mas não rodam. O orchestrator **não chama validadores** nos Milestones 1–5:
+  marca a fase, fecha o milestone e segue. A bateria inteira e os validadores
+  (scrutiny, security-auditor, QA) rodam só no Milestone 6. O que falhar lá vira fase
+  de correção no fim do Milestone 6.
+- **Troca 1:1** (PRD regra 3): renomeie no lugar e ajuste todos os usos no repositório
+  inteiro na mesma fase, pelo glossário `docs/glossario.md`. Termo novo entra no
+  glossário na mesma fase.
+- **Fio congelado até a Fase 48** (PRD regra 4, DT3): nada que cruze fronteira muda nos
+  Milestones 1–3. Campo `serde` renomeado leva `#[serde(rename = "<antigo>")]`. Nome de
+  fio que o checador acusa vai para `dev/english-check/frozen.txt` com a fase que o
+  muda.
+- **Handoff** (`docs/mission/handoffs/phase-<N>.md`): renomes feitos (antigo → novo),
+  literais alterados com o motivo (PRD regra 5), entradas novas de `allow.txt`/
+  `frozen.txt`, o resultado do `make compile` e do `english-check`, e qualquer ponto de
+  segurança em que o nome ficou de propósito.
+- **Lógica de segurança intocada** (PRD regra 7): nas conferências de papel, máscara,
+  cripto, gravação atômica, endurecimento, aprovação, PIN e domínio, o diff tem de ser
+  só de nomes e comentários.
+- **Paralelismo** (worktrees, commit local por fase, sem push): o Milestone 1 é
+  sequencial. Depois dele há três trilhas que podem rodar juntas: **R** (Rust,
+  Milestone 2, sequencial dentro da trilha, de baixo para cima), **W** (web, Fases
+  35–39) e **S** (scripts e instalação, Fases 40–47). W e S não dependem de R porque o
+  fio está congelado. Dentro de W e de S, fases diferentes podem rodar juntas (cada uma
+  tem os seus arquivos), exceto a 35 (tokens e pastas do `app/src`), que vem antes das
+  outras de W. O Milestone 4 começa quando R, W e S acabaram e é sequencial. O 5 também.
+  O 6 roda em sequência porque usa o mesmo daemon e o mesmo cofre de teste.
+- **Testes de fio** (`crates/ward-core/src/wire_v1.rs`, achado da Fase 3): as Fases
+  10–18 renomeiam ali só os usos da API atual; fixture e expectativas não mudam (V2.2
+  aceita diff só de nomes nesse arquivo).
+- **Captura de `format!`** (achado da Fase 7): renomear variável capturada muda o
+  literal (`{rt_texto}` → `{rt_text}`); o V6.3 aceita diferença só de nome de captura.
+- **Base do worktree**: o worker confere que o worktree parte do master atual
+  (`git reset --hard <hash>` com a árvore limpa, se não).
+- Tamanho: cada fase tem ~2,5–4 mil linhas para ler e reescrever (código + testes).
 
 ## Milestone 0 — Design no FigCraft
-Contrato: V0.1–V0.23
 
-- [x] Fase 1 — **(FIGMA)** Ler a página Inspirações sem editar e salvar a lista dos
-  filhos dela (para V0.21); criar as coleções de variables `Cores` (só o modo
-  Escuro, D1), `Tipografia`, `Espaçamento`, `Raio` na página Design System. V0.1, V0.21. Feita no Figma; migrada pela Fase 4a.
-- [x] Fase 2 — **(FIGMA)** Componentes base com variantes: `Botão`, `Campo`,
-  `Campo secreto`, `Select`, `Badge ambiente`, `Badge tipo`, `Item de lista`, `Modal`,
-  `Toast`, `Campo PIN`, todos ligados às variables. V0.2, V0.3. Feita no Figma;
-  migrada pelas Fases 4b–4d.
-- [x] Fase 3 — **(FIGMA)** Telas de destravar e primeiro uso: `Primeiro uso / *`,
-  `Destravar / *` (inclusive "Pedido do agente"), todas no modo Escuro. V0.4–V0.6, V0.19. Feita no Figma; migrada pela
-  Fase 4e.
-- [x] Fase 4 — **(FIGMA)** Credenciais e nível de acesso: `Credenciais / Vazia`,
-  `/ Cheia`, `/ Filtrada`, `Nível de acesso / *`. V0.7, V0.11. Feita no Figma; migrada
-  pela Fase 4f.
-- [x] Fase 4a — **(DESIGN)** Inventário e variables no `Ward.figcraft` (D22, D23). Abrir
-  o arquivo (`open_file`) e levantar com `inspect_document` o que já existe (páginas,
-  variables, estilos, componentes, frames); registrar em `docs/mission/design-nodes.md`.
-  Se houver página Inspirações, só ler e salvar a lista dos filhos em
-  `docs/mission/evidence/figcraft-inspiracoes.json` (V0.21); sem ela ou sem as imagens,
-  ler a `1:3` do Figma (só leitura). Garantir as páginas Design System e Layout (ajustar
-  as existentes, não duplicar). Recriar as coleções a partir do handoff da Fase 1 (só
-  as primitivas em uso): `Primitivas`, `Cores` (só o modo `Escuro`, D1, com as
-  semânticas da Fase 1 e as `icone/*` e `sombra/padrao` da Fase 2), `Tipografia`,
-  `Espaçamento`, `Raio` com os valores novos de D23 e `Largura` (barra lateral,
-  diálogo, formulário, selects). `save_file`. V0.1, V0.19, V0.21.
-- [x] Fase 4b — **(DESIGN)** Estilos e ícones no `Ward.figcraft`: os 14 text styles e os
-  2 effect styles da Fase 2 (sombras suaves de D23), ligados às variables; os 24
-  `Ícone/*` em `Componentes / Ícones` e os da Fase 4 (`Ícone/chave`, `/gerador`,
-  `/engrenagem`). Ids em `design-nodes.md`; `save_file`. V0.2, V0.3.
-- [x] Fase 4c — **(DESIGN)** Componentes base, parte 1, já arredondados (D23): `Botão`,
-  `Campo`, `Campo secreto`, `Select`, `Campo PIN`, com as variantes e propriedades da
-  Fase 2, tudo ligado às variables (raio, espaçamento, largura). Ids em
-  `design-nodes.md`; `save_file`. V0.2, V0.3.
-- [x] Fase 4d — **(DESIGN)** Componentes base, parte 2, já arredondados (D23):
-  `Badge ambiente`, `Badge tipo` (selos em pílula), `Item de lista` (badges alinhados em
-  colunas), `Modal`, `Toast`, e os de apoio das Fases 3 e 4 (`Painel de marca`,
-  `Indicador de passos`) e os de apoio da Fase 4 (`Navegação lateral`, `Item de
-  navegação`, `Cabeçalho de grupo`, `Chip de filtro`, `Opção de nível`, `Diálogo de
-  nível`). Revisar os paddings de todos (regra de respiro abaixo); o usuário apontou o
-  texto colado na borda de baixo na `Opção de nível`. Religar as propriedades às camadas e aplicar text
-  styles em todos (a importação perdeu isso, como na 4c). Pendências da 4c: alinhar a
-  altura do `Botão` e do `Campo` numa altura padrão comum (como na referência-alvo) e
-  igualar a altura dos estados do `Campo secreto`. Ids em `design-nodes.md`;
-  `save_file`. V0.2, V0.3.
-- [x] Fase 4g — **(DESIGN)** Logo do Ward (escolhida pelo usuário, 2026-11-08):
-  `docs/design/referencias/logo-ward.png`, conceito da linha de cima (escudo com "W" e
-  losango embaixo). Redesenhar em vetor no `Ward.figcraft` (não colar o PNG), com
-  geometria limpa e cantos arredondados, cor ligada a `cor/primaria`/gradiente das
-  variables: componentes `Logo / Ícone do app` (squircle com gradiente índigo, 512),
-  `Logo / Símbolo` (cor e branco monocromático, legível em 16×16 — conferir por
-  screenshot em 16, 24, 32), `Logo / Horizontal` (símbolo + "ward" em minúsculas,
-  semibold). Trocar o cadeado provisório do `Painel de marca` pela logo. Exportar SVG e
-  PNG (16–512) para `docs/design/logo/`. Ids em `design-nodes.md`; `save_file`. V0.23.
-- [x] Fase 4e — **(DESIGN)** (Antes: trocar a marca antiga — cadeado + "Ward" — das variantes da `Navegação lateral` pela instância `Logo / Horizontal`.) Telas da Fase 3 no Layout do `Ward.figcraft`, no estilo
-  novo e só com instâncias: `Primeiro uso / Criar cofre`, `/ Senha mestra`, `/ PIN`,
-  `Destravar / Padrão`, `/ Senha errada`, `/ Pedido do agente` (conteúdo do handoff da
-  Fase 3), conferidas por `screenshot` contra as Inspirações. Ids em
-  `design-nodes.md`; `save_file`. V0.2, V0.4–V0.6, V0.19, V0.20.
-- [x] Fase 4f — **(DESIGN)** (Antes: deixar `Campo`, `Campo secreto` e `Select` esticarem na largura do pai — hoje fixos em 320 — e trocar as larguras presas das telas da 4e.) (Credenciais em três colunas: navegação, lista e detalhe da entrada selecionada, como na referência-alvo) Telas da Fase 4 no Layout do `Ward.figcraft`, no estilo
-  novo e só com instâncias: `Credenciais / Vazia`, `/ Cheia`, `/ Filtrada`,
-  `Nível de acesso / Escolher`, `/ PIN`, `/ PIN errado` (conteúdo do handoff da Fase 4),
-  conferidas por `screenshot`. Ids em `design-nodes.md`; `save_file`. V0.2, V0.4,
-  V0.7, V0.11, V0.19, V0.20.
-- [x] Fase 5 — **(DESIGN)** Formulários, parte 1: `login`, `banco`, `servidor` (com
-  `Conectar`), `api`, `aws`, novo e edição, com TOTP e anexos. V0.8–V0.10.
-- [x] Fase 6 — **(DESIGN)** Formulários, parte 2: `smtp`, `ftp/sftp`, `nota segura`,
-  `genérico`, novo e edição, com campos extras e anexos; todos no modo Escuro.
-  V0.8, V0.9, V0.19.
-- [x] Fase 7 — **(DESIGN)** Janela de aprovação: `Aprovação / Normal`, `/ prod`,
-  `/ PIN errado`, `/ PIN bloqueado`, `/ Expirando`, com os quatro botões em todos
-  (R16) e foco em Negar; todos no modo Escuro. V0.16, V0.19.
-- [x] Fase 8 — **(DESIGN)** Gerador e configurações: `Gerador de senha / *`,
-  `Configurações / *` (sem opção de tema, D1), `Restaurar backup / *`,
-  `Kit de emergência / Impressão`; todos no modo Escuro. V0.12–V0.15, V0.19.
-- [x] Fase 9 — **(DESIGN)** Bandeja e extensão: `Bandeja / *`, `Extensão / *`, todos no modo
-  Escuro; proposta de ícone. V0.17–V0.19.
-- [x] Fase 9a — **(DESIGN)** Fluxo "Nova credencial" (usuário, 2026-11-08): ao clicar
-  em `Nova credencial` na tela de Credenciais, o painel de detalhe mostra a escolha do
-  tipo (os 9 tipos em cartões/lista com ícone, nome e uma linha do que guarda; busca
-  opcional) e, escolhido o tipo, abre o `Formulário / <tipo> / Novo` já existente.
-  Frames `Nova credencial / Escolher tipo` e `/ Tipo escolhido` (mostrando a transição
-  para o formulário de login). Conferir que o botão `Nova credencial` das telas leva a
-  esse fluxo. Ids em `design-nodes.md`; `save_file`. V0.8.
-- [x] Fase 10a — **(DESIGN)** Limpeza de tokens no `Ward.figcraft`: remover da coleção
-  `Primitivas` os tons que ficaram sem uso (claros do antigo modo Claro que a migração
-  tenha trazido, ou valores de raio/espaçamento substituídos por D23). Antes de apagar,
-  levantar por `inspect_document` o uso real de cada primitiva (alias em `Cores` e
-  ligação em nodes); só apagar as sem nenhum uso (`neutro/0` e `neutro/50` estão em uso
-  e ficam). `save_file`. V0.1, V0.19. Remover também `sombra/padrao` (`8:7`), sem uso desde a 4b. Avaliar também `largura/select`, `espacamento-letra/caixa-alta` e o `Chip de filtro`, sem uso desde a 4f.
-- [x] Fase 10b — **(DESIGN)** Componente `Campo senha` (vazio, foco, erro, desabilitado;
-  ação "revelar", sem "copiar"), ligado às variables; trocar por ele o `Campo` usado
-  nas telas `Primeiro uso / Senha mestra`, `/ PIN`, `Destravar / *` e onde mais se digita
-  senha mestra. V0.2, V0.3.
-- [x] Fase 10c — **(DESIGN)** Refinamentos da 4d: cores de borda sutil por estado
-  (sucesso, erro, aviso, ambientes) para Toast e Chip de filtro; ícone com cor por estado
-  para o item ativo da `Navegação lateral` (a troca de ícone por propriedade não leva a
-  cor); borda suave para os destaques de aviso/perigo/info (aviso da senha mestra e
-  destaque do PIN, telas da 4e); medir contraste do `Badge ambiente` translúcido.
-  Achados da 5: estado `vazio` (com placeholder) e ajuda como propriedade no `Campo
-  secreto`; variante combobox (autocompletar) no `Select`; apagar itens ocultos das listas
-  de api/aws. Navegação e lista com altura fixa no `Formulário / login / Novo` (`7450`)
-  e na Fase 5 em geral (devem esticar com o frame); renomear a propriedade `Valor` do
-  `Campo extra` segredo (a máscara é fixa). Ícone trocado no `Botão` primário fica cinza (deve
-  ser branco). `Gerador de senha / No formulário` (`14307`) é cópia antiga de `6926`:
-  conferir se acompanha o formulário final. Faixa de destaque da aprovação (repetida 3×) vira
-  componente; ícones coloridos por override viram variantes. Achados da 9: variante escura do `Ícone da bandeja`
-  para painéis claros; estado travado não só por cor (forma/indicador); popup `Salvar
-  login novo` (892) rolando dentro do limite de 600 do Chrome; tirar ligações de
-  gradiente que sobraram na variante cinza do `Ícone da extensão`. Achados da 10b: trocar o
-  campo interno `13088` do `Diálogo de restauração` pelo `Campo senha` (e desfazer o
-  override em `16683`); senha do site em `Extensão / Salvar login novo` (`17450`) vira
-  `Campo secreto` sem copiar. Consolidar em `design-nodes.md` os ids da seção "Ids para design-nodes" dos
-  handoffs 5–9 (fases feitas em paralelo).
-  `save_file`. V0.2, V0.3.
-- [x] Fase 10 — **(DESIGN)** Conferência final contra as Inspirações (só leitura):
-  instâncias em todo o Layout, textos em português, nenhum segredo de exemplo; fechar
-  `docs/mission/design-nodes.md` com todos os ids do FigCraft (conferidos reabrindo o
-  arquivo salvo); `save_file`; apresentar ao usuário para aprovação no FigCraft (ícone
-  incluído). V0.2, V0.4, V0.20–V0.23.
-- [x] Fase 10d — **(DESIGN)** Ajustes do scrutiny do M0: limpar a ajuda copiada do `api`
-  no Role ARN dos formulários aws (`10894`, `11594`); corrigir no handoff da Fase 10 a
-  frase sobre segredos (`FALSOACCESSKEY01` aparece como identificador falso); scripts de
-  evidência rodando de qualquer diretório e sem `__pycache__` (e `.gitignore`).
-  QA do M0 (menores): Copiar em todos os campos não secretos do detalhe (porta, base);
-  indicação de rolagem (fade) na lista atrás de `Nova credencial`; rodapé fixo cortando
-  o cartão de nível em `login / Novo`; dados de exemplo coerentes (24 caracteres no
-  gerador, grupo da aprovação existente na lista); PIN errado com comprimento variável;
-  coluna de texto do "Tempo de trava" mais larga; respiro entre "De … para …" e "PIN"
-  em `Nível de acesso / PIN errado`. `save_file`. V0.20.
-
-Milestone 0 aprovado pelo usuário em 2026-11-08 (V0.23). As decisões em aberto da
-Fase 10 (kit em folha branca, tempo de trava, senha/PIN após restaurar, "Negar" no PIN
-bloqueado, Access Key ID visível, cor da logo, bandeja grafite/contorno, mínimo de 12 e
-barra de força, "Agora não", filtros em diálogo e grupos fora da navegação) ficam como
-estão no design aprovado; o PRD é ajustado se alguma mudar.
-
-## Milestone 1 — Fundação
-Contrato: V1.1–V1.6
-
-- [x] Fase 11 — Workspace Cargo com os crates vazios, `rust-toolchain.toml`,
-  `deny.toml`, `.gitleaks.toml` (allowlist só dos valores falsos de D15), `Makefile`
-  com `make check` (fmt, clippy `-D warnings`, testes, `cargo audit`, `cargo deny`,
-  gitleaks) e a seção "Comandos" do `CLAUDE.md`. V1.1–V1.3, V1.5, V1.6.
-- [x] Fase 12 — `dev/compose.yml` com `postgres`, `ssh-senha`, `ssh-chave`,
-  `ssh-salto`, `ssh-interno`, `wordpress` + `mariadb`, `phish`, `totp`, `redir`;
-  chaves e senhas falsas geradas em `.dev/` por `make dev-servicos`; fixtures das
-  entradas em `dev/fixtures/` (só dados falsos). V1.4, V1.5.
-
-- [x] Fase 12a — Correções da auditoria de segurança do M1 (1ª reprovação):
-  **alto** — os clientes SSH de `dev/servicos/comum.sh` e `ataques-servicos.sh` abrem
-  `~/.ssh/id_*` do usuário (o ssh usa o home do `passwd`, não `$HOME`): `IdentityFile=none`,
-  `CertificateFile=none` e teste de ataque sob strace que falha se algo do home real for
-  aberto; **médio** — varredura extra de chave privada/AWS sem a allowlist global de
-  caminhos do gitleaks (lockfiles, svg, pdf, png, gz); **médio** — `make check` falha com
-  `.cargo/config*` com `[source`/`[patch`/`[registries`, `[patch` no `Cargo.toml` ou
-  dependência por path fora da raiz; **baixo** — `GITLEAKS`/`CARGO` com `:=` e sha256 do
-  binário do gitleaks conferido a cada varredura; anotar no `phase-11.md` que o
-  `phase-11-ajuste.md` o substitui na allowlist.
-
-- [x] Fase 12b — Achados médios e baixos da 2ª auditoria do M1 (aprovada), feita antes da
-  Fase 13: `origens` vira lista de permitidas e roda como pré-checagem antes do passo 1
-  (recusar qualquer `.cargo/config*` no repositório; no `CARGO_HOME` só chaves inofensivas;
-  recusar `CARGO_*`/`RUSTC*`/`RUSTFLAGS*`/`RUSTDOCFLAGS` fora da lista — cobre `[alias]`,
-  `rustc-wrapper`, `linker`, `rustflags`, `build.rustc`, `runner`, `[env]`); `cargo-audit`
-  e `cargo-deny` pelo caminho absoluto; `PATH=/usr/bin:/bin` (+ `~/.cargo/bin`) nos scripts
-  de `dev/` e no `Makefile`; `DOCKER_CONFIG` vazio em `.dev/`, `env -u DOCKER_HOST`,
-  `GIT_CONFIG_GLOBAL=/dev/null` e `GIT_CONFIG_NOSYSTEM=1` nos testes; mutação de teste para
-  o `CertificateFile=/dev/null`. Repros em `scratchpad/r2/` do auditor.
-
-Pendência da Fase 12 (TOTP em `localhost:8083`), resolvida pelo planner em 2026-11-08:
-o cofre de teste ganha `acme-totp-dev` (D28), acrescentada nas fixtures pela Fase 19 e
-usada no V6.7.
-
-## Milestone 2 — Núcleo: formato, cripto, tipos e máscara
-Contrato: V2.1–V2.58
-
-- [x] Fase 13 — Formato e cripto em `ward-core`: cabeçalho versionado com parâmetros
-  Argon2id, chave de dados aleatória embrulhada, XChaCha20-Poly1305 com o cabeçalho
-  como AAD, troca de senha mestra; vetores conhecidos e testes de adulteração.
-  V2.1–V2.8.
-  Notas da Fase 13: o V2.7 foi ajustado para `ctutils`/`cmov`, que substituíram o
-  `subtle` no RustCrypto atual; o hash do PIN da
-  Fase 22 deve passar por `cripto::argon2id` (o `argon2` 0.6 não zera a memória própria).
-- [x] Fase 14 — Gravação atômica (temp + fsync + rename + fsync do diretório) e teste de
-  morte no meio com processo filho; prova de que nada vai em claro para o disco.
-  V2.9–V2.11.
-- [x] Fase 15 — Modelo de entrada: os 9 tipos, campos secretos, campos extras, anexos,
-  `grupo`/`ambiente`/`projeto`/tags, nível de acesso, validação em português; tipos de
-  segredo com `Zeroizing` e `Debug` que imprime `••••`. V2.12, V2.13, V2.27, V2.28.
-  Notas da Fase 15: as regras que ela decidiu sozinha estão em D25; o que faltou do
-  V2.28 (`CofreAberto` e `SenhaMestra`) e a serialização vão para a Fase 15a.
-- [x] Fase 15a — Corpo do cofre e acertos do núcleo (`entrada` → bytes → `formato`).
-  Depende das Fases 13–15; não depende das 16–18 e pode rodar ao lado da 17. Arquivos:
-  um módulo novo de serialização no `ward-core` (ex.: `crates/ward-core/src/corpo.rs` e
-  `corpo/testes.rs`), `formato.rs`, `gravacao.rs` e a linha em `lib.rs`; não mexe em
-  `entrega`, máscara, TOTP nem gerador.
-  - Serialização de D26: codificação binária própria, versionada e canônica, sem
-    dependência nova; buffer `Zeroizing` com capacidade calculada antes; leitura que
-    confere cada comprimento contra o buffer e os limites de D25 antes de alocar, limite
-    do corpo de 64 MiB e de 10 000 entradas; cada entrada relida por `Rascunho::validar`
-    + `definir_nivel` (nível guardado) e o cofre por `conferir_no_cofre`; erro genérico
-    sem valor. Funções `CofreAberto` → `Vec<Entrada>` e volta, usadas pelas Fases 19 e 22.
-  - V2.28: `impl ZeroizeOnDrop for CofreAberto {}` e `for SenhaMestra {}` em
-    `formato.rs`, com o teste de tempo de compilação da Fase 15 passando a cobri-los.
-  - D27: `gravacao::gravar` vira `pub(crate)`; a troca de senha ganha uma função
-    pública que sela e grava (como `gravar_cofre`); doctest `compile_fail` para o
-    `gravar` de fora do crate.
-  - Testes de ataque: ida e volta, adulteração (cortes, mutações, campos forjados),
-    limites com alocador de contagem e alocador que procura segredo em bloco liberado
-    (teste de integração próprio, por causa do `#[global_allocator]`). `make check`
-    limpo. V2.28, V2.30–V2.34.
-- [x] Fase 16 — Entrega: tipo → variáveis de ambiente (D10), todos os motores de
-  `banco`, normalização de nomes de extras e anexos. V2.14–V2.16.
-- [x] Fase 17 — Máscara em fluxo (D11): variações, pedaços quebrados, segredos
-  sobrepostos, anexos, saída sem segredo intacta; teste de propriedade com cortes
-  aleatórios. V2.17–V2.24.
-- [x] Fase 18 — TOTP (RFC 6238) e gerador de senha com `OsRng`. V2.25, V2.26.
-  Nota da Fase 16: fechar a parte do V2.14 que confere `WARD_TOTP` contra o código real
-  (a 16 usou código falso pelo trait `Recursos`); avaliar restringir `?`, `#` e `/` na base
-  de `banco` na validação (a 16 deixou o encoding só na URL).
-- [x] Fase 19 — `make dev-cofre` (cria `.dev/cofre-teste.ward` com as 21 entradas do
-  contrato pela serialização da Fase 15a; acrescenta `acme-totp-dev` de D28 em
-  `dev/fixtures/entradas.json`) e `make dev-variacoes` (lista de segredos e variações
-  para os validadores). Depende da Fase 15a. V2.29.
-  Nota do planner (2026-11-08, D29, D30): os anexos das fixtures não podem ser vazios e
-  somam no máximo 256 KiB por entrada (as chaves e o `app.env` já cabem). A 19 grava o
-  corpo da forma que a 15a deixou; a seção de configuração com o hash do PIN de teste
-  entra depois, pela Fase 19b, que ajusta o `make dev-cofre`. A 19 não precisa esperar.
-- [x] Fase 19a — Limites e validação do núcleo (D29, D31–D34). Depende das Fases 15a–18;
-  pode rodar ao lado da 19 porque não mexe em `dev/` nem no `Makefile`. Arquivos: um
-  `crates/ward-core/src/limites.rs` novo, `entrada/validacao.rs`, `corpo.rs`, o
-  `Gerador` da máscara e `tests/corpo_memoria.rs`.
-  - `ward_core::limites` com constantes `pub` usadas por validação, corpo e máscara;
-    sem número repetido (D32).
-  - Anexos somados até 256 KiB por entrada; anexo vazio segue recusado; orçamento da
-    máscara de 4 MiB de padrões por entrada com entrega, calculado pela mesma função do
-    `Gerador` e conferido em `Rascunho::validar` (logo também na leitura do corpo),
-    com a mensagem de D29 (D29).
-  - Base do `banco` restrita: `[A-Za-z0-9_-]{1,63}`, e só número no `redis` (D33).
-  - `CHAVE=valor` de anexo: o valor só vira padrão próprio com 6 caracteres ou mais
-    (D34).
-  - Alocador de teste com `alloc_zeroed` no lugar de `alloc` (D31).
-  - Ajustar os testes de ida e volta da 15a ao V2.30 novo (anexos somando 256 KiB) e
-    escrever o teste de ataque de cada (SEG). `make check` limpo. V2.30, V2.32,
-    V2.35–V2.38, V2.40.
-- [x] Fase 19b — Corpo v2 com seção de configuração (D30). Depende das Fases 19 e 19a.
-  Arquivos: `corpo.rs` e testes, `formato.rs` (o `CofreAberto` passa a levar a
-  configuração), o gerador do `make dev-cofre` da Fase 19.
-  - Versão 2 do corpo: configuração obrigatória antes das entradas (hash PHC Argon2id
-    do PIN por `cripto::argon2id`, tempo de trava em minutos com padrão 240, backup
-    externo desligado com UUID opcional); a versão 1 vira desconhecida; cofre sem hash
-    de PIN recusado; leitura com os mesmos cuidados de D26 (comprimentos conferidos
-    antes de alocar, erro genérico). Tipos da configuração com `Zeroizing`/`Debug` de
-    `••••` no hash (V2.27, V2.28).
-  - Função que cria o hash a partir do PIN e outra que confere, esta em tempo constante
-    pela biblioteca (o daemon da Fase 22 só chama).
-  - `make dev-cofre` grava o hash do PIN de teste de D15; ida e volta, adulteração e
-    limites (V2.30–V2.33) refeitos sobre o corpo v2. `make check` limpo. V2.29–V2.33,
-    V2.39.
-- [x] Fase 19c — Correções da auditoria de segurança do M2 (D36–D45). Depende da 19b
-  e vem antes da Fase 20. Repros do auditor em
-  `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/ataque/src/bin/`
-  (`mascara.rs`, `validacao.rs`, `gravar.rs`): ler antes, rodar contra o código novo e
-  transformar cada caso em teste de ataque do `ward-core`. Arquivos: `mascara.rs`,
-  `entrada/validacao.rs`, `cripto.rs`, `formato.rs`, `configuracao.rs`, `corpo.rs`,
-  `gravacao.rs`, `limites.rs`, os testes de cada um, `tests/corpo_memoria.rs`, o exemplo
-  `dev-cofre` e `dev/testes/dev-cofre.sh`. Não toca em `wardd`, protocolo nem CLI.
-  Ordem sugerida, do que muda o formato para o que só valida:
-  - **Corpo v3 com `geracao`** (D39, só o núcleo): campo na seção de configuração, +1 em
-    `gravar_entradas` e `trocar_senha` depois da gravação que deu certo, recusa em
-    `u64::MAX`, leitura sem setter público, abertura com `geracao_minima` e erro
-    `Retrocesso`; v2 e geração 0 recusadas; `make dev-cofre` grava a geração 1.
-    V2.44.
-  - **`gravar_cofre` e `CofreAberto::selar` em `pub(crate)`** (D44), com doctests
-    `compile_fail`; `corpo_memoria.rs` passa a gravar por `gravar_entradas`. V2.50.
-  - **Chave no heap** (D40): `cripto::Chave` = `Box<Zeroizing<[u8; 32]>>` para a chave
-    de dados e a KEK, asserção de `size_of`, `buf` de `ler_phc_pin` em `Zeroizing`,
-    saída de `conferir_pin` em `Zeroizing` comparada por `ctutils`. V2.46, V2.28, V2.33.
-  - **Máscara** (D36, D37): passada por linha de `Gerador::anexo` em todo segredo de
-    campo com `\n`; valor de `"chave": "valor"` e `chave: valor` nas linhas; formas
-    `\u` do Go e do `ensure_ascii` e `\$` de aspas duplas; orçamento de D29 recontado
-    pela mesma função, com o V2.36 refeito. Se uma entrada de D15 for recusada, a fase
-    para e devolve ao planner. V2.41–V2.43.
-  - **Validação** (D38, D41–D43): lista branca de texto por campo (sai a lista de
-    `invisivel`), parser estrito de URL, variável do `api` por sufixo, usuário de
-    `servidor`/`ftp/sftp` em `[A-Za-z0-9._-]`; tudo vale também na leitura do corpo.
-    V2.45, V2.47–V2.49.
-  - **Confirmações** (D45): teste da mensagem de `ErroCorpo::GrandeDemais` preso a
-    `limites` (ou a mensagem montada a partir dele); conferir que os testes da 19a e
-    da 19b cobrem as faixas confirmadas. V2.51.
-  - Regravar `.dev/cofre-teste.ward` por `make dev-cofre`, refazer V2.29–V2.33 e V2.39
-    sobre o corpo v3 e escrever o teste de ataque de cada (SEG). `make check` limpo.
-    V2.29–V2.33, V2.36, V2.39, V2.41–V2.51.
-- [x] Fase 19d — Lista do `make dev-variacoes` atualizada para D36 e D37 (handoff 19c,
-  "Problemas"). Pequena; só `dev/variacoes.py` e o teste dele (um teste em Python só
-  com a biblioteca padrão, rodado por `make teste-dev-cofre`, mais o que couber em
-  `dev/testes/dev-cofre.sh`). Não toca em `ward-core`, `wardd`, `Makefile` nem nas
-  fixtures. O `variacoes.py` continua oráculo independente:
-  não importa nem chama o código da máscara.
-  - D36: além das linhas aparadas e do `CHAVE=valor` que já existem, o valor de
-    `"chave": "valor"` e de `chave: valor` em cada linha de segredo de várias linhas
-    (chave privada, extra secreto com `\n`, anexos), com e sem aspas, só com 6+
-    caracteres.
-  - D37: para cada segredo e cada linha, as formas JSON do Go (`\u0026`, `\u003c`,
-    `\u003e`, `\u2028`, `\u2029`), `ensure_ascii` do Python (`\uXXXX` minúsculo, com
-    par substituto) e aspas duplas do shell (`\` antes de `$`, `` ` ``, `"` e `\`),
-    cada uma só quando difere da literal. Hex em maiúsculas fica fora (RA3).
-  - Atualizar a docstring do `variacoes.py` e a descrição do `make dev-variacoes` no
-    `CLAUDE.md`. Testes com os valores falsos da V2.52, mais os de antes (V2.29).
-    `make check` e `make teste-dev-cofre` limpos. V2.52, V2.29.
-
-- [x] Fase 19e — Achados da reauditoria do M2 (D53–D55). Depende da 19d; **a Fase 22
-  só começa depois dela**. Pode rodar ao lado da 21b (arquivos separados). Repros em
-  `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/ataque/src/bin/`
-  (`geracao.rs`, `desvio.rs`, `url.rs`): ler antes, rodar contra o código novo e
-  transformar cada caso em teste de ataque. Arquivos: `formato.rs`, `corpo.rs`,
-  `gravacao.rs` e os testes deles (geração); `mascara.rs` e `mascara/` (máscara);
-  `entrada/validacao.rs` e testes (URL); `dev/variacoes.py`, o teste dele e
-  `dev/testes/dev-cofre.sh` (oráculo e teste cruzado); se preciso, um exemplo novo do
-  `ward-core` para o teste cruzado e a linha do `make dev-variacoes` no `CLAUDE.md`.
-  Não toca em `ward-plataforma`, `wardd`, protocolo, CLI, `Makefile` nem nas fixtures.
-  - **Geração queimada ao selar** (D53): o contador do `CofreAberto` sobe ao selar e
-    fica lá em qualquer erro seguinte; `u64::MAX` recusa antes de selar, sem queimar;
-    `abrir_entradas_desde(arquivo, senha, geracao_minima, geracao_queimada)` com o
-    contador em max(disco, queimada); `trocar_senha(destino, atual, nova,
-    geracao_minima, geracao_queimada)`; ajustar os chamadores (testes, exemplo
-    `dev-cofre`). V2.44 (reescrita), V2.53.
-  - **Máscara** (D54): `linhas` para todo valor secreto de entrega com `\n`; formas de
-    texto por linha; aspas simples do shell, `printf %q` (ASCII, conferido contra o
-    bash real), PHP `\/` + `ensure_ascii`, parser de linha com `chave : valor`,
-    `chave:\tvalor`, `"k":"v"` e chave JSON com qualquer caractere menos `"`, campos de
-    tab; orçamento de D29 pela mesma função, com o V2.36/V2.43 refeitos. Se uma entrada
-    de D15 for recusada, a fase para e devolve ao planner. V2.54–V2.56.
-  - **Oráculo** (D54): `variacoes.py` com a tabela única (sem base64 e miolos por
-    linha; formas de texto e formas novas), docstring atualizada e teste cruzado
-    oráculo → máscara em `dev/testes/dev-cofre.sh`. O oráculo segue sem importar nem
-    chamar a máscara. V2.57, V2.52.
-  - **URL** (D55): último rótulo do domínio começando por dígito (inclui `0x`) é
-    recusado, ao salvar e na leitura do corpo. V2.58.
-  - Regravar `.dev/cofre-teste.ward` por `make dev-cofre` se o formato do contador
-    mudar, refazer V2.29 e V2.43, escrever o teste de ataque de cada (SEG). `make check`
-    e `make teste-dev-cofre` limpos. V2.29, V2.36, V2.43, V2.44, V2.52–V2.58.
-  - D56 (`sftp -l`) não é desta fase: fica para a Fase 27, que ganhou a nota.
-
-Decisões do usuário em 2026-11-08 sobre a Fase 19c: RA4 (troca conjunta de cofre e estado com o daemon parado) fica fora do modelo de ameaça — o planner registra isso em `docs/escopo.md` › fora do modelo; D41 (http só em localhost) e D42 (sufixo obrigatório no `api`) confirmados; D43 mudou: usuário de `servidor`/`ftp-sftp` aceita `@` já na v1. Registrado pelo planner depois da 19c: RA4 no escopo e no PRD; D43 confirmado também para `banco`/`smtp` (ASCII visível, sem `-` no começo; V2.49); D37 e V2.42 com os escapes literais; Fase 19d criada; Fases 20 e 22 com a API nova do núcleo.
-
-Decisão do usuário em 2026-11-09: acessibilidade (AT-SPI) desligada no app (`NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null`); leitor de tela não funciona no Ward. Pendências da 29a para o planner: incluir as 3 variáveis de D48 (GStreamer, AT-SPI) na lista de D57; app conferir o papel na 1ª resposta do protocolo; como o app de teste ganha o papel app (Fases 22/23); log do código de saída do filho no daemon (Fase 23); texto da V5.31 (dumpable por `prctl`); `/tmp/nvidia-mps` (RA8); RA7 — RUSTSEC-2024-0429 talvez já não detectado.
-
-Resolvido pelo planner em 2026-11-09: reauditoria da 19e em D61 (Fase 22a); Problemas do handoff 22 em D62 (Fase 22b); papel app só ao pid do lançador e app de teste em D63 (Fases 23 e 23a); pendências da 29a em D64 (lista de D57 e V5.31 já no PRD e no contrato; MPS, varredura e RA7 na Fase 29b). Acessibilidade desligada registrada em `docs/escopo.md` › "App desktop".
-
-Decisão do usuário em 2026-11-09: limiares de força do gerador (Fase 37) aceitos — fraca <60 bits, razoável <80, forte <128, muito forte ≥128; a Fase 33 usa os mesmos. Pendências da 37 para o planner: faixa de tamanho 8–64 na interface (núcleo 4–128) no PRD; texto dos símbolos no FigCraft diverge de D35 (app segue D35) — corrigir numa fase de design.
-
-Teste instável (2026-11-09): `ward-plataforma --test identificacao` › `ataque_binario_copiado_para_fora_da_instalacao` falhou uma vez com ETXTBSY ("Text file busy") ao executar o binário copiado — corrida clássica de fd de escrita herdado por fork de outra thread de teste. Corrigir na Fase 22b (fechar e sincronizar a cópia antes, ou repetir o spawn em ETXTBSY).
-
-Pendências das Fases 32 e 25 para o planner (2026-11-09): (a) `DaemonSocket::trocar` do app ainda responde `SemProtocolo` — falta ligar a troca de quadros na conexão única (D47) e separar avisos sem pedido (`pedido_de_aprovacao`, `pedido_de_destrave`) — decidir a fase (23a ou 31); (b) o protocolo não tem operação que leve o valor ao app para "Revelar" (V5.3/V5.11 abertos); (c) N+1 em `listar_credenciais` (lista + 1 detalhe por entrada; a `ItemLista` do papel app pode ganhar usuário/porta); (d) datas criada/alterada não existem no protocolo; (e) V4.2 inteiro só no build de release (no `modo-teste` um falso não depurável passa) — validador roda a 2ª parte sem a feature, no contêiner, ou o texto do V4.2 muda.
-
-Resolvido pelo planner em 2026-11-09 (D65): (a) transporte do app e fila de avisos na
-Fase 23a; a 31 consome `pedido_de_destrave`, a 36, `pedido_de_aprovacao`; (b) "Revelar"
-sem operação nova (a `revelar` já existe, só papel app, sem PIN, aprovação nem nível,
-D4): daemon na Fase 22c, app na 33; (c) `resumo` na `ItemLista` do app, Fase 22c; (d)
-datas no corpo v4, Fase 22d (provisória); (e) V4.2 em duas partes, a 2ª no contêiner,
-Fase 28. Pendências da 37: faixa 8–64 e limiares em D65 (f); símbolos do FigCraft e
-frames que faltaram na 32, Fase 37a.
-
-Pendências da 37a (2026-11-09): contagens no FigCraft ficaram em 21/13, mas a fixture passou a 22 (D59) — atualizar numa próxima fase de design; cartões de nível dos 18 formulários e do gerador no formulário seguem soltos (ícone de check em "Com aprovação", herdado do M0) — trocar por instâncias do `Cartão de nível`.
-
-Pendências da 33 para o planner (2026-11-09): anexos — não há operação para ler o conteúdo de um anexo e `salvar_entrada` substitui a entrada inteira, então editar entrada com anexo é recusado (`AnexosNaoMantidos`) e "Adicionar arquivo" está desabilitado; decidir operação (manter anexos por id no salvar, ou ler/gravar anexo) e fase. Botão Salvar no Novo vazio fica clicável (V5.10) ao contrário do design; placeholder da URL trocado por "Endereço com http ou https" (o `app-dist.py` recusa "https://").
-
-Pendências da 22b (2026-11-09): V3.34 do lado do app (`VmLck: 0 kB` no app filho) fica para o contêiner da 23a/29b; `criar_cofre` com estado ilegível recusa com `falha_ao_gravar` sem dizer ao usuário o que fazer (mensagem a melhorar); gancho `com_gancho_depois_de_gravar` existe no release (nunca ligado) — auditoria do M3 olha.
-
-Pendências da 34 (2026-11-09): editar com anexo segue bloqueado (mesma decisão da 33); o `ward-core` recusa nome de anexo começando por `.` (ex.: `.env`, citado no escopo) e a tela não renomeia — decidir; V5.24 ponta a ponta ("Conectar" → `emitir_token` no `wardd` responde `interno`, `ward ssh --token` vem na 27); lista de túnel não sabe quais servidores têm salto (erro só ao salvar); chave privada virou textarea mascarado; dependência direta nova `gtk =0.18.2` no `app/src-tauri` (diálogo de arquivo) — RA7/auditoria do M5 olha; `x-terminal-emulator` no COSMIC não conferido.
-
-Pendências da 23a (2026-11-09): `make teste-sem-modo-teste` fica fora do `make check` (o scrutiny do M3 roda); o copiar não funciona na ponte aberta pelo daemon (ambiente mínimo sem `WAYLAND_DISPLAY`); binário de teste aceita g+w (umask 002); token da ponte no log 0600 (resíduo de D63); fila de avisos sem consumidor na interface (31/36); teste da 22b `v3_33_kill_9_entre_as_senhas_erradas` é sensível a tempo (907 ms > 900 ms sob carga) — dar margem.
-
-Pendências da 35 (2026-11-09): 5º PIN errado deve ir a `Destravar / Padrão` (Fase 31); frame `6373` mostra dígitos no PIN errado, app esvazia (ajustar design); textos dos níveis em `credenciais.js` e `niveis.js` (unificar); teste `ataque_comandos_proprios_so_na_janela_e_origem_certas` do `app/src-tauri` falha se houver `wardd` de teste no socket fixo do uid — isolar o socket do teste.
-
-Pendências da 26 (2026-11-09) — perguntar ao usuário: V4.13/RA1 reprova (environ e anexo do filho legíveis pelo mesmo uid, sem mitigação genérica); o ambiente da CLI (`PATH`, `BASH_ENV`, `NODE_OPTIONS`, `GIT_SSH_COMMAND`…) muda o que o comando aprovado faz e a janela de aprovação não mostra ambiente nem cwd. Para o planner: `<rt>` do release é `/run/user/<uid>/ward/` — sem sessão logind não existe (unit com `RuntimeDirectory=`?); `wardd` de produção agora espera até 2 min o `ward destravar` com cofre travado e sem app (V4.21); grupo inteiro morre no fim (neto com `setsid` escapa); V4.9/V4.12 não rodaram no worktree (serviços de outro checkout, sem `psql`) — validador do M4 roda; `teste-home-real` reprova em worktree (git abre `.git/worktrees/…`).
-
-Pendências da 30 (2026-11-09): mínimo de 12 caracteres da senha mestra só no app (decidir se vai a `ward_core::limites` e ao daemon, inclusive troca de senha V5.22); normalização Unicode (NFC) da senha mestra entre app e CLI — decidir; rótulo de força "boa" do design vs rótulos do gerador; `make app-ponte` não serve para primeiro uso (`dev/daemon.sh` exige cofre).
-
-Pendências da 22c (2026-11-09): lista do app com resumo repete URL/host; perto de 64 MiB de texto a lista passa de `MAX_QUADRO_RESPOSTA` e o daemon responde `interno` (decidir limite); log do `wardd` agora leva nome da entrada e campo em `revelar`/`copiar`/`totp` (D65 b; doc do `log.rs` atualizada); `Alvo::segredo_em` entrou no protocolo; V3.39 simula a extensão só por `argv[0]`. O `v3_33` ganhou margem (1500 ms + checagem relativa).
-
-Pendências da 45 (2026-11-09) — decisão do planner/usuário: restaurar exige cofre destravado + PIN atual + senha da versão (além de D17/V7.7); com o cofre principal corrompido ou senha atual esquecida não há restaurar pelo app — decidir se existe restaurar com o cofre travado e como a 47 pede o PIN. Também: pedidos de aprovação pendentes não são cancelados ao restaurar (26/36); a 46 deve abrir a pasta pelo fd como o `wardd` e não pode usar `link(2)` em vfat; nome do backup em UTC (a 47 mostra no fuso local).
-
-Pendências da 29b (2026-11-09) — canais novos ao planner: `gst-plugin-scanner` carrega `.so` de `~/.frei0r-1/lib`, `~/.ladspa`, `~/.libvisual/actor` (apagar o registry força; `FREI0R_PATH` fecha o frei0r, `GST_PLUGIN_LOADING_WHITELIST` fecha tudo mas o WebKit avisa appsink); `/dev/shm/cuda_injection_path_shm` e socket abstrato `@cuda-uvmfd-…`; `~/.nv/*`, `~/.mfx_trace`, `/dev/shm/GFX_MEDIA_TRACE` (família RA8); pasta de dados do WebKit `~/.local/share/local.ward.app/` (auditoria do M5 confere que nenhum valor revelado vai para lá); alinhar `unsound = "all"` no `deny.toml` da raiz.
-
-Pendências da 31 (2026-11-09): V5.8 parcial — o aviso `pedido_de_destrave` não traz entrada nem comando (o cartão mostra só a contagem); fechar exige campo no aviso (entrada + comando neutralizado por D51) em `ward-core`/`wardd`/app — decidir; "Agora não" só esconde (não há como o app negar o destrave; expira em 2 min); espera de D20 em dobro (tela + daemon, até 30+30 s) — UX; senha errada esvazia o campo (ajustar frame `3393`, como o `6373` da 35); variable própria para a largura 560 do `Painel de marca`; com 16 avisos de aprovação parados na fila, destrave novo é descartado (falha fechada) até a 36 consumir.
-
-Pendências da 22d (2026-11-09): relógio ilegível grava sem carimbo novo (entrada nova fica sem datas para sempre) — planner pode inverter para recusar; entrada antiga editada mostra só "Alterada em" (caso parcial fora do V5.34); datas seguem provisórias no escopo/PRD (D65 d).
-
-Pendências da 46 (2026-11-09): cópia externa só com o cofre destravado (UUID está na parte cifrada) e só com o pendrive já montado (o Ward não monta; montar exigiria polkit) — planner decide; modo da `ward-backup` no vfat não é conferido (vem das opções de montagem); btrfs (dispositivo anônimo) nunca recebe cópia; loops do sistema (snap) aparecem em `pendrives`; V7.4/V7.5 com vfat real montado ficam para o validador do M7 (receita no handoff).
-
-Pendências da 36 (2026-11-09): letras RTL fortes (hebraico/árabe) não são escapadas por D51 — decidir no escopo; fechar a janela nega todos os pendentes, inclusive os não vistos (falha segura; escopo fala em "o pedido"); protocolo não manda o prazo do pedido (app conta 120 s da chegada); texto do bloqueio do `CampoPin` difere do frame `16960`; V5.16 ponta a ponta e V5.28 (foco no COSMIC) ficam para o M5/usuário. Testes do `app/src-tauri` agora usam socket inexistente (`sem_daemon()`), independentes do `wardd` de teste no ar.
-
-Pendências da 27 (2026-11-09): dependência nova `ssh-key =0.7.0-rc.12` (versão rc; acompanhar a estável; auditoria do M4 revisa); só Ed25519 (RSA dá `entrega falhou`) — decidir se o escopo exige RSA; protocolo `Ssh` sem cwd nem ambiente (filho com ambiente fixo, cwd = home) — decidir; modo chave usa `IdentityFile=<id.pub do Ward>` + `IdentitiesOnly` (D13 diz `IdentityFile=none` só no modo senha) — alinhar D13; `emitir_token` emite para `servidor` bloqueado (token inútil); caminho do `known_hosts` não fixado no escopo; V4.27 sem `inotifywait` e sem bwrap com home em tmpfs; V4.35/V4.37 por `/proc/<pid>/cmdline`, não por strace; V3.15 só varre o 1º nível de `wardd/src/` (deveria percorrer subpastas); RA2 a confirmar com o usuário; `make teste-ataques-servicos`/`teste-home-real` não rodam em worktree (git abre `.git/worktrees/…`).
-
-Pendências da 38 (2026-11-09): frame `15242` diz "Trocar pede a senha mestra" no PIN, contrato e `wardd` pedem o PIN atual (corrigir FigCraft); máximo do tempo de trava: design 4 h, D45 1440 min — decidir; diálogos "Trocar senha mestra"/"Trocar PIN" sem frame; `trocar_senha` sem espera crescente de D20 na senha atual (só papel app) — decidir; mínimo de 12 e NFC continuam só no app; operação nova `configuracao` (só app) convive com `backup_externo` da 46.
-
-Pendências da 24a (2026-11-09): 1º `kill -SEGV` cai no tratador de pilha do Rust e só o 2º mata (sem core nos dois; V3.6 fala em um); nesta máquina `suid_dumpable=2` e `core_pattern` é pipe do apport — o que impede o core é `PR_SET_DUMPABLE=0` (levar à instalação, M9); sem `gdb` no host; nome de variável que começa com byte inválido sai vazio na mensagem; extensão divide as 64 vagas com o agente.
-
-Pendências da 39 (2026-11-09): menu da bandeja é acessível a qualquer processo do mesmo uid pelo barramento da sessão (só textos fixos e travar/mostrar/fechar; auditor do M5 confere); dependências novas só no app: `tray-icon 0.25.1`, `libappindicator 0.9.0`, `libappindicator-sys 0.9.0`, `libloading 0.7.4`; `configuracao` conta como uso no `wardd`, então a bandeja só lê o tempo de trava ao destravar/criar; ícone só até 32 px (falta export 64 px); `make teste-logs-app` falta na tabela do CLAUDE.md; bandeja e janela de aprovação no COSMIC ficam para o roteiro (`docs/mission/roteiro-usuario.md`).
-
-Pendências da 48 (2026-11-09): frames `16178`/`16334` mostram caminho de montagem e "última cópia", que o protocolo não traz — corrigir FigCraft ou criar operação de última cópia (só data e contagem); diálogo "Escolher pendrive" sem frame; app só liga com pendrive conectado agora (o `wardd` aceita qualquer UUID no formato); `neutralizar` não escapa `\` (cosmético).
-
-Pendências do scrutiny do M3, 2ª rodada (aprovado, 2026-11-09): `teste-socket-ataques` regrava `target/debug/wardd` (o mesmo do `dev-daemon`) — usar `--target-dir` próprio; vaga do app só com teste de unidade; `ganchos-teste` aceito (só dois ganchos, depende de `modo-teste`).
-
-Pendências da 28 (2026-11-09): salto não usa `ProxyJump` (o OpenSSH 9.6 roda o ProxyJump por `$SHELL -c` e o ssh do salto ignoraria `-o`, lendo `~/.ssh`); o daemon faz a ponte local em `127.0.0.1:0` aceitando só o grupo de processos da sessão — ajustar o texto de D13/D43; túnel só aceita o grupo de processos do `ward run` (contêiner `--network host`/`setsid` não conectam); cada conexão do túnel faz um login SSH novo; `ward run` de `servidor` com salto não abre a ponte.
-
-Auditoria de segurança do M3 (aprovada, 2026-11-09; `docs/mission/evidence/M3/seguranca/`): **alto** fora do M3 — token do "Conectar" vai no argv do terminal e do `ward ssh --token` (`app/nucleo/src/terminal.rs:127`, `crates/wardd/src/ssh.rs:355`), legível em `/proc/<pid>/cmdline` por qualquer processo do mesmo uid, que pode usá-lo primeiro e pular nível e aprovação (Fase 27a); **médio** — ambiente da CLI no `executar` (só `LD_*` sai; `PATH`/`BASH_ENV`/config de ferramentas mudam o comando aprovado e a janela não mostra), o auditor recomenda bloquear o M4 — decisão do usuário; **baixo** — recusa de `LD_PRELOAD` roda depois do `ld.so` carregar a biblioteca (V3.7 é defesa em profundidade; a unit do systemd garante ambiente limpo, M9).
-
-M3 aprovado (2026-11-09): scrutiny (2ª rodada), segurança e uso; V3.1–V3.41 marcados. Ressalvas do uso: Destravar com senha errada não mostra o botão desabilitado com contagem do frame `3393`; V4.1 do contrato ainda diz 19 entradas (o cofre tem 22, a CLI lista 21).
-
-Pendências da 40 (2026-11-09): papel extensão no host de desenvolvimento — sem grupos nem setgid o `ward-nm` de teste é sempre agente, então o QA de V6.2 (UI)/V6.7 no Chrome de teste precisa de uma exceção de `modo-teste` como D63 (pai Chrome conferido pelo `/proc`, sem egid) — decisão do planner na Fase 41; host não confere o id da extensão (o `allowed_origins` do manifesto confere; id fixo na 41/51); ramo do pai não-dumpable de D47 não implementado (falha fechada); daemon fora do ar vira `interno`; `--load-extension` não funciona no Chrome 137+ (usar `Extensions.loadUnpacked` pelo CDP).
-
-Pendências da 27a (2026-11-09): token por `socketpair` herdado (`--token-fd`); testado com `cosmic-term` e `xterm`; terminais que entregam o comando a um servidor já aberto (gnome-terminal) não repassam o fd e o `ward ssh` falha fechado; D3 do PRD e V5.24 do contrato ainda falam em `--token <t>` em argv — atualizar o texto.
-
-Pendências da 44 (2026-11-09): RA1 — processo do mesmo uid pode abrir `/proc/<chrome>/fd/3` e ler o perfil temporário durante a sessão; V6.15 diz "domínio não confere" e o código usa a mensagem de `OrigemDiferente`; TOTP só com `autocomplete="one-time-code"` (login em duas etapas cai em `LoginRecusado`); Playwright do Python fora do repositório (`PW_PYTHONPATH`); Chrome fora do `home-real.sh`; `SIMPLES` agora com 32.
-
-Pendências da 49 (2026-11-09): `window.print()` não conferido no app real (WebKitGTK deve abrir a impressão do GTK; validador do M7 confere, senão comando nativo); pastas da folha são as fixas da instalação; texto "Como restaurar" depende da decisão da Fase 47 (restaurar exige cofre destravado + PIN); barra "Fechar/Imprimir" sem frame no FigCraft; pendrive desconectado com o backup ligado não coberto pelo QA.
-
-Pendências da 50 (2026-11-09): `ward login` descrito pelo contrato — depois da 43, conferir texto do erro de domínio, se exige aba aberta e o que a CLI imprime, e tirar `login` de `PENDENTES` em `dev/testes/skill.py`; depois da 26a, conferir a lista de variáveis e o `PATH` fixo no texto da skill; regras `Bash` com `*` inicial e `//` absoluto só conferidas no Claude Code real no M10; `Read(~/.ssh/**)` vai além de V8.2 (o usuário pode trocar por `Read(~/.ssh/id_*)`); regras `Bash` são cinto de segurança, contornáveis.
-
-Pendências da 47 (2026-11-09): o frame `16512` não tem PIN e diz "O PIN não serve aqui", mas o `wardd` exige o PIN atual — app pede o PIN; ajustar o FigCraft; `16349` mostra tamanho e origem da versão que o protocolo não traz (item mostra "Cópia local"); "Último: hoje às 14:32" fora; restaurar com cofre travado/corrompido e cancelar aprovações pendentes ao restaurar (Pendências da 45) seguem abertos; ponta a ponta com o `wardd` real fica para o M7.
-
-Pendências da 26a (2026-11-09): lista final no handoff (PATH fixo; HOME/USER/LOGNAME do passwd; LANG/LC_*/TERM/COLORTERM/TZ/NO_COLOR conferidos); `PedidoDeAprovacao` ganhou `diretorio` e a janela mostra "Diretório de trabalho" — frames `Aprovação / *` (16701…17035) sem a caixa; D13/D60 do PRD ainda dizem "ambiente da CLI sem `LD_*`"; sugerida asserção V4.x (SEG) para a lista; risco que fica: o diretório da CLI decide o `.git/config` etc.; workers em paralelo precisam copiar `.dev/servicos/` do checkout principal.
-
-Pendências da 51 (2026-11-09): `EXTENSAO_ID`/`EXTENSAO_CRX` obrigatórios no `make install` (pacote real sai da 41); `make release` com o Tauri não rodou (disco); `wardd` de release carrega o texto `WARD_DEV_DBUS_SISTEMA` (pôr `caminho_de_teste` atrás de `cfg(modo-teste)` e tirar a exceção do `instalar.sh`); `sudo make install` de árvore gravável pelo usuário — pacote malicioso do mesmo uid pode trocar `Makefile`/`instalar.sh` antes do sudo (roteiro da 52: clone limpo e `git status` antes; decisão do usuário); D18 do PRD desatualizado (units do sistema, D46); política do Chrome: `ExtensionSettings` em arquivo próprio não se funde, e `update_url` `file://` em force-install no Linux não confirmado (V9.5; alternativa `external_crx`); sem `.desktop` do app; uninstall apaga os grupos mesmo se já existiam; teste `d34_pty` agora espera o `pty-pronto` do falso (corrida sob carga, corrigida no merge).
-
-Pendências da 41 (2026-11-09): **decisão nova para o planner registrar** — exceção de `modo-teste` `WARD_DEV_EXTENSAO=chrome` (modelo D63): o daemon de teste dá o papel extensão ao filho direto do `/opt/google/chrome/chrome` conferido pelo `/proc`, sem egid; resíduo só no daemon de teste (qualquer processo do usuário que abra o Chrome instalado com manifesto próprio ganha o papel; mesmo RA6 do release); `teste-sem-modo-teste` confere a ausência no release. Id fixo `nhkehjnmlgkebhmelajfpmpblepaichf`; chave privada em `.dev/extensao/chave.pem` do checkout principal (fora do git; perder muda o id); `ward-nm` só aceita esse id. `Sugestao` ganhou `ambiente` e `totp` (booleano). Estados sem frame: lista vazia, erro e host ausente. Code Cache do Chrome casou padrão de `.dev/variacoes.txt` (provável PIN só dígitos — avaliar padrão). Strings JS não se zeram (só os bytes da senha). Testes de tempo `d34_pty`/`v3_33` instáveis sob carga (d34 corrigido; v3_33 ainda com margem curta).
-
-Pendências da 42 (2026-11-09): **decisão nova para o planner registrar** — a extensão ganhou content script fixo `envio.js` (todo http/https, só quadro principal, só envio com gesto real do usuário) e service worker `servico.js` (remetente conferido pelo `sender` do Chrome; senha só na memória dele, ≤ 3 min; nunca vai ao popup nem volta à página); `montar.py` recusa o que fugir disso. `salvar_login` grava só pelo papel extensão, só entrada nova, nível "com aprovação". Resíduo: `requestSubmit()` da página durante clique do usuário oferece salvar credenciais escolhidas pela página para a própria origem (confirmação do usuário + "com aprovação"; proposta: aceitar e registrar). V6.8 conflita com D50 (lista do agente não leva nível) — reescrever o texto do V6.8. FigCraft: nome de exemplo do node 17430 inválido (`clientex-stage-painel`), Grupo é `Select` no design mas a extensão usa texto (sem inventário), faltam frames de erro no campo e nota de erro geral. Login enviado com o cofre travado é descartado (decidir). Não oferece atualizar senha de login existente. `CLAUDE.md`: linha do `make teste-extensao` deve citar a Fase 42 e o `ward` de teste.
-
-Pendências da 53 (2026-11-09): guia não testado na máquina (menus do KeePassXC e `gnome-keyring-daemon --start --components=secrets` com o override ativo vêm da documentação). Ordem do V10.1 (chaveiro antes de desfazer a montagem) obriga o passo 4 a ligar os segredos do gnome-keyring só na sessão e o 5 a tornar permanente — alternativa: passo 5 antes de gravar a chave. Skill `cofre` para de funcionar no passo 4 (escopo diz que segue até o KeePassXC sair); o guia manda fazer 4–7 na mesma sessão. Atributos do "Chrome Safe Storage" são exemplo. Sem `.desktop` do app (pendência da 51): passo 1 não diz como abrir. V10.4 é do usuário.
-
-Pendências da 52 (2026-11-09): Depends além do `sshpass`: `openssh-client`, `systemd`, `libwebkit2gtk-4.1-0` (confirmar). `ward-app`/`ward-nm` vão 0755 no pacote e o 2755 com o grupo entra por `dpkg-statoverride` (`preinst` registra, `postinst` aplica). Risco da 51 continua: build como usuário, instalação como root (mesmo uid pode trocar o `.deb` antes do `sudo`; roteiro mitiga com clone limpo e cópia para `/root/ward`; saída: build num contêiner). `file://` no `update_url` com force-install não confirmado no Chrome do Linux (V9.5; alternativa `external_crx`). Sem `conffiles` de propósito. `/usr/local` num `.deb` contra a Debian Policy (R4, D18; D18 do PRD desatualizado). `dpkg -r` apaga grupos mesmo preexistentes. `make extensao-crx` com a chave real não rodou. Roteiro real (V9.5, V9.7, V9.8) é do usuário. App sem `.desktop`.
-
-Pendências da 43 (2026-11-09): **decisão nova para o planner registrar (D-novo em `docs/escopo.md`)** — a extensão pede `host_permissions` exatamente `https://*/*`, `http://localhost/*`, `http://127.0.0.1/*` (sem clique não há `activeTab`; o Chrome recusa a injeção); preço: a extensão pode injetar em qualquer página https sem clique; `montar.py` só aceita essa lista. Service worker mantém porta de native messaging e pergunta `aguardar_login` em laço (daemon segura até 25 s); operações `aguardar_login`/`preencher_login`/`resultado_login` só do papel extensão. Gerenciador de senhas do Chrome pode oferecer guardar a senha enviada pelo `ward login` (S1/S2) — sugestão: `PasswordManagerEnabled=false` na política da Fase 51. 307 da origem certa para outra depois do envio não é barrado (sem `webRequest`). Limpar campos após o envio pode quebrar SPA (QA). Janela de aprovação real do V6.11 e senha recusada pelo WordPress real ficam para o QA do M6. Gancho `com_prazos_login` entrou na lista do V3.15.
-
-## Milestone 3 — Daemon e protocolo
-Contrato: V3.1–V3.41
-
-- [x] Fase 20 — (Depende da Fase 19c; não depende da 19d.) Protocolo em `ward-core`: quadros com limite de tamanho, mensagens
-  versionadas, papéis agente/app/extensão (D5) e a tabela operação × papel, sem
-  operação que devolva segredo ao papel agente; testes de fuzz do decodificador; limite
-  de quadro do cliente comum (V3.4) e envio de anexos de até 256 KiB somados pelo papel
-  app (D29), com os números de `ward_core::limites` (D32). As respostas de erro do
-  destravar e das gravações trazem, sem valor, os casos de D39 que a Fase 22 usa
-  (`Retrocesso`: "o cofre no disco é mais antigo que o último aberto"; "o arquivo do
-  cofre mudou fora do Ward"; `GeracaoEsgotada`). Nenhuma mensagem carrega a geração
-  para o papel agente nem aceita geração vinda do cliente.
-  V3.3, V3.4, V3.15.
-- [x] Fase 21 — `ward-plataforma`: diretório do socket 0700, `SO_PEERCRED`, identificação
-  do processo (exe instalado, dono root, `TracerPid`, `LD_*`, pai Chrome), cadeia de
-  processos para exibir, endurecimento do processo (`PR_SET_DUMPABLE=0`,
-  `RLIMIT_CORE=0`, recusa de `LD_*` e de depurador, `mlock` dos buffers de segredo,
-  D14). V3.1, V3.2, V3.5–V3.7.
-- [x] Fase 21b — (Liberada: D46 e D47 confirmadas pelo usuário em 2026-11-08; D48 no
-  ramo de D47; D49 sem mudança.) Pode rodar ao lado da 19e. Arquivos:
-  `crates/ward-plataforma/` (código e testes), `app/nucleo/src/daemon.rs` e os testes
-  dele, o contêiner de teste e o alvo dele no `Makefile`, e a linha do alvo no
-  `CLAUDE.md`; não toca em `ward-core`.
-  - App (handoff 29): `DaemonSocket` em `app/nucleo/src/daemon.rs` procura hoje o
-    socket em `/run/user/<uid>/ward/wardd.sock`. Passa a usar
-    `/run/ward/<uid>/wardd.sock` e a mesma conferência do `conferir_servidor` (toda
-    pasta do caminho do root, sem escrita para grupo e outros, sem link; socket do
-    próprio uid e 0600; par com uid 0 no `SO_PEERCRED`), antes de mandar qualquer byte;
-    o diretório `ward-teste/` e a exceção do uid 0 ficam só no `modo-teste`. Os
-    ataques que já existem em `daemon.rs` continuam e ganham o do servidor falso do
-    mesmo uid (V3.23). Basta `cargo test` do `app/nucleo`; o `make app-check` exige
-    `libwebkit2gtk-4.1-dev` (R32).
-  `ward-plataforma`, ajustes da Fase 21:
-  - D46: `escutar_de_listen_fds()` (aceita o fd do systemd e confere que é socket Unix
-    em escuta no caminho esperado); `conferir_servidor` passa a exigir pasta do root e
-    par de uid 0, com a exceção só no `modo-teste`;
-  - D47: papel pelo egid do `SO_PEERCRED` (grupos `ward-app`/`ward-nm` vindos da
-    `Instalacao`), `PPid` do app igual ao `systemd --user` ou ao daemon, recusa com
-    `ptrace_scope` 0 ou `suid_dumpable` 1; a leitura de `exe`/`environ`/`maps` fica só
-    para o pai Chrome e a cadeia exibida;
-  - D48: lista insegura da glibc no `conferir_ambiente_proprio`.
-  Testes em contêiner (`ubuntu:24.04`, root só dentro dele). V3.5 (forma de D47),
-  V3.23–V3.25.
-- [x] Fase 22 — (Depende das Fases 19e e 21b; não começa antes delas.) `wardd`: estado travado/destravado, destravar com espera crescente
-  (D20), travar com zeroização, PIN (confere pelo hash da seção de configuração do
-  corpo v3 e pela função da Fase 19b, D30; 5 erros travam), mudar nível só do
-  papel app com PIN, `lista` sem bloqueadas, logs sem segredo; lê e grava o corpo pela
-  Fase 15a (D26) e só por `gravar_entradas` (D27, D44), com `limpar_temporarios` ao abrir.
-  API do núcleo depois da 19c (handoff 19c):
-  - abre por `corpo::abrir_entradas_desde(arquivo, senha, geracao_minima,
-    geracao_queimada)` (API da 19e, D53), com `vista` e `queimada` lidas do arquivo de
-    estado; `ErroAbrir::Retrocesso` mantém travado e mostra o aviso de D39; depois de
-    abrir, sobe `vista` para a geração lida, se for maior;
-  - grava por `gravar_entradas(destino, &mut cofre, entradas)`: o daemon guarda o
-    `CofreAberto` destravado como `&mut` (um dono só, sem cópia). **Antes** de chamar,
-    grava no estado `queimada` = `cofre.geracao()` + 1 (atômico, com fsync), e só
-    então grava o cofre, cujo rename acontece dentro de `gravar_entradas`; se a escrita
-    do estado falhar, o cofre não é gravado. O núcleo queima a geração ao selar, então
-    em erro o `CofreAberto` já subiu e a próxima gravação usa outro número; depois da
-    gravação que deu certo, `vista` = `cofre.geracao()` (D53). `GeracaoEsgotada`
-    recusa a operação sem tocar no disco, com mensagem sem valor;
-  - troca a senha mestra por `gravacao::trocar_senha(destino, atual, nova,
-    geracao_minima, geracao_queimada)`, com o mesmo registro de `queimada` antes; trata
-    `ErroGravacao::Retrocesso` igual à abertura, e um erro depois de selar trava o
-    cofre (D53); `formato::trocar_senha` não sela e não é chamada direto pelo daemon;
-  - `gravar_cofre`, `gravar` e `CofreAberto::selar` são `pub(crate)` e ficam fora do
-    daemon.
-  Contra rollback (D39, D53): arquivo de estado com `vista` e `queimada`, abertura com
-  `geracao_minima`, recusa sem estado com cofre existente, conferência de `dev`/inode/
-  `mtime`/tamanho por `fstat` antes de gravar ou reabrir (mudou → não grava, trava e
-  avisa). RA4 (troca conjunta de cofre e estado com o daemon parado) está fora do modelo
-  de ameaça por decisão do usuário (2026-11-08) e não ganha trabalho.
-  Notas das Fases 20 e 21:
-  - na troca de senha, `ErroGravacao::Formato` de `trocar_senha` responde
-    `senha_incorreta`; em `gravar_entradas` segue `falha_ao_gravar` (D52);
-  - a `lista` do papel agente sai sem o nível; o app continua recebendo (D50); entrada
-    criada nasce "com aprovação", e criar com outro nível pede PIN (D50);
-    `remover_entrada` e `tempo_trava` sem PIN, só do papel app (D50);
-  - `main`: `iniciar_endurecido()` antes de tudo (V3.7); socket por `LISTEN_FDS` quando
-    houver (D46) ou, só no daemon de teste, pelo diretório de teste; a cada conexão,
-    `conferir_conexao` com log da recusa e papel pela classificação vigente
-    (egid de D47, da Fase 21b; `ClassePar` da Fase 21 fica para o pai Chrome);
-  - V3.2 por `make teste-docker-uid` (D49): contêiner `ubuntu:24.04`, `wardd` de teste
-    como uid 1000 via `setpriv`, clientes uid 4242 sem e com `CAP_DAC_OVERRIDE`
-    ambiente e uid 0, e um cliente do uid 1000 no fim; nada do `/run/user` do host é
-    montado; o alvo fica fora do `make check`.
-  Notas da 21b (D57, D60):
-  - `make dev-daemon` sobe o daemon de teste com `env -i` e lista fixa (`HOME`, `PATH`,
-    `XDG_RUNTIME_DIR`, `LANG`, mais as do `modo-teste`): `TMPDIR` está na lista
-    insegura da glibc e o `wardd` recusaria subir (V3.30);
-  - o papel vem de `ProcessoPar::classificar` sem depender do ramo do `systemd --user`,
-    que a Fase 29a tira (D57; a assinatura não muda);
-  - os testes do daemon não fixam o número de entradas do cofre de teste (21 hoje, 22
-    depois da Fase 22a): contam pela fixture;
-  - o daemon não lança processo nesta fase; quando lançar (Fases 23 e 26), nunca passa
-    o próprio ambiente (`LISTEN_*`).
-  V3.2, V3.8–V3.13, V3.17, V3.20, V3.22, V3.26–V3.28, V3.30.
-- [x] Fase 22a — (Depende da 22: as duas mexem no `Makefile` e nas contagens do cofre de
-  teste.) Fixture com caracteres especiais e Go com `ensure_ascii` (D58, D59).
-  Arquivos: `dev/fixtures/entradas.json`, `crates/ward-core/examples/dev-cofre/`,
-  `crates/ward-core/src/mascara.rs` e testes, `dev/variacoes.py` e testes,
-  `dev/testes/dev-cofre.sh`, allowlist do gitleaks, `Makefile` (só textos de ajuda) e
-  as contagens nos testes que existirem.
-  - entrada `delta-api-simbolos` de D59 no cofre de teste (22 entradas);
-  - variação combinada Go + `ensure_ascii` de D58 na máscara e no oráculo, com o teste
-    cruzado e o V2.36/V2.43 refeitos pela função de custo de D29 (se uma entrada de
-    D15 passar a ser recusada, a fase para e devolve ao planner);
-  - texto de ajuda do `dev-variacoes` no `Makefile` atualizado para a tabela única de
-    D54 (vem da 19d; o da linha no `CLAUDE.md` já foi feito na 19e).
-  V3.29 (e V2.29/V2.30 com 22 entradas).
-  - **Reauditoria da 19e (D61, decidida em 2026-11-09):** na máscara e no oráculo, com
-    teste cruzado e o mesmo orçamento: valores JSON na linha (par `"chave": "string"`
-    em qualquer posição de linha de texto, e no segredo de uma linha que começa por `{`
-    ou `[`, decodificado, 6+ → valor de linha); YAML/dotenv com comentário no fim,
-    chave YAML com espaço ou `/` e `''` do YAML; campos de tab de linha que não é UTF-8
-    só pelo literal e percent. `repr()`/`util.inspect`, `iconv`, array JSON e flow do
-    YAML ficam em RA3 (não implementar). Os repros estão em
-    `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/ataque/src/bin/contorno19e.rs`
-    (só leitura; os testes da fase são próprios e com valores falsos). Se uma entrada de
-    D15 passar a ser recusada pelo orçamento, a fase para e devolve ao planner.
-    V3.31, V3.32.
-  `make teste-dev-cofre` falha em master até a 22a (tabela já pede `delta-api-simbolos`).
-- [x] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
-  testes (D8): uma vez, 1 hora (D2), sempre, expirar em 2 min, fechar nega, nível
-  combinado (D19), aprovação indisponível (D21); espera de até 2 min pelo destrave
-  (D16). O texto do pedido (`comando`, `cadeia`) vai exato para o app, e a função que o
-  formata para exibir, no `ward-core`, neutraliza controle e bidi por escape visível
-  (D51), com testes. Operação `abrir_app` (D57): sem segredo, de qualquer papel, uma
-  instância por vez, que chama o lançador da Fase 29a; o motor abre o app por ela
-  quando precisa da janela, e sem sessão Wayland válida responde "aprovação
-  indisponível" (D21). Se a 29a ainda não tiver fechado, a operação entra com o
-  lançador como dependência e a fase espera. V3.14–V3.16, V3.18.
-  Nota do planner (D63, 2026-11-09), para a fase em andamento:
-  - o lançador guarda o pidfd do processo que abriu; o papel app passa a exigir egid
-    `ward-app` **e** pid igual ao do pidfd, vivo, **e** `PPid` = daemon (qualquer outro
-    filho do daemon fica agente). A classificação fica num ponto só, para a 23a
-    acrescentar a exceção do `modo-teste`; **não** faça a exceção de teste aqui;
-  - a resposta de `estado` traz o papel (`agente`/`app`/`extensao`), sem outro dado;
-  - o log do daemon registra o código de saída (ou sinal) do app lançado, só o número.
-  V3.36 (a parte do classificador), V3.38 (a parte do protocolo e do log).
-- [x] Fase 23a — (Depende da 23.) App de teste com o papel app (D63). Arquivos:
-  `crates/wardd` (config e classificação, só atrás de `modo-teste`),
-  `crates/ward-plataforma` (`lancar_para_teste`: ambiente fixo mínimo para a ponte,
-  saída em `.dev/logs/<binário>.log` 0600), `app/nucleo` e `crates/ward-ponte-teste`
-  (conferir o papel na primeira resposta e sair sem `app`), `dev/daemon.sh`, `Makefile`
-  (`dev-daemon` com `WARD_DEV_APP`, `app-ponte` pelo `abrir_app`) e as linhas no
-  `CLAUDE.md`.
-  - no `modo-teste`, o papel app vale para o pid do lançador sem exigir o egid; o
-    `abrir_app` lança só o `WARD_DEV_APP` (absoluto, arquivo regular do uid, sem link,
-    dentro do repositório), nunca algo vindo do pedido;
-  - teste sem a feature (par sem egid aberto pelo lançador fica agente), conferência de
-    que nenhum membro do workspace liga `wardd/modo-teste` ou
-    `ward-plataforma/modo-teste` em dependência normal (`cargo tree -e features`), e
-    `strings` do release sem `WARD_DEV_APP`;
-  - ataques do V3.37 (cliente Python, ponte à mão, cópia, app fora do lançador,
-    `abrir_app` com caminho/ambiente no pedido).
-  - transporte do app (D65 a), em `app/nucleo/src/daemon.rs` e na ponte:
-    `DaemonSocket::trocar` por `escrever_quadro`/`ler_quadro` na conexão única de D47;
-    thread leitora única, um pedido por vez sob mutex, avisos (`pedido_de_aprovacao`,
-    `pedido_de_destrave`) numa fila limitada a 16 que a 31 e a 36 consomem; resposta
-    sem pedido, quadro acima do limite ou tipo fora do papel app fecham a conexão;
-    prazo de 130 s; testes com daemon falso que intercala avisos. Sem evento do Tauri
-    nesta fase.
-  V3.36, V3.37, V3.38, V5.33.
-- [x] Fase 24 — Trava automática: `Lock`/`LockedHint` e `PrepareForSleep` do logind,
-  4 h sem uso com relógio injetado, lidas do tempo de trava da configuração do cofre
-  (D30); units de teste `wardd@.socket`/`wardd@.service` do sistema (D46), com
-  `LimitCORE=0` e **sem** `NoNewPrivileges=`, `RestrictSUIDSGID=`,
-  `MemoryDenyWriteExecute=` nem opção que implique `no_new_privs` com `User=` (D57:
-  senão o setgid do app não vale). V3.19, V3.21.
-  Nota do planner (D62, 2026-11-09), para a fase em andamento: as units de teste levam
-  `LimitMEMLOCK=infinity` (o `mlockall` entra na 22b e, com limite, o Argon2 falharia).
-  A trava automática não mexe no contador de espera do D20, que a 22b separa por papel.
-- [x] Fase 22b — (Depende das 23 e 24: as três mexem em `crates/wardd`.) Problemas do
-  handoff 22 (D62). Arquivos: `crates/wardd`, `crates/ward-plataforma`
-  (`iniciar_endurecido`), `crates/ward-core` (`gravar_entradas` devolve a identidade do
-  fd; criação com geração inicial, se faltar) e os testes.
-  - espera do D20 com contador por papel; o do agente no arquivo de estado (linha nova,
-    formato antigo lido como 0, fsync antes da resposta de erro), aplicado ao subir;
-  - `mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)` no `iniciar_endurecido`: release
-    falha fechada sem `RLIMIT_MEMLOCK` infinito; `modo-teste` só avisa;
-  - `criar_cofre` com estado velho nasce na geração `queimada` + 1;
-  - identidade do cofre gravado pelo `fstat` do temporário, sem `stat` depois do rename;
-  - testes de ataque: `kill -9` entre as senhas erradas, agente atrasando o app, cópia
-    antiga depois do `criar_cofre`, troca logo depois do rename, `VmLck` no contêiner.
-  V3.33–V3.35.
-- [x] Fase 22c — (Depende da 22b e da 23a: mexe em `crates/wardd`, no protocolo e no
-  `app/nucleo`.) Operações de valor do app e lista do app (D65 b, c). Arquivos:
-  `crates/ward-core/src/protocolo*` (só `ItemLista`/`ResumoItem`), `crates/wardd`,
-  `app/nucleo` (`cliente.rs`, `credenciais.rs`, `daemon_falso.rs`) e os testes.
-  - `wardd` atende `revelar`, `copiar` e `totp` do papel app: cofre destravado, sem PIN,
-    sem aprovação e sem olhar o nível (D4), `Segredo` em `Zeroizing`, log sem valor;
-    agente e extensão seguem "não autorizado";
-  - `ItemLista.resumo`, `Some` só para o papel app, com a recusa nos dois sentidos de
-    D50; o app monta a 2ª linha e a busca pela `lista`, sem um `detalhe` por entrada;
-  - testes de ataque: cliente Python agente pedindo `revelar`/`copiar`/`totp`
-    (`acme-pg-dev` e `gama-bloqueada`), quadro forjado com `resumo` no papel agente,
-    log contra `.dev/variacoes.txt`. V3.39, V3.40.
-- [x] Fase 22d — (Depende da 22c e da 22a.) Datas de criação e alteração (D65 d,
-  provisória). Arquivos: `crates/ward-core` (`entrada`, `corpo` v4, `protocolo` só no
-  `DetalheEntrada` e no rascunho), `crates/wardd` (carimbo pelo relógio injetado),
-  `crates/ward-core/examples/dev-cofre/`, `app/nucleo/src/credenciais.rs`,
-  `app/src/telas/Credenciais.svelte` (só o rodapé) e os testes.
-  - corpo v4 com `criada_em`/`alterada_em`; v3 recusada; `make dev-cofre` regrava o
-    cofre de teste e o V2.29 é refeito;
-  - nova → as duas; edição e `mudar_nivel` → `alterada_em`; data no rascunho recusada;
-  - testes de formato de V2 (byte alterado, gravação morta) repetidos com o v4.
-  V3.41, V5.34.
-
-- [x] Fase 24a — Correções do scrutiny do M3 (2026-11-09; `docs/mission/evidence/M3/`).
-  - V3.25 (reprovada): `nome_para_mensagem` (`crates/ward-plataforma/src/endurecimento.rs`)
-    corta no primeiro byte fora de `[A-Za-z0-9_]` e no 64º, sem `?` nem `…`; teste
-    atualizado.
-  - Conexão do papel app (assinante de avisos) não é despejada pelo limite de 64
-    conexões (`crates/wardd/src/servidor.rs` `reservar`): vaga reservada ao app.
-  - V3.3/V3.4 no repositório: levar `docs/mission/evidence/M3/{ataque,matriz}.py` para
-    `dev/testes/` (10 000 conexões caladas; matriz operação × entrada × campo pelo
-    socket, sem padrão de `.dev/variacoes.txt`) e ligar num alvo `make`.
-  - V3.6 no binário: teste que sobe o `wardd` e confere `/proc/<pid>/{mem,environ}`,
-    `limits` (core 0) e `PTRACE` negado.
-  - `com_gancho_depois_de_gravar` e `com_programas_ssh` fora do release (`#[cfg(test)]` ou
-    feature só de teste aceita pelo V3.15); V3.15 percorre subpastas de `wardd/src/`.
-  - Alvos que usam `.dev/` com nomes fixos (`teste-dev-cofre`) com trava (`flock`) ou
-    nomes únicos por execução.
-  - `plan.md`: linha duplicada "`ward-plataforma`, ajustes da Fase 21:".
-
-## Milestone 4 — CLI e integração Claude (run/ssh)
-Contrato: V4.1–V4.38
-
-- [x] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
-  depois de conferir que o servidor é o `wardd` instalado), mensagens em português.
-  A conferência é a de D46 (pasta do root e par de uid 0). V4.1, V4.2, V4.18, V4.22.
-  Nota do planner (D62, D63, 2026-11-09), para a fase em andamento: a CLI é papel
-  agente; o prazo de leitura do `ward destravar` tem de passar dos 30 s da espera de
-  D20 mais o Argon2 (a espera do agente passa a sobreviver ao reinício do daemon, Fase
-  22b). A resposta de `estado` ganha o campo do papel (Fase 23); a CLI não depende dele
-  e não deve recusar um campo a mais vindo da 23.
-- [x] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
-  `LD_*` (D13), entrega de D10, anexos em `<rt>tmp/` 0600 com limpeza em toda saída e
-  na partida, saída mascarada, código de saída, espera do destrave. Pesquisa e
-  registro de RA1 (environ e anexos lidos por outro processo do mesmo uid), com teste
-  do ataque. O ambiente do filho vem só do da CLI, nunca do daemon (sem `LISTEN_*`,
-  D60). A CLI mede argv + ambiente antes de mandar e passa de 750 KiB com
-  mensagem clara (D52). Teste de ataque de D63 no contêiner: `ward run <livre> --
-  /usr/local/bin/ward-app` (e `ward-nm`) fica agente. V4.3–V4.17, V4.19–V4.21, V4.36,
-  V4.38.
-- [x] Fase 27 — `ward ssh` com senha e com chave: `sshpass -e`, agente temporário só do
-  `ssh` filho (D12), `-F /dev/null` e `known_hosts` próprio (D13), pty interativo,
-  token do "Conectar" ainda sem app (token inválido vale o nível, D3); no pty, o fim
-  segurado pela máscara é solto como `••••` após 300 ms sem saída nova, guardando o
-  estado do casamento (D34). O usuário vai só por `-l <usuário>`, o host depois de
-  `--`, por `execve` sem shell, nunca `usuário@host` nem `-o User=` (D43); como o
-  usuário pode ter `@` (`deploy@cliente.com.br`), a fase tem teste de ataque com um
-  usuário com `@` conferindo o argv. Confirmar
-  RA2 com o usuário antes de fechar o milestone. No `sftp` e no `scp`, onde `-l` é
-  limite de banda, o usuário vai como `-o` + `User=<usuário>`, com `-F /dev/null` e o
-  host depois de `--` (D56), com teste de argv por `strace` e login real no SSH de
-  teste.
-  V4.14, V4.23, V4.24, V4.26–V4.28, V4.31, V4.32, V4.34, V4.35, V4.37.
-- [x] Fase 28 — Salto (`ProxyJump`) e túnel de `banco` por `servidor`, com nível
-  combinado (D19); logs da suíte do M4 sem segredo. 2ª parte do V4.2 (D65 e) no
-  contêiner de `make teste-docker-plataforma`: CLI sem `modo-teste`, `wardd` copiado e
-  falso não-dumpable do uid 1000, `bind` em `/run/ward/1000/` recusado.
-  V4.2, V4.25, V4.27, V4.29, V4.30, V4.33.
-
-- [x] Fase 27a — Correção do achado alto da auditoria do M3: o token do "Conectar" nunca
-  vai em argv. O app entrega o token ao `ward ssh` por um fd herdado (ou outro canal que
-  nenhum outro processo do mesmo uid leia), o `x-terminal-emulator` não o recebe em
-  argv/ambiente, e o `ward ssh` lê o token desse canal; `--token` em argv é recusado.
-  Teste de ataque: leitor de `/proc/*/cmdline` e `/proc/*/environ` em laço durante o
-  "Conectar" não acha o token. V5.24, S9, S10.
-- [x] Fase 26a — Ambiente do `executar` por lista fixa (decisão do usuário, achado médio
-  da auditoria do M3): o daemon monta o ambiente do comando do zero — `PATH` fixo
-  `/usr/local/bin:/usr/bin:/bin`, só variáveis de uma lista permitida (`HOME`, `USER`,
-  `LOGNAME`, `LANG`, `LC_*`, `TERM`, `TZ`, `COLORTERM`, `NO_COLOR` e as que a entrega da
-  credencial define) e nada da CLI fora dela (`BASH_ENV`, `ENV`, `NODE_OPTIONS`,
-  `PYTHONPATH`, `PERL5LIB`, `GIT_*`, `SSH_*`, `PG*` não entregues, `LD_*` etc. somem);
-  o comando com caminho relativo é resolvido pelo `PATH` fixo (nunca pelo da CLI) e o
-  diretório de trabalho continua o da CLI, mostrado na janela de aprovação. Mesmo
-  tratamento no `ward ssh` e no salto/túnel. Testes de ataque: `PATH` com pasta do
-  atacante na frente, `BASH_ENV`, `NODE_OPTIONS=--require`, `GIT_SSH_COMMAND`,
-  `PYTHONSTARTUP`, `PGSERVICEFILE`. Atualizar `teste-cli` e o roteiro da skill (comando
-  fora do `PATH` fixo vai com caminho absoluto). V4.3–V4.8, V4.36.
-- [x] Fase 28b — Correções do scrutiny do M4 (1ª reprovação, 2026-11-09): teste do V4.27
-  com home em tmpfs (bwrap) e `strace`/`inotifywait` provando que o `ward ssh` não abre
-  nada do home do passwd; teste cronometrado do V4.21 (travado sem destravar sai ≠ 0 em
-  120 s ± 2 s, `--ignored` ou no `teste-cli`); `required-features = ["modo-teste"]` nos
-  testes de `crates/wardd/tests/` que dependem da feature; texto do contrato: V4.1 (21
-  entradas visíveis) e V4.9 (`bash -c` ou `printf | sftp`); registrar no PRD as
-  divergências do salto sem `ProxyJump` (D13/D43), agente SSH só Ed25519 e
-  `--token-fd` no lugar de `--token` (D3). V4.13 (RA1): risco aceito pelo usuário
-  (2026-11-09), registrado no escopo; registrar também em RA1 do PRD.
-  V4.1, V4.9, V4.21, V4.27.
-- [x] Fase 28c — Pendências da 28b: a varredura do V1.5 (`dev/testes/ataques-fundacao.sh`)
-  acusa pastas do usuário citadas em `dev/conteiner-deb/dentro.sh`,
-  `dev/conteiner-units/dentro.sh`, `dev/conteiner-install/dentro.sh`,
-  `dev/testes/migracao.py`, `dev/testes/skill.py`, `dev/testes/install.sh` e no `Makefile`
-  (linhas ~395 e ~444): montar os nomes por partes ou mudar a regra com justificativa,
-  e `make teste-ataques-fundacao` volta a passar; texto do V4.32 com `--token-fd` no
-  lugar de `--token`; linhas do `CLAUDE.md` para `make teste-ssh-home` e o V4.21
-  cronometrado no `teste-cli`. V1.5, V4.32.
-- [x] Fase 28d — Scrutiny do M4 reprovou pela 2ª vez (2026-11-09) só por defeito do
-  script: `copiar_workspace` de `dev/testes/ataques-fundacao.sh` copia só `crates/`, mas
-  `ward-ponte-teste` depende de `app/nucleo`; a cópia quebra antes dos ataques (falsa
-  falha do V1.2 e aborta antes do V1.5). Copiar também o que o workspace referencia
-  (`app/` sem `node_modules`/`dist`) e `make teste-ataques-fundacao` inteiro até "Todos
-  os ataques foram barrados". Decisão do usuário: com isso passando, o scrutiny do M4
-  conta como aprovado, sem 3ª rodada. V1.2, V1.5.
-Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crítico e 1 alto.
-
-- [x] Fase 28e — Achados da auditoria do M4. **Crítico:** a máscara (`Fluxo` em
-  `ward-core/src/mascara.rs`, `PAUSA_INTERATIVA` em `wardd/src/execucao.rs`) vira oráculo
-  de prefixo — no pty o prefixo parado sai `••••` e o resto sai em claro; sem pty o
-  prefixo segurado atrasa a saída; o agente recuperou os 18 bytes da senha de
-  `acme-ssh-senha-stage` só pelo `ward ssh` (53 consultas, 314 s). Correção conforme
-  decisão do usuário (2026-11-09: "nunca segurar" — a máscara cobre só o segredo
-  inteiro num mesmo bloco de saída; nenhum prefixo é segurado nem atrasado, com ou sem
-  pty; o V4.34 sai do contrato), registrar no PRD (D34) e no contrato, e o
-  oráculo da auditoria (pty e por tempo) vira teste de ataque que tem de falhar.
-  **Alto:** no sftp, `par_permitido` (`wardd/src/agente_ssh.rs`) aceita qualquer filho do
-  `sftp`; o `!cmd` do sftp usa o agente temporário (`ssh-add -L`, login com a chave em
-  host/porta à escolha) — prender o agente ao primeiro par aceito (pid exato do `ssh`
-  que o `sftp` cria) e recusar os demais; teste com o `!exec` da auditoria. **Médio:**
-  filhos sem pty ficam na sessão do `wardd` e outro `ward run` entra no grupo pelo
-  `setpgid` e usa a ponte do túnel/salto alheia — `setsid()` no filho e conferir o par
-  por pid exato na ponte; teste com o `entrar_grupo.py`. **Baixo:** `known_hosts` do Ward
-  com pasta 0700 e arquivo 0600 do daemon, recusa se frouxo. V4.14, V4.26, V4.29, V4.34,
-  V4.28. Scripts da auditoria: scratchpad `bin/` (`oraculo_pty.py`, `tempo.py`,
-  `sftp_cmds.txt`, `entrar_grupo.py`).
-  Pendências da 28e: S4 do `docs/escopo.md` ainda fala de valor "quebrado entre dois
-  pedaços" (alinhar com D34 revisto); notas do planner em V2.18, V2.24 e V4.17; linha do
-  `teste-cli` no `CLAUDE.md` cita o V4.34; na máquina real, `~/.local/share/ward/known_hosts`
-  antigo com 0644 é recusado (o usuário faz `chmod 600`/`700`); descendente que sai da
-  sessão não usa o túnel; segredo impresso byte a byte mostra o começo em claro.
-  28d: 160 `ok` e nenhuma falha até `config_do_cargo_home`; faltaram `ambiente_do_make` e
-  `git_sem_config_do_usuario` por disco — rodar `make teste-ataques-fundacao` sozinho com
-  ~12 GB livres.
-- [x] Fase 28f — A 28d pôs as cópias do `teste-ataques-fundacao` em `.dev/ataques-fundacao.*`,
-  e o `dev/origens.py` acha os `.cargo/config*` plantados nelas: enquanto o teste roda,
-  todo `make` do checkout falha em `origens`, e o próprio V1.2 (`make check` na raiz)
-  sai 2 por isso, sem citar `vazamento.txt` (falsa falha). Pôr as cópias fora do
-  repositório numa pasta do usuário não gravável por outros (V3.37 recusa `/tmp`), ou
-  fazer o `origens.py` ignorar `.dev/` com justificativa (cargo não lê config de
-  subpastas). Critério: `make teste-ataques-fundacao` inteiro até "Todos os ataques foram
-  barrados" e `make origens` limpo durante a rodada. V1.2, V1.5.
-  Feita: cópias em `~/.cache/ward-ataques-fundacao.*` (0700, cadeia conferida); `make
-  teste-ataques-fundacao` 167 `ok`, 0 `FALHA`; `origens` da raiz limpo durante a rodada.
-  Com isso a 28d fecha e, pela decisão do usuário, o scrutiny do M4 conta como aprovado.
-  Reauditoria de segurança do M4 (2026-11-09): **aprovada**. Os quatro ataques da 1ª
-  auditoria falham agora (oráculo por pty e por tempo, `!cmd` do sftp, grupo do filho,
-  `known_hosts` frouxo). Ficaram 1 médio e 2 baixos, levados para a Fase 28g.
-  QA do M4 (2026-11-09): **aprovado**, com evidência em `docs/mission/evidence/M4/`.
-  Itens V4.* marcados no contrato. A exceção é a V4.12: falta o `psql` na máquina, então
-  o túnel foi conferido pelo `pg_select.py`; o `psql` real fica para o QA final.
-  Observação de ambiente: com o `make dev-daemon` padrão (`WARD_DEV_APP` = ponte), o
-  `make teste-cli` falha em V4.30, V4.32 e "27a --token-fd" com "pedido expirado". Com
-  `WARD_DEV_APP=` vazio, passa inteiro (138 ok). Isso entra na 28g.
-- [x] Fase 28g — Achados da 2ª auditoria do M4 (não bloqueiam o QA).
-  - **Médio:** um `write` único acima de 64 KiB mostra o começo do segredo em claro. O
-    leitor de pipe/pty do `wardd` corta no tamanho do buffer (`mascara.rs:1285-1300`).
-    Reproduzir: `os.write(1, b'b'*n + PGPASSWORD + b'\n')` com n de 65520 a 65539 sob
-    `ward run acme-pg-dev`. Correção: quando a leitura enche o buffer, ler de novo sem
-    bloquear até EAGAIN e só então mascarar, com buffer de 64 KiB ou mais. Não segura
-    nada através de pausa, então não reabre o oráculo de tempo. Teste novo com esse
-    caso.
-  - **Baixo:** o `sshpass` faz `setsid()` no filho, e a ponte (`ponte.rs:533-556`) exige
-    pgrp == sid == líder. Resultado: um `servidor` com senha e salto é recusado no `ward
-    ssh`, falhando fechado. Aceitar o filho direto do líder conferindo pid e pai, com
-    teste, ou documentar que a combinação não é suportada.
-  - **Baixo:** depois de SIGKILL no `wardd`, a pasta `<rt>ssh-*/` sobra. Apagar os
-    `ssh-*` na partida, como já é feito com `tmp/`.
-  - Texto: o S4 de `docs/escopo.md` ainda diz "inclusive quando o valor chega quebrado
-    entre dois pedaços". Alinhar com D34 revisto ("nunca segurar"; o corte entre leituras
-    lentas sai com o começo em claro, risco aceito pelo usuário).
-  - Ambiente (QA do M4): `make teste-cli` exige o daemon sem `WARD_DEV_APP`. Fazer o
-    teste conferir isso e recusar com mensagem clara, ou documentar no CLAUDE.md.
-  Feita (2026-11-09):
-  - **Médio:** o vazamento também acontecia na fronteira de 16 KiB. Agora os pipes de
-    saída têm 256 KiB (`F_SETPIPE_SZ`), e o `execucao::ler_lote` lê enquanto `poll(0)`
-    tiver dado, sem segurar nada. O ataque deu 0 casos ruins nas duas faixas, em stdout e
-    stderr.
-  - **Baixo (sshpass):** a ponte aceita o filho direto do líder que tem sessão própria.
-  - **Baixo (`ssh-*`):** a partida apaga os `ssh-*` que sobraram.
-  - Texto: S4, PRD D11/D13 e V4.17 alinhados.
-  - Ambiente: `cli.py` recusa o daemon com `WARD_DEV_APP`.
-  - `make check` 0; `teste-cli` 0.
-  Ficam como risco aceito (D34): `write` acima de 256 KiB e o pty do `ward ssh`
-  interativo, que entrega a saída em pedaços de cerca de 4 KiB. Um filho direto que faz
-  `setsid` volta a usar o túnel. O lote ocupa até cerca de 32 MiB de mlock no pior caso.
-
-## Milestone 5 — App desktop
-Contrato: V5.1–V5.35
-
-- [x] Fase 29 — Esqueleto Tauri + Svelte: capabilities só com os comandos próprios,
-  CSP estrita, sem conteúdo remoto, devtools fora do release; cliente do socket no lado
-  Rust; "copiar" resolvido no Rust (D4); tokens e componentes do M0 em Svelte; ponte de
-  teste só com `modo-teste` (D7). V5.1, V5.2, V5.4–V5.6. O lado do app de D47 não foi
-  feito nesta fase (handoff 29) e foi para a Fase 29a; o caminho e a conferência do
-  socket de D46 no `daemon.rs`, para a 21b.
-  Notas do handoff 29: o `make app-check` precisa de `libwebkit2gtk-4.1-dev` (R32); os
-  advisories RUSTSEC-2024-0370 e RUSTSEC-2024-0429 ficam ignorados só no `deny.toml` do
-  app (RA7, provisório, vai ao usuário).
-- [x] Fase 29a — App com D47 e D57 (depende das Fases 21b e 29; vem antes da 30; pode
-  rodar ao lado da 22, porque não toca em `crates/wardd` nem no protocolo). Arquivos: o
-  `main` do `app/src-tauri`, um módulo de partida no `app/nucleo` e, em
-  `crates/ward-plataforma`, o lançador e o `processo.rs`.
-  - `ward-plataforma`: tira o ramo do `systemd --user` do
-    `ProcessoPar::classificar` (o pai do app só pode ser o daemon) e cria o lançador
-    de D57 (`fork` + `execve` do `ward-app` instalado, ambiente montado do zero com
-    os valores fixos, um só `wayland-<n>`, sem `DISPLAY`, fds fechados), que a Fase 23
-    chama pela operação `abrir_app`;
-  - app: conecta ao socket antes do GTK, larga o grupo (`setresgid` para o gid real)
-    e chama `PR_SET_DUMPABLE=0` de novo; confere o ambiente recebido contra D57 antes
-    do GTK e sai se não bate; fd do socket com `CLOEXEC`; se a conexão cair e o
-    `PPid` ainda for o daemon, se executa de novo; com outro pai, não usa o papel e
-    sai com mensagem (o pedido `abrir_app` ao daemon entra na Fase 23);
-  - confere com o WebKitGTK real que o ambiente de D57 basta (módulos do GTK,
-    GStreamer, IBus) e, se algo de fora do root for carregado pelo ambiente, fixa a
-    variável que desliga a fonte (D48) e a acrescenta à lista de D57;
-  - confere, só lendo, quantos `wayland-*` o COSMIC deste host cria em `/run/user/<uid>`
-    e registra no handoff (se forem dois, o "um só" de D57 volta ao planner);
-  - roda o `make app-check` e confirma o lock do Tauri corrigido na 21b (D60, R32).
-  Testes de ataque no contêiner da 21b (binário setgid de teste), incluindo o pai que
-  imita o `systemd --user`. Exige `libwebkit2gtk-4.1-dev` (R32). V3.5 (forma de D47),
-  V3.24, V5.31.
-- [x] Fase 29b — (Depende da 23a: as duas mexem no lançador.) Pendências da 29a (D64).
-  Arquivos: `crates/ward-plataforma` (`ambiente_do_app` e `conferir_ambiente_do_app`),
-  `app/src-tauri/deny.toml` e o teste com o WebKitGTK real.
-  - `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps` no ambiente de D57, conferido pelo app;
-  - `strace -f` do `ward-app` com o ambiente de D57: nada em `/tmp/nvidia-mps`, e a
-    lista de `open`/`connect` em pastas graváveis fora do root vai ao handoff; canal
-    novo volta ao planner;
-  - RUSTSEC-2024-0429: sai do `deny.toml` do app se o `cargo audit` em
-    `app/src-tauri/` não a achar;
-  - `make app-check` limpo. V5.30, V5.32.
-- [x] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
-  v2 como hash, D30). V5.7, V5.25, V5.26.
-- [x] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
-  `pedido_de_destrave` da fila da 23a e o leva à tela por evento do Tauri (D65 a). V5.8.
-- [x] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
-- [x] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
-  `nota segura`, `genérico`, com campo secreto (revelar 30 s, copiar com limpeza em
-  30 s), campos extras, TOTP e gerador no formulário (símbolos de D35; `otpauth://`
-  fora de SHA1/6/30 recusado, D35). V5.3, V5.5, V5.10, V5.11, V5.13, V5.14.
-  Nota do planner (D65, 2026-11-09), para a fase em andamento: "revelar" usa a operação
-  `revelar` que já existe (só papel app; nenhuma operação nova): `cliente::revelar`,
-  resposta no daemon falso, comando `revelar_campo` na capability, valor na webview só
-  no clique e fora dela em 30 s, ao esconder ou ao sair (padrão `Revelada` da 37, sem
-  ligaduras); vale também para o `Campo secreto` do detalhe de Credenciais. O daemon
-  real atende na 22c. Gerador no formulário: tamanho 8–64 e limiares da 37; símbolos de
-  `ward_core::gerador::SIMBOLOS`, não do texto do FigCraft. Datas do rodapé ficam para
-  a 22d.
-- [x] Fase 34 — **(UI)** Formulário, parte 2: `banco`, `servidor` (com "Conectar" e
-  token de uso único, D3), `ftp/sftp`, anexos (aviso ao escolher arquivo acima de
-  256 KiB ou soma acima disso, arquivo vazio recusado, recusa do orçamento da máscara
-  no campo, números de `ward_core::limites`; D29, D32); base do `banco` com o formato
-  de D33. V5.10, V5.12, V5.24.
-- [x] Fase 35 — **(UI)** Nível de acesso com PIN. V5.15.
-- [x] Fase 36 — **(UI)** Janela de aprovação em primeiro plano, aberta pelo daemon, com
-  os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
-  Consome `pedido_de_aprovacao` da fila da 23a (D65 a). V5.16–V5.20, V5.29.
-- [x] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.
-- [x] Fase 37a — **(DESIGN)** Correções do design (D65 f e design pendente; pode rodar a
-  qualquer momento, só mexe no `Ward.figcraft` e em `docs/mission/design-nodes.md`):
-  descrição de "Símbolos" com o conjunto de D35 no avulso e no popover do formulário;
-  frame `Credenciais / Sem resultado`; cartão de nível bloqueado no detalhe; contagens
-  da fixture nos frames de Credenciais. Inspirações só leitura; termina com
-  `save_file` e PNG das telas ao usuário. V5.35.
-- [x] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
-  configuração do cofre, D30; backup externo só exibido desligado). V5.22.
-- [x] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
-  varredura de logs do app. V5.23, V5.27, V5.28.
-
-Correções do scrutiny do M5 (1ª reprovação, 2026-11-09). Do usuário, fora das fases:
-instalar `libwebkit2gtk-4.1-dev` (para `make app-check` e `make teste-webkit-real`
-rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; também a
-única prova real de V5.4, V5.5, V5.16, V5.23, V5.25).
-
-- [x] Fase 39a — Aviso `pedido_de_destrave` com entrada e comando passados por
-  `neutralizar` (D51), em `ward-core`, `wardd` e app; o cartão do `Destravar / Pedido do
-  agente` mostra entrada, comando e contagem. V5.8.
-  Pendências da 39a: frame `3450` com selos de tipo/ambiente e comando fora de D51
-  (ajustar: sem selos, linha da operação e argv entre aspas); vários usos esperando o
-  destrave mostram só o mais novo ("e mais N"?); "Agora não" ainda não nega (falta
-  operação); `make app-check` não rodou (sem `libwebkit2gtk-4.1-dev`).
-- [x] Fase 39b — Anexos na edição: operação no protocolo (ou manter anexos por id em
-  `salvar_entrada`) para adicionar, listar e remover anexo de `servidor` e `genérico`
-  já salvos; decidir se nome começando por `.` (ex.: `.env`) é aceito. V5.12.
-  Pendências da 39b: `.env` é anexado como `env` (pontos do começo tirados; `ward-core`
-  segue recusando `.`) — registrar no escopo; `v3_33_kill_9_entre_as_senhas_erradas`
-  falha sob carga (limite de 1,5 s precisa de margem); `make app-check` não rodou.
-- [x] Fase 39c — Ponta a ponta do app com o daemon de teste e a ponte: `ward run` real
-  com janela (negar → CLI ≠ 0, "1 hora", "sempre") e "Conectar" abrindo terminal com
-  `ward ssh` real, mais os três ataques de token (V5.16, V5.24); Salvar desabilitado no
-  Novo vazio (V5.10); decisão e registro dos canais pendentes do V5.32 (frei0r, LADSPA,
-  libvisual, `cuda_injection_path_shm`, `~/.nv`, `~/.mfx_trace`) com as variáveis que
-  os fecham; `unsound = "all"` no `deny.toml` da raiz; registro de risco do menu da
-  bandeja no barramento da sessão; mínimo de 12 e NFC da senha mestra também no
-  daemon; `teste-logs-app` na tabela do `CLAUDE.md`. V5.10, V5.16, V5.24, V5.32.
-  Pendências da 39c: `make teste-webkit-real`, `make app-check` e
-  `make teste-docker-plataforma` (o `dentro.sh` mudou) não rodaram — validador do M5 e
-  usuário (roteiro 11a); RA9 (menu da bandeja) para o usuário decidir; RA8 ampliado
-  (driver NVIDIA lê `~/.nv/nvidia-application-profile-globals-rc`); a ponte tira o token
-  da URL (recarregar dá 403); dependência nova `unicode-normalization =0.1.25`; linhas
-  do `CLAUDE.md` para `teste-logs-app`, `teste-canais-gst` e `teste-app-e2e` no handoff.
-- [x] Fase 39d — **(DESIGN)** Contagens do `Ward.figcraft` iguais à fixture (22
-  entradas, D59); instâncias de `Cartão de nível` nos 18 formulários; frames `15242`
-  (PIN, não senha mestra), `3393` e `6373` iguais ao comportamento; diálogos "Trocar
-  senha mestra" e "Trocar PIN". V5.35.
-  Pendências da 39d: `make check` saiu 2 só no `v3_33_kill_9_entre_as_senhas_erradas`
-  por tempo sob carga (load 39) — repetir com a máquina calma; frames de erro dos
-  diálogos de troca não desenhados; nenhum frame do grupo delta; "Mudar nível"
-  desabilitado no formulário (segue o app); "(máximo 4 h)" × D45 com o planner.
-
-Roteiro do usuário M5 (2026-11-09): o usuário instalou `libwebkit2gtk-4.1-dev`, abriu
-a janela nativa do app de teste pelo daemon de teste, destravou com a senha de teste e disse
-"está bom, continue". O roteiro inteiro (aprovação em primeiro plano, bandeja, copiar 30 s)
-não foi conferido passo a passo; V5.28 fica parcial até o QA final.
-
-Scrutiny do M5, rodada 2 (2026-11-09): **reprovado** (2ª vez), só pelo harness.
-`make check`, `make app-check` e o `cargo test` do workspace deram 0, este duas vezes e
-sem teste instável. Falha: o `make teste-webkit-real` sai 2. O recorte do
-`dev/testes/webkit-real.sh:109-114` (de `// Antes do GTK` até `let app = com_comandos(`)
-apaga `estado`, `canais`, `fila` e `na_aprovacao`, que o `main` atual define nesse
-trecho, e o harness não compila (E0425). Com o recorte só da `partida`, numa cópia, deu
-"V5.32 ok". V5.28 continua parcial.
-Decisão do usuário: corrigir e seguir. O scrutiny do M5 conta como aprovado depois da
-39e; seguem a segurança e o QA.
-
-- [x] Fase 39e — Consertar o recorte do `dev/testes/webkit-real.sh`: tirar só o bloco
-  da `partida` (o `let mut partida = partida::iniciar()…`, o `tomar_daemon` trocado por
-  `Err(ErroApp::ConexaoPerdida)` e o `partida.vigiar(…)`), de modo que o harness resista
-  a variáveis novas no `main`. A cópia do scrutiny está no scratchpad em `wk.sh`. Rodar
-  `make teste-webkit-real` até "V5.32 ok". Pôr no `CLAUDE.md` as linhas de
-  `make teste-logs-app`, `make teste-canais-gst` e `make teste-app-e2e` (pendência da
-  39c). V5.32.
-  Feita (2026-11-09): o recorte agora tira só a `partida`, em três trocas, com `assert` de
-  ocorrência única. `make teste-webkit-real` deu 0 ("V5.32 ok"). Com `SEM_39C=1` deu 2,
-  então o ataque continua visível. `make check` 0. As linhas do `CLAUDE.md` não entraram:
-  o worker pede a autorização do usuário; o texto está no handoff da 39c, linhas
-  131–141. `SEM_MPS=1` não mostra o ataque de D64 nesta GPU. O comentário do Makefile
-  ainda diz "sai 1", mas o script sai 2.
-
-## Milestone 6 — Extensão, `ward login` e `ward playwright`
-Contrato: V6.1–V6.16
-
-- [x] Fase 40 — `ward-nm` (native messaging): mensagens com limite, papel extensão no
-  daemon (D47; pai Chrome conferido com o Chrome real: lançado
-  direto ou por intermediário, navegador dumpable ou não, handoff 21), origem da aba
-  comparada no daemon (D9).
-  V6.1, V6.2.
-- [x] Fase 41 — **(UI)** Extensão MV3 e popup "Sugestões do domínio": sugere por origem,
-  preenche usuário, senha e TOTP só no documento da origem certa, sem
-  `externally_connectable`, nada guardado em `chrome.storage`. V6.2, V6.4–V6.7.
-- [x] Fase 42 — **(UI)** Popup "Salvar login novo" e "Cofre travado". V6.8, V6.9.
-- [x] Fase 43 — `ward login`: daemon → `ward-nm` → aba ativa, confere a origem,
-  preenche, envia e limpa os campos, com nível e aprovação. V6.3, V6.10, V6.11, V6.15.
-- [x] Fase 44 — `ward playwright`: Chrome headless com `--remote-debugging-pipe` e perfil
-  temporário (D6), storage state 0600, limpeza ao travar e na partida; logs sem
-  segredo. V6.12–V6.16.
-
-Auditoria de segurança do M5 (2026-11-09): **reprovada**, com 2 altos. É a 3ª reprovação
-do M5, então a decisão é do usuário.
-- **Alto (S2):** `app/nucleo/src/area_transferencia.rs:168-187`. O `wl-copy` 2.2.1 grava
-  o valor em `/tmp/wl-copy-buffer-*/stdin` (ext4). O bloco físico é alocado em cerca de
-  28 s, antes da limpeza de 30 s, e fica no disco depois de liberado (sem `discard`).
-  Vale para todo "copiar" do app. Correção: servir da memória (`gtk::Clipboard` ou
-  data-control, ex. `wl-clipboard-rs`), mais `x-kde-passwordManagerHint: secret`.
-- **Alto (S2/S8):** o `WebKitWebProcess` é dumpable, e o apport (`core_pattern` com
-  pipe) ignora `RLIMIT_CORE=0`. Um `kill -SEGV` de outro processo do uid gera
-  `/var/crash/*.crash`, legível pelo usuário, com a memória do processo. Mecanismo
-  provado com um processo comum; o tiro final no `WebKitWebProcess` foi barrado pelo
-  classificador. Correção: blacklist do apport e do systemd-coredump para o WebKitGTK na
-  instalação, e corrigir o "Fora do modelo de ameaça".
-- **Baixos:**
-  - o `anexos.rs:228` segue link e trava em FIFO;
-  - D51: o RTL hebraico passa cru, e U+202E no nome do processo vira `?`;
-  - uma trava vinda de fora não limpa a área de transferência na hora.
-- **RA9:** parecer **baixo**, com aceitação recomendada (travar, sair e roubo de foco
-  pelo menu da bandeja no D-Bus).
-Asserções que passaram: V5.1, V5.2, V5.6, V5.15, V5.16, V5.19, V5.20, V5.27, V5.29–V5.33.
-
-Decisão do usuário (2026-11-09): corrigir os dois altos, mais os baixos. **RA9 aceita**:
-item novo no menu da bandeja só pode ser ação que não entrega segredo. Depois das fases
-39f e 51c, uma reauditoria só desses pontos, e então o QA do M5.
-
-- [x] Fase 39f — Área de transferência sem disco e baixos da auditoria do M5.
-  - `app/nucleo/src/area_transferencia.rs`: o "copiar" serve o valor da memória do app,
-    sem `wl-copy`. Pode ser o `gtk::Clipboard` na thread principal ou o protocolo
-    data-control (ex.: `wl-clipboard-rs`, por `cargo deny`/`audit`), com
-    `x-kde-passwordManagerHint: secret`. Mantém a limpeza condicional de 30 s e o "só
-    apaga o que o Ward copiou".
-  - Teste de ataque: nenhum arquivo em `/tmp`, `/var/tmp` nem `$XDG_RUNTIME_DIR` recebe o
-    valor (strace ou inotify), e nenhum processo `wl-copy` sobe.
-  - A trava vinda de fora (`na_passagem_da_bandeja`) também limpa a área de
-    transferência se o valor ainda for do Ward.
-  - `app/nucleo/src/anexos.rs:228` abre com `O_NOFOLLOW|O_NONBLOCK|O_NOCTTY`, como o
-    `chave.rs`.
-  - D51: U+202E no nome do processo sai como escape visível, não `?`; letras RTL fortes
-    (hebraico, árabe) ficam isoladas para não reordenar o texto ao redor (pendência da
-    36).
-  - `make app-check` 0. S2, S12, V5.4, V5.5, V5.12, V5.29.
-  Feita (2026-11-09):
-  - O copiar passa pelo `gtk::Clipboard` (`app/src-tauri/src/area_gtk.rs`), com o valor em
-    `Zeroizing` e a dica `secret`. "Só apaga o que o Ward copiou" agora quer dizer "o Ward
-    ainda é o dono da seleção". O `wl-copy` ficou só na ponte de teste.
-  - Novo `make teste-area-transferencia`: strace e inotify sem arquivo nem programa
-    externo, com V5.4 e V5.5 de verdade (GTK X11 no Xwayland).
-  - Baixos: a trava de fora limpa na hora, o `anexos.rs` usa `O_NOFOLLOW`, U+202E sai
-    com escape e o RTL fica isolado em `<bdi>`.
-  - `make check` e `app-check` 0. Nenhuma dependência nova.
-  Pendências:
-  - O copiar no Wayland do COSMIC, com clique de verdade, fica para o roteiro (seção 4,
-    passos 3–8). O compositor só aceita a seleção de janela com foco.
-  - A linha do `CLAUDE.md` do alvo novo espera autorização do usuário.
-  - Um gerenciador de área de transferência que tome a seleção impede a limpeza.
-- [x] Fase 51c — Core dump dos auxiliares do WebKitGTK (S2/S8).
-  - A instalação (`instalar.sh` e `.deb`) põe na blacklist do apport
-    (`/etc/apport/blacklist.d/ward`) o `ward-app` e os binários auxiliares do WebKitGTK
-    que o app usa (`WebKitWebProcess`, `WebKitNetworkProcess`, `WebKitGPUProcess`, com os
-    caminhos reais do `libwebkit2gtk-4.1-0`).
-  - Faz o equivalente para o systemd-coredump, se estiver presente. Avaliar se dá para
-    impedir o dump só dos processos do app (ex.: `prctl(PR_SET_DUMPABLE, 0)` herdado ou
-    `RLIMIT_CORE` respeitado pelo handler) sem afetar o resto do sistema.
-  - Uninstall remove.
-  - Teste no contêiner do `teste-install`/`teste-deb`. No host, só um processo falso:
-    nunca dar `kill` no app nem em processo do usuário.
-  - Corrigir em `docs/escopo.md` o texto que diz que os auxiliares ficam protegidos só
-    pelo Yama, e citar o apport/coredump.
-  - Guia `docs/instalacao.md`: como conferir.
-  S2, S8, V9.*.
-  Feita (2026-11-09):
-  - `instalacao/despejo.sh` põe na blacklist do apport (`blacklist.d` e `report-ignore`)
-    o `ward*` e os auxiliares `WebKit*Process`, conferidos contra o `dpkg -L`. Um
-    auxiliar desconhecido faz a instalação recusar.
-  - Drop-in `coredump.conf.d/ward.conf` com `Storage=none` e `ProcessSizeMax=0`. Vale
-    para o sistema inteiro: o systemd-coredump não tem lista por programa.
-  - Aviso sobre `core_pattern` de terceiros.
-  - Proteger só os processos do app não dá: o mesmo uid baixa o RLIMIT com `prlimit`.
-  - `teste-install` e `teste-deb` 0 (apport e coredump reais no contêiner). `make check`
-    0, com o gitleaks rodado à parte.
-  Pendências:
-  - decisão do usuário sobre o crash do **Chrome** ir para o apport (o renderer guarda a
-    senha preenchida);
-  - falta asserção V9.x própria;
-  - as linhas `teste-install`/`teste-deb` do `CLAUDE.md` não citam a 51c.
-
-2ª auditoria de segurança do M5, focada (2026-11-09): **aprovada**. Os dois altos estão
-fechados: `teste-area-transferencia` 0 (sem disco nem programa externo), `teste-deb` 0
-(apport e systemd-coredump reais) e `make check` 0. No Wayland sem foco, o
-`gtk_clipboard_clear` destrói a fonte antiga, então nada continua sendo servido. Segue o
-QA do M5.
-QA do M5 (2026-11-09): **aprovado**, pela ponte com o Playwright do Python em
-`.dev/pw-lib`; evidência em `docs/mission/evidence/M5/`. Os V5.* estão marcados, menos o
-V5.28 (janela nativa). Não exercitados pela ponte, com cobertura em teste ou no roteiro:
-V5.4/V5.5 (`teste-area-transferencia`), V5.7, V5.12, V5.24 e V5.34. Observações:
-- depois de 5 PINs errados, o aviso "bloqueado" fica aberto e esconde o pedido seguinte;
-  conferir no roteiro, passo 10;
-- o 1º Tab da aprovação cai num contêiner;
-- `favicon.ico` 404 na ponte.
-O M5 está fechado, faltando só o roteiro nativo do usuário
-(`docs/mission/evidence/M5/roteiro-usuario.md`).
-- [x] Fase 39g — Restos da 2ª auditoria do M5 (não bloqueiam o QA).
-  - **Médio:** com o valor revelado, selecionar com o mouse ou dar Ctrl+C o leva à
-    PRIMARY ou à CLIPBOARD pelo WebKit, sem prazo nem dica `secret`
-    (`CampoSecreto.svelte:204-207`, `.revelado { user-select: text }`). Usar
-    `user-select: none` e bloquear `copy`/`selectstart` no campo revelado; o botão copiar
-    continua. Teste com o `scratchpad/primary.py` da auditoria.
-  - **Baixo:** U+FEFD e U+FEFE (não atribuídos, AL na ICU) não são isolados nem escapados
-    (`bidi.js:17`, `ward-core/src/exibicao.rs:31`). Estender a faixa ou escapar todo
-    código não atribuído.
-  - **Baixo:** sem bandeja, a trava de fora não limpa na hora (`main.rs:742-745`).
-    Chamar `na_passagem_da_bandeja` antes do `try_state`.
-  - **Baixo:** `anexos.rs:247` lê num buffer fixo com `Zeroizing`, como o `chave.rs`.
-  - **Escopo:** o crash do Chrome (apport e crashpad no perfil) com a senha preenchida
-    entra no "Fora do modelo", junto do RA10; o Chrome não vai para a lista do apport
-    (parecer do auditor: baixo).
-  S2, S12, D51.
-  Feita (2026-11-09):
-  - O valor revelado vai em `data-valor`, desenhado por `::before`. `user-select: none`
-    sozinho não bastava: Ctrl+A e o arrasto de fora ainda levavam o valor à PRIMARY.
-  - Novo `make teste-selecao-revelado` (WebKitGTK real num Xwayland privado). No HEAD
-    antigo dá 11 FALHAs, e 0 agora.
-  - Baixos: U+FEFD/FEFE com `bidi_icu.py` no `app-front`, trava sem bandeja e `anexos.rs`
-    com buffer fixo.
-  - Item novo no escopo: "Crash do Chrome com a senha preenchida".
-  - `make check` e `app-check` 0.
-  Pendências:
-  - o QA lê o revelado por `data-valor`;
-  - a seleção dentro do campo de digitação com o olho aberto ainda vai à PRIMARY;
-  - falta o usuário confirmar o item do escopo (parecer do auditor: baixo);
-  - as listas de invisíveis em `ward/src/texto.rs`, `nucleo/formulario.rs` e
-    `nucleo/comandos.rs` não foram estendidas.
-
-Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
-- `make check`, `teste-nm`, `teste-extensao`, `teste-login` e o `cargo test --ignored`
-  do Playwright deram 0.
-- Falha: `make teste-playwright` dá 3 FALHAs num ambiente limpo. O `posts_log()` de
-  `dev/testes/playwright.py:72-75` devolve `None` enquanto o phish não criou o
-  `posts.log`.
-- Pendências: o V6.11 (UI) nunca abriu a janela real de aprovação. O V6.12 com o
-  Playwright do Python não rodou, porque ele não está no host.
-
-- [x] Fase 44a — Correções do scrutiny do M6.
-  - `dev/testes/playwright.py`: `posts.log` ausente conta como `b""`, como em
-    `dev/testes/login.py:111-118`. `make teste-playwright` precisa passar com os
-    serviços recém-subidos.
-  - `dev/testes/extensao.py`: o achado em `Default/Code Cache/js/…` (dicionário de
-    senhas comuns do próprio Chrome) é filtrado com justificativa ou documentado, para
-    não parecer vazamento. Conferir que não vem do cofre de teste.
-  - `crates/wardd/src/playwright.rs`, script `PREENCHER`: trocar
-    `document.querySelectorAll` pelos protótipos, como em `pagina.js`, contra DOM
-    clobbering. Com teste.
-  - Registrar no roteiro do usuário do M6 o V6.11 (UI): `ward login acme-wp-dev` com a
-    janela real de aprovação, negar e permitir.
-  V6.11, V6.12, V6.15.
-  Feita (2026-11-09): `make check` 0; `teste-playwright SEM_PLAYWRIGHT_PYTHON=1` 0 com os
-  serviços recém-subidos; `teste-extensao` 0.
-  - O achado do Code Cache vem do `zxcvbn.min.js` do WordPress de teste (o PIN de teste é
-    palavra do dicionário dele). Agora é filtrado só com prova.
-  - `PREENCHER`/`LER_PAGINA` agora só pelos protótipos. É defesa em profundidade: no
-    Chrome 156 o `document` do mundo isolado não sofre clobbering. O comentário de
-    `extensao/pagina.js` linhas 9–13 ficou impreciso.
-  - Roteiro do V6.11 em `docs/mission/evidence/M6/roteiro-usuario.md`.
-  - O V6.12 com o Playwright do Python segue sem rodar.
-Scrutiny do M6, rodada 2 (2026-11-09): **aprovado**.
-- `cargo test` (890, duas vezes), clippy, audit, deny, gitleaks, `teste-playwright`,
-  `teste-extensao` e `teste-login` deram 0.
-- O `make check` inteiro saiu 2 por causa do `area_wl.rs` da 39f, ainda em andamento na
-  hora. O `MAX_VALOR` existe no commit da 39f, cujo `make check` deu 0.
-Pendências para o QA ou o usuário: V6.11 (janela real), V6.12 com o Playwright do Python,
-V6.8 e V6.9 visual.
-Auditoria de segurança do M6 (2026-11-09): **reprovada**, com 2 críticos. As asserções
-V6.1–V6.6 e V6.13–V6.16 passam como escritas.
-- **Crítico (localhost por `[::1]`):** D9 aceita `http://localhost`. Um processo do uid
-  abre `[::1]:8081` enquanto o serviço escuta só em `127.0.0.1`; o Chrome prefere
-  `::1`, a origem bate e a senha de `acme-wp-prod` vai ao falso. Vale para o
-  `ward playwright` (agente, sem aprovação), o `ward login` e o popup, e também para
-  `127.0.0.1:<porta>` com o serviço parado. Fica fora do RA10 (ameaça 4).
-- **Crítico (pipe CDP):** o Chrome do `ward playwright` é dumpable. Um processo do uid
-  reabre `/proc/<chrome>/fd/3` e, com `tee(2)`, lê o `Runtime.callFunctionOn` com a senha
-  sem quebrar a sessão; escrevendo ali, injetaria CDP. O mecanismo fica fora do RA1 e do
-  RA10, e o impacto, dentro do RA10. O escopo diz, errado, que o Yama protege os fds.
-- **Alto (dentro do RA10):** o mesmo `tee` no stdout do `ward-nm` no Chrome do usuário
-  lê o quadro `preenchimento`.
-- **Médio:** a política do Chrome não desliga `PasswordManagerEnabled` nem
-  `PasswordLeakDetectionEnabled`. O Chrome pode oferecer guardar a senha e manda um hash
-  dela ao Google.
-- **Baixo:** `apagar_sessoes` (`playwright.rs:172-185`) segue link no `read_dir`.
-Decisões do usuário (2026-11-09):
-- localhost: aprovação com clique para origem `http`;
-- pipe CDP: aceito no RA10, com o texto ampliado;
-- gerenciador de senhas do Chrome: desligar os dois.
-
-- [x] Fase 44c — Achados da auditoria do M6 (com a 44b junto).
-  - **Origem `http`** (`localhost`/`127.0.0.1`): `ward playwright`, `ward login` e o
-    preencher do popup sempre passam pela janela de aprovação do app, com a origem à
-    vista, mesmo no nível "livre". Sem app, "aprovação indisponível". Sem PIN extra no
-    nível livre, salvo se o nível já pedir. Para `https`, nada muda.
-    - O Chrome do `ward playwright` passa a usar
-      `--host-resolver-rules="MAP localhost 127.0.0.1"`.
-    - Teste de ataque com o falso em `[::1]:<porta>` (script
-      `scratchpad/falso_v6.py` da auditoria): sem aprovar, nada sai; o pedido mostra a
-      origem.
-    - Atualizar D9, a ameaça 4 e o contrato (V6.x).
-  - **RA10 ampliado** (`docs/escopo.md`, PRD): um processo do mesmo uid lê e escreve nos
-    pipes do Chrome por `/proc/<pid>/fd` (o pipe CDP do `ward playwright` e o stdout do
-    `ward-nm` no Chrome do usuário). Corrigir o "Fora do modelo", que diz que o Yama
-    protege o Chrome contra quem não é ancestral; isso não vale para fds.
-  - **Política do Chrome** (`instalar.sh` e `.deb`): `PasswordManagerEnabled: false` e
-    `PasswordLeakDetectionEnabled: false`, conferidos no `teste-install`/`teste-deb` e no
-    `teste-politica-chrome`. Explicar o efeito no `docs/instalacao.md`.
-  - **Baixo:** `apagar_sessoes` (`playwright.rs:172-185`) usa `symlink_metadata` ou
-    `preparar_diretorio` antes de listar; teste com link.
-  - **44b:** mensagem real do `ward login` negado no roteiro do M6; comentário de
-    `extensao/pagina.js:9-13`.
-  S1, S9, S10, V6.*, V9.5.
-  Feita (2026-11-09):
-  - Em `http`, o login só sai depois da confirmação no app: no nível livre é
-    `confirmar` sem PIN; nos outros níveis, o pedido com PIN mostra a origem. O popup
-    preenche pelo service worker. O Chrome do playwright usa `MAP localhost 127.0.0.1`.
-  - Aprovador de teste `wardd-aprovador-teste` (só com `modo-teste`).
-  - Ataque `[::1]` em `login.py`/`playwright.py`: negado, o falso recebe 0 bytes.
-  - Política com `PasswordManagerEnabled` e `PasswordLeakDetectionEnabled` false.
-  - RA10 ampliado (pipes por `/proc/<pid>/fd`). Novos V6.17 e V6.18; V9.5 ampliado.
-  - Verde: `teste-login`, `teste-extensao`, `teste-playwright`,
-    `teste-politica-chrome`, `teste-install`, `teste-deb`, `make check` (gitleaks à
-    parte).
-  Pendências:
-  - `make app-check` e `make teste-sem-modo-teste` não rodaram (disco).
-  - Não há frame no FigCraft para a confirmação `http`.
-  - Risco residual: no `ward login` e no popup, quem confirma sem olhar ainda manda a
-    senha ao `[::1]`.
-  - O popup em `http` pede só confirmação, em qualquer nível.
-- [x] Fase 44d (DESIGN) — Frame no `Ward.figcraft` para a janela de aprovação com origem
-  `http`: a confirmação (nível livre, "Negar" / "Confirmar a origem", aviso de `http`) e
-  o pedido com PIN com a origem à vista. Atualizar o `design-nodes.md`. A referência é a
-  tela da 44c (`docs/mission/evidence/fase-44c/`).
-  Feita (2026-11-09): frames `22733` (confirmar), `22817` (popup) e `22882` (PIN), só
-  com componentes existentes; aviso de `http` em `Destaque` aviso. Ids no
-  `design-nodes.md`, PNG em `docs/mission/evidence/fase-44d/`.
-2ª auditoria de segurança do M6, focada (2026-11-09): **aprovada**. O `[::1]` foi negado
-no login e no playwright, com o falso recebendo 0 bytes. Decisões fora do pedido são
-recusadas e o aprovador de teste não existe sem `modo-teste`. As políticas aparecem no
-`chrome://policy`. Passaram, todos com 0: `make check`, `app-check`,
-`teste-sem-modo-teste`, `teste-playwright`, `teste-login`, `teste-extensao`,
-`teste-politica-chrome`, `teste-install` e `teste-deb`. Médio e baixos foram para a 44e.
-- [x] Fase 44e — App alinhado à 44d (`JanelaAprovacao.svelte`, `aprovacao.js`):
-  - `origemDestaque` com `tipo="aviso"`;
-  - `prodDestaque` na confirmação com "Credencial de produção. Confira a origem com
-    atenção antes de confirmar.";
-  - `resumo` do pedido com PIN e origem com "Confira a entrada, a origem e quem pediu
-    antes de permitir.";
-  - `daemon_falso.rs` › `na_origem` usa o ambiente real da entrada (`acme-wp-dev` é dev);
-  - conferir as três telas pela ponte contra `22733`/`22817`/`22882`.
-  - **Médio (2ª auditoria):** `uso.rs:79-86` (`origem_http`) só confirma o esquema `http`.
-    Uma entrada `https://localhost`, `https://127.0.0.1` ou `https://[::1]` vai sem janela
-    ao `ward login` e ao popup. Com uma CA mkcert ou uma CA plantada no `~/.pki`, o
-    `[::1]` pega a senha. Correção: todo host de loopback pede confirmação, em qualquer
-    esquema. Teste e atualização de D9 e da ameaça 4.
-  - **Baixo:** `apagar_sessoes` abre com `O_DIRECTORY|O_NOFOLLOW` e lista e apaga pelo
-    fd.
-  - **Baixo:** o `teste-politica-chrome` lê o `chrome://policy` em tempo de execução, e o
-    `c44_popup_*` inclui o falso `[::1]`.
-  Feita (2026-11-09):
-  - As três telas batem com `22733`/`22817`/`22882` pela ponte, sem diferença.
-  - `origem_local_da_url` (`localhost`, `*.localhost`, `127/8`, `0/8`, `[::1]`, `[::]`,
-    IPv4 mapeado) pede confirmação em qualquer esquema.
-  - `apagar_sessoes` trabalha pelo fd.
-  - A rodada 2b do `teste-politica-chrome` lê o `chrome://policy`.
-  - Popup contra o `[::1]`: o falso recebe 0 bytes.
-  - `make check`, `app-check`, `teste-extensao`, `teste-login`, `teste-playwright` (com o
-    Playwright do Python) e `teste-politica-chrome` deram 0.
-  Pendências:
-  - prod com aprovação e origem local ainda diz "confira o comando" (sem frame);
-  - falta decidir o rótulo "confirmar a origem" do nível;
-  - um domínio público que resolve para 127.0.0.1 não é pego (está no D9).
-QA do M6 (2026-11-09): **aprovado**, com evidência em `docs/mission/evidence/M6/`.
-`teste-extensao` deu 102 ok, `teste-login` 48 ok e `teste-playwright` 37 ok, este com o
-Playwright do Python (V6.12). A janela com origem local bate com a 44d. Os V6.* estão
-marcados; o V6.11 com a janela nativa fica para o roteiro do usuário.
-- O "frames da 44d não existem" do QA foi a aba velha do FigCraft headless. O arquivo
-  em disco (`3a2afbfb…`) tem os três frames, conferido pelo `document.json`.
-- `make dev-servicos-conferir` falha: o `pg_select.py` diz "o trace não pegou o cliente".
-  Não é do M6; fica para a auditoria final e o QA final.
-- [x] Fase 44b — (juntada à 44c) Baixos do scrutiny do M6, sem bloquear:
-  - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
-    `ward login` negado;
-  - corrigir o comentário de `extensao/pagina.js:9-13` sobre clobbering do `document`.
-
-## Milestone 7 — Backup
-Contrato: V7.1–V7.11
-
-- [x] Fase 45 — Backup local automático (30 versões, mesmo formato, gravação atômica,
-  dentro do `ward-core` pelo `gravar` interno, D27) e restaurar no daemon, só pelo papel
-  app (D17); a versão restaurada é selada com `geracao` = maior vista + 1 e o arquivo
-  de estado é atualizado (D39). V7.1–V7.3, V7.8, V7.11.
-- [x] Fase 46 — Backup externo em pendrive por UUID via udisks2, desligado por padrão;
-  ligado/desligado e UUID ficam na configuração do cofre (D30). V7.4–V7.6, V7.8.
-- [x] Fase 47 — **(UI)** Restaurar backup. V7.7.
-- [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
-- [x] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
-
-Validação do M7 (2026-11-09): scrutiny, segurança e QA aprovados com ressalvas; o
-contrato V7.* é marcado depois da 49a. QA: V7.4–V7.6 e V7.9 ligado/desligado não
-exercitados na UI (daemon de teste sem udisks); "Duplicar" em Credenciais não faz nada
-no modo de teste; a vitrine de componentes aparece abaixo da tela de erro no
-`dist-teste` (conferir que o de produção não tem); item da lista de versões sem
-tamanho. Roteiro do usuário: `docs/mission/evidence/M7/roteiro-usuario.md`.
-
-- [x] Fase 49a — Achados da auditoria do M7 (aprovado, 2026-11-09). Médio: rotação e
-  ordem dos backups confiam na data do nome (30 versões plantadas com data futura fazem
-  o daemon apagar as reais, local e no pendrive, e aparecem como a mais nova no
-  restaurar) — ignorar/recusar data maior que agora + margem, nunca apagar versão com
-  data passada para manter uma futura, mostrar geração ou data selada no item. Baixos:
-  restaurar preserva backup externo e tempo de trava atuais (ou avisa na confirmação);
-  pasta de backups insegura vira aviso no app (linha "Backup local"); limpar
-  `.estado.tmp-*` ao subir; documentar pendrive identificado só pelo UUID (ou marcador
-  aleatório em `ward-backup/`); cancelar pedidos de aprovação pendentes ao restaurar.
-  Testes de ataque para cada um. V7.1, V7.3, V7.5, V7.7, V7.11.
-  Pendências da 49a: geração não vai ao item (invariante `d39_…`; daemon manda só as
-  marcas `conferida`/`fora_de_ordem`); relógio atrasado > 5 min esconde versões até
-  alcançar; `backups` decifra até 64 versões com o estado preso; restaurar link dá
-  `backup_inexistente`; `make app-check` não rodou.
-- [x] Fase 49b — **(DESIGN)** Estados novos da 49a no FigCraft: item de versão "gravação
-  mais antiga do que a data diz", aviso de "Backup local" inseguro em Configurações e a
-  frase nova da confirmação do restaurar (mantém tempo de trava e backup externo). V7.7,
-  V7.9.
-
-Scrutiny do M7 (2026-11-09): aprovado com ressalvas. Para o planner: restaurar uma
-versão antiga troca também a configuração dela (backup externo pode desligar sem aviso)
-— avisar na confirmação ou preservar o externo; `window.print()` no WebKitGTK real não
-conferido (V7.10); restaurar sem cofre destravado/PIN atual sem caminho guiado; pedidos
-de aprovação pendentes não são cancelados ao restaurar; falha intermitente em testes
-de gravação do `ward-core` sob carga (`v2_10_v2_11`, `v2_44`, `v2_53`) a repetir com a
-máquina calma; ponte de teste só usa o socket fixo (sem `WARD_DEV_SOCKET_DIR`).
-
-## Milestone 8 — Skill `ward`
-Contrato: V8.1–V8.4
-
-- [x] Fase 50 — Skill `ward` do zero em `skill/ward/` (fluxo, comandos, SSH com
-  `~/.ssh` fica de fora; nunca imprimir anexo nem variável de credencial em nenhuma
-  codificação, RA3) e o trecho de deny para `~/.claude/settings.json`; a instalação
-  no `~/.claude` é feita pelo usuário no M10. V8.1–V8.4.
-
-- [x] Fase 50a — Achados da auditoria do M8 (aprovado, 2026-11-09). Médio: o deny de
-  Bash em `skill/settings-deny.json` não pega as formas que a skill cita (`ward run X --
-  /usr/bin/env`, `sh -c env`, `od`, `rev`, `fold`, `tr`, `cut`, `python3 -c`, `> arquivo`,
-  `/usr/local/bin/ward run`, globs em `~/.local/share/w*`, `/proc/N/env*`) — regras sem
-  âncora (`Bash(*ward run*env*)` etc.) e autoteste com cada forma. Baixos: caminho do
-  storage state do `ward playwright` casa com o deny de `/run/user/*/ward*` (ajustar
-  skill ou regra); `//run/media/**/ward-backup/**` no deny; exemplo do `curl` do
-  `beta-github-api` sem usar `$GITHUB_TOKEN`; `make teste-skill` compila o `ward` sem
-  `modo-teste` no `target/` compartilhado (usar target próprio); escopo e roteiro do M10
-  dizem explicitamente que nível "livre" = o agente consegue ler o segredo (RA3). V8.2.
-
-Pendências da 50a: o deny nega de propósito alguns comandos inocentes (`update … set` do
-psql e `2>&1` dentro do `ward run`, pipe para `cut` depois dele, qualquer `/run/user`,
-`/proc/`, `environ`); `*` inicial, `?`/`[` e `//` só se conferem no Claude Code real
-(M10, passo 3 do `skill/README.md`); D17 do PRD ainda cita só `/media/**`.
-
-Validação do M8 (2026-11-09): segurança e QA aprovados; contrato V8.* marcado depois da 50a.
-Roteiro: `docs/mission/evidence/M8/roteiro-usuario.md`. Scrutiny do M8 (2026-11-09): aprovado; tipo `ftp-sftp` corrigido na skill. `Bash(*…)` e
-caminhos `//` do `settings-deny.json` só se conferem no Claude Code real (M10).
-
-## Milestone 9 — Instalação
-Contrato: V9.1–V9.11
-
-- [x] Fase 51 — `make install`/`uninstall` com `DESTDIR` e `PREFIX=/usr/local` (o
-  `sudo` uma vez), units `wardd@.socket`/`wardd@.service` do sistema, `/run/ward/` por
-  `tmpfiles.d` e `systemctl enable --now wardd@<uid>.socket` (D46), grupos
-  `ward-app`/`ward-nm` e binários 2755 (D47; grupos com `groupadd --system`, gid < 1000,
-  fora das faixas do `/etc/subgid`, sem membros, senha travada `!` no `gshadow`, e
-  recusa de grupo existente fora disso, D60), units sem `NoNewPrivileges=` nem opção
-  que o implique (D57), `LimitMEMLOCK=infinity` (D62), build de release por pacote
-  (`-p`, sem `modo-teste`, D63), manifesto de native messaging, política
-  do Chrome com force-install e update local, recusa de artefato `modo-teste`. V9.1–V9.4, V9.6,
-  V9.7, V9.10, V9.11.
-- [x] Fase 52 — `.deb` por `dpkg-deb` a partir do staging (dependência `sshpass`), teste
-  num contêiner `ubuntu:24.04` e roteiro de instalação para o usuário (política do
-  Chrome, systemd, `~/.ssh` intacto). V9.5, V9.8, V9.9.
-
-Scrutiny do M9 (2026-11-09): aprovado (V9.5, V9.7 real e V9.8 com `git push` são do
-usuário). Baixo novo: texto `WARD_DEV_DBUS_SISTEMA` no `wardd` de release (`main.rs:201`,
-`trava.rs`) obriga exceção na recusa de `WARD_DEV_*` do `instalar.sh` — pôr atrás de
-`cfg(feature = "modo-teste")`.
-
-Auditoria de segurança do M9 (2026-11-09): **reprovada** (1ª vez), achado crítico: a
-política do Chrome gerada não tem `NativeMessagingUserLevelHosts: false`, então um
-manifesto `br.ward.nm.json` plantado no perfil do usuário vence o do root; o script do
-atacante faz `exec` do `ward-nm` real (mesmo pid, pai = Chrome) e fica com o stdin/stdout
-dele — tirou senhas e TOTP de 4 entradas `login`. Aguarda decisão do usuário (a política
-desliga também os manifestos de usuário de 1Password, Claude Code e KeePassXC).
-
-Decisão do usuário (2026-11-09) sobre o crítico do M9: política com
-`NativeMessagingUserLevelHosts: false` e guia para mover os manifestos de outros apps
-(1Password, Claude in Chrome) para `/etc/opt/chrome/native-messaging-hosts/`.
-
-- [x] Fase 51a — Achados da auditoria do M9. **Crítico:** `instalar.sh` (e o `.deb`, mesmo
-  staging) gera a política com `"NativeMessagingUserLevelHosts": false`; `teste-install`
-  e `teste-deb` conferem; teste com o Chrome real num bwrap com `/etc/opt/chrome` trocado
-  (manifesto plantado no perfil não é chamado; o do sistema é), a partir dos scripts da
-  auditoria (scratchpad `e2e/rodar.py`, `e2e/hospedeiro.py`, `nmhijack/`); `docs/instalacao.md`
-  explica o efeito e mostra como copiar com sudo os manifestos de usuário de outros apps
-  (1Password, Claude in Chrome) para `/etc/opt/chrome/native-messaging-hosts/`, com
-  conferência e volta atrás (o usuário executa). **Baixos:** avisar/recusar se outro
-  arquivo de `/etc/opt/chrome/policies/managed/` define `ExtensionSettings` ou
-  `NativeMessagingUserLevelHosts`; D60 confere também `/etc/security/group.conf`,
-  `sudoers` com `ward-app`/`ward-nm` e `subid:` por NSS; uninstall/`dpkg -r` só apagam
-  grupos criados pelo Ward (marca em `/usr/local/lib/ward/`); `Operacao` sem uso sem
-  `modo-teste` (`app/nucleo/src/daemon.rs:51`); `WARD_DEV_DBUS_SISTEMA` atrás de
-  `cfg(feature = "modo-teste")` e sem a exceção no `instalar.sh`. V9.2, V9.5, V9.6,
-  V9.10, V9.11.
-  Feita (2026-11-09): política com `"NativeMessagingUserLevelHosts": false`;
-  `teste-politica-chrome` novo (Chrome real num bwrap: sem política o host plantado no
-  perfil roda e o ataque da auditoria tira 4 preenchimentos; com a política só o do
-  sistema roda e nada sai), `teste-install` 232 ok, `teste-deb` 153 ok; guia 0.4, 0.5,
-  4a e 4b. `instalacao/chrome.sh` recusa outra política em `managed/` que cite
-  `ExtensionSettings`/`NativeMessagingUserLevelHosts` (inclusive em comentário). Grupos
-  criados anotados em `/usr/local/lib/ward/grupos-criados`.
-  Pendências:
-  - `make check` inteiro não rodou por falta de disco: ficaram `cargo test` do workspace,
-    `audit` e `deny`. Passaram fmt, clippy dos crates tocados, origens e gitleaks.
-  - A rodada 3 (controle fora do bwrap) imprime "pulado" depois que o Ward estiver
-    instalado no host.
-  - D60 não cobre sudoers com `(:ALL)`/`Runas_Alias` amplo nem outro módulo PAM.
-  - O PRD D18 continua desatualizado.
-
-2ª auditoria de segurança do M9 (2026-11-09): **reprovada** (2ª reprovação do M9).
-O vetor da 1ª auditoria está fechado (`teste-politica-chrome` 0) e os baixos também.
-`make check` 0, com 902 testes. Achados novos:
-- **Crítico:** exec com troca de pai, em `processo.rs:412` (`conferir_pai`) e
-  `processo.rs:443-445` (`classificar`). Um processo do uid faz fork do filho, que espera e
-  faz exec do `ward-nm` setgid. O pai então faz exec do `/opt/google/chrome/chrome`
-  instalado. O `ward-nm` vê o Chrome do root como pai e vira extensão. O ataque tirou 4
-  senhas/TOTP do `wardd` de teste, sem manifesto e sem extensão, com uns 60 linhas de
-  Python. Nenhuma conferência local resolve: horário de início não, por causa do subreaper;
-  os fds também não, porque o processo é não-dumpable. S1 quebrada.
-- **Alto:** a extensão force-installed fica no perfil do usuário. Trocar o `sw.js`,
-  recalcular `_metadata/computed_hashes.json` e apagar o `Service Worker` faz o Chrome
-  rodar o código adulterado com o mesmo id. A defesa "extensão em pasta do root" (modelo
-  2 do escopo) não vale no Linux.
-- **Alto:** o guia 4a manda copiar para o sistema o manifesto de outros apps cujo `path`
-  é gravável pelo usuário (Claude in Chrome). Um script nessa posição é filho do Chrome e
-  reabre o ataque original.
-- **Baixo:** o D60 não vê grupo de outra fonte do NSS (`group: files sss`).
-O M9 reprovou duas vezes: a decisão é do usuário.
-Decisão do usuário (2026-11-09): **aceitar o risco** (RA10). Um processo do mesmo uid
-que execute o Chrome instalado se passa pelo navegador, e a extensão no perfil pode ser
-adulterada. A extensão continua preenchendo sem clique. A segurança do M9 conta como
-aprovada depois da Fase 51b; segue o QA.
-
-- [x] Fase 51b — Registrar o RA10 e fechar o resto da 2ª auditoria do M9.
-  - `docs/escopo.md`: em "Fora do modelo de ameaça", acrescentar que um processo do mesmo
-    uid que execute o Chrome instalado (exec com troca de pai) ou adultere a extensão no
-    perfil se passa pelo navegador para o `ward-nm`. Reescrever o modelo 2 ("extensão em
-    pasta do root"), que no Linux não protege o código da extensão. Atualizar o PRD D18,
-    pendente desde a 51.
-  - `docs/instalacao.md` 4a: tirar "esse risco é do app, não do Ward". Dizer que copiar
-    para o sistema um host cujo `path` (ou alguma pasta acima) é gravável pelo usuário
-    deixa um programa do usuário rodar como filho do Chrome. Mandar conferir dono root e
-    sem escrita para grupo e outros no `path` e em cada pasta acima, e não copiar quando
-    falhar (o Claude in Chrome com host no home entra nesse caso).
-  - Baixo: `instalacao/grupos.sh` (D60) recusa `group:` do `nsswitch.conf` fora de
-    `files`/`systemd`, como já faz com `subid:`/`sudoers:`. Teste em `teste-install`/
-    `teste-deb`, ou no autoteste do `grupos.sh` se ele cobrir o caso.
-  Feita (2026-11-09):
-  - RA10 em "Fora do modelo de ameaça"; modelo 2 e D18 reescritos.
-  - Guia 4a: `conferir_host` mostra "NÃO COPIE" para host gravável, link ou script.
-  - `grupos.sh` recusa `group:`/`initgroups:` fora de `files`/`systemd`.
-  Pendências:
-  - `make check`, `teste-install` e `teste-deb` não rodaram (os casos de NSS nos
-    contêineres estão sem rodar); ficam para o QA do M9.
-  - O S1 do escopo não cita a exceção. O V9.11 não lista os casos de NSS.
-  - Um `nsswitch.conf` sem a linha `group:` não é recusado.
-QA do M9 (2026-11-09): **aprovado**. `teste-install` deu 238 ok, `teste-deb` 158 ok,
-`teste-politica-chrome` 10 ok e `gitleaks` 0. Marquei V9.1–V9.4, V9.6 e V9.9–V9.11.
-V9.5, V9.7 e V9.8 ficam para o roteiro do usuário, no host
-(`docs/mission/evidence/M9/roteiro-usuario.md`).
-`conferir_host` contra os manifestos desta máquina: 1Password e KeePassXC dão ok; o
-Claude in Chrome (host no home) dá "NÃO COPIE".
-Baixos de documentação ainda abertos:
-- o heredoc do `conferir_host` vem indentado no texto cru;
-- um `path` em `/bin/...` dá "/bin é um link", e falta dizer que `/usr/bin/...` passa.
-
-## Milestone 10 — Migração e saída do KeePassXC
-Contrato: V10.1–V10.4
-
-Scrutiny do M10 (2026-11-09): aprovado (V10.1–V10.3); V10.4 é do usuário.
-Auditoria do M10 (2026-11-09): **reprovada** (1ª vez), achado alto: o passo 2b manda
-`wl-copy < arquivo` com a chave privada, e o wl-clipboard 2.2.1 grava a entrada em
-`/tmp/wl-copy-buffer-XXXXXX/` (ext4, caminho fixo no binário) até o `--clear` — chave
-em claro no disco (S2).
-2ª auditoria do M10 (2026-11-09, depois de 53a, 53b e 53c): **aprovada**. O alto está
-fechado; `make app-check` saiu 0; a corrida de link/FIFO no `carregar_chave` (81 mil
-chamadas) não carregou nada fora do arquivo escolhido. Os 2 médios e 4 baixos foram para
-a Fase 53d.
-QA do M10 (2026-11-09): **aprovado**. V10.1–V10.3 estão marcados. O botão bate com os
-frames da 53c, com 14 de 14 asserções pela ponte; a evidência está em
-`docs/mission/evidence/M10/`. O V10.4 é do usuário. Observações: a ponte de teste pede um
-`favicon.ico` que não existe (404, só no teste); com o daemon real, a ponte não tem
-seletor (falta `--anexos`), então o fluxo real fica para a janela nativa; "Salvar" fica
-habilitado cedo, uma diferença cosmética em relação ao design (V5.10).
-
-- [x] Fase 53a — App: botão "Carregar de arquivo" no campo "Chave privada" (`servidor`)
-  que lê o arquivo escolhido (tmpfs) direto para o daemon, sem área de transferência;
-  limite de tamanho, recusa de link e de arquivo que não é chave OpenSSH/PEM; conteúdo
-  nunca volta à webview; testes de ataque e QA pela ponte. S2, S12, V5.13.
-  Feita (2026-11-09): comando `carregar_chave { campo }` (só `chave_privada`), leitura em
-  `app/nucleo/src/chave.rs` com `O_NOFOLLOW|O_NONBLOCK|O_NOCTTY`, 64 KiB, só OpenSSH/PEM;
-  a chave fica no Rust (`Segredo`) até salvar, cancelar, sair ou travar. `make check` 0;
-  QA pela ponte com daemon falso 13/13. Pendências: `make app-check` não rodou no worktree
-  (clippy/ACL/release do Tauri; o host já tem o webkit 2.52.6, rodar no checkout); o
-  diálogo GTK real e o `recently-used.xbel` ficam para o roteiro nativo; teste por tempo
-  `v3_33_kill_9_entre_as_senhas_erradas` (limite 1,5 s) falha com a máquina carregada.
-- [x] Fase 53c (DESIGN) — Desenhar no `Ward.figcraft` o botão "Carregar de arquivo" e os
-  estados "aviso" e "chave carregada" do campo "Chave privada" (frames `9900`, `8981`,
-  `14743`) e atualizar o `design-nodes.md`. A tela da 53a usa só componentes e tokens
-  existentes.
-  Feita (2026-11-09): componente `Campo chave privada` (set `20988`, estados vazio e
-  aviso), frames novos `21032`, `21452`, `21847`, `22268` e o `14743` corrigido; ids no
-  `design-nodes.md`, PNG em `docs/mission/evidence/fase-53c/`. Pendências: aba antiga não
-  salva no MCP headless do FigCraft (não salvar dela); `docs/escopo.md` não cita o
-  "Carregar de arquivo"; ajuda da chave salva em `8981` difere do app (antigo).
-- [x] Fase 53b — Guia e lint da migração (achados médios/baixos da auditoria do M10):
-  passo 2b usa o "Carregar de arquivo" da 53a e nunca `wl-copy` para chave; chaves que só
-  existem no `~/.ssh` também vão para o Ward e, conferido o passo 3, são apagadas (não
-  guardadas em `~/ward-migracao`), e a frase "nenhum deles tem segredo" é corrigida;
-  antes do primeiro `ward ssh`, copiar a linha do host do `~/.ssh/known_hosts`
-  (`ssh-keygen -F`) para o `known_hosts` do Ward; chave pessoal sem passphrase ganha
-  uma (`ssh-keygen -p`); conferir do chaveiro por `busctl … SearchItems` ou contagem de
-  `attribute.application`, sem prometer rótulo/caminho; "Voltar atrás" do passo 6 devolve
-  todos os `Login Data*`; abrir o backup do `.kdbx` (e guardar arquivo-chave) antes do
-  passo 8; caso de mais de um item do Chrome no chaveiro. `dev/testes/migracao.py` com
-  lista positiva de comandos por bloco, `wl-copy` só com `--clear` no mesmo passo, nada
-  de `rm` em `~/cofre`/`.kdbx` antes do passo 8, `secret-tool clear` só depois da guarda
-  do dono, frases "conversa/chat/agente/assistente" + verbo de envio recusadas mesmo com
-  negação, blocos de qualquer linguagem; os 22 ataques do auditor (scratchpad
-  `burla.py`) entram no autoteste. V10.1–V10.3.
-  Pendências da 53b: passo 2b depende do botão **Carregar de arquivo** da 53a (o lint
-  confere esse nome); guarda do `secret-tool clear` assume `Comm=gnome-keyring-d` no
-  `busctl status` (falha fechada); não conferido se `wl-copy --clear` ou o histórico da
-  área de transferência do COSMIC gravam em disco; comentário do alvo no `Makefile`.
-
-- [x] Fase 53 — `docs/migracao.md`: guia da etapa final, executado pelo usuário, com
-  conferência e volta atrás em cada passo (chaves pessoais para `~/.ssh`, chaves de
-  servidor para entradas `servidor`, gnome-keyring e "Chrome Safe Storage", desfazer
-  `montagem.md`, senhas do Chrome, troca da skill, desinstalar o KeePassXC por último).
-  A fase não executa nenhum passo. V10.1–V10.4.
-- [x] Fase 53d — Achados da 2ª auditoria do M10 (não bloqueiam o QA).
-  - **Médio:** o lint do `dev/testes/migracao.py` deixa a chave voltar ao disco:
-    - `cp`/`mv` com origem na pasta em memória `/run/user/$(id -u)/migracao/`;
-    - `..` nos caminhos de `cp`/`mv`/`install` (`../tmp` escapa do padrão `/tmp`);
-    - argumentos de `find … -exec cp`;
-    - `chmod 644` de chave, `grep .` de chave e `busctl … Item Delete`.
-    Correção: a pasta em memória conta como origem de chave, e o destino só pode ser ela
-    mesma ou o `~/.ssh`. Recusar `..` em todo caminho e conferir os argumentos do `-exec`.
-    Limitar o `chmod` a 600/700, o `grep` a `-x`/`-q` sem caminho de chave e o `busctl` a
-    `SearchItems`/`NameHasOwner`/`status`. Os 9 casos entram no autoteste.
-  - **Médio:** no passo 2a do `docs/migracao.md`, uma chave pessoal sem passphrase é
-    salva direto em `~/.ssh` (ext4, com a umask) e só depois ganha passphrase. Correção:
-    salvar na pasta em memória, rodar `ssh-keygen -p -f` lá, `install -m 600` para o
-    `~/.ssh` e `rm -f` da cópia. O lint passa a aceitar esse caminho.
-  - **Baixo:** no passo 3, o `>>` cria o `known_hosts` do Ward com a umask, e o daemon
-    recusa o `ward ssh`. Correção: `install -m 600 /dev/null …` antes, ou `chmod 600`
-    depois, com o lint ajustado.
-  - **Baixo:** em `app/src-tauri/src/main.rs`, o `atualizar_bandeja` não zera
-    `carregadas`/`usadas` quando a trava vem de fora (inatividade, `ward travar`, tela
-    bloqueada). Correção: chamar `descartar_formulario()` na passagem para `Travado`.
-  - **Baixo:** desligar `gtk-recent-files-enabled` nas `GtkSettings` do app, para o
-    diálogo de arquivo não gravar o caminho em `recently-used.xbel`.
-  - **Baixo:** `app/nucleo/src/chave.rs` deve ler num buffer fixo de `MAX_CHAVE + 1` com
-    `Zeroizing`, sem realocar.
-  Feita (2026-11-09): os 2 médios e os 4 baixos estão corrigidos, mais os dois baixos de
-  documentação do QA do M9 (4a). `teste-migracao` passa com 85 ataques recusados, sendo
-  23 novos; `app-check` 0; `make check` sem o gitleaks, que rodou à parte limpo.
-  Pendências:
-  - o `recently-used.xbel` com o diálogo real fica para o roteiro nativo;
-  - sem bandeja, a trava vinda de fora só descarta o formulário na próxima consulta de
-    estado;
-  - o `>>` do passo 3 segue link (só chave pública, pasta 0700);
-  - o `docs/escopo.md` não cita o "Carregar de arquivo".
-
-## Auditoria final
-
-Auditoria final de segurança (2026-11-09): **reprovada**. Nenhum crítico; um alto, um médio e
-seis baixos.
-- `make check` (932 testes), `app-check`, `teste-socket-ataques`, `teste-cli`,
-  `teste-ssh-home`, `teste-nm`, `teste-extensao`, `teste-login`, `teste-playwright`,
-  `teste-skill`, `teste-migracao`, `teste-install`, `teste-units`, `teste-docker-uid` e
-  `teste-deb` deram 0.
-- V2.25 (TOTP por um oráculo HMAC em Python) e V4.12 (`pg_select.py` pelo `ward run`)
-  conferidos sem o `oathtool` e sem o `psql`.
-- **Alto:** RA8 nunca foi decidido (`docs/escopo.md:474-477`). Um `ward` falso no `PATH`
-  capturou a senha mestra digitada em `ward destravar`. Decisão do usuário.
-- **Médio:** a janela de aprovação não mostra a entrada padrão. `printf <script> | ward run
-  acme-pg-aprovacao -- python3` aprovado com PIN tirou o `PGPASSWORD`, e a janela só
-  mostrou `"python3"`. Decisão do usuário (RA3 ou correção).
-
-- [x] Fase 54 — Baixos da auditoria final:
-  - `ward run` morre na trava: `Estado::travar` (`nucleo.rs:170-186`) mata o grupo da
-    sessão, como o agente SSH e a ponte (S8). Teste de ataque: `travar` no meio de
-    `sh -c 'sleep 4; printenv …'`.
-  - A trava por tempo sem uso (`trava.rs:76-82`) só zera com uso que entrega credencial
-    ou com ação do app; `lista` periódica do agente não adia a trava. Teste.
-  - Cópia externa (`externo.rs:320-342`) só copia versões com `geracao_selada` pela
-    chave aberta; lixo plantado na pasta local não gira as versões do pendrive. Teste.
-  - `dev/conteiner-plataforma/dentro.sh:428`: preencher em `http://localhost:8081`
-    agora exige confirmação (44c/44e); `make teste-docker-plataforma` volta a sair 0.
-  - `dev/testes/home-real.sh:183`: `python3` na regex do trace e ignorar o 2º argumento
-    de `readlink`/`readlinkat` no analisador; `make dev-servicos-conferir` e
-    `make teste-ataques-servicos` voltam a sair 0.
-  - Aviso na tela "Trocar senha": os backups antigos continuam abrindo com a senha antiga.
-  - `make teste-ataques-fundacao` (não rodou na auditoria por falta de disco) roda e sai 0.
-  Feita (2026-11-10): `make check` (936 testes), `teste-docker-plataforma`, `teste-cli`,
-  `teste-ataques-servicos` e `teste-ataques-fundacao` (167 ok) saíram 0. Achados fora da
-  fase: Fases 54c e 54d; `ward ssh` aberto não cai na trava (decidido: Fase 54c).
-- [x] Fase 54a — RA8 aceito, docs endurecidos (decisão do usuário, 2026-11-09: "Aceitar e
-  endurecer docs"):
-  - `docs/escopo.md`: RA8 sai de "a decidir" e entra em "Fora do modelo de ameaça" (sessão
-    gráfica ou shell adulterados por processo do mesmo uid: `ward` falso no `PATH`, proxy
-    Wayland ou de barramento), com as reduções; PRD RA8 atualizado.
-  - `docs/instalacao.md`, `docs/migracao.md`, `skill/ward/SKILL.md`, `skill/README.md` e o
-    roteiro do usuário: `ward destravar` e todo comando que digita a senha mestra usam
-    `/usr/local/bin/ward`; uma nota explica o porquê.
-  - `make teste-skill` e `make teste-migracao` continuam saindo 0 (ajustar as listas se
-    preciso).
-  Feita (2026-11-09): RA8 em "Fora do modelo", com o que o caminho completo não fecha
-  (função do shell, alias do zsh). Guias, skill e README usam `/usr/local/bin/ward
-  destravar`. `migracao.py` e `skill.py` têm 7 ataques novos e saíram 0. O `make check`
-  e o `make teste-skill` completo não rodaram, por falta de disco; ficam para a
-  reauditoria.
-- [x] Fase 54b — Entrada padrão na aprovação (decisão do usuário, 2026-11-09: "Avisar e
-  recusar pipe"):
-  - A CLI informa ao daemon o tipo da entrada padrão do `ward run`/`ward ssh` (tty, pipe,
-    arquivo, `/dev/null`), por `fstat`, no `PedidoExecutar`.
-  - A janela de aprovação mostra em `Destaque` aviso quando a entrada não é tty nem
-    `/dev/null` ("O comando recebe dados pela entrada padrão, que esta janela não mostra").
-  - No nível "com aprovação", entrada pipe/arquivo só passa com uma confirmação explícita
-    a mais na janela (caixa marcada antes de "Permitir"); sem ela o daemon recusa. O
-    daemon confere, a janela não decide sozinha (S9).
-  - `skill/settings-deny.json`: regras para `| ward run`, `ward run … <` e `<<<`, e
-    `make teste-skill` com os ataques novos.
-  - Testes de ataque: o `printf <script> | ward run acme-pg-aprovacao -- python3` da
-    auditoria final e o `psql` por pipe não tiram nada sem a confirmação; com tty passa
-    como antes. Atualizar D/RA no PRD e o contrato (V4.*).
-  - Da 54a: a mensagem de travado da CLI (`crates/ward/src/comandos.rs:143`) passa a dizer
-    `/usr/local/bin/ward destravar`; ajustar o V4.22 e o `teste-cli`.
-  Feita (2026-11-10): `tipo_entrada` (terminal/nula/pipe/arquivo/outra) no pedido; o daemon
-  recusa Permitir sem `entrada_confirmada` (antes do PIN), "1 hora" não cobre entrada
-  oculta, `nula` fechada no filho. D68, RA11 proposto, V4.39/V4.40. `make check`,
-  `teste-skill` e `teste-cli` saíram 0; `app-check` (release) não rodou por disco.
-- [x] Fase 54c — Rotação dos backups contra versões plantadas (achado da Fase 54):
-  - A rotação do backup local (`backup.rs`) só conta e só apaga versões que conferem pela
-    `geracao_selada`; lixo plantado com data mais nova não apaga versão real. Teste.
-  - A rotação do pendrive (`externo.rs`) faz o mesmo: nomes plantados com data passada
-    recente não apagam cópias reais (a 49a só cobriu datas futuras). Teste.
-  - Relógio que volta: documentar a falha fechada (versão "fora de ordem" não vai) no
-    escopo › backup.
-  - `ward ssh` morre na trava (decisão do usuário, 2026-11-10: "Derrubar também"): a sessão
-    `ssh`/`sshpass` aberta entra no mesmo registro do `ward run` (`SessoesRun`) e leva
-    `SIGKILL` no grupo ao travar; a CLI sai 137 com o aviso. Teste de ataque e ajuste do
-    V4.26/escopo › S8.
-  Feita (2026-11-10): `para_apagar_conferidas` (local e pendrive); `ward ssh` sai 137 na trava
-  (`matar_com_sessoes_filhas` pega o `ssh` do `setsid` do `sshpass`); V7.12 novo. `make check`
-  (954) e `teste-cli` 0. Versões de antes de uma troca de senha não saem mais pela rotação.
-- [x] Fase 54d (DESIGN) — Aviso dos backups antigos no FigCraft (achado da Fase 54):
-  - `Diálogo de troca` › `Tipo=senha mestra` (19918/19924) e `Configurações / Trocar senha
-    mestra` (20085/20411) ganham o aviso da tela, com `--cor-aviso-texto`, igual ao app
-    (`docs/mission/evidence/fase-54/trocar-senha-aviso.png`).
-  Feita (2026-11-10): explicação `19924` igual à do app e aviso `22962` (`aviso/texto`);
-  herdado na tela `20085` (`22963`). Ids em `design-nodes.md` › "Fase 54d".
-- [x] Fase 54e — Tamanho dos textos da troca de senha (achado da 54d): o design usa 14/20
-  (`8:12`) na explicação e no aviso; o `TrocarSenha.svelte` usa 13/18. O app passa a
-  14/20 (`--tamanho-base`/`--altura-linha-base`; o `--tamanho-md` é 16/24) nos dois,
-  conferido no Chrome headless contra o frame `20085`.
-  Feita (2026-11-10): 14/20, 430×40 e 430×60, quebras iguais ao frame; `make app-front` 0.
-- [x] Fase 54f (DESIGN) — Aprovação com entrada padrão oculta (achado da 54b): frame
-  `Aprovação / entrada padrão` no FigCraft com o `Destaque` aviso e o `Interruptor` da
-  confirmação, desmarcado e marcado, igual a `docs/mission/evidence/fase-54b/`;
-  `docs/escopo.md` › "Janela de aprovação" passa a citar o aviso e a confirmação.
-  Feita (2026-11-10): frames `22964` e `23051`; escopo atualizado.
-- [x] Fase 54g — RA11 aceito (decisão do usuário, 2026-11-10: "Aceitar como risco"): o
-  tipo `terminal` declarado pela CLI do mesmo uid (cliente que mente no socket, pty próprio
-  do agente) entra em `docs/escopo.md` › "Fora do modelo de ameaça", com o que a 54b fecha
-  (pipe, arquivo, erro honesto); RA11 no PRD sai de "proposta". Rodar depois da 54c e 54f.
-  Feita (2026-11-10): item novo em "Fora do modelo de ameaça"; RA11 fechado no PRD.
-- [x] Fase 54m — Ordem do RA10 no escopo (achado da 54g): em "Fora do modelo de ameaça", o
-  parágrafo "Vale também para o próprio agente (ameaça 1)…" e o subitem dos pipes do Chrome
-  por `/proc/<pid>/fd` voltam para o item do RA10, antes de "Crash do Chrome com a senha
-  preenchida". Só mover, sem mudar texto.
-- [x] Fase 54h — `Modal` contra o design (achado da 54e, já existia): o "X" de fechar do
-  cabeçalho e o corpo 3 px acima (y 170 contra 173) no diálogo de troca; conferir no Chrome
-  headless contra o frame `20085`.
-  Feita (2026-11-10): "X" no `Modal` (fecha como o Esc), corpo em y 173; `make app-front` 0.
-- [x] Fase 54i (DESIGN) — "Diretório de trabalho" nos frames de aprovação (achado da 54f):
-  os frames `16701`, `16810`, `16885`, `16960` e `17035` ganham a `Caixa de código` do
-  diretório, como o app mostra desde a 26a; o comentário "sem frame" de `aprovacao.js` e
-  `JanelaAprovacao.svelte` passa a citar `22964`.
-  Feita (2026-11-10): caixas `23144`–`23156`; comentários atualizados. A propriedade
-  `Conteúdo` das caixas "Comando" antigas ainda diz `clientex-*` (o texto desenhado está certo).
-- [x] Fase 54j (DESIGN) — Rodapé dos modais e Trocar PIN (achados da 54h): no FigCraft,
-  os botões do rodapé das instâncias do `Modal` (`612`/`628`, `20463`/`20467`) voltam a 44
-  px como o `Botão` `263`, sem o espaço de 4 px no topo; a diferença de 4 px do Trocar PIN
-  (554 no app, 558 em `20471`) é medida e o lado errado é corrigido.
-  Feita (2026-11-10): rodapés a 44 nos componentes `612`/`628`/`19918`/`19979`; o
-  `TrocarPin.svelte` passou a 14/20 na explicação (558, igual ao `20471`).
-- [x] Fase 54k (DESIGN) — `Diálogo de nível` (achado da 54j): app 48 de altura (padding 4,
-  botões 44), design `967` 44 (botões 40); o design passa a botões de 44, como na 54j.
-  Comentário "Sem frame próprio" do `TrocarPin.svelte` passa a citar `20193`. Diferenças
-  de 1–2 px de largura por fonte não viram fase.
-  Feita (2026-11-10): botões de 44 nos componentes `968`/`1027`/`1078`; app e design batem.
-- [x] Fase 54l — Achados da 54c:
-  - `arquivos::ler_cofre` abre com `O_NOFOLLOW | O_NONBLOCK` e só arquivo comum: um FIFO
-    no lugar de uma versão (restaurar, leitura local da cópia externa) não trava a thread.
-    Teste de ataque.
-  - Fim da sessão do `ward ssh` (CLI caiu, SIGKILL na CLI) usa `matar_com_sessoes_filhas`:
-    nenhum `ssh` com sessão própria sobra. Teste de ataque.
-  Feita (2026-11-10): `abrir_leitura` com `O_NONBLOCK`/`O_NOCTTY`; todo fim de sessão usa
-  `matar_com_sessoes_filhas`. `make check` (957) e `teste-cli` 0.
-
-Reauditoria final (2026-11-10): **aprovada**. Nenhum crítico nem alto; um médio e quatro
-baixos. `make check` (957), `teste-skill`, `app-check` e `teste-cli` (157) deram 0;
-`teste-ataques-fundacao` 166/167 (o que falhou foi ENOSPC no build da cópia, precisa de ~5 GB).
-- [x] Fase 55 — Achados da reauditoria final:
-  - **Médio (S8):** descendente do `ward run` que sai do grupo (`setsid -f`, `setpgid(0,0)`)
-    sobrevive à trava e ao fim do comando com o segredo. O `wardd` vira
-    `PR_SET_CHILD_SUBREAPER` e a sessão mata todo descendente (varredura de `/proc` por
-    ancestralidade sob SIGSTOP, ou cgroup v2 por sessão se o `wardd@` puder delegar);
-    a CLI só diz "encerrado" se nada sobrou. Testes de ataque com os dois passos da
-    auditoria; controle sem a correção.
-  - **Baixo:** o `detalhe` que a janela de aprovação pede para mostrar o pedido e o
-    `codigo_totp` do formulário não contam como uso (`trava.rs`); um `ward run` repetido,
-    negado ou expirado, não adia a trava. Teste.
-  - **Baixo:** `gravacao::trocar_senha` lê o cofre por `arquivos::abrir_leitura` (sem seguir
-    link, sem travar em FIFO). Teste com FIFO.
-  - `make teste-ataques-fundacao` com disco suficiente (apagar `target/debug/incremental`
-    antes) sai 0.
-  Feita (2026-11-10): subreaper e varredura de descendentes (D69), trava sem detalhe/TOTP/
-  janela, troca de senha por `ler_cofre`. `make check` (967), `teste-cli` (157) e
-  `teste-ataques-fundacao` (167 ok, build do zero) saíram 0.
-
-
-QA final (2026-11-10): **aprovado**. `teste-cli` (157, 0 falhas; as falhas de V4.14 das
-rodadas anteriores vinham de comandos paralelos na máquina: um varredor independente de
-`/proc/*/cmdline` não achou nada), `teste-extensao`, `teste-login` e `teste-playwright`
-saíram 0; interface conferida contra o FigCraft. Evidência em `docs/mission/evidence/final/`.
-Pendências (não bloqueiam): pedido de aprovação fica na janela depois que a CLI morre
-(`kill -9`) e sobrevive a travar/destravar — dá para aprovar ou "Permitir sempre" um pedido
-órfão; "Escolher tipo" não fecha com Esc; 404 do favicon só na ponte de teste; pesos de
-fonte, "24 caracteres" e origem da extensão em mono, quebra em "Símbolos" e "Último: …" do
-backup local diferem do FigCraft. Do usuário: V10.4/migração, V5.28 (janela nativa,
-`roteiro-usuario.md`) e `sudo make install`.
+Pulado (resposta 1 do usuário, 2026-11-10): nenhuma tela muda. `Ward.figcraft` e
+`docs/mission/design-nodes.md` ficam como estão. Sem fases.
+
+## Milestone 1 — Base da tradução
+
+Contrato: V1.1–V1.10. Sequencial.
+
+- [x] Fase 1 — Glossário. Inventário de todo nome pt-BR do repositório (grep por crate,
+  módulo, arquivo, pasta, tipo e função públicos, alvo e variável do make, subcomando,
+  variável de ambiente, operação/campo/erro/papel do protocolo, nome gravado no cofre,
+  comando e evento do Tauri, classe CSS e token, mensagem de native messaging) e
+  `docs/glossario.md` (pt-BR, tabela termo → inglês, mais uma seção por categoria com
+  todos os nomes externos). Inclui as tabelas DT4, DT8, DT11–DT15 do PRD, completadas
+  (campos e erros do protocolo, outros nomes gravados). Se achar um nome gravado fora
+  de DT4, atualiza a tabela no PRD. Escreve também `dev/english-check/pt-words.txt`
+  (radicais do domínio e palavras funcionais). Não muda código. Sem compilação. — V1.1
+- [x] Fase 2 — Checador e `make compile`. `dev/english_check.py` (DT17: por linguagem,
+  comentários/identificadores/literais; nomes de arquivo e pasta; `allow.txt`,
+  `frozen.txt`, exceção sem uso falha; `--paths`, `--literals`, `--self-test` que
+  planta em cópia em `.dev/`) e alvos `english-check` (só relatório, ainda fora do
+  `make check`) e `compile` (V1.5; passa pelas origens; sem teste). Só biblioteca padrão.
+  Compilação: `make compile`. — V1.2, V1.3, V1.4, V1.5
+- [x] Fase 3 — Linha de base legada (DT18). `git worktree` da tag `v0.1.4` em
+  `.dev/baseline/src`. Gera, com o código de lá: `dev/fixtures/legacy/`
+  (`vault-0.1.4.ward`, `state-0.1.4`, `backup-0.1.4/`, `protocol-v1.jsonl`,
+  `list-v1.json`, `help-0.1.4.txt`, `strings-0.1.4.txt` pelo `--literals`,
+  `SHA256SUMS`) e `.dev/baseline/` (binários 0.1.4 de release e de `modo-teste`, `.deb`
+  0.1.4 com CRX3 falso, a extensão 0.1.4 montada). Escreve no `ward-core` os testes de
+  fio que comparam a serialização dos tipos do protocolo com `protocol-v1.jsonl` e o
+  corpo serializado com o de `vault-0.1.4.ward` (V2.2). Roda o `make gitleaks` só sobre
+  as fixtures novas (se acusar, para e pergunta). Compilação: `make compile`. — V1.6,
+  V1.7
+- [x] Fase 4 — Crates e feature (DT13). `git mv` de `crates/ward-plataforma` →
+  `crates/ward-platform`, `crates/ward-ponte-teste` → `crates/ward-test-bridge`,
+  `app/nucleo` → `app/core` (pacote `ward-app-core`); nomes de pacote e de lib,
+  `[workspace]`, dependências, `use`, `app/src-tauri/Cargo.toml`, os dois `Cargo.lock`
+  (só os nomes; nenhuma versão muda), `deny.toml`. Feature `modo-teste` → `test-mode`
+  em Cargo, `cfg`, Makefile, scripts e `dev/origens.py`. A marca nos binários (literal)
+  fica para a Fase 56. Compilação: `make compile`. — V1.8
+- [x] Fase 5 — Pastas e arquivos fora dos crates e do `app/src` (DT13, DT1). `git mv` de
+  `instalacao/` → `install/` (e os arquivos dela: `arvore.txt` → `tree.txt`,
+  `instalar.sh` → `install.sh`, `grupos.sh` → `groups.sh`, `despejo.sh` → `dump.sh`,
+  `empacotar-extensao.sh` …), `extensao/` → `extension/` (`chave-publica.txt` →
+  `public-key.txt`, `servico.js`, `pagina.js`, `envio.js` …), `dev/testes/` →
+  `dev/tests/`, `dev/servicos/` → `dev/services/`, `dev/conteiner-*` →
+  `dev/container-*`, `dev/fixtures/entradas.json` → `entries.json`, `dev/ambiente.sh` →
+  `dev/env.sh`, `dev/origens.py` → `dev/origins.py`, `dev/variacoes.py` →
+  `dev/variations.py`, e os demais arquivos de `dev/` pelo glossário; todos os usos
+  (Makefile, scripts, `CLAUDE.md`, `.gitleaks.toml` e `dev/gitleaks-*.toml`, `.gitignore`,
+  docs; achado da Fase 2: também `dev/fixtures/anexos/` e `app/design/icones/*.svg`). Caminhos de `.dev/` pelo glossário em scripts e no `config.rs` de teste (o da
+  release, `~/.local/share/ward/cofre.ward` e `estado`, não muda), com `mv` dos arquivos
+  existentes; a chave da extensão vai por `mv` para `.dev/extension/key.pem`, 0600, e a
+  fase confere o id (V1.9; nunca imprime a chave). Evidência dos scripts em
+  `docs/mission/evidence/<suíte>/`. Compilação: `make compile`. — V1.8, V1.9
+- [x] Fase 6 — Makefile e `CLAUDE.md` (DT14, DT2). Alvos e variáveis pelo glossário,
+  sem alias, com todos os usos (scripts, mensagens de "rode `make …` antes", docs,
+  `.claude/agents/*.md`, `.claude/skills/mission/SKILL.md`, `skill/README.md`). A tabela
+  de comandos do `CLAUDE.md` com os nomes novos e a convenção de IDs (`m2:`; IDs sem
+  prefixo = missão 1, em `docs/mission/arquivo/m1/`). Alvo `extension` no `.PHONY` (existe a pasta `extension/`; achado da
+  Fase 5); `target/sem-modo-teste` pelo glossário. Compilação: `make compile`. —
+  V1.10
+
+## Milestone 2 — Rust em inglês (trilha R, fio congelado)
+
+Contrato: V2.1–V2.8. Sequencial, de baixo para cima: cada fase traduz os
+identificadores, os comentários e os nomes de módulo/arquivo (`testes.rs` → `tests.rs`)
+dos arquivos listados, e ajusta os usos nos crates que dependem deles (só os usos).
+Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
+
+`ward-platform`:
+- [x] Fase 7 — `launcher` (`lancador.rs`), `child` (`filho.rs`), `relogio.rs`, `teste.rs`,
+  `lib.rs`. — V2.1, V2.3
+- [x] Fase 8 — `sys.rs`, `processo.rs`, `descendentes.rs`, `memoria.rs`. — V2.1, V2.6, V2.7
+- [x] Fase 9 — `socket.rs`, `papel.rs`, `conectar.rs`, `terminal.rs`, `endurecimento.rs`,
+  `servidor.rs`, `app.rs`, `pasta.rs` e os testes do crate; checador também em `process.rs`, `launcher.rs`, `child.rs`, `clock.rs`,
+  `testing.rs` e `lib.rs` (achado da Fase 7). — V2.1, V2.3
+
+`ward-core`:
+- [x] Fase 10 — `lib.rs`, `limites` (+ testes), `cripto`, `totp` (+ testes), `gerador`
+  (+ testes), `origem`, `exibicao`. — V2.1
+- [x] Fase 11 — `formato` (+ testes), `gravacao` (+ testes). Gravação atômica intocada.
+  — V2.1
+- [x] Fase 12 — `entrada.rs`, `entrada/segredo.rs`, `entrada/validacao.rs` (os nomes
+  gravados de `nome()`/`de_nome()` são literais congelados; os rótulos pt-BR ficam). —
+  V2.1
+- [x] Fase 13 — `entrada/testes.rs`, `configuracao` (+ testes). — V2.1
+- [x] Fase 14 — `corpo.rs`, `corpo/cofre_teste.rs`, `corpo/testes.rs` (`VERSAO_CORPO`
+  continua 4). — V2.1, V2.2
+- [x] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
+  congelados). — V2.1
+- [x] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
+  máscara intocada. — V2.1, V2.5
+- [x] Fase 17 — `protocolo.rs`, `campos.rs`, `quadro.rs`, `json.rs`, `erros.rs`,
+  `pedido.rs` (nomes de operação, campo, erro e papel congelados como literais; o
+  `dev/tests/socket_matrix.py` lê `protocolo.rs`, `Operacao, `, `tabela!`, `TODOS`/
+  `AGENTE_E_APP`/`SO_AGENTE` e muda junto, achado da Fase 45). —
+  V2.1, V2.2
+- [x] Fase 18 — `protocol/response.rs`, `protocol/tests.rs`; `crates/ward-core/tests/sources.rs`
+  e `tests/body_memory.rs`, antes `tests/fontes.rs` e `tests/corpo_memoria.rs` (achado da
+  Fase 10; o `sources.rs` já exclui `tests`/`tests.rs`). — V2.1, V2.2
+
+`wardd`:
+- [x] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
+  `arquivos.rs`, `uso.rs`, `trava.rs` (formato do estado congelado; o V3.15 em
+  `tests/approval.rs` lista `uso.rs` pelo nome e muda junto, achado da Fase 23). — V2.1, V2.7
+- [x] Fase 20 — `nucleo.rs`, `aprovacao.rs` (o V3.15 em `tests/approval.rs` lista os dois
+  pelo nome e muda junto, achado da Fase 23). — V2.1
+- [x] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
+- [x] Fase 22 — `playwright.rs`, `cdp.rs`, `login.rs`, `ponte.rs` (`serde` do CDP: campos
+  do Chrome não mudam). — V2.1
+- [x] Fase 23 — `servidor.rs`, `externo.rs`, `udisks.rs`; testes `comum/`, `units.rs`,
+  `memoria.rs`, `socket.rs`, `datas.rs`. — V2.1, V2.4
+- [x] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
+- [x] Fase 25 — testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (com o `[[test]]` `trava` no `Cargo.toml`, achado da Fase 4). — V2.1
+- [x] Fase 26 — testes `externo.rs`, `backup.rs`, `configuracoes.rs`, `d62.rs` (o
+  `externo_nao_usa_link` procura `rename_no_replace(destination.as_fd()` em `src/external.rs`;
+  achado da Fase 23). — V2.1
+- [x] Fase 27 — testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`,
+  `app_valor.rs`, `valor_app.rs`, `app_teste.rs`, `anexos_edicao.rs` (com os `[[test]]` `app_teste` e `app_valor` no
+  `Cargo.toml`, achado da Fase 4). — V2.1
+
+Clientes Rust:
+- [x] Fase 28 — `crates/ward` (`args`, `cliente`, `comandos`, `texto`, testes;
+  subcomandos e textos congelados) e `crates/ward-nm` (`ID_EXTENSAO` → `EXTENSION_ID`, com a leitura do
+  `pub const` em `dev/tests/extension.py` e o regex e as mensagens de
+  `dev/extension/build.py` (achado da Fase 39); mensagens congeladas). — V2.1
+- [x] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
+  `tests/ataques.rs`). — V2.1
+- [x] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
+- [x] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
+- [x] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
+  `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1
+- [x] Fase 33 — `app/core`: `comandos.rs`, `configuracoes.rs`, `backup_externo.rs`,
+  `terminal.rs`, `chave.rs`, `partida.rs`, `credenciais.rs`. — V2.1
+- [x] Fase 34 — `app/core`: `destrave.rs`, `primeiro_uso.rs`, `gerador.rs`,
+  `area_transferencia.rs`, `nivel.rs`; `app/src-tauri/src` (`main.rs` — o heredoc do
+  `dev/tests/webkit-real.sh` procura `partida::iniciar()`, `tomar_daemon`, `vigiar`,
+  `na_vigia`, `ErroApp::ConexaoPerdida` e muda junto, achado da Fase 45; o
+  `dev/tests/clipboard.py` roda `area_gtk::testes::sessao_real` pelo nome, achado da Fase 46 —, `area_gtk.rs`,
+  `build.rs`; nomes das funções `#[tauri::command]`, dos parâmetros e dos eventos
+  congelados até a Fase 54). Compilação: `make compile` (com o `cargo check` do
+  `app/src-tauri`). — V2.1
+
+- [x] Fase 34a — Resto do Rust (achado do fechamento do M2: `make english-check PATHS="crates app/core app/src-tauri/src"`
+  dá 1158 achados): comentários dos `Cargo.toml` (`crates/wardd`, `crates/ward-core`, `app/core`), os binários de teste
+  `crates/wardd/app-teste/main.rs` e `aprovador-teste/main.rs` (pastas e nomes de binário ficam para a Fase 56),
+  `app/core/tests/configuracao_tauri.rs`, e os identificadores que sobraram em `fake_daemon.rs`, `client.rs`,
+  `ward/src/{tests,commands}.rs`, `wardd/src/ssh.rs` e testes do `wardd`. Nome de fio, de comando Tauri, de
+  variável entregue ou de teste congelado continua literal (exceção em `frozen.txt` com a fase que o muda).
+  No fim, o checador nesses caminhos dá 0 achado. — V2.1
+
+## Milestone 3 — Web e scripts em inglês (trilhas W e S, fio congelado)
+
+Contrato: V3.1–V3.7. Pode rodar em paralelo com o Milestone 2 (depois da Fase 6).
+
+Trilha W (a 35 primeiro, depois 36–39 em paralelo):
+- [x] Fase 35 — **(UI)** Base do `app/src`: pastas `telas` → `screens`,
+  `lib/componentes` → `lib/components`, `lib/estilo` → `lib/style`, `lib/ponte` →
+  `lib/bridge`, `lib/teste` → `lib/test`; nomes dos componentes (`.svelte`) e dos
+  módulos JS com todos os imports; tokens CSS (`tokens.css`: propriedades custom e
+  classes) com todos os usos no app e em `extension/popup.css` e no montador da
+  extensão; nomes dos `.svg` de `app/design/icons/` (chaves de
+  `ICONES`, inclusive as montadas como `tipo-${tipo}`; achado da Fase 5); ícones da bandeja `app/src-tauri/icons/bandeja-*-32.png` com o caminho no Tauri (achado da Fase 2); `bidi.js`, `main.js`, `App.svelte`, `lib/components/*` (identificadores e
+  comentários). Nomes dos comandos Tauri e chaves de mensagem congelados. Compilação:
+  `make compile`. — V3.1, V3.2, V3.6
+- [x] Fase 36 — **(UI)** `screens/Form.svelte` (Formulario), `form.js`,
+  `Credentials.svelte`, `credentials.js`, `ChooseType.svelte`. — V3.1, V3.2, V3.4
+- [x] Fase 37 — **(UI)** `ApprovalWindow.svelte` (JanelaAprovacao), `approval.js`,
+  `PasswordGenerator.svelte`, `FirstUse.svelte`, `first-use.js`,
+  `RestoreBackup.svelte`, `restore.js`, `EmergencyKit.svelte`, `emergency-kit.js`. —
+  V3.1, V3.2, V3.3, V3.4
+- [x] Fase 38 — **(UI)** `Settings.svelte`, `settings.js`, `Unlock.svelte`,
+  `ChangePassword.svelte`, `ChangePin.svelte`, `ChooseUsbDrive.svelte`,
+  `lib/bridge/*`, `lib/test/Showcase.svelte`. — V3.1, V3.2, V3.3
+- [x] Fase 39 — **(UI)** Extensão: `extension/*.js`, `popup.html`, `popup.css` (classes),
+  `manifest.json` (só comentários do montador; campos do Chrome não mudam), montador
+  `dev/extension/` (`montar.py` → `build.py`). Mensagens de native messaging
+  congeladas. Ajusta os literais de `dev/tests/extension.py` (`data-entrada`, classes do
+  popup, `preencherNaPagina`; achado da Fase 40). Compilação: `make compile`. — V3.1, V3.5
+
+Trilha S (fases independentes entre si):
+- [x] Fase 40 — `dev/tests/extension.py`, `dev/tests/cli.py`. — V3.1
+- [x] Fase 41 — `dev/tests/migration-guide.py` (`migracao.py`),
+  `attacks-foundation.sh`, `skill.py`. — V3.1, V3.7
+- [x] Fase 42 — `dev/variations.py`, `dev/tests/variations_test.py`, `login.py`,
+  `revealed_selection.py`. — V3.1
+- [x] Fase 43 — `dev/container-*` (`inside.sh` de plataforma, install e deb; units, uid;
+  `falso.c` → `fake.c`), `dev/tests/clipboard.py`; exemplos `wardd-cliente-teste`,
+  `pai-chrome`, `chrome-falso`, `dev-cofre` e `partida-conteiner` com todos os usos
+  (achado da Fase 4). — V3.1, V3.7
+- [x] Fase 44 — `dev/tests/dev-vault.sh`, `ssh_home.py`, `install.sh`,
+  `attacks-services.sh`, `chrome_policy.py`, `app_e2e.py`, `playwright.py`. — V3.1,
+  V3.7
+- [x] Fase 45 — `dev/tests/real-home.sh`, `webkit-real.sh`, `dev/origins.py`,
+  `dev/services/web/server.py`, `nm.py`, `socket_attack.py`, `dev/services/generate.py`,
+  `deb.sh`, `dev/compose.yml`, `socket_matrix.py`; `make test-webkit-real NO_MPS=1
+  NO_39C=1` passa `--no-mps--no-39c` grudado (achado da Fase 6). — V3.1, V3.7
+- [x] Fase 46 — o resto de `dev/` (scripts com menos de 150 linhas, `daemon.sh`,
+  `bridge.sh`, `open-app.py`, `dev/services/*`, Dockerfiles, `entrypoint.sh`,
+  `pg_select.py`, `bidi*`, `gst-channels.sh`, `terminal-test.py`, `log-scan.py` …); `CASA_PASSWD` → `PASSWD_HOME`, `OPCOES_SSH`, `IMAGEM_PG` e `RAIZ` → `ROOT` (apagar os `RAIZ="$ROOT"` do `install.sh`/`attacks-services.sh`) e as funções do `common.sh` (`exigir`, `cliente`, `ssh_senha`…, achar por grep) em todos os usos
+  (achado da Fase 41). —
+  V3.1, V3.7
+- [x] Fase 47 — `install/` (`install.sh`, `groups.sh`, `dump.sh`, `chrome.sh`,
+  `crx.py`, `deb.sh`, `deb/*`, `systemd/*`, `tmpfiles.d`, `coredump.conf.d`; caminhos
+  instalados congelados até a Fase 57), comentários do `Makefile`, `deny.toml`,
+  `app/src-tauri/deny.toml`, `.gitleaks.toml`, `dev/gitleaks-*.toml`,
+  `rust-toolchain.toml`, `Cargo.toml` raiz. Textos do Makefile/`origins.py` que o
+  `attacks-foundation.sh` procura mudam junto com o `grep` (achado da Fase 41). — V3.1
+
+- [x] Fase 47a — Correção (achado da Fase 47): a varredura do V1.5 em
+  `dev/tests/attacks-foundation.sh` exclui `dev/fixtures/legacy/` (linha de base da Fase 3:
+  caminho do cofre real, variável do agente SSH e pasta do ssh na ajuda 0.1.4), com
+  controle de que a varredura ainda acusa o mesmo padrão plantado fora dessa pasta.
+  Compilação: `make compile`. — V1.6, V1.7
+
+- [x] Fase 47b — Resto fora do Rust (achado do fechamento do M2: `make english-check` no repositório dá 444
+  achados): comentários de `.gitignore`, `app/.npmrc`, `app/vite.config.js`, `app/src-tauri/Cargo.toml`, `app/package.json`
+  (`build:teste`), `app/src-tauri/capabilities/aprovacao.json` e dos scripts de `dev/` (`daemon.sh`, `bridge.sh`,
+  `open-app.py`, `dev/tests/*.sh`). Nome que só muda depois (variáveis `WARD_*`, binários e pastas de teste: Fase 56;
+  comandos e capabilities do Tauri: Fase 54; `dev/fixtures/entries.json`: Fases 48 e 53) vai para `frozen.txt` com a fase
+  que o muda; comentário que só cita esse nome é reescrito sem ele. No fim, `make english-check` no repositório só acusa
+  `dev/fixtures/entries.json` (da Fase 48). — V2.1
+
+## Milestone 4 — Formato e protocolo novos
+
+Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
+
+- [x] Fase 48 — Corpo v5 no `ward-core` (DT4). `BODY_VERSION` 5; nomes v5 em
+  `name()`/`from_name()`; leitura do v4 por uma tabela fechada de conversão (só no
+  caminho de leitura do v4); nome desconhecido recusa; a gravação só gera v5;
+  `dev/fixtures/entries.json` com os nomes v5 (chaves em inglês, valores falsos iguais);
+  testes novos (v4 → v5 igual em tudo, v5 com nome pt recusado, v4 com nome inglês
+  recusado, byte alterado, vetores) escritos, não rodados. Atualiza o teste de fio do
+  corpo (o v4 fica como leitura). Compilação: `make compile`. — V4.1, V4.2, V4.8, V4.9
+- [x] Fase 49 — (achado da Fase 48: a API pública do corpo ainda não diz se o lido era v4; p.ex. `open_entries_with_generation` devolver a versão) Migração no daemon e estado v2 (DT5, DT6; o `dev/daemon.sh` grava `ward-estado 1` quando falta o estado e muda junto, achado da Fase 46). Destrave de um v4 → grava v5
+  pelo caminho atômico, geração + 1, estado, backup; erro na gravação = destrave com
+  erro e v4 intacto; sem regravação de v5; restaurar v4 grava v5; rotação local e do
+  pendrive lendo v4 e v5; `ward-state 2` lendo `ward-estado 1`; log sem segredo. Testes
+  do `wardd` (morte em cada ponto da gravação por pontos de falha de `test-mode`,
+  retrocesso, idempotência) escritos, não rodados. Compilação: `make compile`. — V4.3,
+  V4.4, V4.5, V4.6, V4.7, V4.10, V4.11, V4.12
+- [x] Fase 50 — (achado da Fase 48: os valores de tipo, nível e segurança SMTP já saem nos nomes v5 pelo `name()`/`from_name()`; as linhas de `protocol-v1.jsonl` com `servidor`/`livre`/`bloqueado` falham no `wire_v1` até esta fase) Protocolo v2 no `ward-core` (DT8). `VERSION` 2; operações, respostas,
+  campos, erros e papéis pela tabela; campo desconhecido recusado; v1 →
+  `unknown_version`; testes do protocolo (matriz de papéis igual, nenhum nome pt-BR,
+  linhas de `protocol-v1.jsonl` recusadas) escritos. Compilação: só `cargo check` do
+  `ward-core` (os clientes quebram até a Fase 51; o handoff diz isso). — V4.13, V4.14,
+  V4.15
+- [x] Fase 51 — (achados da Fase 50: o `server.rs` responde ao erro de leitura e segue na conexão, e o V4.13 pede fechar depois de `unknown_version`; a CLI e o app usam `protocol::frame_version` para parar antes da senha (V4.16); `app/core` `credentials.rs` (`"usuario"`/`"senha"`/`"chave_privada"`) e `key.rs` (`LOADABLE_FIELDS`), o erro pronto do `ward-nm` (`{"v":1,"tipo":"erro",…}`) e o JSON montado à mão nos testes Rust passam à v2; gitleaks pode acusar `"password":"<base64>"`: só a forma base64 exata de um valor de D15 entra na allowlist) (achado da Fase 48: testes Rust que montam JSON com `banco`/`servidor`/`nota-segura`/`generico`/`bloqueado`/`com-aprovacao`/`livre`/`nenhuma` em `crates/wardd/tests/*`, `app/core`, `app/src-tauri/src/main.rs`, ponte, `ward-nm` e `ward` passam aos nomes v5; coluna TIPO do `ward list` por `label()`) Protocolo v2 nos clientes Rust: `wardd` (servidor, sessões, extensão,
+  ponte), `ward` (conferência da versão antes da senha; `list --json` com chaves e
+  valores em inglês e tabela com rótulos pt-BR: imprime `label()`, não `nome()`, achado da Fase 1), `ward-nm`, `ward-test-bridge`,
+  `app/core` (com o `daemon_falso`), testes Rust que montam JSON à mão. Compilação:
+  `make compile`. — V4.13, V4.16, V4.17, V4.18
+- [x] Fase 52 — (achado da Fase 50: `dev/tests/socket_matrix.py`, a extensão e os `dev/tests/*.py` ainda falam v1) (achado da Fase 48: o front-end `app/src` e `app/core/src/level.rs` ainda mandam `com-aprovacao`/`livre`/`banco`/`nenhuma`, que o `from_name` recusa desde a Fase 48; trocar pelos nomes v5 aqui ou na 54; `grep -rnE '"(banco|servidor|nota-segura|generico|bloqueado|com-aprovacao|livre|nenhuma)"'`) Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
+  `app/src/lib/bridge`, ponte de teste do front-end, `dev/tests/*.py` que falam com o
+  socket ou com o `ward-nm` (`socket_matrix.py`, `socket_attack.py`, `nm.py`,
+  `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
+  `fake_chrome.py`, `fake_ssh.py`), servidor falso v1 para o V4.16. Esvazia de
+  `frozen.txt` as chaves de mensagem. Compilação: `make compile`. — V4.13, V4.16, V5.10
+- [x] Fase 53 — (achado da Fase 48: o `SMTP_SECURITY` entregue passa de `nenhuma` a `none`; registrar na tabela "Entrega esperada") Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
+  `make dev-vault` e `dev-vault-verify` com o `entries.json` novo (chaves lidas por
+  `dev/variations.py` e `dev/tests/login.py`; heredoc do `dev-vault.sh` chama
+  `entry_patterns`/`database_url`; achado da Fase 42); oráculo
+  `dev/variations.py` (formas das variáveis novas); o parser da tabela "Cofre de teste"
+  em `dev/tests/dev-vault.sh` com os nomes v5 deste contrato; expectativas de
+  `dev/tests/cli.py` e dos testes do `wardd` pela tabela "Entrega esperada". Compilação:
+  `make compile`. — V4.19, V4.20, V4.21
+- [x] Fase 54 — (achado da Fase 51: o `app/src` tem de usar os ids de formulário v2 — `password`, `username`, `totp_seed`, `private_key`… — e o código `versao-incompativel` do app não tem tela própria) **(UI)** Comandos e eventos do Tauri e `serde` da webview: (tirar do `dev/english-check/frozen.txt` as 52 entradas da Fase 54 que a Fase 34 pôs para os comandos e parâmetros do `main.rs`; e as dos `#[serde(rename)]` de app/core das Fases 32–34) (procurar nome de fio como chave entre aspas e como acesso por
+  ponto, achado da Fase 36; `frozen.txt` lista os da W) nomes das
+  funções `#[tauri::command]` e dos parâmetros, eventos, `capabilities/*.json`,
+  `permissions/`, chamadas `invoke`/`listen` no `app/src`, ponte de teste, tira os
+  `#[serde(rename = "<antigo>")]`; lista do `strings` do V5.6 (missão 1) com os nomes
+  novos. `frozen.txt` vazio e apagado. Compilação: `make compile`. — V4.22, V4.23, V4.24
+
+- [x] Fase 54a — Correção (achados da Fase 51): (1) `crates/ward-nm/tests/binary.rs` › `no_daemon_answers_internal`, rodado com
+  `cargo test -p ward -p ward-nm -p ward-test-bridge`, compilou o `ward-nm` sem `test-mode` e alcançou o `wardd` 0.1.4
+  instalado na máquina pelo socket do sistema (pedido `fill` sem segredo, recusado). Nenhum teste pode alcançar o socket do
+  sistema: todo teste que fala com um daemon exige `test-mode` (falha alta sem ele, nunca cai no socket real) e um socket
+  dentro de `.dev/` ou do `WARD_DEV_SOCKET_DIR`; procurar no workspace todo teste com o mesmo risco (binário compilado por
+  unificação de features) e um teste de ataque que planta um socket "do sistema" falso e exige que nenhum teste o toque.
+  (2) gitleaks acusa 9 `generic-api-key` na árvore e outros no histórico (senhas falsas novas de testes e o handoff da
+  Fase 50): segredo de teste novo é gerado em `.dev/` ou é um valor de D15; o handoff não leva o valor; nada de padrão
+  genérico na allowlist. — S1, S3, V2.1
+
+- [x] Fase 54b — Nomes reservados na leitura (achado da Fase 53; decisão do usuário 2026-11-11: aceitar na leitura). Um
+  cofre v4 ou v5 com extra `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*` (ou `PROTOCOL` em ftp/sftp) ou anexo `key` em
+  server/ftp/sftp abre e migra; o nome reservado só é recusado ao salvar a entrada (`Draft::validate` no caminho de
+  gravação), e a entrega continua recusando nome repetido na conferência final (nenhuma variável entregue é trocada
+  por um extra). Testes de ataque: v4 com cada nome reservado abre e migra igual; salvar a entrada sem renomear é
+  recusado; `ward run` dessa entrada não deixa o extra sobrescrever `WARD_*` nem o anexo trocar `WARD_FILE_KEY`. — S1, V4.1, V4.19
+
+## Milestone 5 — Nomes externos e documentação
+
+Contrato: V5.1–V5.11. Sequencial.
+
+- [x] Fase 55 — Subcomandos da CLI (DT10): `list`, `lock`, `unlock`, `help`; sem alias;
+  `ward --help` (texto pt-BR igual, só os nomes); mensagens que citam subcomando (CLI,
+  daemon, app: "rode `ward unlock`"); `dev/tests/cli.py` e testes Rust. Compilação:
+  `make compile`. — V5.1, V5.2
+- [x] Fase 56 — (achado da Fase 54: ids do menu da bandeja `bandeja-*`, caminho `/ponte/`, nomes de tela do `&tela=`, modos `--daemon-falso` e códigos locais da ponte de teste ainda em pt-BR; e `incompatible-version` do app sem tela própria — cai no erro genérico) (também, achado da Fase 47b: o caminho `/cadastro` do serviço totp 8083 e o arquivo `aprovador.modo` do aprovador de teste, e as exceções de Fase 56 no `frozen.txt`) Variáveis internas e de teste e marca de `test-mode` (DT12): renomes com
+  todos os usos (Rust, scripts, Makefile, units); recusa da marca nova e da antiga no
+  `install/install.sh` e no `make release`; `dev/tests/no-test-mode.sh` procurando nomes
+  novos e antigos; binários `wardd-app-teste`/`wardd-aprovador-teste`, texto de uso e
+  mensagens `ward-ponte-teste:` da ponte (com o `dev/ponte.sh` aceitando as duas formas)
+  e a mensagem "modo-teste" do `install.sh` (achados da Fase 4); pasta do socket de teste
+  `ward-teste`, logs `wardd-*-teste.log` (achados da Fase 5); guarda `WARD_HOME_COBERTO`
+  em `real-home.sh`, `ssh-home.sh` e `home-decoys.sh` de uma vez (achado da Fase 45); os
+  `WARD_*`/`ward-teste*` dos scripts de `dev/` e o prefixo `ward-ponte-teste:` que o
+  `dev/bridge.sh` procura (achado da Fase 46). Textos de log
+  `UidRecusado`/`SemIdentidade` do `wardd` com o `dev/container-uid/inside.sh`; variáveis
+  `WARD_ATIVACAO`, `WARD_CAMINHO`, `WARD_ESPERADO`, `WARD_PLATAFORMA_FILHO` (achados da Fase 9). Compilação:
+  `make compile`. — V5.4, V5.5
+- [x] Fase 57 — Caminhos instalados e atualização (DT15, DT16): seis funções de `install/` que o
+  `dev/tests/deb.sh` procura (`garantir_grupo`, `conferir_grupo`, `conferir_politicas_chrome`,
+  `apagar_grupos_marcados`, `avisar_manifestos_de_usuario`, `avisar_core_pattern`) e o
+  `grupos-criados` nos dois lados, tirando as entradas do `frozen.txt` (achado da Fase 47); `install/tree.txt`,
+  `install.sh` (apaga `extensao/` e `grupos-criados` da 0.1.x, passa a marca para
+  `created-groups`, para o `wardd@*` antes de trocar binários; uninstall lê as duas
+  marcas), política do Chrome com o caminho novo, `install/deb/*` (preinst, postinst,
+  prerm, postrm) e `install/deb.sh`; testes de contêiner (`dev/container-install`,
+  `dev/container-deb`, `dev/tests/install.sh`, `deb.sh`) com os cenários de atualização a
+  partir dos artefatos 0.1.4 de `.dev/baseline/`. Compilação: `make compile`. — V5.6,
+  V5.7, V5.8, V5.9
+- [x] Fase 58 — (achado da Fase 55: skill, README e deny negam `ward unlock` em todas as formas e mantêm `destravar` para a 0.1.x; `dev/tests/skill.py` (`ALLOWED`, `UNLOCK`, exemplos, ataques) junto; até aqui o `make test-skill` falha) (achado da Fase 53: o deny nega `WARD_FILE_KEY` nas mesmas formas e mantém `WARD_ARQUIVO_CHAVE` para a 0.1.x; `dev/tests/skill.py` junto) Skill e deny (DT10): `skill/ward/SKILL.md` e `skill/README.md` com os
+  comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
+  `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
+  de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
+- [x] Fase 59 — (achado da Fase 56: `design-nodes.md` cita `--daemon-falso`, agora `--fake-daemon`) (achado da Fase 55: `docs/migracao.md` com `dev/tests/migration-guide.py`, `docs/instalacao.md`, `docs/escopo.md`, `README.md`, `.claude/agents/planner.md` e `user-testing-validator.md` citam `lista`/`travar`/`destravar`; o texto do nível bloqueado no app virou "ward list" e `docs/mission/design-nodes.md` (linha 854) e o `Ward.figcraft` acompanham) (achado da Fase 54b: `docs/instalacao.md` avisa que, depois de atualizar, extras `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`/`PROTOCOL` e anexo `key` vindos da 0.1.x têm de ser renomeados no app: até lá o `ward run` dessa entrada só dá erro genérico, e o motivo fica no log do daemon) (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
+  tipos, caminhos; o histórico das decisões fica), `docs/instalacao.md` (atualização
+  0.1.x → 0.2.0, volta pelo backup v4, DT7), `docs/migracao.md` (comandos novos;
+  `make test-migration-guide` com as expectativas novas), caminhos de arquivo em
+  `docs/mission/design-nodes.md`, `README.md`, `.claude/agents/*.md` (nomes de alvo,
+  caminho e arquivo). Compilação: `make compile`. — V5.11
+
+## Milestone 6 — Validação final
+
+Contrato: V6.1–V6.13 e a conferência de **todas** as asserções V1–V5. Sequencial. As
+Fases 61–65 só rodam e registram (comando, saída resumida, evidência em
+`docs/mission/evidence/M6/`). Não corrigem: cada falha vira uma fase de correção no fim
+deste milestone, e a suíte roda de novo depois dela. Antes de build pesado: `df -h` e
+limpeza de `target/` velho. Rajadas de processos com teto (`systemd-run --user
+-p TasksMax=…`). No fim de cada fase: serviços de teste parados e worktrees limpos.
+Depois das Fases 61–66 (e das correções), o orchestrator chama os três validadores.
+
+- [x] Fase 60 — (achados da Fase 59: o V5.11 precisa aceitar os nomes antigos que ficam de propósito — deny da 0.1.x em `skill/README.md`, marcas da 0.1.x/imagens `ward-teste/*:1`/base `app_teste` no `CLAUDE.md`, tabela antes→depois do `design-nodes.md`, handoffs, plano e PRD; o README cita `ward_0.2.0_amd64.deb` e o roteiro diz "60 caminhos" no `dpkg-deb -c`) (achado da Fase 55: `ward --version` ainda diz 0.1.4; o `wardd-test-client` mantém os argumentos `estado|lista|destravar`, chamados por scripts de contêiner, `units.sh` e `deb.sh` — traduzir com todos os chamadores) (achado da Fase 52: o V4.18 do contrato lista `level` nas chaves do `ward list --json`, mas D50 tira o nível da lista do agente; as Fases 51–52 seguem D50; o contrato precisa tirar `level` do V4.18 antes da validação) Gate e versão: `english-check` (com o autoteste) dentro do `make check`;
+  achados restantes no repositório inteiro corrigidos ou em `allow.txt` com motivo;
+  versão 0.2.0 (DT19); comparação dos literais com `strings-0.1.4.txt` e lista da
+  diferença no handoff; procura dos nomes antigos (V6.2). Compilação: `make compile`. —
+  V6.1, V6.2, V6.3
+- [x] Fase 61 — (achado das Fases 50 e 54a: a árvore está limpa no gitleaks, mas o `gitleaks git` acusa 12 valores falsos de teste no histórico — commits `1ae5610`, `0c09209`, `c0d849e`, `81960fb`, `541720e`, `1b2820b`, lista no handoff da 54a; o usuário decide reescrever, ignorar por fingerprint ou aceitar; roda também `make test-system-socket`) Bateria A (estática e unitária): `make check`, `make app-check`,
+  `make test-no-test-mode`, `make test-skill`, `make test-migration-guide`,
+  `make dev-vault` + `dev-variations` + `test-dev-vault`,
+  `make test-attacks-foundation`, testes de fio no commit do fim do M3 (V2.2),
+  `english_check.py --self-test`. — V1.*, V2.1, V2.2, V3.1, V3.6, V3.7, V4.1, V4.2,
+  V4.8, V4.9, V4.15, V5.3, V5.5, V5.11, V6.1, V6.11
+- [x] Fase 61a — Correção da Bateria A: 4 testes com expectativa antiga (pt-BR/v1) no `cargo test` — `app/core/src/key.rs:286` (`result`/`loaded`/`size`), `crates/wardd/tests/dates.rs:204` (guarda `_em` → `created_at`/`modified_at`; o ataque V3.41 tem de rodar de verdade), `crates/wardd/tests/core.rs:114` (regra de dígitos do v1 contra `"v":2`, sem afrouxar a checagem de contagem), `crates/wardd/tests/run.rs:1140` (`invalid_request`/`run`/`once`); depois `make check` e `make test-attacks-foundation` verdes. Handoff da 61. — V1.2, V1.3, V6.11
+- [x] Fase 62 — (achado da Fase 56: `crates/wardd/tests/run.rs` perto da linha 1149 espera `operacao=executar … decisao=uma_vez` do aprovador de teste, que já fala v2 (`run`, `once`); deve falhar aqui; logs velhos `wardd-*-teste.log` podem ser apagados) Bateria B (daemon, CLI e serviços): `make dev-services` +
+  `dev-services-up` + `dev-services-verify`, `make dev-daemon`,
+  `make test-attacks-services`, `test-home-decoys`, `test-real-home`, `test-cli`,
+  `test-ssh-home`, `test-socket-attacks`, `test-docker-uid`; V6.6, V6.7, V6.10 à mão
+  pela CLI de teste. — V2.4–V2.8, V4.13, V4.14, V4.16–V4.21, V5.1, V5.2, V6.4, V6.6,
+  V6.7, V6.10
+- [x] Fase 62a — Correção da Bateria B: `dev/tests/cli.py` linhas 430–442 (`kinds_in_log` da 54b: `nula`/`arquivo`/`outra` → `null`/`file`/`other`); `dev/tests/pg_select.py` executável (ou o teste chama por `python3 -I`); suítes de serviço em git worktree (o `real-home.sh` acusa o `git check-ignore` lendo `<git-common-dir>/worktrees/<nome>/HEAD`: aceitar o `git-common-dir` sem afrouxar a regra do home); depois `make test-cli` verde com os serviços. Handoff da 62. — V4.1, V4.2, V5.1, V5.2
+- [x] Fase 63 — Bateria C (contêineres e instalação): `make test-docker-platform`,
+  `test-units`, `test-install`, `test-deb` (com a atualização a partir da 0.1.4). —
+  V2.3, V2.6, V2.7, V4.4, V5.4, V5.6–V5.9, V6.4
+- [x] Fase 63a — Correção da Bateria C (handoff da 63): **defeito do produto (m2:DT16)**: `dpkg -i` recusado no preinst reinicia o `wardd` e trava o cofre, porque `postrm`/`postinst abort-upgrade` chamam `start_enabled_sockets`, que faz `try-restart` em todo `wardd@*.service` ativo — só religar/reiniciar o que o preinst de fato parou (marca em `/run`), com teste de ataque; testes: `dev/container-units/inside.sh` 89/91/93 (`status`/`list`), controle do vigia fora de `/tmp` noexec, `CAP_SYS_PTRACE` no contêiner do `test-install` (o vigia de `/proc/<pid>/exe` hoje passa sem ver), a mensagem de parada que o `install.sh` imprime de fato, `ward unlock` só depois do prompt (e sem a senha falsa no log do pty); depois `test-units`, `test-install` e `test-deb` verdes. — m2:V5.6–V5.9, V2.6, V2.7
+- [x] Fase 64 — (achado da Fase 57: os cenários de atualização 0.1.4 → 0.2.0 de `test-install`/`test-deb` precisam da linha de base em `.dev/baseline/` (`bin-release/`, `deb-0.1.4/`, `SHA256SUMS`; montagem no handoff da 57); `make install` 0.1.4 → `.deb` 0.2.0 só por sobras plantadas) (achado da Fase 49: os scripts de dev agora criam `ward-state 2`, que o `wardd` 0.1.4 recusa; para subir o 0.1.4 use `ward-estado 1`, p.ex. o fixture `state-0.1.4`; a parte em contêiner do V4.4 (`inotifywait`/`strace`) entra aqui ou no `test-units`) Bateria D (migração de ponta a ponta e versões misturadas): `wardd`
+  0.2.0 de teste com cópias de `vault-0.1.4.ward`, `state-0.1.4` e `backup-0.1.4/` em
+  `.dev/`; migração comparada com o `wardd` 0.1.4 (V4.5); morte em cada ponto (V4.3);
+  observação do disco (V4.4); retrocesso (V4.7); restauração e rotação (V4.10); estado
+  (V4.11); `wardd` 0.1.4 no cofre migrado (V4.12); CLI 0.1.4 × daemon 0.2.0 e CLI 0.2.0
+  × daemon 0.1.4 (V4.16, V4.17). — V4.3–V4.7, V4.10–V4.12, V4.16, V4.17
+- [x] Fase 65 — Bateria E (navegador e app) **(UI)**: `make app-front`, `test-nm` (com a
+  extensão 0.1.4 também, V5.10), `extension`, `test-extension`, `test-login`,
+  `test-playwright`, `test-chrome-policy`, `test-webkit-real`, `test-app-e2e`,
+  `test-clipboard`, `test-revealed-selection`, `test-app-logs`, `test-gst-channels`;
+  capturas de cada tela comparadas com `docs/mission/arquivo/m1/evidence/final/`. —
+  V3.2–V3.5, V4.22–V4.24, V5.10, V6.4, V6.5, V6.8, V6.9
+- [x] Fase 65a — Correção da Bateria E (handoff da 65; decisão do usuário 2026-11-11: guarda + contêiner): (1) **segurança dos testes**: toda suíte que abre Chrome (`test-nm`, `test-extension`, `test-login`, `test-chrome-policy`, `test-playwright`, `test-app-e2e`, `test-webkit-real` e afins) recusa rodar no host se houver política do Ward em `/etc/opt/chrome/policies/managed/` (ou qualquer `ExtensionSettings`/`force_installed` do id do Ward), com autoteste; nenhuma suíte pode alcançar `/usr/local/bin/ward-nm` nem o `wardd` instalado; (2) `test-nm`, `test-extension` e `test-login` rodam num contêiner `ubuntu:24.04` com o Chrome, serviços e `wardd` de teste dentro (sem a política do host), verdes; (3) `dev/tests/app_e2e.py › run_in_background` com `stdin=subprocess.DEVNULL` e o `test-app-e2e` verde; (4) `test-webkit-real` não grava em `/run/user/<uid>/ward-tray` (pasta do app instalado); (5) decidir/registrar a marca "fora de ordem" com cópia de mesma geração (achado 64/65). — V3.5, V5.10, V6.5, V6.6, V6.8, V2.8
+- [x] Fase 65b — (UI/DESIGN) Pedido do usuário (2026-11-11): no detalhe da entrada com TOTP, o campo "Semente TOTP" (revelar/copiar a semente) vira o **código TOTP atual** (6 dígitos, contagem até o próximo, botão Copiar), calculado pelo daemon (op `totp`, sem a semente sair para a tela); a semente só aparece no formulário de edição. `Ward.figcraft` atualizado (FigCraft headless) e PNG das telas no handoff; teste que prova que a semente não chega ao detalhe. — V3.x (detalhe), S-invariantes de revelação
+- [x] Fase 65c — Correção: `make test-app-e2e` (rodado pelo orchestrator depois da 65a, saída 2) para no primeiro passo: `Page.wait_for_selector('#master-password')` dá timeout de 20 s, com o Chrome no bwrap `chrome-isolated.sh` da 65a (guarda ok, sem extensões). Achar a causa (bwrap sem acesso à ponte/porta, `app/dist-teste` ausente, D68 etc.), corrigir sem tirar o isolamento nem a guarda, e o e2e inteiro verde (permitir uma vez, por 1 h e sempre; Conectar com token). Log em `docs/mission/evidence/M6/fase-65c/app-e2e-antes.log`. — V6.8, V6.9, V3.2
+- [x] Fase 66 — (achado da 65c: `make app-bridge` e `make test-revealed-selection` só conferem se `app/dist-teste/index.html` existe — aplicar a mesma recusa de pacote velho; achado da 65a: `make extension-crx` abre o Chrome sem a guarda, aceito porque só empacota) (achado da Fase 65: V6.5 para `ward playwright` diz "a origem da página não bate com a da entrada", igual à 0.1.4 — ajustar o contrato) (achados da Fase 64, ajuste do contrato sem mudar produto: V4.7 dizer o estado do daemon — travado dá `rollback`, destravado dá `vault_changed` na gravação seguinte; V4.12 aceitar a mensagem `cofre_invalido` do 0.1.4; V4.17 aceitar "resposta inválida do daemon" da CLI 0.1.4 e trocar `executar` por `run`; registrar no handoff para o usuário) Artefatos 0.2.0 e roteiro do usuário: `make release`, `make extension`,
+  `make extension-crx` (chave `.dev/extension/key.pem`, id conferido), `make deb
+  EXTENSION_ID=… EXTENSION_CRX=…`; `docs/mission/roteiro-usuario.md` (instalar por cima
+  da 0.1.4, primeiro destrave pelo app ou por `/usr/local/bin/ward unlock` = migração,
+  conferir as entradas, atualizar a skill e o deny em `~/.claude` a partir de `skill/`,
+  janela nativa, bandeja e aprovação, e como voltar pela versão v4 do backup).
+  Publicar a release e instalar são do usuário. — V6.12, V6.13
+- [x] Fase 66a — Correção: portar o commit `b4d5e1b` da 0.1.5 (só no `origin/master`; a máquina tem a 0.1.5 instalada): aberto pelo menu com o app na bandeja, o daemon manda ao app assinado uma resposta sem dado para mostrar a janela principal. Nomes em inglês do protocolo v2 (`show_window`), só para o papel app (teste que nenhum outro papel recebe e que não leva dado), `main.rs`/núcleo do app/`approval.rs`, testes do commit original traduzidos; não fazer merge do `origin/master` (história divergente). Versão segue 0.2.0. Depois: refazer os artefatos de `target/release-0.2.0/` (mesmo processo da 66, sha256 novos no handoff e no `SHA256SUMS`), `docs/mission/prd.md:223` com a mensagem `cofre_invalido`, e o roteiro sem o aviso de "não instalar". — m2:V6.12, V6.13
+- [x] Fase 66b — (user-testing-validator do M6, APROVADO COM RESSALVA: `make test-app-e2e` sai 2 de forma reproduzível — em `dev/tests/app_e2e.py` linhas ~198 e ~520 o teste espera `#master-password` habilitado, mas durante a espera da senha errada só o botão desabilita e o Enter é descartado; esperar o botão "Destravar" voltar; rodar o e2e 2 vezes verde) (security-auditor do M6, APROVADO; achados: médio — `docs/mission/roteiro-usuario.md` passo 3b roda `sudo make install` do checkout do usuário (um pacote do mesmo uid troca `install/install.sh` antes do sudo): copiar `install/`, Makefile, `tree.txt` e artefatos para `/root/ward-src` 0700 e rodar de lá, ou recomendar só o `.deb`, e o mesmo aviso em `docs/instalacao.md`; baixo — `show_window` sem limite: juntar pedidos (≤ 1 por segundo) e não entregar com o lock do motor preso se der; baixo — leitor v2 aceita `{"v":2,"op":"list"}` sem `data` e `op` com escape: exigir `data` e recusar escape, ou documentar a decisão com teste) Antes de publicar, depois dos validadores: `install/desktop/local.ward.app.metainfo.xml` com `<release>` da 0.1.5 e da 0.2.0, e os artefatos de `target/release-0.2.0/` refeitos uma última vez (junto com qualquer correção dos validadores), sha256 no roteiro.
+- [x] Fase 66c — Ressalvas do scrutiny-validator do M6 (aprovado com ressalvas): A1 V6.9 pela UI (tela de nível com PIN; 5 PINs errados travam o cofre) e A2 V6.8 pela UI (expirar em 2 min, PIN nos 3 botões de permitir, confirmação a mais com entrada em pipe), no `app_e2e.py` ou no roteiro `f65_ui`, com capturas; A3 capturas de todas as telas e foco/Esc (V3.2, V3.3); D1 `make test-totp-detail` com a guarda do Chrome/`chrome-isolated.sh`; D2 `test-playwright` e `test-chrome-policy` rodando no contêiner de navegador (ou guarda equivalente) e verdes; contrato: V6.2 lista os lugares permitidos dos nomes antigos, V6.3 ressalva das mensagens novas de propósito, V6.11 "sem moderate ou superior; low sem correção registrado" e a exceção base64 de D15 no `.gitleaks.toml`; B5 sobra `docs/mission/evidence/test-app-e2e/` movida para `M6/`. — V3.2, V3.3, V6.2–V6.4, V6.8, V6.9, V6.11

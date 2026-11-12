@@ -1,129 +1,177 @@
-# Fase 28 — Salto e túnel de `banco` por `servidor`, nível combinado, logs do M4 e V4.2 (2ª parte)
+# Fase 28 — Clientes Rust: `crates/ward` e `crates/ward-nm` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- **Ponte do salto e do túnel, sem `ProxyJump` e sem shell** (`crates/wardd/src/ponte.rs`, novo).
-  - Por que não `ProxyJump`: o OpenSSH 9.6 monta `ssh -l … -p … -F <config> -W '[%h]:%p' <salto>` e o executa por `$SHELL -c "exec …"` (a string está no binário). Isso põe um `sh -c` na cadeia, que o V4.35 proíbe. Além disso, as opções de `-o` não chegam ao `ssh` do salto (só o `-F`), e ele ficaria com o `known_hosts`, as identidades e o agente padrão do `~/.ssh` (D13, R19).
-  - O daemon escuta em `127.0.0.1:0`. A porta vem do kernel e fica presa ao socket do daemon, então ninguém a toma antes.
-  - Cada conexão aceita só passa se o socket do par, achado em `/proc/net/tcp`, for do mesmo uid **e** estiver aberto por um processo do grupo de processos do filho da sessão (`/proc/<pid>/stat` + `/proc/<pid>/fd`).
-    - No salto, o grupo é o do `ssh` principal (ou do `sshpass` dele). No túnel, é o do comando do `ward run`.
-    - Qualquer outra conexão é fechada sem nenhum byte e sem lançar nada.
-  - Para cada conexão aceita, o daemon executa por `execve` um `[sshpass -e] ssh -F /dev/null … -W <alvo>:<porta> -p <porta> -l <usuário> -- <host>` até a entrada intermediária. O endurecimento é o mesmo da Fase 27; o ambiente é montado do zero; a senha vai só em `SSHPASS`; com chave, cada `ssh` da ponte tem o seu agente de D12, preso ao pid dele.
-  - Os bytes passam entre a conexão e o stdin/stdout desse `ssh`, com buffers `Zeroizing`. O stderr dele passa pela máscara das duas entradas (D19) e chega à CLI como `Erro`.
-  - Limites: o salto aceita 1 conexão no total; o túnel aceita 8 simultâneas e 64 por sessão.
-  - A ponte para de aceitar quando o cofre trava (contador `travas`) e morre com a sessão (o `ssh` de cada conexão leva `SIGKILL`).
-- **`ward ssh` com salto** (`ssh.rs`):
-  - A entrada de salto precisa ser `servidor`, visível e sem salto. Se for bloqueada ou tiver sumido depois da autorização, dá `negado`; se for de outro tipo, `entrega_falhou`.
-  - O `ssh` principal conecta em `127.0.0.1:<porta da ponte>` com `HostKeyAlias=<nome do destino no known_hosts>` (`host` na 22, `[host]:porta` nas outras) e `CheckHostIP=no`. Assim a chave conferida continua sendo a do destino (D13).
-  - A máscara cobre as duas entradas.
-  - Funções novas: `montar_argv_com_alias`, `Programa::Encaminhar`, `alias_do_destino` e `intermediario`.
-- **Túnel do `banco` no `ward run`** (`execucao.rs`): o `Recursos::tunel` deixou de ser stub.
-  - Abre a ponte pelo `servidor` do túnel e devolve a porta local, que vai para `PGHOST=127.0.0.1`/`PGPORT` e o `DATABASE_URL`.
-  - A máscara do run inclui o `servidor` do túnel (D19).
-  - A ponte começa a aceitar quando o pid do comando é conhecido e fecha no fim. `Preparo` ganhou `ponte`, que o `sessao_com` inicia e derruba.
-- **Nível combinado (D19, V4.30)**: o `uso.rs` já resolvia o nível. Agora os testes cobrem salto com aprovação (`aprovacao_indisponivel`/negado) e salto bloqueado (negado).
-- **V4.33**:
-  - O `make dev-daemon` sobe o daemon de teste com `RUST_LOG=trace` por padrão (`dev/daemon.sh` aceita só `error|warn|info|debug|trace`).
-  - O `make teste-cli` confere que o log tem linhas `[debug]` e nenhum padrão de `.dev/variacoes.txt`.
-  - A CLI roda com `RUST_LOG=trace` nos testes do salto e do túnel, com `sem_variacao`.
-- **V4.2, 2ª parte (D65 e)**, no contêiner de `make teste-docker-plataforma` (`dev/conteiner-plataforma/dentro.sh`, `falso.c`). O Makefile compila `ward` e `wardd` sem `modo-teste` em `target/sem-modo-teste`, e o script recusa binário com a string `WARD_DEV_SOCKET_DIR`.
-  - O `wardd` de release copiado para `/tmp` como uid 1000 não sobe: com `LISTEN_FDS` de um socket numa pasta do uid sai com "o socket do systemd não está no caminho esperado"; sem `LISTEN_FDS`, também não sobe.
-  - Três falsos não-dumpable (`prctl(PR_SET_DUMPABLE,0)`, conferido `dumpable=0`) do uid 1000 escutam em `/run/user/1000/{ward,ward-teste,copia}/wardd.sock`. Um controle prova que o registro pega conexões de verdade.
-  - `ward destravar`, `ward lista` e `ward travar` rodam num pty (`script`), com a senha falsa digitada e `XDG_RUNTIME_DIR`/`WARD_DEV_SOCKET_DIR` apontando para os falsos, em três cenários: com o socket velho do root, sem socket e sem a pasta `/run/ward/1000`. Em todos, a CLI sai ≠ 0 com "o daemon não está rodando", sem mostrar "Senha mestra", e nenhum falso recebe conexão nem byte.
-  - `bind` do uid 1000 em `/run/ward/1000/` dá `EACCES`, tanto com nome novo quanto com `wardd.sock` depois de removido. Com o socket velho no lugar, o uid 1000 não o toma. O uid 1000 também não cria a pasta `/run/ward/1000`.
-- **Testes integrados contra os serviços** (`dev/testes/cli.py`, seção 5): V4.25, V4.29, V4.30, V4.35 com salto, o ataque à ponte do túnel e V4.33. O cliente do Postgres é `dev/testes/pg_select.py`, novo: SCRAM-SHA-256 só com a biblioteca padrão, porque o host não tem `psql`. Ele entrou no `dev/testes/home-real.sh`.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard 66eb87b`.
+  Fase adiantada em paralelo com as Fases 14, 29 e 30 (pedido do orchestrator): só os
+  nomes próprios de `ward` e `ward-nm` mudaram; os de `ward-core`/`ward-platform` (`Pedido`,
+  `Resposta`, `ErroResposta`, `Papel`, `quadro`, `TipoEntradaPadrao`, campos `entrada`/
+  `senha`/`tipo_entrada`…) ficaram como no master e são usados com o nome atual.
+- **Arquivos** (`git mv`, glossário seção 4): `crates/ward/src/{cliente,comandos,texto,testes}.rs`
+  → `{client,commands,text,tests}.rs`; `crates/ward-nm/src/testes.rs` → `tests.rs`;
+  `crates/ward-nm/tests/binario.rs` → `binary.rs`. `examples/fake-chrome.rs` já estava em
+  inglês (Fase 43).
+- **Renomes** (antigo → novo; lista completa no parágrafo "Fase 28" do glossário, seção 15):
+  - `ward`: `principal` → `main`; `Comando` → `Command` (`Lista`/`Travar`/`Destravar`/`Ajuda`/
+    `Versao` → `List`/`Lock`/`Unlock`/`Help`/`Version`; campos `entrada`/`comando` →
+    `entry`/`command`); `ErroUso` → `UsageError` (variantes `NoCommand`, `UnknownCommand`,
+    `UnexpectedArgument`, `NotUtf8`, `RunUsage`, `SshUsage`, `TokenInArgv`,
+    `PlaywrightUsage`, `LoginUsage`; `mensagem()` → `message()`); `AJUDA` → `HELP`;
+    `interpretar`/`interpretar_run`/`interpretar_ssh`/`numero_fd` → `parse`/`parse_run`/
+    `parse_ssh`/`fd_number` (`token_ok` fica).
+  - `client`: `ErroConexao` → `ConnectionError` (`Missing`, `Untrusted`, `NoResponse`,
+    `Closed`, `Io`, `InvalidResponse`, `InvalidRequest`); `Conexao` → `Connection`
+    (`conectar`/`conectar_com`/`conectar_sem_extra`/`reconferir`/`conferir_extra`/`pedir`/
+    `pedir_com_prazo`/`abrir_sessao` → `connect`/`connect_with`/`connect_without_extra`/
+    `reverify`/`verify_extra`/`request`/`request_with_timeout`/`open_session`; campo
+    `exigir_nao_dumpable` → `require_non_dumpable`); `Sessao`/`EscritaSessao` → `Session`/
+    `SessionWriter` (`receber`/`entrada`/`janela` → `receive`/`send_stdin`/`send_window`);
+    `servidor_esperado` → `expected_server`; `PRAZO_LEITURA`/`PRAZO_ESCRITA` →
+    `READ_TIMEOUT`/`WRITE_TIMEOUT`; `erro_de_io`/`erro_do_quadro` → `io_error`/`frame_error`.
+  - `commands`: `Entorno` → `Env` (métodos `connect`, `harden`, `read_password`, `stdout`,
+    `stderr`, `environment`, `current_dir`, `stdin`, `stdin_kind`, `terminal`,
+    `terminal_size`, `raw_mode`, `read_token`); `Sistema { esperado, … }` → `System {
+    expected, … }`; `executar` → `execute` (não `run`, que é o handler do `ward run`);
+    `SAIDA_*` → `EXIT_OK`/`EXIT_ERROR`/`EXIT_USAGE`/`EXIT_RUN_ERROR`; `MSG_RUN_GRANDE`/
+    `MSG_RUN_CAMPO`/`MSG_RUN_TRAVADO`/`MSG_TOKEN_FORMATO` → `MSG_RUN_TOO_LARGE`/
+    `MSG_RUN_FIELD`/`MSG_RUN_LOCKED`/`MSG_TOKEN_FORMAT`; `PEDACO_ENTRADA` → `STDIN_CHUNK`;
+    `PASSO_JANELA` → `WINDOW_STEP`; `PRAZO_PLAYWRIGHT` → `PLAYWRIGHT_TIMEOUT`;
+    `lista`/`travar`/`destravar` → `list`/`lock`/`unlock`; `pedido_run`/`pedido_ssh` →
+    `run_request`/`ssh_request`; `falhar`/`falhar_run` → `fail`/`fail_run`;
+    `mensagem_do_daemon`/`mensagem_do_login` → `daemon_message`/`login_message`;
+    `variavel_mandada` → `variable_sent`; `repassar_entrada`/`receber_sessao` →
+    `forward_stdin`/`receive_session`; `token_do_canal` → `token_from_channel`;
+    `acompanhar_janela` → `track_window`; `janela_de` → `window_from`;
+    `tipo_da_entrada_padrao`/`classificar_entrada` → `detect_stdin_kind`/`classify_stdin`.
+  - `text`: `invisivel`/`neutralizar`/`json_texto`/`json_opcional`/`lista_json`/
+    `lista_tabela` → `invisible`/`neutralize`/`json_text`/`json_optional`/`list_json`/
+    `list_table`.
+  - `ward-nm`: `ID_EXTENSAO` → `EXTENSION_ID` (valor igual); `MAX_MENSAGEM_ENTRADA`/`SAIDA`
+    → `MAX_MESSAGE_IN`/`OUT`; `OPERACOES` → `OPERATIONS`; `resposta_cabe` →
+    `response_fits`; `origem_da_extensao_valida` → `valid_extension_origin`; `ErroMensagem`
+    → `MessageError` (`End`, `Truncated`, `Empty`, `TooLarge`, `Io`); `ler_mensagem`/
+    `escrever_mensagem` → `read_message`/`write_message`; `FalhaDaemon` → `DaemonFailure`
+    (`Unavailable`, `Conversation`; `texto()` → `text()`); `Daemon::trocar` → `exchange`;
+    `erro` → `error_body`; `atender`/`servir` → `handle`/`serve`; no `main.rs`,
+    `servidor_esperado`/`conferir_extra`/`PRAZO_*` → `expected_server`/`verify_extra`/
+    `READ_TIMEOUT`/`WRITE_TIMEOUT`.
+  - Testes: nomes, ajudantes e locais em inglês (`Pasta` → `TestDir`, `Visto` → `Seen`,
+    `Teste` → `TestEnv`, `servidor` → `fake_server`, `com_daemon_falso` →
+    `with_fake_daemon`, `Falso` → `FakeDaemon`, `quadro` → `frame` etc.). Nenhum script
+    nem alvo do Makefile roda teste destes crates pelo nome (procurado).
+- **Leitores do `EXTENSION_ID`** (achados das Fases 39 e 40, mais os que achei): o regex e
+  as duas mensagens de `dev/extension/build.py`; a leitura de `pub const` em
+  `dev/tests/extension.py`, `dev/tests/login.py`, `dev/tests/chrome_policy.py`; o `sed` e as
+  duas mensagens de `install/pack-extension.sh` (não estava no plano) com a mensagem que o
+  `dev/tests/deb.sh` procura; `CLAUDE.md` e `docs/instalacao.md`.
+- **Comentários** (inclusive `Cargo.toml` dos dois crates) em inglês; "Fase" → "Phase", IDs
+  da missão 1 sem prefixo (DT2). Onde o comentário citava nome de fio ou subcomando pt-BR
+  (`destravar`, `estado`, `interno`, `nao_autorizado`, `executar`/`saida`/`fim`, o botão
+  "Conectar", a pasta `ward-teste`), a frase foi reescrita sem o nome, sem exceção nova.
+- **Glossário**: parágrafo "Fase 28" depois do da Fase 13 (seção 15).
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`.
+
+## Literais alterados (PRD regra 5)
+- Rust (`--literals` antes × depois em `crates/ward` e `crates/ward-nm`): só capturas de
+  `format!` com nome novo (V6.3): `{codigo}` → `{code}`, `{entrada}` → `{entry}` (em
+  `"login enviado: {entry} (aba ativa do Chrome)"`, saída igual), `{MSG_RUN_CAMPO}`/
+  `{MSG_RUN_GRANDE}`/`{MSG_RUN_TRAVADO}` → `{MSG_RUN_FIELD}`/`{MSG_RUN_TOO_LARGE}`/
+  `{MSG_RUN_LOCKED}`, `{ruim:?}` → `{bad:?}`, `{tipo:?}` → `{kind:?}`. Nenhum texto exibido,
+  subcomando, ajuda, mensagem de native messaging nem nome de fio mudou (o `HELP`, os
+  `"lista"`/`"travar"`/`"destravar"`/`"ajuda"`, as mensagens pt-BR e a resposta pronta
+  `{"v":1,"tipo":"erro",…}` do `ward-nm` são os mesmos bytes). Nomes de thread
+  `ward-entrada`/`ward-janela` e os eventos de teste `"conectar"`/`"endurecer"`/`"ler_senha"`
+  ficaram (literais).
+- Scripts (nome de constante): `dev/extension/build.py` (`r'pub const EXTENSION_ID: …'`,
+  `"EXTENSION_ID não achado em crates/ward-nm/src/lib.rs"`, `"… ≠ EXTENSION_ID do ward-nm"`),
+  `install/pack-extension.sh` (o `sed`, `"EXTENSION_ID não achado …"`, `"… não do
+  EXTENSION_ID $EXPECTED …"`), `dev/tests/deb.sh` (procura `"não do EXTENSION_ID"`),
+  `dev/tests/{extension,login,chrome_policy}.py` (`"pub const EXTENSION_ID"`).
 
 ## Segurança
-- **Invariantes tocadas e como a fase as respeita**:
-  - **S1**: nenhuma credencial do salto ou do túnel vai à CLI. Com chave, a ponte usa o agente de D12, que só lista e assina, e a chave privada não sai do daemon.
-  - **S2**: só `id.pub` em `<rt>ssh-*/` (agente). Nada em `/tmp` nem no home.
-  - **S3**: a senha vai só em `SSHPASS`. Nenhum argumento tem segredo, e não há `sh -c` em lugar nenhum: todo `ssh` é filho do `wardd` ou do `sshpass`, verificado no `/proc` pelo `teste-cli`.
-  - **S4**: a máscara cobre as duas entradas, no stdout/stderr do comando e no stderr do `ssh` da ponte.
-  - **S5**: V4.2 inteiro (as duas partes).
-  - **S8**: o salto e o túnel valem o nível mais restritivo (D19), e a ponte para quando o cofre trava.
-  - **S13**: o log usa só textos fixos e números. V4.33 conferido com `RUST_LOG=trace`.
-  - **D43**: o usuário do salto vai só depois de `-l` (com `@` inteiro) e o host depois de `--`. Nunca há `usuário@host`, `User=` nem `ProxyJump`.
-- **Testes de ataque escritos**:
-  - `crates/wardd/tests/ssh.rs`:
-    - `fase28_salto_com_senha_pela_ponte`: um estranho do mesmo uid conecta na ponte e é fechado sem byte, sem lançar o `ssh` do salto. A segunda conexão do salto é recusada, a senha do salto sai mascarada no stderr e a porta fecha no fim.
-    - `fase28_tunel_do_banco_no_run`: estranho recusado no túnel, mascaramento de D19 e porta fechada no fim.
-    - `fase28_travar_fecha_o_tunel_para_conexoes_novas`.
-    - `fase28_salto_com_chave_agente_de_cada_ssh`: o agente do salto recusa adicionar, remover e travar, e o neto é recusado.
-    - `recusas_sem_executar_nada`: salto com aprovação e salto bloqueado não executam nada (V4.30).
-  - `crates/wardd/src/ssh_testes.rs`:
-    - `fase28_ataque_alvo_e_alias_fora_do_formato`: `-oProxyCommand=x`, espaço, `%`, colchetes e porta 0 no alvo e no alias.
-    - `fase28_argv_da_ponte_sem_proxyjump`.
-  - `crates/wardd/src/ponte.rs`:
-    - `ataque_socket_de_outro_uid_ou_ambiguo`.
-    - `par_do_grupo_de_verdade`: outro grupo e outro uid são recusados.
-    - `grupo_do_stat_com_parenteses_no_nome`.
-  - `dev/testes/cli.py` (seção 5): ataque à ponte do túnel contra o daemon de teste real, sem nenhum `ssh` filho de `ssh`.
-  - `dev/conteiner-plataforma/dentro.sh` (V4.2, 2ª parte): falso não-dumpable, `wardd` copiado e `bind` em `/run/ward/1000/`.
-- **Dependências novas**: nenhuma. O `falso.c` é programa de teste compilado com o gcc do host, que o alvo já exigia. O `pg_select.py` usa só a biblioteca padrão.
-
-## Reexecução depois do merge do master (disco cheio)
-- **Causa da falha no master: o disco cheio.** O `/` estava 100% cheio quando os testes de ssh falharam (ENOSPC). Depois que o coordenador liberou 22 GB, rodei `git merge master` (o conflito no `CLAUDE.md` foi resolvido mantendo as duas linhas; merge em b905c8e) e repeti os testes:
-  - `cargo test --all-features -p wardd --test ssh` passou com 12/12 numa execução sozinho e em 3 execuções em paralelo.
-  - `make check` passou ("tudo limpo") duas vezes seguidas.
-- **Endurecimento dos testes contra corrida** (sem mudar código de produção). Rodando em paralelo, apareceram duas corridas:
-  - `fechar_entrada` (`crates/wardd/tests/ssh.rs`) dava pânico com broken pipe quando o daemon já tinha respondido e fechado o stream numa recusa cedo. Agora ignora o erro da escrita.
-  - A checagem "porta fechada no fim" passou a usar o inode do socket de escuta (`inode_da_escuta`/`escuta_fechada`, por `/proc/net/tcp` e `/proc/self/fd`), porque, com testes em paralelo, outro teste pode reusar o número da porta.
-  - O timeout de conexão subiu de 10 para 60 s no `ssh_falso.py` e no cliente Python do teste. Sob carga, o ssh falso do salto com chave roda o cliente do agente com um neto antes de responder.
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários):
+  - S5/D46/V4.2 (CLI): `connect_with` confere o servidor por `connect_server` antes do
+    primeiro byte; `verify_extra` (só `test-mode`) exige `/proc/<pid>/exe` com `EACCES` e
+    `reverify_no_debugger`; `reverify` reconfere no mesmo socket antes da senha. Ordem do
+    `unlock` igual: conecta → estado → `harden` → `read_password` → `reverify` → manda.
+  - S3/Fase 27a (`--token-fd`): `parse_ssh` recusa `--token`/`--token=` antes de tudo;
+    `fd_number` só dígitos, 3..=`MAX_FD_NUMBER`; `token_from_channel` endurece antes de ler
+    e confere `token_ok`; nada conecta antes.
+  - D13/Fase 26a (ambiente do filho): `variable_sent` continua tirando `LD_*`, `=` e NUL;
+    limites D52 iguais; a montagem do ambiente do filho é do daemon (não mudou aqui).
+  - S1/S8/S13 (`ward-nm`): `valid_extension_origin` só aceita o `EXTENSION_ID`; `handle`
+    recusa operação fora de `OPERATIONS`, confere `response_fits` e o papel da resposta de
+    estado (D63); limites `MAX_MESSAGE_IN`/`OUT` e `Zeroizing` iguais; stderr só textos
+    fixos. O pai Chrome e o papel pelo egid são conferidos no `ward-platform`/daemon (não
+    tocados).
+  - Conferência mecânica: um script (scratchpad, não versionado) troca todo identificador
+    por `I`, todo literal por `S`, tira comentários e compara a sequência de tokens de cada
+    arquivo antigo com o novo: `text.rs`, `lib.rs`, `main.rs` (dos dois crates), `ward-nm`
+    `tests.rs` e `tests/binary.rs` iguais; em `client.rs`, `commands.rs`, `args.rs` e
+    `tests.rs` só aparecem `campo: local` no lugar do atalho `campo` (campos do `ward-core`
+    com o local renomeado) e vírgulas/chaves que o `rustfmt` mudou na quebra de linha.
+- **Testes de ataque**: nenhum novo (só rename); os existentes (V4.2 servidor falso no
+  release e no `test-mode`, socket trocado enquanto digita, resposta com credencial, token
+  em argv, canal do token forjado, argumento sem eco, origem de outra extensão, operações
+  do app/agente, resposta fora do papel, mensagem grande/vazia/cortada) acompanham os
+  nomes. Não rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- **V4.27**: o `inotifywait` não está instalado e não há sudo. O `ssh` da ponte usa as mesmas opções do `ward ssh` da 27 (`-F /dev/null`, `IdentityFile=none`/`id.pub`, `CertificateFile=/dev/null`, `known_hosts` do Ward, ambiente do zero), mas a ausência total de acesso ao `~/.ssh` não foi provada. É o mesmo residual R19 do handoff 27.
-- **`ward run` de um `servidor` com salto**: o `uso.rs` já cobra o nível combinado, mas a entrega continua com o `WARD_HOST`/`WARD_PORT` do destino, sem abrir a ponte. O escopo só cita o túnel de `banco` no `ward run`.
-- **`make teste-home-real` e `make teste-ataques-servicos`**: não rodam em worktree (o `git` abre `.git/worktrees/…`, como no handoff 27). O `pg_select.py` foi incluído no `home-real.sh`, mas essa inclusão não foi executada.
+- Os nomes de `ward-core` (protocolo: `Pedido`, `Resposta`, `ErroResposta`, `Papel`,
+  `Operacao`, `TipoResposta`, `quadro`, `codificar_*`/`decodificar_*`, `LIMITE_RESPOSTA`,
+  `TipoEntradaPadrao`, `Janela`, `ItemLista` e campos) usados por estes crates: ficam para
+  as Fases 17–18, que ajustam os usos aqui. Por isso o `english-check` destes caminhos
+  ainda tem 763 achados, **todos** identificadores do `ward-core` (conferido pela lista
+  única de nomes); nenhum comentário nem identificador próprio dos dois crates.
+- Subcomandos (Fase 55), protocolo v2 e `list --json` em inglês (Fase 51).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `make dev-servicos` / `make dev-cofre` / `make dev-variacoes` | 0 |
-| `cargo test -p wardd --test ssh` (12 testes) | 0 |
-| `cargo test -p wardd --lib` | 0 |
-| `make dev-daemon` (daemon desta worktree; nenhum outro estava no ar) | 0 |
-| `make teste-cli` (seções 1–5, 0 falhas) | 0 |
-| `make teste-docker-plataforma` | 0 |
-| `make fmt` | 0 |
-| `make check` (fmt, clippy, testes, audit, deny, gitleaks: "tudo limpo") | 0 |
-| `make dev-daemon-parar` (só o daemon desta worktree) | 0 |
-| `git merge master` (após liberar o disco) | 0 (conflito no `CLAUDE.md` resolvido) |
-| `cargo test --all-features -p wardd --test ssh` (1 sozinho + 3 em paralelo, 12/12 cada) | 0 |
-| `make check` duas vezes seguidas após o merge | 0, 0 |
-| `make teste-home-real` / `make teste-ataques-servicos` | não rodados (worktree) |
+| `git reset --hard 66eb87b` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `cargo fmt --all` | 0 |
+| `cargo check -p ward -p ward-nm --all-targets --all-features --locked` (log `.dev/logs/fase28-check.log`) | 0 |
+| `cargo clippy -p ward -p ward-nm --all-targets --all-features --locked -- -D warnings` (log `fase28-clippy.log`) | 0 |
+| `cargo clippy -p ward -p ward-nm --all-targets --locked -- -D warnings` (sem `test-mode`; log `fase28-clippy-sem-feature.log`) | 0 |
+| `make compile` (log `fase28-make-compile.log`; `npm ci`, Vite, `cargo check` do `app/src-tauri`, `syntax_check.py`: 0 erro) | 0 |
+| `make english-check PATHS="crates/ward crates/ward-nm"` (log `fase28-english.log`) | 1 (763 achados, só nomes do `ward-core`; ver "Ficou de fora") |
+| `make english-check PATHS="<scripts e Cargo.toml tocados>"` (log `fase28-english-scripts.log`) | 1 (0 achado; 1 "exceção sem uso" `install/* instalacao` só porque o `--paths` pegou um arquivo de `install/` sozinho) |
+| `python3 -I dev/english_check.py --literals --paths crates/ward crates/ward-nm` antes × depois | só capturas de `format!` |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **Divergência com o escopo (D13: "Salto por `ProxyJump`")**: o salto não usa `ProxyJump`, pelos motivos da seção "Implementado" (`sh -c` na cadeia, contra o V4.35, e opções que não chegam ao `ssh` do salto). O planner precisa ajustar o texto de D13/D43 ("a Fase 28 usa um `ssh_config` gerado… ou recusa o salto com `@`"). Com a ponte, o usuário com `@` funciona e não há `ssh_config` gerado.
-- **Túnel só para o grupo de processos do `ward run`**: um cliente que roda fora do grupo não conecta. Exemplos: `docker run --network host … psql`, um processo que chama `setsid` e um cliente de outro uid. Foi a escolha segura; se o usuário precisar de clientes em contêiner, é decisão dele.
-- **Cada conexão do túnel faz um login SSH novo** no servidor do túnel (`ssh -W` por conexão). Clientes com pool de conexões (até 8 simultâneas e 64 por sessão) pagam essa latência.
-- **Chaves dos serviços compartilhados**: os contêineres de pé usam a chave do checkout principal. Copiei `acme-deploy_ed25519{,.pub}` e `known_hosts` de `/home/…/cofre/.dev/servicos/` para o `.dev/` desta worktree (valores falsos) e rodei `make dev-cofre` de novo. Nenhum serviço foi derrubado.
-- **O stderr do `ssh` da ponte** (por exemplo, "Permanently added '[127.0.0.1]:2224'…") aparece na CLI como `Erro`, mascarado, também no pty interativo.
-- **`known_hosts` do Ward**: o salto grava `[127.0.0.1]:2224` e o destino grava `ssh-interno` (pelo alias), como numa conexão direta.
+- O worktree nasceu em `b4d5e1b`, não em `66eb87b`; reset com a árvore limpa.
+- `install/pack-extension.sh` também lê `pub const ID_EXTENSAO` (o plano só citava o
+  `build.py` e o `extension.py`); trocado junto, com a mensagem que o `dev/tests/deb.sh`
+  procura. `dev/tests/login.py` e `dev/tests/chrome_policy.py` também liam.
+- `make english-check PATHS=…` com um único arquivo de `install/` acusa a exceção
+  permanente `install/* instalacao` como sem uso (comportamento do `--paths`, não desta
+  fase).
+- **Arquivos compartilhados** com as fases paralelas: `docs/glossario.md` (parágrafo novo
+  depois do da Fase 13; a Fase 14 deve pôr o dela no mesmo ponto, conflito de merge
+  esperado e trivial), `CLAUDE.md` (duas células da tabela, só `ID_EXTENSAO`).
+- Os arquivos renomeados aparecem no `git diff` como apagar + criar (o texto mudou muito);
+  o `git mv` foi feito.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/wardd/src/ponte.rs` | criado |
-| `crates/wardd/src/ssh.rs` | alterado |
-| `crates/wardd/src/ssh_testes.rs` | alterado |
-| `crates/wardd/src/execucao.rs` | alterado |
-| `crates/wardd/src/lib.rs` | alterado |
-| `crates/wardd/tests/ssh.rs` | alterado |
-| `crates/wardd/tests/ssh_falso.py` | alterado |
-| `dev/testes/cli.py` | alterado |
-| `dev/testes/pg_select.py` | criado |
-| `dev/testes/home-real.sh` | alterado |
-| `dev/testes/docker-plataforma.sh` | alterado |
-| `dev/conteiner-plataforma/dentro.sh` | alterado |
-| `dev/conteiner-plataforma/falso.c` | criado |
-| `dev/daemon.sh` | alterado |
-| `Makefile` | alterado |
-| `CLAUDE.md` | alterado (linhas de `dev-daemon`, `teste-cli` e `teste-docker-plataforma`) |
+| `crates/ward/src/client.rs` (era `cliente.rs`) | renomeado e reescrito |
+| `crates/ward/src/commands.rs` (era `comandos.rs`) | renomeado e reescrito |
+| `crates/ward/src/text.rs` (era `texto.rs`) | renomeado e reescrito |
+| `crates/ward/src/tests.rs` (era `testes.rs`) | renomeado e reescrito |
+| `crates/ward/src/{args,lib,main}.rs`, `crates/ward/Cargo.toml` | alterado |
+| `crates/ward-nm/src/tests.rs` (era `testes.rs`) | renomeado e reescrito |
+| `crates/ward-nm/tests/binary.rs` (era `binario.rs`) | renomeado e reescrito |
+| `crates/ward-nm/src/{lib,main}.rs`, `crates/ward-nm/Cargo.toml` | alterado |
+| `dev/extension/build.py`, `dev/tests/{extension,login,chrome_policy}.py`, `dev/tests/deb.sh`, `install/pack-extension.sh` | alterado (`EXTENSION_ID`) |
+| `CLAUDE.md`, `docs/instalacao.md` | alterado (`EXTENSION_ID`) |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-28.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado (V4.27 sem `inotifywait`; ver "Ficou de fora")
-- [ ] (UI/DESIGN) Conferido contra o FigCraft: não se aplica
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make compile` (0), `cargo fmt`, `cargo clippy -D warnings` com e sem `test-mode` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou (conferido por tokens)
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

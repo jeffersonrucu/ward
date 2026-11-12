@@ -1,0 +1,44 @@
+[
+ {
+  "id": "",
+  "tag": "button",
+  "name": "Credenciais",
+  "visible": true
+ },
+ {
+  "id": "",
+  "tag": "button",
+  "name": "Gerador de senha",
+  "visible": true
+ },
+ {
+  "id": "",
+  "tag": "button",
+  "name": "Configurações",
+  "visible": true
+ },
+ {
+  "id": "",
+  "tag": "button",
+  "name": "Travar agora",
+  "visible": true
+ },
+ {
+  "id": "search",
+  "tag": "input",
+  "name": "",
+  "visible": true
+ },
+ {
+  "id": "",
+  "tag": "button",
+  "name": "Filtrar",
+  "visible": true
+ },
+ {
+  "id": "",
+  "tag": "button",
+  "name": "acme-pg-aprovacao\nstage\nbanco\npostgres ·",
+  "visible": true
+ }
+]

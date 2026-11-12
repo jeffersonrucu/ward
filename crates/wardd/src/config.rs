@@ -1,195 +1,193 @@
-//! Caminhos do daemon.
+//! Daemon paths.
 //!
-//! - **Release:** cofre em `$HOME/.local/share/ward/cofre.ward` e estado em
-//!   `$HOME/.local/share/ward/estado` (D39). O `HOME` vem da unit do systemd do sistema
-//!   (`User=`), não da sessão (D46); tem de ser absoluto e sem `..`. Socket só pelo
-//!   `LISTEN_FDS` do systemd, em `/run/ward/<uid>/wardd.sock`.
-//! - **`modo-teste`** (D7): cofre `$WARD_DEV_DIR/cofre-teste.ward` e estado
-//!   `$WARD_DEV_DIR/cofre-teste.estado`; `WARD_DEV_DIR` é obrigatório, então o daemon de
-//!   teste nunca toca em `~/.local/share/ward/`. Sem `LISTEN_FDS`, o socket fica num
-//!   diretório 0700 do usuário: `/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`.
-//!   Com `WARD_DEV_APP` (D63, Fase 23a), o `abrir_app` abre esse binário (o `ward-app`
-//!   de teste ou a ponte): caminho absoluto de arquivo regular do uid, sem link, dentro
-//!   do repositório (a pasta acima de `WARD_DEV_DIR`), conferido aqui e a cada
-//!   abertura; a saída vai para `$WARD_DEV_DIR/logs/<binário>.log` (0600).
-//!   Com `WARD_DEV_EXTENSAO=chrome` (Fase 41), o par filho do Chrome instalado ganha o
-//!   papel extensão sem o egid do grupo `ward-nm` (ver [`crate::lancamento::ExtensaoDeTeste`]).
-//!   O build de release não lê nenhuma variável `WARD_DEV_*`.
+//! - **Release:** vault and state in `$HOME/.local/share/ward/`, under the 0.1.x file
+//!   names, which never change (D39, m2:PRD rule 11). `HOME` comes from the system systemd unit
+//!   (`User=`), not from the session (D46); it must be absolute and without `..`. Socket
+//!   only through the systemd `LISTEN_FDS`, at `/run/ward/<uid>/wardd.sock`.
+//! - **`test-mode`** (D7): vault `$WARD_DEV_DIR/test-vault.ward` and state
+//!   `$WARD_DEV_DIR/test-vault.state`; `WARD_DEV_DIR` is required, so the test daemon
+//!   never touches `~/.local/share/ward/`. Without `LISTEN_FDS`, the socket lives in a
+//!   0700 directory of the user: `/run/user/<uid>/ward-test/` or `WARD_DEV_SOCKET_DIR`.
+//!   With `WARD_DEV_APP` (D63, Phase 23a), the open-app operation opens that binary (the
+//!   test `ward-app` or the bridge): absolute path of a regular file of the uid, without
+//!   a link, inside the repository (the folder above `WARD_DEV_DIR`), checked here and
+//!   on every opening; the output goes to `$WARD_DEV_DIR/logs/<binary>.log` (0600).
+//!   With `WARD_DEV_EXTENSION=chrome` (Phase 41), the peer that is a child of the
+//!   installed Chrome gets the extension role without the egid of the `ward-nm` group
+//!   (see [`crate::launch::TestExtension`]).
+//!   The release build reads no `WARD_DEV_*` variable.
 
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use crate::nucleo::Caminhos;
+use crate::core::Paths;
 
-/// Configuração lida do ambiente.
+/// Configuration read from the environment.
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub caminhos: Caminhos,
-    /// Diretório do socket do daemon de teste (`None` no release).
-    pub diretorio_socket_teste: Option<PathBuf>,
-    /// O binário que o `abrir_app` do daemon de teste abre (D63).
-    #[cfg(feature = "modo-teste")]
-    pub app_de_teste: Option<ward_plataforma::BinarioDeTeste>,
-    /// `WARD_DEV_EXTENSAO=chrome` (Fase 41): o daemon de teste dá o papel extensão ao
-    /// par filho do Chrome instalado sem o egid do grupo `ward-nm`. Qualquer outro valor
-    /// é recusado na partida.
-    #[cfg(feature = "modo-teste")]
-    pub extensao_de_teste: bool,
-    /// `<rt>` (Fase 26, S2): os temporários do `ward run` ficam em `<rt>tmp/`. Release:
-    /// `/run/user/<uid>/ward/` (pelo uid efetivo, não por `XDG_RUNTIME_DIR`); daemon de
-    /// teste: o diretório do socket de teste.
+    pub paths: Paths,
+    /// Socket directory of the test daemon (`None` in the release).
+    pub test_socket_dir: Option<PathBuf>,
+    /// The binary that the test daemon's open-app operation opens (D63).
+    #[cfg(feature = "test-mode")]
+    pub test_app: Option<ward_platform::TestBinary>,
+    /// `WARD_DEV_EXTENSION=chrome` (Phase 41): the test daemon gives the extension role to
+    /// the peer that is a child of the installed Chrome without the egid of the `ward-nm`
+    /// group. Any other value is refused at startup.
+    #[cfg(feature = "test-mode")]
+    pub test_extension: bool,
+    /// `<rt>` (Phase 26, S2): the `ward run` temp files live in `<rt>tmp/`. Release:
+    /// `/run/user/<uid>/ward/` (by the effective uid, not by `XDG_RUNTIME_DIR`); test
+    /// daemon: the test socket directory.
     pub rt: PathBuf,
 }
 
-/// `WARD_DEV_APP` (D63): conferido como [`ward_plataforma::BinarioDeTeste`], dentro do
-/// repositório (a pasta acima de `dev`). O ambiente mínimo da ponte leva `WARD_DEV_DIR`
-/// e, se veio, `WARD_DEV_SOCKET_DIR`: são as variáveis do `modo-teste`, da configuração
-/// do daemon, nunca do pedido.
-#[cfg(feature = "modo-teste")]
-fn app_de_teste(
+/// `WARD_DEV_APP` (D63): checked as a [`ward_platform::TestBinary`], inside the
+/// repository (the folder above `dev`). The bridge's minimal environment carries
+/// `WARD_DEV_DIR` and, if it came, `WARD_DEV_SOCKET_DIR`: they are the `test-mode`
+/// variables, from the daemon configuration, never from the request.
+#[cfg(feature = "test-mode")]
+fn test_app_binary(
     v: OsString,
     dev: &Path,
     socket: Option<&Path>,
-) -> Result<ward_plataforma::BinarioDeTeste, &'static str> {
-    let caminho = absoluto_limpo(v).ok_or("daemon de teste: WARD_DEV_APP inválido")?;
-    let raiz = dev
+) -> Result<ward_platform::TestBinary, &'static str> {
+    let path = clean_absolute(v).ok_or("daemon de teste: WARD_DEV_APP inválido")?;
+    let root = dev
         .parent()
         .filter(|r| r.parent().is_some())
         .ok_or("daemon de teste: WARD_DEV_DIR sem repositório acima")?;
-    let texto = |p: &Path| {
+    let text = |p: &Path| {
         p.to_str()
             .map(str::to_owned)
             .ok_or("daemon de teste: caminho fora de UTF-8")
     };
-    let mut extras = vec![("WARD_DEV_DIR", texto(dev)?)];
+    let mut extras = vec![("WARD_DEV_DIR", text(dev)?)];
     if let Some(s) = socket {
-        extras.push(("WARD_DEV_SOCKET_DIR", texto(s)?));
+        extras.push(("WARD_DEV_SOCKET_DIR", text(s)?));
     }
-    ward_plataforma::BinarioDeTeste::novo(caminho, raiz.to_path_buf(), dev.join("logs"), extras)
-        .map_err(|e| e.mensagem())
+    ward_platform::TestBinary::new(path, root.to_path_buf(), dev.join("logs"), extras)
+        .map_err(|e| e.message())
 }
 
-/// Caminho absoluto sem `.`, `..` nem `//`, conferido nos bytes (o `components()` do
-/// Rust some com `.` e `//` no meio, então ele sozinho não basta).
-fn absoluto_limpo(v: OsString) -> Option<PathBuf> {
+/// Absolute path without `.`, `..` or `//`, checked on the bytes (Rust's `components()`
+/// drops `.` and `//` in the middle, so it alone is not enough).
+fn clean_absolute(v: OsString) -> Option<PathBuf> {
     use std::os::unix::ffi::OsStrExt;
     let p = PathBuf::from(v);
     let bytes = p.as_os_str().as_bytes();
-    let segmentos_ok = bytes.strip_prefix(b"/").is_some_and(|resto| {
-        resto
-            .split(|b| *b == b'/')
+    let segments_ok = bytes.strip_prefix(b"/").is_some_and(|rest| {
+        rest.split(|b| *b == b'/')
             .all(|s| !s.is_empty() && s != b"." && s != b"..")
     });
-    let limpo = segmentos_ok
+    let clean = segments_ok
         && p.components()
             .all(|c| matches!(c, Component::RootDir | Component::Normal(_)));
-    limpo.then_some(p)
+    clean.then_some(p)
 }
 
 impl Config {
-    /// Lê do ambiente. A mensagem de erro não leva valor de variável.
-    pub fn do_ambiente() -> Result<Config, &'static str> {
-        Self::de(|k| std::env::var_os(k))
+    /// Reads from the environment. The error message carries no variable value.
+    pub fn from_env() -> Result<Config, &'static str> {
+        Self::from_vars(|k| std::env::var_os(k))
     }
 
-    #[cfg(not(feature = "modo-teste"))]
-    fn de(var: impl Fn(&str) -> Option<OsString>) -> Result<Config, &'static str> {
+    #[cfg(not(feature = "test-mode"))]
+    fn from_vars(var: impl Fn(&str) -> Option<OsString>) -> Result<Config, &'static str> {
         let home = var("HOME")
-            .and_then(absoluto_limpo)
+            .and_then(clean_absolute)
             .ok_or("HOME ausente ou não absoluto")?;
         let dir = home.join(".local/share/ward");
         Ok(Config {
-            caminhos: Caminhos {
-                cofre: dir.join("cofre.ward"),
-                estado: dir.join("estado"),
+            paths: Paths {
+                vault: dir.join("cofre.ward"),
+                state: dir.join("estado"),
             },
-            diretorio_socket_teste: None,
-            rt: ward_plataforma::socket::diretorio_runtime()
-                .join(ward_plataforma::socket::NOME_DIRETORIO),
+            test_socket_dir: None,
+            rt: ward_platform::socket::runtime_dir().join(ward_platform::socket::DIR_NAME),
         })
     }
 
-    #[cfg(feature = "modo-teste")]
-    fn de(var: impl Fn(&str) -> Option<OsString>) -> Result<Config, &'static str> {
+    #[cfg(feature = "test-mode")]
+    fn from_vars(var: impl Fn(&str) -> Option<OsString>) -> Result<Config, &'static str> {
         let dev = var("WARD_DEV_DIR")
-            .and_then(absoluto_limpo)
+            .and_then(clean_absolute)
             .ok_or("daemon de teste: WARD_DEV_DIR ausente ou não absoluto")?;
-        let socket_do_ambiente = match var("WARD_DEV_SOCKET_DIR") {
+        let env_socket = match var("WARD_DEV_SOCKET_DIR") {
             Some(v) => {
-                Some(absoluto_limpo(v).ok_or("daemon de teste: WARD_DEV_SOCKET_DIR inválido")?)
+                Some(clean_absolute(v).ok_or("daemon de teste: WARD_DEV_SOCKET_DIR inválido")?)
             }
             None => None,
         };
-        let app_de_teste = match var("WARD_DEV_APP") {
-            Some(v) => Some(app_de_teste(v, &dev, socket_do_ambiente.as_deref())?),
+        let test_app = match var("WARD_DEV_APP") {
+            Some(v) => Some(test_app_binary(v, &dev, env_socket.as_deref())?),
             None => None,
         };
-        let extensao_de_teste = match var("WARD_DEV_EXTENSAO") {
+        let test_extension = match var("WARD_DEV_EXTENSION") {
             None => false,
             Some(v) if v == "chrome" => true,
-            Some(_) => return Err("daemon de teste: WARD_DEV_EXTENSAO só aceita \"chrome\""),
+            Some(_) => return Err("daemon de teste: WARD_DEV_EXTENSION só aceita \"chrome\""),
         };
-        let socket = socket_do_ambiente.unwrap_or_else(|| {
-            ward_plataforma::socket::diretorio_runtime()
-                .join(ward_plataforma::socket::NOME_DIRETORIO_TESTE)
+        let socket = env_socket.unwrap_or_else(|| {
+            ward_platform::socket::runtime_dir().join(ward_platform::socket::TEST_DIR_NAME)
         });
         Ok(Config {
-            caminhos: caminhos_de_teste(&dev),
+            paths: test_paths(&dev),
             rt: socket.clone(),
-            diretorio_socket_teste: Some(socket),
-            app_de_teste,
-            extensao_de_teste,
+            test_socket_dir: Some(socket),
+            test_app,
+            test_extension,
         })
     }
 }
 
-/// Cofre e estado do daemon de teste dentro de `dev` (D7).
-pub fn caminhos_de_teste(dev: &Path) -> Caminhos {
-    Caminhos {
-        cofre: dev.join("cofre-teste.ward"),
-        estado: dev.join("cofre-teste.estado"),
+/// Vault and state of the test daemon inside `dev` (D7).
+pub fn test_paths(dev: &Path) -> Paths {
+    Paths {
+        vault: dev.join("test-vault.ward"),
+        state: dev.join("test-vault.state"),
     }
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
-    fn caminho_relativo_ou_com_ponto_ponto_recusado() {
-        for ruim in [
+    fn relative_or_dot_dot_path_refused() {
+        for bad in [
             "relativo", "/a/../b", "./x", "", "/a/./b", "/a//b", "/a/b/", "/",
         ] {
-            assert!(absoluto_limpo(ruim.into()).is_none(), "{ruim}");
+            assert!(clean_absolute(bad.into()).is_none(), "{bad}");
         }
-        assert!(absoluto_limpo("/home/x/.dev".into()).is_some());
+        assert!(clean_absolute("/home/x/.dev".into()).is_some());
     }
 
     #[test]
-    #[cfg(feature = "modo-teste")]
-    fn modo_teste_exige_dev_dir() {
-        assert!(Config::de(|_| None).is_err());
-        let c = Config::de(|k| (k == "WARD_DEV_DIR").then(|| "/x/.dev".into())).unwrap();
-        assert_eq!(c.caminhos.cofre, Path::new("/x/.dev/cofre-teste.ward"));
-        assert_eq!(c.caminhos.estado, Path::new("/x/.dev/cofre-teste.estado"));
-        assert!(c.diretorio_socket_teste.unwrap().ends_with("ward-teste"));
-        assert!(!c.extensao_de_teste);
+    #[cfg(feature = "test-mode")]
+    fn test_mode_requires_dev_dir() {
+        assert!(Config::from_vars(|_| None).is_err());
+        let c = Config::from_vars(|k| (k == "WARD_DEV_DIR").then(|| "/x/.dev".into())).unwrap();
+        assert_eq!(c.paths.vault, Path::new("/x/.dev/test-vault.ward"));
+        assert_eq!(c.paths.state, Path::new("/x/.dev/test-vault.state"));
+        assert!(c.test_socket_dir.unwrap().ends_with("ward-test"));
+        assert!(!c.test_extension);
     }
 
-    /// Fase 41: a exceção da extensão só liga com o valor exato `chrome`.
+    /// Phase 41: the extension exception only turns on with the exact value `chrome`.
     #[test]
-    #[cfg(feature = "modo-teste")]
-    fn extensao_de_teste_so_com_chrome() {
-        let com = |v: &'static str| {
-            Config::de(move |k| match k {
+    #[cfg(feature = "test-mode")]
+    fn test_extension_only_with_chrome() {
+        let with_value = |v: &'static str| {
+            Config::from_vars(move |k| match k {
                 "WARD_DEV_DIR" => Some("/x/.dev".into()),
-                "WARD_DEV_EXTENSAO" => Some(v.into()),
+                "WARD_DEV_EXTENSION" => Some(v.into()),
                 _ => None,
             })
         };
-        assert!(com("chrome").unwrap().extensao_de_teste);
-        for ruim in ["", "1", "Chrome", "chrome ", "/opt/google/chrome/chrome"] {
-            assert!(com(ruim).is_err(), "{ruim:?}");
+        assert!(with_value("chrome").unwrap().test_extension);
+        for bad in ["", "1", "Chrome", "chrome ", "/opt/google/chrome/chrome"] {
+            assert!(with_value(bad).is_err(), "{bad:?}");
         }
     }
 }

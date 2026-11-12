@@ -1,151 +1,179 @@
-# Fase 16 — Entrega: tipo → variáveis de ambiente (D10)
+# Fase 16 — `ward-core`: `mask` (+ `automaton`, `tests`) (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- **`ward-core::entrega`** (público; sem dependência nova, sem `unsafe`, sem E/S):
-  - `montar(&Entrada, &mut dyn Recursos) -> Result<Entrega, ErroEntrega>`: monta a
-    lista exata de D10, na ordem: `WARD_ENTRADA`/`WARD_GRUPO`/`WARD_AMBIENTE`, depois as
-    variáveis do tipo, os extras (`WARD_<CAMPO>`) e os anexos (`WARD_ARQUIVO_<NOME>`),
-    com o nome de `entrada::nome_variavel` (Fase 15).
-  - Trait **`Recursos`**, que quem chama implementa (o daemon na Fase 26; um falso nos
-    testes). Assim o núcleo continua sem Linux:
-    - `codigo_totp(semente)`: código atual; a semente nunca vira variável;
-    - `arquivo(nome, conteudo)`: grava o anexo ou a chave (`nome = "chave"`) em
-      `<rt>tmp/` e devolve o caminho;
-    - `tunel(servidor, host, porta)`: abre o túnel do `banco` e devolve a porta local.
-      Com túnel, host/porta viram `127.0.0.1:<local>` em todas as variáveis e URLs.
-  - Os 9 tipos:
-    - `login`: `WARD_TOTP` só com semente;
-    - `banco`: os 5 motores;
-    - `servidor` e `ftp/sftp`: `WARD_PASS` **ou** `WARD_ARQUIVO_CHAVE` +
-      `WARD_PASSPHRASE`;
-    - `api`: `WARD_URL` opcional, `WARD_TOKEN` e a variável escolhida;
-    - `aws`: session token e role opcionais;
-    - `smtp`;
-    - `genérico`: só extras e anexos;
-    - `nota segura`: `ErroEntrega::TipoSemEntrega`, cujo `Display` é exatamente
-      "tipo sem entrega".
-  - URLs do banco:
-    - postgres: `postgresql://u:s@h:p[/base]`;
-    - mysql: `mysql://…[/base]`;
-    - redis: `redis://…[/n]`, só quando a base é número;
-    - mongo: `mongodb://…[/base]`;
-    - sqlserver: `sqlserver://u:s@h:p[?database=base]`.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard efa6865`
+  (master atual).
+- **Arquivos** (glossário seção 4): `src/mascara.rs` → `src/mask.rs`,
+  `src/mascara/automato.rs` → `src/mask/automaton.rs`, `src/mascara/testes.rs` →
+  `src/mask/tests.rs` (`git mv`); `lib.rs`: `pub mod mask`. Os três traduzidos por inteiro
+  (comentários, locais, parâmetros, campos privados, nomes de teste e de ajudantes).
+- **Renomes públicos** (antigo → novo), com todos os usos no repositório:
+  - módulo `mascara` → `mask`; `MARCA` → `MARK`.
+  - `ErroMascara` → `MaskError` (`GrandeDemais` → `TooLarge`, `SemEntrega` → `NoDelivery`).
+  - `ConstrutorMascara` → `MaskBuilder` (`entrada`/`entrega`/`construir` → `entry`/
+    `delivery`/`build`).
+  - `Mascara` → `Mask` (`da_entrada`/`tem_segredo_curto`/`fluxo`/`mascarar_tudo` →
+    `from_entry`/`has_short_secret`/`stream`/`mask_all`).
+  - `Fluxo` → `Stream` (`mascarar`/`terminar` → `mask`/`finish`).
+  - `custo_da_entrada` → `entry_cost`; `pub(crate) somar` → `sum_patterns`.
+- **Renomes privados** (lista completa no parágrafo "Fase 16" do glossário): `Gerador` →
+  `Generator` e os métodos dele, `RecursosDoOrcamento` → `BudgetResources`, `visitar`/
+  `Visitante` → `visit`/`Visitor`, `Modo { Cru, Percent, Formulario }` → `Mode { Raw,
+  Percent, Form }`, `Escape { Nada, … }` → `Escape { Nothing, … }`, `Visao` → `View`
+  (`andar`/`ler`/`fechar` → `walk`/`read`/`close`), `cobrir` → `cover`, campos do `Stream`
+  (`pendente`/`emitido`/`lido`/`visoes`/`cobertos`/`em_marca` → `pending`/`emitted`/
+  `consumed`/`views`/`covered`/`in_mark`, `emitir_ate` → `emit_until`), `JsonEscapado` →
+  `EscapedJson`, as funções de forma de texto e de parser de linha; `Automato` →
+  `Automaton` (campos e métodos), `NENHUM`/`RAIZ` → `NO_NODE`/`ROOT`, `reservar`/
+  `empurrar`/`indice` → `reserve`/`push`/`index`.
+- **Testes**: ajudantes e nomes em inglês (`rascunho`/`valida`/`anexo`/`generico`/
+  `gama_generico`/`entrega`/`mascara` → `draft`/`valid`/`attachment`/`generic`/
+  `gama_generic`/`delivery_of`/`mask_of`; `em_pedacos`/`nada_segurado`/`um_bloco`/`texto`/
+  `sem_pedaco` → `in_chunks`/`nothing_held`/`one_block`/`text`/`no_piece`; `Sorteio`
+  (`proximo`/`ate`) → `Draw` (`next`/`below`); `SENHA_PG`/`URL_PG`/`CODIGO_FALSO`/
+  `SENHA_SSH`/`FIM_CURTO` → `PG_PASSWORD`/`PG_URL`/`FAKE_CODE`/`SSH_PASSWORD`/`SHORT_END`;
+  `Falsos` → `Fakes`; `NaoClone`/`ImplementaClone`/`zera_ao_sair` → `NotClone`/
+  `ImplementsClone`/`zeroes_on_drop`; `oraculo_cobre`/`oraculo_responde` →
+  `oracle_covers`/`oracle_answers`; `v2_56_printf_q_igual_ao_bash` →
+  `v2_56_printf_q_equal_to_bash` (citado no comentário de `printf_q_escapes`) etc.). 51
+  testes antes e depois. Nenhum script, Makefile, contrato nem teste de fora cita os nomes
+  de teste (procurado).
+- **Usos ajustados** (só os nomes desta fase): `ward-core` (`lib.rs`, `entry/validation.rs`,
+  `limits/tests.rs`, `examples/dev-vault/main.rs`) e `wardd` (`src/execution.rs`,
+  `src/ssh.rs`, `src/ponte.rs`, `src/playwright.rs`). Feito por regex de palavra inteira
+  nos tipos e caminhos qualificados, e os métodos pelos diagnósticos `E0599` do `cargo
+  check` (troca só no span de cada erro cujo tipo é `MaskBuilder`, `Mask` ou `Stream`; um
+  `Arc<Mask>::fluxo` à mão), até 0 erro. Os locais pt-BR desses arquivos (`mascara`,
+  `mascarado`, `tem_segredo`) ficam para as fases deles.
+- **Glossário**: parágrafo "Fase 16" depois do da Fase 15 (seção 15). Nota: aqui "emitir"
+  (soltar saída) virou `emit` (`emit_until`, `emitted`), não o `issue` do token.
+- **Exceções**: nenhuma em `allow.txt` nem em `frozen.txt`. Os comentários que citavam
+  nomes de dados ou de arquivos pt-BR (`"Segurança"` do escopo, `delta-api-simbolos`, os
+  repros `desvio.rs`/`contorno19e.rs`/`oraculo_pty.py`/`tempo.py` do auditor, o valor
+  `falso-PG%3A…` e `"-fim"`) foram reescritos sem o nome.
 
-    Usuário, senha e base vão com percent-encoding (RFC 3986, hex maiúsculo, tudo fora de
-    `A-Za-z0-9-._~` é codificado). Host IPv6 ganha colchetes. `SQLCMDSERVER` sai como
-    `host,porta`.
-  - `Entrega` / `Variavel`: `nome()`, `expor()`, `e_segredo()` (marca senha, token, URL
-    com senha e passphrase; o TOTP e o caminho de arquivo não, conforme D11), `valor(nome)`
-    e `nomes()`.
-- `entrada.rs`: só re-exporta `variaveis_do_tipo`, `VARIAVEIS_COMUNS` e
-  `anexos_do_tipo`, com `#[cfg(test)]` e `pub(crate)`, para o teste de coerência.
-- `lib.rs`: só a linha `pub mod entrega;` e um comentário.
+## Literais alterados (PRD regra 5)
+Conferido por multiconjunto de literais (script na scratchpad, comentários fora):
+- `mask.rs`: só o `Debug` dos três tipos, que acompanha o nome (como o `"Secret(••••)"` da
+  Fase 12): `"ConstrutorMascara(••••)"` → `"MaskBuilder(••••)"`, `"Mascara(••••)"` →
+  `"Mask(••••)"`, `"Fluxo(••••)"` → `"Stream(••••)"`. Nenhum script nem teste procura
+  esses textos (só `strings-0.1.4.txt`, que o V6.3 deve aceitar). As mensagens pt-BR do
+  `Display` de `MaskError` e o `"/orcamento"` ficam.
+- `automaton.rs`: nenhum (os `expect` pt-BR ficam).
+- `tests.rs`:
+  - capturas de `format!` (texto igual, V6.3): `{SENHA_PG}`/`{URL_PG}`/`{CODIGO_FALSO}` →
+    `{PG_PASSWORD}`/`{PG_URL}`/`{FAKE_CODE}`, `{forma}` → `{form}`, `{colado}` →
+    `{glued}`, `{maior}`/`{menor}` → `{larger}`/`{smaller}`, `{caso}` → `{case}`,
+    `{saida}` → `{output}`, `{fora}` → `{masked}`, `{alvo}` → `{target}`, `{valor}`/
+    `{VALOR}` → `{value}`/`{VALUE}`, `{um}`/`{dois}` → `{one}`/`{two}`, `{linha}` →
+    `{line}`, `{rotulo}` → `{label}`, `{nome}` → `{name}`, `{custo}` → `{cost}`,
+    `{rodada}` → `{round}`, `{prefixo}`/`{sobra}` → `{prefix}`/`{leftover}`, `{erro}` →
+    `{error}`, `{cand}` → `{candidate}`, `{maior}` (bytes) → `{longest}`.
+  - **o script Python do teste cruzado com o oráculo** (dois iguais, em
+    `v2_57_oracle_and_mask_with_d54_values` e `oracle_covers`): `v.variacoes(…, anexo=…)`
+    → `v.variations(…, attachment=…)`, o nome de módulo `'variacoes'` → `'variations'` e o
+    local `linha` → `line`. Motivo: é nome (a API do oráculo). A trilha S (`dev/variations.py`,
+    Fase 42) renomeou `variacoes`/`anexo` para `variations`/`attachment` e estes dois
+    scripts não acompanharam: no Milestone 6 os testes V2.57/V3.29/V3.31/V3.32 falhariam
+    com `AttributeError`. O `dev/variations.py` não mudou (oráculo independente).
+  - **Ficaram**: todos os dados de teste (valores falsos de D15 e dos casos, nomes de entrada
+    e de extra, `teste-generico`, `REGIAO`, `CHAVE_LICENCA`…), as variáveis de ambiente
+    locais dos scripts de teste (`NOTA`, `VALORES`, `V`, `A`), todos os textos de
+    `panic!`/`assert!`/`eprintln!` e os nomes de caso em pt-BR.
+- Nenhum literal mudou nos arquivos dependentes, fora as capturas `{MARCA}` → `{MARK}` em
+  três mensagens do `examples/dev-vault/main.rs` (texto igual).
+- **Incidente corrigido durante a fase**: a ferramenta de escrita decodificou os escapes
+  `\uXXXX` dentro de strings cruas dos testes (e de um comentário do `mask.rs`). A
+  conferência de literais acusou; as 17 linhas foram restauradas byte a byte por script
+  (escapes montados sem `\u` no fonte), e a conferência final mostra só as diferenças
+  acima.
+- **Conferido por forma** (tokens com identificadores normalizados, sem comentários):
+  `mask.rs` (8853 tokens) e `automaton.rs` (1295) iguais ao antigo; `tests.rs` igual fora
+  quatro campos abreviados (`data: dados` → `data`, `secret: segredo` → `secret`) e uma
+  vírgula final (rustfmt).
 
 ## Segurança
-- Invariantes tocadas:
-  - **S8 / V2.28:** todo valor fica num `Zeroizing<String>`. As URLs com senha são
-    alocadas uma vez só, no tamanho exato (`juntar` calcula o tamanho antes), então não
-    sobra cópia parcial do segredo depois de uma realocação. `Entrega` e `Variavel` têm
-    `ZeroizeOnDrop` e não têm `Clone`.
-  - **S13 / V2.27:** o `Debug` de `Entrega`/`Variavel` mostra só `NOME=••••`, e nenhum
-    valor aparece, nem os não secretos. `ErroEntrega`/`ErroRecurso` só têm
-    `&'static str`.
-  - **S1/S3 (preparação para o M4):**
-    - percent-encoding em usuário, senha **e base**. Sem ele, uma base
-      `app?host=evil.invalid` mandaria o libpq (e a senha) para outro host, e uma senha
-      com `@`/`/`/`#` mudaria o destino;
-    - extra nunca vira variável do sistema: `LD_PRELOAD` vira `WARD_LD_PRELOAD`, e
-      `PGPASSWORD`/`DATABASE_URL` como extra não sobrescrevem as do tipo;
-    - conferência final da lista: nome em `[A-Z_][A-Z0-9_]*`, sem `LD_*`, sem repetido,
-      sem nulo em valor;
-    - o que vem de `Recursos` também é conferido: TOTP com 6 a 8 dígitos, caminho não
-      vazio e sem nulo, porta do túnel diferente de 0.
-  - **S2 (preparação):** `nota segura` recusa antes de chamar qualquer recurso, então não
-    cria arquivo. A chave privada vai só para arquivo e nunca para o ambiente. Se a
-    montagem falhar depois de criar um arquivo, quem chama apaga (está documentado no
-    módulo; o `ward run` da Fase 26 limpa em toda saída).
-- Testes de ataque (`crates/ward-core/src/entrega/testes.rs`):
-  - `ataque_senha_usuario_ou_base_mudam_o_destino_do_url`: os 5 motores, com
-    senha/usuário/base cheios de `@ : / ? # & =`;
-  - `ataque_extra_vira_variavel_do_sistema`: `LD_PRELOAD`, `PATH`, `PGPASSWORD`,
-    `DATABASE_URL` e o anexo `LD_AUDIT`;
-  - `ataque_recurso_devolve_lixo`: TOTP com `\n`, letras, nulo, curto ou longo, caminho
-    vazio ou com nulo, porta 0, e recurso que falha, com o erro sem segredo;
-  - `ataque_debug_e_erros_sem_segredo`;
-  - `defesa_conferir_recusa_lista_invalida`;
-  - `entrega_zera_ao_sair_e_nao_clona`: em tempo de compilação;
-  - `url_alocada_uma_vez_no_tamanho_exato`.
-- Funcionais:
-  - `v2_14_entrega_esperada_do_contrato`: as 11 linhas da tabela, comparando nomes e
-    valores exatos, nada a mais e nada a menos; inclui o túnel pelo servidor certo, a
-    chave e o `app.env` com o conteúdo certo nos arquivos, e "tipo sem entrega" com zero
-    chamadas;
-  - `v2_14_comuns_vem_primeiro_e_na_ordem`;
-  - `v2_15_todos_os_motores`: os 5 motores, com `falso:DB/01` → `falso%3ADB%2F01`;
-  - `v2_16_extra_e_anexo_normalizados`: `WARD_API_KEY`,
-    `WARD_ARQUIVO_CHAVE_ACESSO_PEM` e a recusa de repetidos ao salvar;
-  - `variaveis_do_tipo_batem_com_as_reservadas`: toda `WARD_*` do tipo está na lista
-    reservada da validação. É o elo com a Fase 15: um extra nunca colide;
-  - `marca_de_segredo_bate_com_o_valor`;
-  - `opcionais_ausentes_ficam_de_fora`;
-  - `redis_com_base_numerica_vai_no_url`;
-  - `host_ipv6_vai_entre_colchetes_no_url`;
-  - `percent_encoding_de_todos_os_bytes`;
-  - `extras_entram_em_todo_tipo_que_tem_entrega`.
-- Mutações conferidas e revertidas, ambas pegas:
-  - base sem encoding: `ataque_senha_usuario_ou_base…` falha;
-  - checagem de `LD_` desligada: `defesa_conferir…` falha.
-- Dependências novas: nenhuma. O percent-encoding é feito à mão, porque não é
-  criptografia, e tem teste de todos os bytes especiais e do UTF-8.
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários):
+  - S4/D11/D34/D36/D37/D54/D58/D61 (máscara): mesmos padrões gerados pelo mesmo
+    `Generator` (literal, base64 e miolos, Basic, formas de texto, passada por linha, valor
+    de linha, JSON na linha, campos de tab), as três visões (cru, percent, formulário) no
+    mesmo autômato, nada segurado entre pedaços (sem oráculo de prefixo), trechos
+    sobrepostos numa marca só. Mesma lógica, mesma ordem (conferido por forma).
+  - S8: `Zeroizing` em todas as tabelas e buffers, `reserve` que não deixa cópia, sem
+    `Clone`, `ZeroizeOnDrop`, `Debug` sem conteúdo (só o nome do tipo mudou).
+  - D29: `entry_cost` com os mesmos recursos falsos (porta do túnel máxima) e o mesmo
+    teto `MASK_BUDGET`; `MaskError::TooLarge` falha fechado no `ward run`.
+- **Testes de ataque**: nenhum novo (só rename); os existentes (pedaços quebrados, base64
+  maior, segredos sobrepostos, JSON escapado, saída patológica, `Debug` sem segredo,
+  anexo grande demais, oráculo de prefixo da auditoria, prefixo certo × errado, tempo,
+  percent pela metade, oráculo cruzado) acompanham os nomes. Não rodaram (PRD regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- **`WARD_TOTP` igual ao `oathtool` (V2.14):** o código vem de `Recursos::codigo_totp`.
-  Aqui o teste usa um código falso e confere que a semente certa foi passada. Não liguei
-  o `crate::totp` da Fase 18, que roda em paralelo e cuja API ainda pode mudar, e o
-  `oathtool` não está instalado. Quem fecha é a Fase 26, quando o daemon implementar
-  `Recursos` com `totp::Totp`, ou o orchestrator, com um teste depois que a 18 fechar.
-- Criar e apagar os arquivos temporários e abrir o túnel de verdade: Fases 26 e 29 (o
-  núcleo não faz E/S).
+- Locais e comentários pt-BR dos arquivos que usam os nomes novos ficam para as fases deles
+  (`wardd`: `execution.rs`/`ssh.rs` já da Fase 21; `ponte.rs`/`playwright.rs` da Fase 22,
+  em paralelo; `examples/dev-vault` da trilha S).
+- Os homônimos `ErroCodificar::GrandeDemais`, `ErroQuadro::GrandeDemais` e
+  `ErroResposta::TipoSemEntrega`/`EntregaFalhou` (Fase 17).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `cargo test -p ward-core --locked entrega` (18 testes) | 0 |
-| `cargo clippy -p ward-core --all-targets --locked -- -D warnings` | 0 |
-| mutações (base sem encoding; sem checagem `LD_`) e reversão | 101 → 0 |
-| `make check` | 0 ("tudo limpo") |
+| `git reset --hard efa6865` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `cargo check --workspace --all-targets --all-features --locked` (logs `.dev/logs/fase16-check.{log,json}`; 6 rodadas com os diagnósticos `E0599`) | 0 |
+| `cargo fmt --all` | 0 |
+| `make english-check PATHS="crates/ward-core/src/mask.rs crates/ward-core/src/mask/automaton.rs crates/ward-core/src/mask/tests.rs"` (log `fase16-english.log`) | 0 (0 achado) |
+| `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` (extra; log `fase16-clippy.log`) | 0 |
+| `make compile` (log `fase16-make-compile.log`; inclui o `cargo check` do `app/src-tauri`, build do Vite e `syntax_check.py`) | 0 |
+| `make check` | não rodado (PRD regra 6) |
+| `rm -rf target app/src-tauri/target` (disco) | 0 |
 
 ## Problemas descobertos
-- **Decisões minhas, fora do texto de D10, para o orchestrator confirmar:**
-  - `SQLCMDSERVER` sai como `host,porta`, a sintaxe do `sqlcmd`;
-  - a base do sqlserver vai no URL como `?database=`;
-  - no redis, a base só entra no URL se for número. D10 não define `REDIS_USER`, então o
-    usuário só vai no URL;
-  - `WARD_TOTP` e `WARD_ARQUIVO_*` não são marcados como segredo (D11: o código não é
-    mascarado; o caminho não é segredo).
-- **A validação aceita `base` com qualquer caractere de linha** (`?`, `#`, `/`). A
-  entrega neutraliza isso com percent-encoding, mas variáveis como `PGDATABASE` recebem o
-  texto cru. Isso é inofensivo para os clientes, que tratam o valor como nome. Talvez
-  valha restringir o formato da base na validação (Fase 15). Não mexi nela.
-- `variaveis_do_tipo` está correta só porque os tipos sem variável `WARD_*` própria
-  (banco, aws, smtp) usam nomes sem `WARD_`. O teste de coerência quebra se alguém
-  acrescentar uma `WARD_*` num tipo sem atualizar a lista.
+- O worktree nasceu em `b4d5e1b`, não em `efa6865`; reset com a árvore limpa.
+- **Teste cruzado com o oráculo quebrado desde a Fase 42**: os scripts Python embutidos em
+  `mascara/testes.rs` chamavam `variacoes(…, anexo=…)`, que o `dev/variations.py` não tem
+  mais (`variations(…, attachment=…)`). Corrigido aqui (nome da API, PRD regra 5). Vale
+  o M6 conferir se outro chamador do oráculo ficou com o nome velho (procurei em
+  `*.rs`, `*.py`, `*.sh`: nenhum).
+- **Arquivos de fases paralelas tocados (só usos)**: `crates/wardd/src/ponte.rs` e
+  `crates/wardd/src/playwright.rs` (Fase 22): imports, `Mask`, `Mask::from_entry`,
+  `.stream()`/`.mask(…)`/`.finish(…)`, `mask_all`; nenhum local renomeado. `execution.rs` e
+  `ssh.rs` (Fase 21, concluída) idem. Nada nas Fases 24 (testes `ssh.rs`/`run.rs`) e 31
+  (`app/core`).
+- **Arquivo da trilha S tocado**: `crates/ward-core/examples/dev-vault/main.rs`, só os usos.
+- **Arquivo compartilhado**: `docs/glossario.md` (parágrafo novo depois do da Fase 15).
+- **Ferramenta**: a escrita de arquivo decodifica `\uXXXX` no texto; quem traduzir arquivo
+  com esses escapes (protocolo, extensão, `app/core`) deve conferir os literais por script.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-core/src/entrega.rs` | criado |
-| `crates/ward-core/src/entrega/testes.rs` | criado |
-| `crates/ward-core/src/entrada.rs` | alterado (só a re-exportação `#[cfg(test)]` de 3 nomes) |
-| `crates/ward-core/src/lib.rs` | alterado (só `pub mod entrega;`) |
+| `crates/ward-core/src/mask.rs` (era `mascara.rs`) | renomeado e reescrito |
+| `crates/ward-core/src/mask/automaton.rs` (era `mascara/automato.rs`) | renomeado e reescrito |
+| `crates/ward-core/src/mask/tests.rs` (era `mascara/testes.rs`) | renomeado e reescrito |
+| `crates/ward-core/src/lib.rs` | alterado |
+| `crates/ward-core/src/entry/validation.rs`, `crates/ward-core/src/limits/tests.rs` | alterado (usos) |
+| `crates/ward-core/examples/dev-vault/main.rs` | alterado (usos) |
+| `crates/wardd/src/{execution,ssh,ponte,playwright}.rs` | alterado (usos) |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-16.md` | criado |
 
-`Cargo.toml` e `Cargo.lock` não foram alterados, nem os arquivos da Fase 18 (`totp*`,
-`gerador*`).
-
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados (valores de D15; nada em `.dev/` tocado)
-- [x] Teste de ataque para cada (SEG) tocado (S8/V2.28, S13/V2.27, mais URL, variável do sistema e recurso malicioso)
-- [x] (UI/DESIGN) não se aplica
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make compile` (0), `cargo fmt` e `cargo clippy -D warnings` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master `5162340` (Fases 22, 24, 31)
+- Conflito modify/delete em `crates/wardd/src/ponte.rs` (a Fase 22 o renomeou para
+  `bridge.rs`): `ponte.rs` apagado e os usos desta fase aplicados no `bridge.rs`
+  (`ward_core::mask::Mask`, `Arc<Mask>`, `mask.stream()`, `m.mask(…)`, `m.finish(…)`).
+- Conflito de conteúdo em `crates/wardd/src/playwright.rs`: ficou a versão da Fase 22
+  (`has_secret`, `mask`), com `Mask`, `mask_all` e `Mask::from_entry`.
+- Glossário com as partes das Fases 15, 16, 21, 22, 24 e 31. Nenhum uso antigo restou
+  (procurado em `crates/` e `app/`).
+- Literais conferidos de novo por script nos arquivos tocados: iguais ao `5162340` fora
+  as capturas `{MARCA}` → `{MARK}` do `dev-vault`; `mask*` iguais à conferência de antes.
+- `cargo check` (log `.dev/logs/fase16-merge-check.log`) 0; `make compile` (log
+  `.dev/logs/fase16-merge-make-compile.log`) 0.

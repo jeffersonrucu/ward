@@ -3,13 +3,116 @@
 Roteiro da Fase 52 (D18, D46, D47, D60; V9.5, V9.7, V9.8). Quem roda é você, uma vez,
 na sua máquina. A missão nunca roda `sudo` nem instala nada no host.
 
-Duas formas de instalar a mesma árvore (`instalacao/arvore.txt`). Escolha uma:
+Duas formas de instalar a mesma árvore (`install/tree.txt`). Escolha uma:
 
 - **`.deb`** (recomendada): `make deb` e depois `sudo dpkg -i`. O `dpkg` registra os
   arquivos, a dependência de `sshpass` e a remoção.
-- **`sudo make install`**: copia direto da árvore do repositório.
+- **`sudo make install`**: copia a árvore do repositório, rodado de uma cópia numa
+  pasta do root (passo 2b), nunca de dentro do clone.
 
 Não misture as duas. Se já usou uma, desinstale antes de trocar.
+
+Já tem a 0.1.x instalada? Leia antes a seção "Atualizar da 0.1.x para a 0.2.0", logo
+abaixo: ela pede uma cópia do cofre **antes** de instalar a versão nova.
+
+## Atualizar da 0.1.x para a 0.2.0
+
+Na 0.2.0 o código passou para o inglês. Para você, quase nada muda: as telas, os
+textos e o jeito de usar são os mesmos. O que muda está nesta lista, e esta é a única
+parte do roteiro que ainda cita os nomes da 0.1.x.
+
+**O que muda.**
+
+- **Subcomandos da CLI.** `ward lista` virou `ward list`, `ward destravar` virou
+  `ward unlock`, `ward travar` virou `ward lock` e `ward ajuda` virou `ward help`. Os
+  nomes antigos não existem mais: dão "comando desconhecido" (saída 2). `run`, `ssh`,
+  `login` e `playwright` ficam iguais.
+- **Variáveis que o `ward run` entrega.** `WARD_ENTRADA` → `WARD_ENTRY`, `WARD_GRUPO` →
+  `WARD_GROUP`, `WARD_AMBIENTE` → `WARD_ENVIRONMENT`, `WARD_PROTOCOLO` → `WARD_PROTOCOL`,
+  `WARD_ARQUIVO_<NOME>` → `WARD_FILE_<NOME>` e `WARD_ARQUIVO_CHAVE` → `WARD_FILE_KEY`.
+  Script seu que lia o nome antigo passa a receber variável vazia: troque o nome. As
+  outras (`WARD_URL`, `WARD_USER`, `WARD_PASS`, `PG*`, `AWS_*`…) e os `WARD_<CAMPO>`
+  dos seus campos extras não mudam.
+- **`ward list --json`** tem chaves e valores em inglês (`type`, `database`, `server`,
+  `secure-note`…). A tabela de texto continua em português.
+- **O cofre migra sozinho.** Na primeira vez que você destrava a 0.2.0, o `wardd`
+  regrava o cofre no formato novo (corpo v5) e grava uma versão nova no backup local. A
+  senha mestra, o PIN, as entradas, os níveis, os anexos e a configuração ficam iguais.
+  O arquivo continua com o mesmo nome e no mesmo lugar (`~/.local/share/ward/`). A
+  partir daí a 0.1.x **não abre mais** esse cofre (ela diz "o conteúdo do cofre é
+  inválido", ou recusa como retrocesso, e não grava nada). Por isso a cópia do passo 1 abaixo.
+- **Caminhos instalados.** A extensão do Chrome sai de `/usr/local/share/ward/extensao/`
+  para `/usr/local/share/ward/extension/`, e a marca dos grupos sai de
+  `/usr/local/lib/ward/grupos-criados` para `/usr/local/lib/ward/created-groups`. A
+  instalação apaga os caminhos antigos e reescreve a política do Chrome com o novo; o
+  Chrome atualiza a extensão sozinho (versão 0.2.0, mesmo id). Até ele atualizar, a
+  extensão 0.1.x recebe "versão desconhecida" e não preenche nada.
+- **Nomes reservados.** Na 0.2.0, um campo extra chamado `ENTRY`, `GROUP`,
+  `ENVIRONMENT`, `FILE` ou que comece por `FILE_` (em qualquer tipo), um extra
+  `PROTOCOL` numa entrada `ftp-sftp` e um anexo chamado `key` numa entrada `servidor`
+  ou `ftp-sftp` colidiriam com as variáveis novas. Na 0.1.x esses nomes eram livres. O
+  cofre abre e migra normalmente, mas o `ward run` dessa entrada só dá um erro
+  genérico (o motivo, "campo extra ou anexo com nome reservado", fica no log do
+  `wardd`: `sudo journalctl -u wardd@$(id -u).service`), e o app não salva a entrada
+  enquanto o nome não mudar. Antes de atualizar, procure esses nomes nos campos extras
+  e nos anexos das suas entradas; depois de atualizar, renomeie no app (editar a
+  entrada, trocar o nome do extra ou do anexo, salvar) e confira com um `ward run`.
+
+**Passo a passo.**
+
+1. **Copie o cofre antes de atualizar.** A migração não guarda no backup local uma
+   cópia no formato antigo: as versões 0.1.x que já estão em
+   `~/.local/share/ward/backups/` ficam, mas a rotação as apaga depois de 30 gravações
+   na 0.2.0. A cópia é o seu caminho de volta. Pare o `wardd` (o cofre trava), para que
+   nada seja gravado durante a cópia, e copie a pasta inteira (cofre, `estado` e
+   backups) para uma pasta sua, fechada:
+
+   ```sh
+   sudo systemctl stop "wardd@$(id -u).socket" "wardd@$(id -u).service"
+   install -d -m 0700 ~/ward-copia-0.1.x
+   cp -a ~/.local/share/ward/. ~/ward-copia-0.1.x/
+   ls -l ~/ward-copia-0.1.x/          # cofre.ward, estado e backups/
+   ```
+
+   A cópia é cifrada pela sua senha mestra, como o cofre. Não a ponha em `/tmp`, nem em
+   backup em nuvem. O `estado` não tem segredo, mas vai junto: sem ele a 0.1.x
+   recusaria a cópia como um retrocesso.
+2. **Instale a 0.2.0 pelo mesmo meio que instalou a 0.1.x** (passo 2a ou 2b), por cima,
+   sem desinstalar antes. A instalação para todo `wardd@*` antes de trocar os binários,
+   para nenhum daemon 0.1.x ficar no ar com a CLI nova, e religa os sockets no fim.
+3. **Atualize a skill e as regras de deny** pelo `skill/README.md` (a skill usa os
+   comandos novos; o deny nega `ward unlock` e continua negando a forma antiga).
+4. **Destrave** pelo app ou por `/usr/local/bin/ward unlock`. É aqui que o cofre migra.
+5. **Confira**: `ward list` mostra as mesmas entradas de antes; um `ward run` de uma
+   entrada com aprovação funciona; em `chrome://extensions` a extensão está na 0.2.0;
+   `ls /usr/local/share/ward/` não tem mais `extensao/`.
+6. Use a 0.2.0 por uns dias. Quando tiver certeza de que não vai voltar, apague
+   `~/ward-copia-0.1.x/`.
+
+**Voltar para a 0.1.x.** Não há volta automática: a 0.1.x não abre o cofre migrado.
+O caminho é reinstalar a 0.1.x e repor a cópia do passo 1. O que você mudou no cofre
+depois de atualizar (entradas novas, senhas trocadas) se perde e tem de ser refeito à
+mão.
+
+1. Desinstale a 0.2.0 (passo 6) e instale a 0.1.x pelo roteiro dela.
+2. Pare o `wardd`, guarde o cofre migrado à parte (não apague) e reponha a cópia:
+
+   ```sh
+   sudo systemctl stop "wardd@$(id -u).socket" "wardd@$(id -u).service"
+   mv ~/.local/share/ward ~/ward-migrado-0.2.0
+   install -d -m 0700 ~/.local/share/ward
+   cp -a ~/ward-copia-0.1.x/. ~/.local/share/ward/
+   sudo systemctl start "wardd@$(id -u).socket"
+   ```
+
+3. Destrave a 0.1.x pelo caminho completo (na 0.1.x o subcomando ainda é
+   `/usr/local/bin/ward destravar`) e confira as entradas.
+
+Sem a cópia do passo 1, a única versão no formato antigo que sobra é uma das versões
+0.1.x de `~/.local/share/ward/backups/` (os arquivos `ward-<data>-<hora>.ward` de antes
+da atualização), enquanto a rotação não as apagou. Repor uma delas à mão, no lugar do
+`cofre.ward`, ainda esbarra no `estado` gravado pela 0.2.0 (formato novo, geração
+maior), que a 0.1.x recusa. Esse caminho não está conferido: faça a cópia.
 
 ## 0. Antes de começar
 
@@ -31,7 +134,7 @@ Não misture as duas. Se já usou uma, desinstale antes de trocar.
    ssh -G github.com | sort > ~/ward-antes/ssh-G.txt
    ```
 
-3. **Código de confiança.** O `sudo` roda os scripts do repositório (`instalar.sh`,
+3. **Código de confiança.** O `sudo` roda os scripts do repositório (`install.sh`,
    `Makefile`) ou os do pacote (`preinst`/`postinst`) como root. Um programa malicioso
    rodando como o seu usuário poderia trocá-los antes do `sudo`. Para diminuir esse
    risco:
@@ -45,7 +148,10 @@ Não misture as duas. Se já usou uma, desinstale antes de trocar.
 
    - no caminho do `.deb`, copie o pacote para uma pasta do root **antes** de conferir
      e instalar. Assim nada do seu usuário consegue trocá-lo entre a conferência e o
-     `dpkg` (passo 2).
+     `dpkg` (passo 2a);
+   - no caminho do `make install`, o mesmo: o instalador, os binários e o pacote da
+     extensão vão para `/root/ward-src` e o `sudo make` roda de lá, nunca do clone
+     (passo 2b).
 
    O risco não some: o build ainda roda como o seu usuário. Está anotado no handoff
    da Fase 52.
@@ -78,28 +184,28 @@ Não misture as duas. Se já usou uma, desinstale antes de trocar.
 
 ```sh
 make release          # ward, wardd, ward-nm e o app (precisa de libwebkit2gtk-4.1-dev)
-make extensao         # extensao/dist/
-make extensao-crx     # target/extensao/ward.crx, assinado com .dev/extensao/chave.pem
+make extension         # extension/dist/
+make extension-crx     # target/extension/ward.crx, assinado com .dev/extension/key.pem
 ```
 
-O `make extensao-crx` usa o Chrome (`--pack-extension`) com perfil e HOME temporários
+O `make extension-crx` usa o Chrome (`--pack-extension`) com perfil e HOME temporários
 em `target/`, e não mexe no seu perfil. Ele recusa o pacote se o id não for o
-`ID_EXTENSAO` do `ward-nm`. No fim imprime a linha `EXTENSAO_ID=… EXTENSAO_CRX=…` do
+`EXTENSION_ID` do `ward-nm`. No fim imprime a linha `EXTENSION_ID=… EXTENSION_CRX=…` do
 próximo passo.
 
-A chave privada tem de estar em `.dev/extensao/chave.pem` (0600) no clone de
+A chave privada tem de estar em `.dev/extension/key.pem` (0600) no clone de
 instalação. Copie do checkout principal com `install -m 0600`. Sem ela, o id muda e
 nada casa.
 
 ## 2a. Instalar pelo `.deb`
 
 ```sh
-make deb EXTENSAO_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSAO_CRX=$PWD/target/extensao/ward.crx
+make deb EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSION_CRX=$PWD/target/extension/ward.crx
 ```
 
 O comando gera `target/deb/ward_<versão>_<arq>.deb` e imprime o sha256 dele. O
 `make deb` passa pelas mesmas conferências do `make install`: recusa artefato
-`modo-teste` (V9.2), binário que não é ELF, link e pacote da extensão com outro id.
+`test-mode` (V9.2), binário que não é ELF, link e pacote da extensão com outro id.
 Depois confere o próprio `.deb`: a lista do `dpkg-deb -c` tem de ser igual à do
 staging, tudo root/root, nenhum bit setgid no pacote e Depends com `sshpass` (V9.9).
 
@@ -107,7 +213,7 @@ staging, tudo root/root, nenhum bit setgid no pacote e Depends com `sshpass` (V9
 sudo install -d -m 0700 -o root -g root /root/ward
 sudo install -m 0644 -o root -g root target/deb/ward_*.deb /root/ward/
 sudo sha256sum /root/ward/ward_*.deb                           # o mesmo que o make deb imprimiu
-sudo dpkg-deb -c /root/ward/ward_*.deb                         # 60 caminhos, root/root, sem 's'
+sudo dpkg-deb -c /root/ward/ward_*.deb                         # 61 linhas (o ./ e 60 caminhos), root/root, sem 's'
 sudo dpkg-deb -f /root/ward/ward_*.deb Depends                 # sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
 sudo dpkg-deb -I /root/ward/ward_*.deb preinst | less          # leia os scripts antes de rodar
 sudo apt install /root/ward/ward_*.deb                         # ou: sudo dpkg -i (sem resolver dependências)
@@ -120,7 +226,7 @@ Durante a instalação:
   login pelo `/etc/security/group.conf`, citado num `sudoers`, ou com `subid:`/`sudoers:`
   do `/etc/nsswitch.conf` fora de `files`), a instalação para antes de qualquer arquivo
   e diz qual regra falhou. Os grupos que ele cria ficam anotados em
-  `/usr/local/lib/ward/grupos-criados`;
+  `/usr/local/lib/ward/created-groups`;
 - o `preinst` também para se outro arquivo de `/etc/opt/chrome/policies/managed/` citar
   um nome da política do Ward (`ExtensionSettings`, `NativeMessagingUserLevelHosts`,
   `PasswordManagerEnabled` ou `PasswordLeakDetectionEnabled`; passo 0.5);
@@ -134,9 +240,41 @@ Durante a instalação:
 
 ## 2b. Ou instalar por `sudo make install`
 
+Prefira o `.deb` (2a). Se for pelo `make install`, **nunca rode `sudo make install` de
+dentro do clone**: o clone é do seu usuário, e qualquer programa seu pode trocar o
+`Makefile` ou o `install/install.sh` entre a sua conferência e o `sudo`; o root roda o que
+estiver lá (auditoria de segurança do M6, Fase 66b). Faça como no `.deb`: leve para uma
+pasta do root o instalador (o `Makefile`, `install/` com o `tree.txt` e os ícones), os
+binários e o pacote da extensão, confira lá e rode de lá.
+
+No clone, como você (sem sudo), gere o pacote do instalador a partir da revisão
+conferida no passo 0.3:
+
 ```sh
-sudo make install EXTENSAO_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSAO_CRX=$PWD/target/extensao/ward.crx
+git archive -o target/ward-install.tar HEAD Makefile install docs/design/logo
+sha256sum target/ward-install.tar target/release/ward target/release/wardd \
+    target/release/ward-nm app/src-tauri/target/release/ward-app target/extension/ward.crx
 ```
+
+Depois, como root, copie tudo para `/root/ward-src` (0700), confira os sha256 (têm de ser
+os mesmos de cima), extraia, leia e rode de lá:
+
+```sh
+sudo install -d -m 0700 -o root -g root /root/ward-src /root/ward-src/bin
+sudo install -m 0644 -o root -g root target/ward-install.tar target/extension/ward.crx /root/ward-src/
+sudo install -m 0755 -o root -g root target/release/ward target/release/wardd target/release/ward-nm \
+    app/src-tauri/target/release/ward-app /root/ward-src/bin/
+sudo sha256sum /root/ward-src/ward-install.tar /root/ward-src/bin/* /root/ward-src/ward.crx
+sudo tar -x --no-same-owner -f /root/ward-src/ward-install.tar -C /root/ward-src
+sudo less /root/ward-src/install/install.sh               # leia antes de rodar
+sudo make -C /root/ward-src install EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf \
+    EXTENSION_CRX=/root/ward-src/ward.crx \
+    BIN_WARD=/root/ward-src/bin/ward BIN_WARDD=/root/ward-src/bin/wardd \
+    BIN_NM=/root/ward-src/bin/ward-nm BIN_APP=/root/ward-src/bin/ward-app
+```
+
+Guarde `/root/ward-src` enquanto usar o Ward: o `sudo make -C /root/ward-src uninstall` sai
+de lá (passo 6). Nunca rode o `uninstall` do clone pelo mesmo motivo.
 
 ## 3. Conferir o systemd (V9.7)
 
@@ -147,29 +285,29 @@ systemctl is-enabled wardd@$(id -u).socket     # enabled
 systemctl is-active  wardd@$(id -u).socket     # active
 stat -c '%U:%G %a' /run/ward /run/ward/$(id -u)   # root:root 755 nas duas
 stat -c '%U %a %F' /run/ward/$(id -u)/wardd.sock  # <você> 600 socket
-/usr/local/bin/ward destravar                   # primeira conexão sobe o wardd, sem sudo
+/usr/local/bin/ward unlock                     # primeira conexão sobe o wardd, sem sudo
 ps -o user=,pid=,cmd= -C wardd                  # roda como você
 stat -c '%U %a' /run/user/$(id -u)/ward         # <você> 700 (temporários)
 systemd-inhibit --list | grep -i ward           # inibidor da suspensão (trava ao suspender)
 ```
 
-O uso diário (`ward lista`, `ward run`, `ward ssh`, app) não pede `sudo`.
+O uso diário (`ward list`, `ward run`, `ward ssh`, app) não pede `sudo`.
 
 **Senha mestra só pelo caminho completo.** Destrave pelo app ou, no terminal, sempre com
-`/usr/local/bin/ward destravar`, nunca o `ward` que o `PATH` acha. Um programa malicioso
+`/usr/local/bin/ward unlock`, nunca o `ward` que o `PATH` acha. Um programa malicioso
 rodando como você pode pôr um `ward` falso antes no `PATH` (em `~/.local/bin`, por
 exemplo): ele mostra o mesmo pedido de senha e guarda o que você digitar. O caminho
 completo pula o `PATH`. Ele não protege de um `~/.bashrc` ou `~/.zshrc` adulterado (uma
 função do shell, ou um alias do zsh, pode ter o nome `/usr/local/bin/ward`): esse caso
 fica fora do que o Ward cobre (escopo › "Fora do modelo de ameaça", RA8). Os outros
-comandos (`ward lista`, `ward run`…) não recebem a senha mestra; o PIN é digitado só na
+comandos (`ward list`, `ward run`…) não recebem a senha mestra; o PIN é digitado só na
 janela do app.
 
 ### V9.4 (opcional): o `LD_PRELOAD` do gerente do usuário não chega ao `wardd`
 
 ```sh
 systemctl --user set-environment LD_PRELOAD=/tmp/nao-existe.so
-pkill -KILL -x wardd; ward lista >/dev/null     # mata e sobe outro pela conexão
+pkill -KILL -x wardd; ward list >/dev/null      # mata e sobe outro pela conexão
 sudo cat /proc/$(pgrep -x wardd)/environ | tr '\0' '\n' | grep -c '^LD_'   # 0
 grep -E '^(Max core)' /proc/$(pgrep -x wardd)/limits                       # 0 0
 systemctl --user unset-environment LD_PRELOAD
@@ -214,7 +352,7 @@ ls /var/crash | grep -i -E 'webkit|ward'                # nada
 Se um crash do app acontecer, `/var/log/apport.log` (com `sudo`) mostra "executable
 version is in denylist" no lugar de "wrote report". A atualização do WebKitGTK que
 trouxer um auxiliar novo faz a reinstalação do Ward recusar com o nome dele, até a lista
-do Ward (`instalacao/despejo.sh`) ser atualizada.
+do Ward (`install/dump.sh`) ser atualizada.
 
 ## 4. Conferir o Chrome (V9.5)
 
@@ -227,12 +365,12 @@ Feche e abra o Chrome.
 2. Em `chrome://extensions`, a extensão Ward aparece como **instalada pela sua
    organização**. Não há botão de remover e a chave de ativar fica travada.
 3. Ainda em `chrome://extensions`, ligue o modo desenvolvedor e tente "Carregar sem
-   compactação" com `extensao/dist/`, que tem a mesma `key` e portanto o mesmo id. O
+   compactação" com `extension/dist/`, que tem a mesma `key` e portanto o mesmo id. O
    Chrome tem de recusar.
 4. O ícone fica fixado na barra. Num site de teste, o popup lista as sugestões.
 
 Se a extensão **não** aparecer: a política aponta para `update.xml` e `ward.crx` por
-`file://` em `/usr/local/share/ward/extensao/`, e não está confirmado que o Chrome do
+`file://` em `/usr/local/share/ward/extension/`, e não está confirmado que o Chrome do
 Linux aceite `file://` em force-install (handoff da Fase 51). Não improvise. Anote o
 que `chrome://policy` e `chrome://extensions` mostram e leve para a missão. A
 alternativa planejada é o `external_crx` em `/opt/google/chrome/extensions/<id>.json`,
@@ -249,7 +387,7 @@ em `~/.config/google-chrome/NativeMessagingHosts/`, deixam de valer.
 script) pode gravar um `br.ward.nm.json` no seu perfil. Esse manifesto vence o do
 sistema, e o script dele recebe a conexão da extensão do Ward no lugar do `ward-nm`. A
 auditoria do M9 fez isso e tirou senhas e códigos TOTP de 4 entradas `login`. Com a
-política, esse arquivo é ignorado. O teste é o `make teste-politica-chrome`.
+política, esse arquivo é ignorado. O teste é o `make test-chrome-policy`.
 
 **O efeito colateral.** Apps que instalaram o manifesto só no seu perfil param de
 falar com a extensão deles no Chrome. Exemplos: o 1Password (destravar pelo app do
@@ -415,7 +553,8 @@ da senha para o Google. As duas coisas tiram a senha do lugar onde ela deveria f
 
 **Se você usa o gerenciador do Chrome para outras senhas:** passe-as para o Ward ou
 para outro gerenciador antes de instalar. Não há como desligar só para os sites do
-Ward. Voltar atrás é desinstalar o Ward (`sudo make uninstall` ou `sudo dpkg -r ward`),
+Ward. Voltar atrás é desinstalar o Ward (`sudo dpkg -r ward` ou, pelo passo 2b,
+`sudo make -C /root/ward-src uninstall`),
 que tira a política.
 
 ## 4c. Outras políticas do Chrome
@@ -468,14 +607,14 @@ não usa `SSH_AUTH_SOCK`, `environment.d` nem `ssh_config` (D18).
 ## 6. Desinstalar
 
 ```sh
-sudo dpkg -r ward          # ou sudo dpkg -P ward; ou sudo make uninstall
+sudo dpkg -r ward          # ou sudo dpkg -P ward; ou sudo make -C /root/ward-src uninstall
 ```
 
 A remoção para e desliga todo `wardd@*`, apaga os arquivos, os overrides e `/run/ward`,
 inclusive a lista do apport e o drop-in do systemd-coredump do passo 3a (as pastas
 `/etc/apport/…` e `/etc/systemd/coredump.conf.d/` ficam).
 Dos grupos `ward-app` e `ward-nm`, apaga só os que a instalação criou (anotados em
-`/usr/local/lib/ward/grupos-criados`, com o gid). Um grupo que já existia antes fica, e
+`/usr/local/lib/ward/created-groups`, com o gid; sem ela, a marca que a 0.1.x deixou). Um grupo que já existia antes fica, e
 a remoção avisa. O cofre e os backups em `~/.local/share/ward/` ficam, e também os
 manifestos de outros apps que você copiou no passo 4a.
 

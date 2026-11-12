@@ -1,0 +1,1467 @@
+==> 0/7 origens do cargo (pré-checagem: configs, ambiente, toolchain, fontes)
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+==> 1/7 english-check (autoteste e repositório inteiro)
+autoteste: 93/93 casos ok
+/usr/bin/python3 -I -B dev/english_check.py 
+english-check: 0 achado(s) em 0 arquivo(s), 0 problema(s) nas exceções
+==> 2/7 cargo fmt --check
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo fmt --all --check
+==> 3/7 cargo clippy --all-targets -- -D warnings
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    Checking ward-platform v0.2.0 (<repo>/crates/ward-platform)
+    Checking wardd v0.2.0 (<repo>/crates/wardd)
+    Checking ward-app-core v0.2.0 (<repo>/app/core)
+    Checking ward-nm v0.2.0 (<repo>/crates/ward-nm)
+    Checking ward v0.2.0 (<repo>/crates/ward)
+    Checking ward-test-bridge v0.2.0 (<repo>/crates/ward-test-bridge)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.02s
+==> 4/7 cargo test
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo test --workspace --all-features --locked
+   Compiling ward-platform v0.2.0 (<repo>/crates/ward-platform)
+   Compiling wardd v0.2.0 (<repo>/crates/wardd)
+   Compiling ward-app-core v0.2.0 (<repo>/app/core)
+   Compiling ward-nm v0.2.0 (<repo>/crates/ward-nm)
+   Compiling ward v0.2.0 (<repo>/crates/ward)
+   Compiling ward-test-bridge v0.2.0 (<repo>/crates/ward-test-bridge)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.59s
+     Running unittests src/lib.rs (target/debug/deps/ward-2c54ba5aece3aad8)
+
+running 32 tests
+test args::tests::attack_token_in_argv_refused_without_echo ... ok
+test args::tests::attack_argument_not_echoed_in_message ... ok
+test args::tests::login ... ok
+test args::tests::commands ... ok
+test args::tests::not_utf8 ... ok
+test args::tests::old_names_are_unknown_commands ... ok
+test args::tests::playwright ... ok
+test args::tests::run ... ok
+test args::tests::token_format ... ok
+test args::tests::ssh ... ok
+test tests::f54b_stdin_kind_by_fstat ... ok
+test tests::usage_and_help ... ok
+test tests::daemon_missing ... ok
+test tests::with_fake_daemon::attack_forged_token_channel_does_not_connect ... ok
+test tests::with_fake_daemon::attack_socket_swapped_while_typing ... ok
+test tests::with_fake_daemon::m2_v4_16_unknown_version_error_stops_before_the_password ... ok
+test text::tests::json_only_with_the_list_fields ... ok
+test text::tests::attack_text_with_control_bidi_and_quotes ... ok
+test text::tests::table ... ok
+test tests::with_fake_daemon::unlock_in_order ... ok
+test tests::with_fake_daemon::v4_1_list_as_text_and_json ... ok
+test tests::with_fake_daemon::unlock_wrong_empty_or_canceled_password ... ok
+test tests::with_fake_daemon::v4_22_lock_then_list_answers_locked ... ok
+test tests::with_fake_daemon::attack_response_with_credential_or_level_refused ... ok
+test tests::with_fake_daemon::ssh_request_token_output_and_code ... ok
+test tests::with_fake_daemon::run_request_output_and_code ... ok
+test tests::with_fake_daemon::attack_m2_v4_16_server_of_another_version_stops_before_the_password ... ok
+test tests::d52_run_too_large_refused_before_connecting ... ok
+test tests::with_fake_daemon::f54b_run_and_ssh_send_the_kind_and_null_does_not_read ... ok
+test tests::attack_old_subcommands_unknown_without_talking_to_the_daemon ... ok
+test tests::v4_2_attack_fake_server_refused_before_reading_the_password ... ok
+test tests::v4_2_attack_fake_server_on_the_test_socket_refused ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/main.rs (target/debug/deps/ward-20e1e4be60b98bd7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_app_core-f41e63295ccd721c)
+
+running 201 tests
+test approval::tests::arrival_order_without_repeating_and_with_limit ... ok
+test approval::tests::attack_agent_text_becomes_visible_escape ... ok
+test approval::tests::decision_only_by_the_five_names ... ok
+test approval::tests::watcher_takes_the_approval_and_leaves_the_unlock ... ok
+test approval::tests::deadline_of_120_s_and_expired_leaves ... ok
+test attachments::tests::attack_growing_file_does_not_reallocate_the_buffer ... ok
+test approval::tests::attack_directory_with_bidi_becomes_visible_escape ... ok
+test approval::tests::webview_keys_are_the_english_ones ... ok
+test attachments::tests::attack_old_wire_names_are_refused ... ok
+test client::tests::daemon_errors_have_a_fixed_message ... ok
+test attachments::tests::attack_link_and_fifo_are_refused_without_holding ... ok
+test clipboard::tests::clear_now_respects_the_same_condition ... ok
+test approval::service_tests::attack_forged_answer_does_not_reach_the_daemon ... ok
+test clipboard::tests::delay_is_30_seconds ... ok
+test clipboard::tests::attack_empty_or_too_large_value_is_refused ... ok
+test approval::service_tests::attack_confirmation_only_by_confirm_and_request_with_pin_never ... ok
+test commands::tests::attack_invented_or_plugin_command_does_not_exist ... ok
+test commands::tests::attack_old_command_names_are_refused ... ok
+test commands::tests::attack_reference_out_of_format ... ok
+test commands::tests::list_and_permissions ... ok
+test client::tests::attack_response_of_another_type_or_forged_is_refused ... ok
+test attachments::tests::attaches_lists_and_removes_without_content_in_the_response ... ok
+test attachments::tests::attack_ids_forged_by_the_interface ... ok
+test credentials::tests::attack_old_wire_names_are_gone ... ok
+test client::tests::status_list_and_detail_over_the_protocol ... ok
+test daemon::tests::attack_directory_through_symlink_is_refused ... ok
+test daemon::tests::attack_regular_file_in_place_of_the_socket_is_refused ... ok
+test daemon::tests::attack_fake_server_of_the_same_uid_is_refused_without_receiving_anything ... ok
+test daemon::tests::default_path_without_environment_variable ... ok
+test daemon::tests::attack_socket_open_to_others_is_refused ... ok
+test daemon::tests::missing_socket_is_unavailable ... ok
+test daemon::tests::attack_without_the_startup_connection_does_not_reconnect ... ok
+test daemon::tests::attack_m2_v4_16_server_of_another_version_closes_before_the_password ... ok
+test daemon::tests::v5_33_agent_role_type_or_forged_closes_without_showing_anything ... ok
+test daemon::tests::v5_33_frame_above_the_limit_closes_the_connection ... ok
+test daemon::tests::v5_33_notices_in_the_middle_go_to_the_queue_and_the_response_to_the_requester ... ok
+test client::tests::attack_d65_list_without_summary_or_with_secret_in_summary_is_refused ... ok
+test daemon::tests::v5_33_response_with_no_request_closes_the_connection ... ok
+test attachments::tests::attack_name_with_leading_dot ... ok
+test external_backup::tests::attack_forged_usb_drives_response_is_refused ... ok
+test external_backup::tests::attack_forged_uuid_out_of_format_is_refused ... ok
+test external_backup::tests::attack_label_with_direction_and_zero_width_becomes_visible_escape ... ok
+test external_backup::tests::find_case_insensitive_and_repeated_does_not_count ... ok
+test external_backup::tests::valid_choice ... ok
+test attachments::tests::attack_total_with_the_kept_attachments ... ok
+test daemon::tests::request_too_large_does_not_go_out_and_the_connection_stays ... ok
+test external_backup::tests::via_service::attack_cloned_usb_drive_with_repeated_uuid_is_not_chosen ... ok
+test external_backup::tests::via_service::attack_usb_drive_label_arrives_neutralized ... ok
+test external_backup::tests::via_service::attack_uuid_forged_by_the_interface_does_not_reach_the_daemon ... ok
+test attachments::tests::attack_large_file_total_and_empty_are_not_kept ... ok
+test external_backup::tests::webview_fields_are_the_english_ones ... ok
+test external_backup::tests::via_service::v7_9_choose_turn_on_and_turn_off ... ok
+test external_backup::tests::via_service::without_udisks_does_not_turn_on_and_the_card_says_it_did_not_see ... ok
+test fake_daemon::tests::only_the_app_role_is_handled ... ok
+test first_use::tests::attack_different_confirmation_is_refused ... ok
+test first_use::tests::attack_errors_and_debug_do_not_show_value ... ok
+test first_use::tests::attack_extra_field_or_wrong_type_is_refused ... ok
+test first_use::tests::attack_old_wire_names_are_refused ... ok
+test fake_daemon::tests::same_entries_as_the_fixtures ... ok
+test first_use::tests::attack_pin_with_3_or_7_digits_or_letters_is_refused ... ok
+test first_use::tests::attack_password_too_short_or_too_large_is_refused ... ok
+test first_use::tests::through_service::attack_invalid_pin_or_confirmation_do_not_reach_the_daemon ... ok
+test fake_daemon::tests::origin_requests_use_the_real_entry ... ok
+test daemon::tests::v5_33_a_thousand_notices_the_queue_stays_at_16_and_the_app_keeps_answering ... ok
+test first_use::tests::through_service::without_a_vault_the_rest_is_refused ... ok
+test first_use::tests::valid_password_and_pin_pass ... ok
+test form::tests::attack_debug_of_the_secret_text_does_not_show_the_value ... ok
+test form::tests::attack_form_with_unknown_key_is_refused ... ok
+test form::tests::attack_old_wire_names_are_refused ... ok
+test form::tests::attack_otpauth_other_than_sha1_6_30_is_refused ... ok
+test form::tests::attack_problem_forged_by_the_daemon_does_not_become_free_text ... ok
+test form::tests::mask_budget_refusal_goes_to_the_attachments ... ok
+test form::tests::typed_seed_is_normalized ... ok
+test generator::tests::attack_generate_does_not_return_the_value ... ok
+test generator::tests::attack_options_out_of_format_are_refused ... ok
+test generator::tests::design_strength ... ok
+test generator::tests::discard_zeroes_and_generating_again_changes ... ok
+test generator::tests::password_respects_size_and_sets ... ok
+test generator::tests::screen_limits_within_the_core ... ok
+test generator::tests::symbols_are_those_of_d35 ... ok
+test key::tests::accepts_openssh_and_pem ... ok
+test key::tests::attack_link_fifo_large_empty_and_text_are_refused ... ok
+test key::tests::attack_read_does_not_reallocate_the_key_buffer ... ok
+test key::tests::attack_what_is_not_a_private_key_is_refused ... ok
+test key::tests::reads_the_key_without_returning_the_content ... ok
+test key::tests::webview_tag_and_fields_are_the_english_ones ... ok
+test level::tests::attack_pin_debug_does_not_show_the_value ... ok
+test level::tests::attack_pin_out_of_format_is_refused_without_echo ... ok
+test level::tests::level_only_by_the_three_protocol_names ... ok
+test level::tests::webview_keys_are_the_english_ones ... ok
+test restore::tests::attack_forged_version_outside_the_format_is_refused ... ok
+test restore::tests::attack_restore_with_extra_field_or_bad_pin_is_refused ... ok
+test restore::tests::name_becomes_utc_instant ... ok
+test attachments::tests::attack_too_many_attachments ... ok
+test daemon::tests::attack_directory_open_to_others_is_refused ... ok
+test restore::tests::through_the_service::attack_vault_locked_in_the_middle_does_not_restore ... ok
+test daemon::tests::wait_approval_leaves_the_unlock_in_the_queue ... ok
+test daemon::tests::wait_unlock_leaves_the_approval_in_the_queue ... ok
+test restore::tests::through_the_service::unavailable_dir_and_no_versions ... ok
+test first_use::tests::through_service::creates_the_vault_and_stays_unlocked ... ok
+test first_use::tests::through_service::attack_creating_over_an_existing_vault_is_refused ... ok
+test restore::tests::webview_keys_are_the_english_ones ... ok
+test secret::tests::attack_debug_does_not_show_the_value ... ok
+test restore::tests::through_the_service::v7_8_agent_role_gets_unauthorized ... ok
+test service::tests::attack_auth_forged_by_the_interface ... ok
+test service::tests::attack_connect_only_server_and_no_token_in_the_response ... ok
+test service::tests::attack_attachment_does_not_return_to_the_interface_and_goes_in_the_draft ... ok
+test service::tests::attack_copy_does_not_return_the_value ... ok
+test service::tests::attack_error_does_not_carry_the_request ... ok
+test service::tests::attack_forged_name_or_level_does_not_reach_the_daemon ... ok
+test service::tests::attack_edit_keeps_removes_and_adds_attachment_without_the_content_passing_through_the_app ... ok
+test service::tests::attack_form_forged_by_the_interface ... ok
+test service::tests::attack_generator_copies_without_returning_the_value ... ok
+test service::tests::attack_large_empty_attachment_and_forged_id ... ok
+test service::tests::attack_list_and_details_of_all_entries_without_secret ... ok
+test service::tests::attack_load_key_forged_field_notice_and_discard ... ok
+test service::tests::attack_lock_clears_the_clipboard_and_locks ... ok
+test service::tests::attack_malformed_entry_name_does_not_reach_the_daemon ... ok
+test service::tests::attack_outside_lock_clears_the_clipboard_at_once ... ok
+test service::tests::attack_outside_lock_discards_the_loaded_key ... ok
+test service::tests::attack_outside_lock_without_tray_clears_the_clipboard_at_once ... ok
+test service::tests::attack_reveal_only_secrets_and_responses_without_secret ... ok
+test approval::service_tests::deny_without_pin_and_allow_once_with_pin ... ok
+test approval::service_tests::always_makes_free_and_close_denies_all ... ok
+test credentials::tests::d65_dates_in_the_screen_detail ... ok
+test service::tests::attack_tray_poll_only_asks_status ... ok
+test service::tests::attack_unsupported_otpauth_is_not_saved ... ok
+test service::tests::d65_list_in_a_single_exchange_with_summary_and_username ... ok
+test service::tests::database_server_and_ftp_save_and_edit ... ok
+test service::tests::empty_vault ... ok
+test service::tests::form_generator_fills_the_password_without_passing_through_the_interface ... ok
+test service::tests::list_and_detail_of_acme_pg_dev_as_in_the_frame ... ok
+test service::tests::lock_without_daemon_clears_and_answers_error ... ok
+test service::tests::new_type_errors_on_the_field ... ok
+test service::tests::load_key_goes_to_the_daemon_without_passing_through_the_interface ... ok
+test service::tests::save_without_required_shows_field_error ... ok
+test service::tests::save_new_and_edit_keeping_secret ... ok
+test service::unlock_tests::agent_request_shows_only_locked_and_goes_away_on_unlock ... ok
+test service::unlock_tests::attack_the_password_only_goes_in_the_unlock_request ... ok
+test service::unlock_tests::attack_unlock_error_without_password_or_count ... ok
+test daemon::tests::no_response_in_time_closes_and_the_late_one_does_not_become_another ... ok
+test service::unlock_tests::wrong_password_does_not_unlock_and_the_right_one_unlocks ... ok
+test settings::tests::attack_current_or_new_pin_out_of_format_is_refused ... ok
+test settings::tests::attack_errors_and_debug_do_not_show_value ... ok
+test settings::tests::attack_extra_field_or_wrong_type_is_refused ... ok
+test settings::tests::attack_minutes_out_of_range ... ok
+test settings::tests::attack_old_wire_names_are_refused ... ok
+test settings::tests::attack_short_or_different_new_password_and_empty_current_refused ... ok
+test settings::tests::valid_changes_pass ... ok
+test restore::tests::through_the_service::attack_planted_copy_arrives_marked_by_the_generation ... ok
+test restore::tests::through_the_service::attack_missing_or_forged_version_does_not_reach_the_daemon ... ok
+test restore::tests::through_the_service::v7_7_chooses_version_confirms_and_the_version_entries_show_up ... ok
+test settings::tests::via_service::attack_timeout_out_of_range_does_not_even_reach_the_daemon ... ok
+test settings::tests::via_service::attack_pin_or_password_outside_the_rule_do_not_reach_the_daemon ... ok
+test settings::tests::via_service::v5_22_default_4h_off_and_timeout_changeable ... ok
+test startup::tests::attack_outside_environment_does_not_get_to_connect ... ok
+test startup::tests::attack_without_app_role_in_the_first_response_exits_without_using_the_connection ... ok
+test startup::tests::message_without_value ... ok
+test startup::tests::opened_from_the_menu_only_asks_open_app ... ok
+test startup::tests::opened_from_the_menu_with_any_environment_does_not_check_the_environment ... ok
+test startup::tests::with_another_parent_asks_for_the_true_instance_and_exits ... ok
+test clipboard::tests::attack_user_text_copied_later_is_not_erased ... ok
+test clipboard::tests::copies_and_clears_after_the_delay ... ok
+test clipboard::tests::attack_value_prefix_does_not_count_as_equal ... ok
+test terminal::tests::attack_entry_that_would_become_an_option_does_not_go_to_argv ... ok
+test terminal::tests::attack_token_forged_by_the_daemon_is_refused ... ok
+test tray::tests::attack_forged_id_in_the_menu_does_nothing ... ok
+test terminal::tests::terminal_command_with_environment_from_scratch ... ok
+test tray::tests::attack_lock_from_outside_discards_the_form ... ok
+test tray::tests::attack_settings_only_after_unlocking ... ok
+test tray::tests::attack_menu_without_vault_data ... ok
+test tray::tests::design_texts ... ok
+test service::tests::attack_generator_cleanup_does_not_erase_user_text ... ok
+test tray::tests::status_comes_from_the_response_and_error_stays_locked ... ok
+test tray::tests::subtitle_with_the_lock_timeout ... ok
+test unlock::tests::attack_old_wire_names_are_gone ... ok
+test unlock::tests::attack_password_debug_does_not_show_the_value ... ok
+test tray::tests::icons_dir_created_0700 ... ok
+test unlock::tests::attack_raw_entry_and_command_arrive_neutralized ... ok
+test tray::tests::library_only_if_the_file_exists ... ok
+test unlock::tests::deadline_comes_from_the_daemon_and_never_exceeds_2_min ... ok
+test unlock::tests::request_counts_from_120_s_restarts_and_disappears ... ok
+test unlock::tests::watcher_takes_the_unlock_and_marks_the_request ... ok
+test tray::tests::attack_icons_dir_link_open_or_relative ... ok
+test unlock::tests::attack_password_out_of_format_is_refused_without_echo ... ok
+test first_use::tests::through_service::daemon_keeps_only_the_pin_hash ... ok
+test restore::tests::through_the_service::attack_wrong_version_password_changes_nothing ... ok
+test service::tests::attack_set_level_response_and_error_without_pin ... ok
+test approval::service_tests::attack_hidden_entry_only_with_the_box ... ok
+test clipboard::tests::new_copy_replaces_the_previous_delay ... ok
+test approval::service_tests::attack_no_secret_or_pin_in_the_window ... ok
+test external_backup::tests::via_service::locked_does_not_read_nor_change ... ok
+test service::tests::set_level_with_pin_and_the_three_levels_also_in_prod ... ok
+test service::unlock_tests::fake_daemon_waits_d20_before_looking_at_the_password ... ok
+test settings::tests::via_service::v5_22_change_pin_asks_for_the_current_pin ... ok
+test terminal::tests::attack_connect_token_does_not_show_up_in_proc ... ok
+test restore::tests::through_the_service::attack_wrong_pin_does_not_restore_and_the_fifth_locks ... ok
+test settings::tests::via_service::attack_guessing_the_pin_through_the_change_locks_on_the_fifth_error ... ok
+test approval::service_tests::attack_wrong_pin_five_times_locks_and_denies ... ok
+test settings::tests::via_service::v5_22_change_password_asks_for_the_current_one_and_the_new_one_unlocks ... ok
+test service::tests::attack_wrong_pin_does_not_change_and_the_fifth_error_locks ... ok
+
+test result: ok. 201 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.89s
+
+     Running tests/tauri_config.rs (target/debug/deps/tauri_config-00e84f0febdc41e6)
+
+running 8 tests
+test attack_capability_with_extra_permission ... ok
+test approval_window_follows_rust_and_does_not_use_html ... ok
+test attack_loose_csp_or_remote_content ... ok
+test interface_command_list_is_the_same ... ok
+test generator_limits_in_the_interface_are_the_rust_ones ... ok
+test attack_devtools_or_dynamic_acl_in_release ... ok
+test attack_interface_stores_or_injects_content ... ok
+test attack_old_command_names_are_gone ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_core-93de694322e26978)
+
+running 349 tests
+test atomic_write::tests::child_write ... ignored, só roda como processo filho dos testes de gravação
+test atomic_write::tests::relative_path_without_directory ... ok
+test atomic_write::tests::error_carries_no_content ... ok
+test atomic_write::tests::temp_file_is_born_0600_with_any_umask ... ok
+test atomic_write::tests::temp_file_does_not_follow_symlink_nor_reuse_file ... ok
+test atomic_write::tests::clean_temp_files_deletes_only_the_vault_ones ... ok
+test atomic_write::tests::dt5_attack_migration_bytes_have_no_clear_name ... ok
+test atomic_write::tests::invalid_destination ... ok
+test atomic_write::tests::refuses_to_write_bytes_that_are_not_a_vault ... ok
+test atomic_write::tests::temp_file_names_do_not_repeat ... ok
+test atomic_write::tests::directory_destination_fails_without_leaving_temp_file ... ok
+test backup::tests::attack_name_out_of_format_refused ... ok
+test backup::tests::attack_old_copy_under_new_name_comes_out_marked ... ok
+test atomic_write::tests::replaces_existing_destination_and_sets_0600 ... ok
+test atomic_write::tests::symlink_destination_is_not_followed ... ok
+test backup::tests::child_backup ... ignored, só roda como processo filho dos testes de backup
+test backup::tests::attack_directory_with_open_permission_refused ... ok
+test atomic_write::tests::d53_body_that_does_not_serialize_does_not_burn ... ok
+test backup::tests::f54c_rotation_only_counts_and_only_deletes_what_verifies ... ok
+test atomic_write::tests::v2_9_io_failure_injected_at_each_point ... ok
+test backup::tests::name_of_the_instant_in_utc_and_round_trip ... ok
+test atomic_write::tests::d62_identity_from_the_fd_and_swap_right_after_the_rename ... ok
+test backup::tests::rotation_counts_only_up_to_the_ceiling ... ok
+test backup::tests::attack_link_with_version_name_is_not_followed ... ok
+test backup::tests::attack_versions_with_future_date_do_not_delete_the_real_ones ... ok
+test atomic_write::tests::v2_10_v2_11_strace_order_and_nothing_in_clear ... ok
+test backup::tests::f54c_clock_that_goes_back_does_not_delete_real_version ... ok
+test atomic_write::tests::dt5_sigkill_at_each_point_v4_to_v5 ... ok
+test body::tests::attack_forged_body_with_text_variable_and_username ... ok
+test body::tests::d65_body_v3_refused ... ok
+test body::tests::d65_dates_only_change_the_16_bytes_of_the_entry ... ok
+test body::tests::d65_dates_rule ... ok
+test body::tests::d65_forged_dates_in_the_body ... ok
+test backup::tests::attack_keep_current_only_accepts_the_authentic_file ... ok
+test body::tests::dt4_tables_of_the_two_versions ... ok
+test backup::tests::same_second_gets_suffix_without_overwriting ... ok
+test body::tests::dt4_v4_body_reads_equal_and_is_written_as_v5 ... ok
+test body::tests::dt4_v4_body_with_unknown_name_refused ... ok
+test body::tests::dt4_v4_smtp_security_none_becomes_v5_none ... ok
+test backup::tests::attack_sealed_generation_cannot_be_forged ... ok
+test body::tests::errors_without_vault_data ... ok
+test body::tests::known_format_of_one_entry ... ok
+test body::tests::known_format_of_one_entry_v4_is_written_as_v5 ... ok
+test body::tests::m2_54b_names_reserved_since_v5_open_and_migrate ... ok
+test body::tests::m2_54b_other_reserved_names_still_refused_on_read ... ok
+test body::tests::d65_v3_vault_on_disk_refused_without_touching_the_file ... ok
+test body::tests::read_at_the_limit_accepts_and_above_refuses ... ok
+test body::tests::serialize_refuses_config_outside_the_rule ... ok
+test body::tests::dt4_v4_vault_on_disk_opens_without_writing_and_any_write_is_v5 ... ok
+test body::tests::serialize_refuses_vault_that_would_not_reopen ... ok
+test body::tests::serialize_refuses_more_than_10_000_entries ... ok
+test body::tests::v2_30_empty_attachment_refused_on_save_and_in_the_body ... ok
+test body::tests::v2_30_empty_vault ... ok
+test backup::tests::f54c_attack_junk_with_newer_date_does_not_delete_real_versions ... ok
+test body::tests::v2_30_round_trip_of_the_test_vault ... ok
+test body::tests::v2_30_config_comes_back_equal ... ok
+test atomic_write::tests::d53_burned_lower_than_the_disk_does_not_go_down ... ok
+test body::tests::v2_30_one_of_each_type_at_the_model_maximum ... ok
+test body::tests::v2_31_forged_fields ... ok
+test body::tests::v2_31_truncated_at_every_size_and_extra_byte ... ok
+test body::tests::v2_36_forged_body_with_too_large_entry ... ok
+test body::tests::v2_39_body_v1_without_section_or_without_hash_refused ... ok
+test body::tests::v2_39_downgraded_hash_of_the_right_pin_refused ... ok
+test body::tests::v2_39_forged_config_section ... ok
+test body::tests::v2_39_pin_only_as_hash_in_the_body ... ok
+test body::tests::v2_44_exhausted_generation_does_not_touch_the_disk ... ok
+test body::tests::password_change_seals_and_writes_through_the_same_path ... ok
+test body::tests::v2_44_generation_zero_and_body_v2_refused ... ok
+test body::tests::v2_51_too_large_message_follows_the_limits ... ok
+test body::tests::v2_58_forged_body_with_numeric_last_label ... ok
+test atomic_write::tests::round_trip_mode_0600_without_temp_file ... ok
+test backup::tests::f54c_versions_from_before_the_password_change_neither_count_nor_leave ... ok
+test config::tests::change_the_pin ... ok
+test config::tests::external_backup ... ok
+test body::tests::dt4_v4_bit_flipped_in_every_byte ... ok
+test config::tests::inflated_hash_refused_fast ... ok
+test config::tests::lock_timeout_in_range ... ok
+test config::tests::each_hash_has_its_own_salt ... ok
+test config::tests::hash_is_standard_argon2id_phc ... ok
+test config::tests::new_config_has_the_defaults ... ok
+test config::tests::pin_of_4_to_6_digits ... ok
+test crypto::tests::derive_kek_is_argon2id_without_extras ... ok
+test crypto::tests::open_refuses_any_flipped_bit ... ok
+test crypto::tests::random_does_not_repeat ... ok
+test crypto::tests::v2_5_argon2id_rfc9106 ... ok
+test crypto::tests::v2_5_xchacha20poly1305_draft_open ... ok
+test crypto::tests::v2_5_xchacha20poly1305_draft_seal ... ok
+test delivery::tests::attack_debug_and_errors_without_secret ... ok
+test delivery::tests::attack_extra_becomes_system_variable ... ok
+test delivery::tests::attack_m2_54b_stored_reserved_name_does_not_replace_a_variable ... ok
+test delivery::tests::attack_password_user_or_db_name_change_the_url_destination ... ok
+test delivery::tests::attack_resource_returns_junk ... ok
+test delivery::tests::defense_check_refuses_invalid_list ... ok
+test delivery::tests::delivery_zeroes_on_drop_and_does_not_clone ... ok
+test delivery::tests::extras_go_in_every_type_with_a_delivery ... ok
+test delivery::tests::ipv6_host_goes_in_brackets_in_the_url ... ok
+test delivery::tests::m2_54b_saved_entries_have_no_reserved_name ... ok
+test delivery::tests::m2_smtp_security_with_the_v5_name ... ok
+test delivery::tests::m2_v4_19_no_old_variable_name ... ok
+test delivery::tests::missing_optionals_stay_out ... ok
+test delivery::tests::percent_encoding_of_all_bytes ... ok
+test delivery::tests::redis_with_numeric_db_name_goes_in_the_url ... ok
+test delivery::tests::secret_mark_matches_the_value ... ok
+test delivery::tests::type_variables_match_the_reserved_ones ... ok
+test delivery::tests::url_allocated_once_at_the_exact_size ... ok
+test delivery::tests::v2_14_common_ones_come_first_and_in_order ... ok
+test delivery::tests::v2_14_expected_delivery_of_the_contract ... ok
+test delivery::tests::v2_15_all_engines ... ok
+test delivery::tests::v2_16_extra_and_attachment_normalized ... ok
+test delivery::tests::v2_37_valid_db_name_comes_out_the_same ... ok
+test delivery::tests::v2_48_accepted_variable_comes_out_with_the_token ... ok
+test display::tests::args_in_quotes_and_separated ... ok
+test display::tests::attack_control_and_bidi_become_visible_escape ... ok
+test display::tests::attack_imitating_escape_or_separator_does_not_fool ... ok
+test display::tests::cut_with_notice_never_silently ... ok
+test display::tests::invalid_byte_becomes_x ... ok
+test display::tests::neutralize_is_idempotent_over_the_output ... ok
+test display::tests::text_without_quotes ... ok
+test entry::tests::attack_attachment_name_leaves_the_directory ... ok
+test entry::tests::attack_dangerous_variable_in_api ... ok
+test entry::tests::attack_excessive_sizes ... ok
+test entry::tests::attack_extra_or_attachment_overrides_type_variable ... ok
+test entry::tests::attack_host_and_username_become_ssh_option ... ok
+test entry::tests::attack_invisible_text_forges_the_approval_window ... ok
+test entry::tests::attack_level_does_not_change_on_save_or_edit ... ok
+test entry::tests::attack_local_origin_in_any_scheme ... ok
+test entry::tests::attack_secret_with_nul_or_binary ... ok
+test entry::tests::combined_level_and_names ... ok
+test entry::tests::contract_test_vault_validates_and_verifies ... ok
+test entry::tests::d9_url_origin ... ok
+test entry::tests::empty_port_uses_the_default ... ok
+test entry::tests::m2_54b_reserved_since_v5_accepted_on_read_refused_on_save ... ok
+test entry::tests::m2_dt11_old_names_are_not_reserved ... ok
+test entry::tests::messages_cite_the_current_limits ... ok
+test entry::tests::one_of_each_type_validates ... ok
+test entry::tests::v2_12_collects_all_errors ... ok
+test entry::tests::v2_12_database_with_engine_off_the_list ... ok
+test entry::tests::v2_12_no_group_no_environment_and_environment_off_the_list ... ok
+test entry::tests::v2_12_other_formats ... ok
+test entry::tests::v2_12_required_field_of_each_type ... ok
+test entry::tests::v2_12_server_with_password_and_key_or_neither ... ok
+test entry::tests::v2_13_secret_fields_of_each_type ... ok
+test config::tests::pin_hash_accepts_the_right_pin_and_refuses_the_others ... ok
+test entry::tests::v2_16_normalization_and_duplicates ... ok
+test entry::tests::v2_27_errors_do_not_carry_user_value ... ok
+test entry::tests::v2_28_secret_types_zeroize_and_do_not_clone ... ok
+test entry::tests::v2_27_debug_and_display_without_secret ... ok
+test entry::tests::v2_37_database_name ... ok
+test entry::tests::v2_45_display_text_is_allowlist ... ok
+test entry::tests::v2_47_strict_url ... ok
+test entry::tests::v2_48_api_variable_with_suffix ... ok
+test entry::tests::v2_49_ssh_username ... ok
+test entry::tests::v2_58_last_label_with_digit ... ok
+test entry::tests::verify_in_vault_references ... ok
+test format::tests::attack_short_disguised_new_password_is_refused ... ok
+test config::tests::debug_and_errors_without_secret ... ok
+test config::tests::tampered_hash_does_not_verify ... ok
+test entry::tests::v2_36_attachments_total_and_budget_on_save ... ok
+test atomic_write::tests::v2_9_sigkill_at_each_point ... ok
+test format::tests::garbage_does_not_open ... ok
+test format::tests::debug_does_not_show_secret ... ok
+test format::tests::nothing_in_clear_in_the_file ... ok
+test format::tests::params_above_maximum_refused_without_deriving ... ok
+test format::tests::empty_content_opens ... ok
+test format::tests::header_is_the_body_aad ... ok
+test format::tests::typed_password_ascii_and_invalid_bytes_stay_the_same ... ok
+test body::tests::v2_30_round_trip_through_disk_with_attachments_at_the_limit ... ok
+test atomic_write::tests::d65_v4_sigkill_at_each_point_keeps_the_dates ... ok
+test format::tests::password_change_requires_the_current_one ... ok
+test atomic_write::tests::d65_v4_byte_changed_in_the_dates_fails_the_opening ... ok
+test body::tests::v2_31_bit_flipped_in_every_byte ... ok
+test format::tests::round_trip ... ok
+test format::tests::v2_4_well_formed_below_minimum_refused ... ok
+test backup::tests::password_change_goes_to_the_backup_with_the_new_password ... ok
+test atomic_write::tests::d62_new_vault_after_the_burned_generation ... ok
+test backup::tests::v7_1_31_writes_leave_30_versions ... ok
+test generator::tests::attack_failing_rng_does_not_generate_weak_password ... ok
+test generator::tests::attack_modulo_bias ... ok
+test generator::tests::attack_password_debug_and_errors_without_value ... ok
+test generator::tests::attack_stuck_rng_does_not_hang ... ok
+test generator::tests::sets_are_disjoint_and_visible_ascii ... ok
+test generator::tests::v2_26_all_randomness_comes_from_the_source ... ok
+test generator::tests::v2_26_invalid_size_and_sets ... ok
+test format::tests::v2_1_wrong_password_same_error_as_tampered ... ok
+test generator::tests::v2_28_generated_password_zeroes ... ok
+test body::tests::v2_31_100_000_random_mutations ... ok
+test format::tests::v2_5_format_composition ... ok
+test limits::tests::v2_36_cost_refuses_above_the_budget_and_note_stays_out ... ok
+test limits::tests::v2_35_validation_and_body_at_the_same_attachment_limit ... ok
+test format::tests::sealing_again_reopens_and_changes_the_nonce ... ok
+test generator::tests::v2_26_ten_thousand_passwords_per_combination ... ok
+test mask::tests::attachment_with_several_lines ... ok
+test format::tests::typed_password_composed_or_decomposed_opens_the_same_vault ... ok
+test mask::tests::attack_debug_without_secret ... ok
+test mask::tests::attack_escaped_json ... ok
+test mask::tests::attack_overlapping_secrets ... ok
+test format::tests::splicing_between_vaults_and_writes_fails ... ok
+test format::tests::v2_4_downgrade_to_8_mib_fails ... ok
+test mask::tests::attack_secret_inside_larger_base64 ... ok
+test mask::tests::base64_rfc4648 ... ok
+test mask::tests::automaton_allocated_once ... ok
+test mask::tests::d34_attack_prefix_at_chunk_end_goes_out_right_away_and_unchanged ... ok
+test mask::tests::d34_attack_audit_prefix_oracle_recovers_nothing ... ok
+test format::tests::v2_4_header_records_params ... ok
+test mask::tests::d34_half_percent_escape_at_chunk_end_goes_out_right_away ... ok
+test mask::tests::d34_pty_stopped_prefix_goes_out_in_plaintext_and_the_rest_becomes_mark ... ok
+test mask::tests::d54_new_forms_only_when_they_change_and_line_without_base64 ... ok
+test mask::tests::d61_candidates_only_when_they_change ... ok
+test mask::tests::delivery_marks_what_is_secret ... ok
+test mask::tests::escaped_forms_only_when_they_change ... ok
+test mask::tests::jump_and_tunnel_join_both_entries ... ok
+test mask::tests::mask_and_stream_zero_and_do_not_clone ... ok
+test mask::tests::mask_without_secret_touches_nothing ... ok
+test mask::tests::d34_attack_timing_nothing_held_until_the_rest_arrives ... ok
+test mask::tests::short_secret_is_masked_and_warned ... ok
+test mask::tests::stdout_and_stderr_in_separate_streams ... ok
+test mask::tests::totp_code_is_not_masked ... ok
+test mask::tests::v2_17_literal ... ok
+test mask::tests::v2_18_every_cut_point ... ok
+test mask::tests::v2_19_form_with_space ... ok
+test mask::tests::v2_19_percent_encoding ... ok
+test mask::tests::v2_20_base64 ... ok
+test mask::tests::v2_20_base64_url_safe_differs_from_standard ... ok
+test mask::tests::v2_21_whole_database_url ... ok
+test mask::tests::v2_22_secret_that_contains_another ... ok
+test mask::tests::v2_23_whole_attachment_line_and_value ... ok
+test mask::tests::property_random_cuts ... ok
+test mask::tests::attack_attachment_too_large_fails_closed ... ok
+test mask::tests::v2_38_mutation_without_minimum_would_mask_the_short_value ... ok
+test mask::tests::v2_38_short_key_value_does_not_become_pattern ... ok
+test mask::tests::v2_41_control_without_line_pass_would_leak ... ok
+test mask::tests::d34_attack_right_and_wrong_prefix_give_the_same_answer ... ok
+test mask::tests::v2_42_escaped_forms ... ok
+test mask::tests::v2_41_multi_line_json_and_yaml ... ok
+test mask::tests::v2_54_multi_line_delivery_by_line ... ok
+test mask::tests::v2_41_key_in_field_masked_by_line ... ok
+test mask::tests::v2_56_printf_q_equal_to_bash ... ok
+test mask::tests::v2_55_text_forms_by_line ... ok
+test mask::tests::v2_56_new_forms_and_line_parser ... ok
+test mask::tests::v3_29_go_with_ensure_ascii_by_line_and_binary_line ... ok
+test mask::tests::v2_57_oracle_and_mask_with_d54_values ... ok
+test mask::tests::v3_29_delta_api_symbols_and_go_with_ensure_ascii ... ok
+test origin::tests::attack_lookalike_origins_do_not_match ... ok
+test origin::tests::invalid_url_has_no_origin ... ok
+test origin::tests::same_origin_with_path_and_default_port ... ok
+test protocol::tests::approval_pin_and_decision ... ok
+test protocol::tests::attack_approval_request_with_origin_out_of_shape ... ok
+test protocol::tests::attack_d65_date_in_draft_refused ... ok
+test protocol::tests::attack_d65_detail_with_forged_date_refused ... ok
+test protocol::tests::attack_phase_39a_unlock_request_app_only_and_strict_format ... ok
+test protocol::tests::attack_phase_43_login_extension_only_and_strict_format ... ok
+test protocol::tests::attack_restore_with_path_in_name_refused ... ok
+test protocol::tests::attack_set_external_backup_out_of_format ... ok
+test protocol::tests::attack_stdin_kind_out_of_format ... ok
+test mask::tests::v3_32_yaml_dotenv_and_tab_of_binary_line ... ok
+test protocol::tests::d39_generation_never_comes_from_nor_goes_to_client ... ok
+test protocol::tests::d39_unlock_and_write_errors ... ok
+test protocol::tests::d50_agent_list_without_level_and_app_list_with_level ... ok
+test protocol::tests::d65_app_list_with_summary_and_agent_list_without ... ok
+test protocol::tests::d65_dates_only_in_app_detail ... ok
+test protocol::tests::d65_target_finds_only_the_entry_secrets ... ok
+test protocol::tests::debug_without_secret ... ok
+test protocol::tests::dt8_attack_v1_field_name_in_v2_request_refused ... ok
+test protocol::tests::dt8_attack_v1_names_in_v2_response_refused ... ok
+test protocol::tests::dt8_attack_v1_operation_names_refused ... ok
+test protocol::tests::dt8_attack_v1_values_refused ... ok
+test protocol::tests::dt8_no_portuguese_name_in_protocol_v2 ... ok
+test protocol::tests::dt8_role_matrix_same_as_v1 ... ok
+test protocol::tests::entry_not_found_has_a_single_frame ... ok
+test protocol::tests::envelope_refused ... ok
+test protocol::tests::errors_without_number_and_fixed_message_on_read ... ok
+test protocol::tests::escaped_text_round_trip ... ok
+test mask::tests::v3_31_json_in_a_line ... ok
+test protocol::tests::fuzz_random_frame_and_json ... ok
+test limits::tests::v2_35_budget_is_the_same_in_validation_and_in_the_mask ... ok
+test protocol::tests::known_frame_format ... ok
+test protocol::tests::json_depth_node_and_key_limits ... ok
+test protocol::tests::phase39b_attack_forged_keep_attachments ... ok
+test protocol::tests::d29_attachments_up_to_256_kib_total_from_app ... ok
+test protocol::tests::phase39b_keep_attachments_round_trip ... ok
+test protocol::tests::response_reading_is_strict ... ok
+test protocol::tests::reveal_requires_a_known_target ... ok
+test protocol::tests::round_trip_of_every_request_and_response ... ok
+test protocol::tests::phase39b_attack_merge_kept_attachments ... ok
+test protocol::tests::s1_response_with_credential_never_goes_to_agent ... ok
+test protocol::tests::s9_draft_without_level_and_without_field_of_other_type ... ok
+test protocol::tests::strict_base64 ... ok
+test protocol::tests::strict_json ... ok
+test protocol::tests::v3_15_no_backdoor_in_code ... ok
+test protocol::tests::v3_15_operation_role_table ... ok
+test protocol::tests::v3_38_status_carries_the_role_and_only_it ... ok
+test protocol::tests::v3_3_app_and_extension_operations_from_agent_are_unauthorized ... ok
+test protocol::tests::v3_3_invented_fields_refuse_the_request ... ok
+test mask::tests::v2_24_output_without_secret_goes_out_unchanged ... ok
+test protocol::tests::run_refuses_nul_equals_and_empty ... ok
+test protocol::tests::v3_3_test_vault_list_and_detail_without_secret ... ok
+test protocol::tests::fuzz_decoder ... ok
+test protocol::tests::v3_4_invalid_json_and_unknown_operation_answer_error ... ok
+test protocol::tests::v7_8_external_backup_only_from_app ... ok
+test totp::tests::attack_debug_and_errors_without_seed ... ok
+test totp::tests::attack_digits_out_of_range ... ok
+test protocol::tests::v7_8_restore_and_backups_only_from_app ... ok
+test totp::tests::attack_extreme_time_does_not_panic ... ok
+test totp::tests::attack_malformed_seed_is_refused ... ok
+test totp::tests::base32_rfc4648_vectors ... ok
+test totp::tests::padding_at_the_end_is_accepted ... ok
+test totp::tests::remaining_and_code_now ... ok
+test totp::tests::v2_25_contract_seed_known_codes ... ok
+test protocol::tests::v3_4_truncated_and_closed_frame ... ok
+test totp::tests::v2_25_delivered_ward_totp_comes_from_this_module ... ok
+test totp::tests::v2_25_rfc6238_sha1_vectors ... ok
+test totp::tests::v2_25_rfc4226_hotp_vectors ... ok
+test totp::tests::v2_25_matches_oathtool ... ok
+test totp::tests::v2_28_totp_without_clone_and_seed_zeroes ... ok
+test wire_v1::dt8_unknown_version_error_has_no_data ... ok
+test wire_v1::dt8_v1_requests_answer_unknown_version ... ok
+test wire_v1::dt8_v1_responses_refused_by_the_v2_client ... ok
+test wire_v1::v1_fixture_has_only_known_kinds ... ok
+test wire_v1::v1_fixture_is_version_1 ... ok
+test protocol::tests::v3_4_frames_refused_before_reading_the_body ... ok
+test wire_v1::vault_and_backups_014_have_no_value_in_clear ... ok
+test format::tests::v2_3_truncated_and_extended ... ok
+test wire_v2::attack_renamed_wire_name_is_refused ... ok
+test wire_v2::attack_v2_frame_labelled_1_is_unknown_version ... ok
+test wire_v2::v2_error_codes_read_and_written_byte_for_byte ... ok
+test wire_v2::v2_fixture_has_the_lines_of_v1 ... ok
+test wire_v2::v2_fixture_is_version_2 ... ok
+test wire_v2::v2_fixture_roles_follow_the_table ... ok
+test wire_v2::v2_requests_read_and_written_byte_for_byte ... ok
+test wire_v2::v2_responses_read_and_written_byte_for_byte ... ok
+test wire_v1::vault_014_body_v4_is_read_and_written_as_v5 ... ok
+test protocol::tests::largest_entry_fits_in_app_frame ... ok
+test wire_v1::backup_014_two_consecutive_generations ... ok
+test mask::tests::attack_pathological_output_stays_linear ... ok
+test limits::tests::v2_43_entry_that_only_goes_over_the_budget_by_d36_is_refused ... ok
+test body::tests::v2_44_generation_rises_and_rollback_is_refused ... ok
+test format::tests::v2_8_password_change ... ok
+test backup::tests::v7_2_backup_encrypted_wrong_password_and_changed_byte ... ok
+test format::tests::v2_6_two_equal_vaults_are_different ... ok
+test wire_v1::vault_v5_header_same_as_014 ... ok
+test wire_v1::attack_vault_014_byte_flipped_does_not_open ... ok
+test backup::tests::v7_3_sigkill_at_each_backup_point ... ok
+test atomic_write::tests::v2_9_sigkill_at_200_random_points ... ok
+test limits::tests::v2_36_database_and_tunnel_server_pair_builds_the_mask ... ok
+test atomic_write::tests::v2_53_directory_fsync_fails_and_the_generation_does_not_repeat ... ok
+test backup::tests::v7_3_sigkill_at_100_random_points ... ok
+test atomic_write::tests::v2_44_failure_at_each_point_burns_the_generation ... ok
+test format::tests::v2_2_bit_flipped_in_each_byte ... ok
+test limits::tests::v2_36_largest_entry_of_each_type_builds_the_mask ... ok
+
+test result: ok. 347 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 59.72s
+
+     Running tests/body_memory.rs (target/debug/deps/body_memory-49a632f2f29c4bb3)
+
+running 5 tests
+test s8_protocol_no_freed_block_has_secret ... ok
+test v2_32_forged_body_refused_fast_without_allocating ... ok
+test v2_32_authentic_body_allocates_only_what_exists ... ok
+test v2_32_encoder_refuses_above_limit_before_allocating ... ok
+test v2_33_no_freed_block_has_secret ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.33s
+
+     Running tests/sources.rs (target/debug/deps/sources-5665dcd5ca654c86)
+
+running 2 tests
+test v2_50_only_public_writes ... ok
+test v2_46_key_on_heap_and_no_hash_password ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests examples/dev-vault/main.rs (target/debug/examples/dev_vault-99c6714a03498323)
+
+running 17 tests
+test tests::command_line_options ... ok
+test tests::json_reads_what_the_fixtures_use ... ok
+test tests::attack_malformed_json_refused ... ok
+test tests::attack_input_file_too_large_refused ... ok
+test tests::missing_dev_is_created_0700 ... ok
+test tests::v2_29_output_inside_dev_accepted ... ok
+test tests::attack_fixture_with_unknown_field_refused ... ok
+test tests::attack_output_outside_dev_refused ... ok
+test tests::attack_symbolic_link_in_the_path_refused ... ok
+test tests::attack_input_file_outside_the_folder_refused ... ok
+test tests::attack_dev_that_is_a_link_refused ... ok
+test tests::attack_invalid_fixture_refused_without_value_in_the_error ... ok
+test tests::v2_29_levels_of_the_table ... ok
+test tests::attack_inconsistent_vault_is_not_written ... ok
+test tests::v2_29_fixtures_equal_the_contract_table ... ok
+test tests::v2_39_generated_vault_has_the_configuration ... ok
+test tests::v2_29_writes_reopens_and_verifies ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.90s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_nm-a043be4b6e82ed18)
+
+running 11 tests
+test tests::loop_many_messages_and_normal_end ... ok
+test tests::attack_m2_daemon_of_another_version_gives_only_the_version_error ... ok
+test tests::extension_origin ... ok
+test tests::state_without_the_extension_role_becomes_unauthorized ... ok
+test tests::operations_are_the_extensions ... ok
+test tests::fill_goes_through_the_daemon_and_comes_back_canonical ... ok
+test tests::attack_daemon_response_outside_the_role_or_the_operation_does_not_go_out ... ok
+test tests::attack_app_and_agent_operations_do_not_reach_the_daemon ... ok
+test tests::attack_malformed_json_and_extra_fields ... ok
+test tests::write_refuses_over_the_chrome_limit ... ok
+test tests::attack_message_over_the_limit_empty_or_truncated ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/ward_nm-d70ffc8838751cdf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/binary.rs (target/debug/deps/binary-d481d063151082ba)
+
+running 3 tests
+test no_daemon_answers_internal ... ok
+test attack_message_too_large_and_malformed ... ok
+test attack_arguments_out_of_form_exit_with_nothing_on_stdout ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_platform-cd2210479b41327a)
+
+running 99 tests
+test app::tests::attack_parent_that_is_not_the_daemon_is_refused ... ok
+test app::tests::without_setgid_release_group_changes_nothing ... ok
+test child::tests::debug_without_value ... ok
+test child::tests::attack_daemon_environment_does_not_reach_the_child ... ok
+test child::tests::attack_daemon_fd_does_not_reach_the_child ... ok
+test connect::tests::attack_reopening_the_channel_through_proc_fails ... ok
+test connect::tests::empty_or_large_token_does_not_even_become_a_channel ... ok
+test child::tests::child_dies_with_the_thread_that_created_it ... ok
+test connect::tests::the_ends_are_born_with_cloexec ... ok
+test connect::tests::token_goes_through_the_channel_and_the_fd_closes ... ok
+test child::tests::failures_before_exec ... ok
+test child::tests::output_pipes_with_enlarged_capacity ... ok
+test child::tests::input_reaches_the_child ... ok
+test descendants::tests::stat_with_parentheses_in_name ... ok
+test connect::tests::exec_carries_only_the_channel ... ok
+test descendants::tests::session_targets_with_subreaper ... ok
+test descendants::tests::without_subreaper_only_the_leader_tree ... ok
+test child::tests::killing_the_group_takes_the_grandchildren ... ok
+test descendants::tests::zombie_is_not_a_target ... ok
+test hardening::tests::attack_glibc_insecure_list ... ok
+test hardening::tests::d62_memory_release_fails_closed_and_test_mode_warns ... ok
+test dir::tests::attack_name_that_leaves_the_dir_refused ... ok
+test dir::tests::renames_and_never_overwrites ... ok
+test hardening::tests::attack_name_with_control_does_not_go_raw_to_the_message ... ok
+test hardening::tests::finds_any_ld_variable ... ok
+test hardening::tests::message_has_no_value ... ok
+test dir::tests::attack_dir_swapped_for_a_link_after_being_opened ... ok
+test child::tests::signals_at_default ... ok
+test child::tests::code_and_signal ... ok
+test launcher::tests::attack_gstreamer_list_only_has_system_plugins ... ok
+test dir::tests::deletes_the_contents_through_the_fd_without_following_links ... ok
+test child::tests::attack_another_process_does_not_join_the_child_group ... ok
+test child::tests::debugging_pipe_only_in_the_child_on_3_and_4 ... ok
+test child::tests::search_in_the_child_path_without_shell ... ok
+test launcher::tests::attack_user_binary_or_without_setgid_is_refused ... ok
+test launcher::tests::attack_bus_or_session_dir_swapped ... ok
+test launcher::tests::attack_test_binary_outside_the_rules_is_refused ... ok
+test child::tests::exact_argv_cwd_and_environment ... ok
+test launcher::tests::locale_only_locale_name ... ok
+test launcher::tests::built_environment_has_only_the_d57_variables ... ok
+test launcher::tests::attack_two_wayland_sockets_or_link_does_not_open ... ok
+test launcher::tests::messages_without_value ... ok
+test launcher::tests::attack_launcher_passes_neither_environment_nor_fd_of_the_daemon ... ok
+test memory::tests::existing_region_is_locked ... ok
+test memory::tests::debug_does_not_show_content ... ok
+test launcher::tests::attack_environment_forced_on_the_app_is_refused ... ok
+test launcher::tests::home_comes_from_passwd ... ok
+test launcher::tests::test_app_gets_the_d57_environment ... ok
+test memory::tests::locked_buffer_reads_writes_and_locks ... ok
+test memory::tests::zero_wipes_the_whole_region ... ok
+test process::tests::allowed_path_only_absolute_and_canonical ... ok
+test process::tests::chain_name_without_question_mark_replacement ... ok
+test process::tests::environment_with_any_ld_refuses_without_value ... ok
+test process::tests::map_line ... ok
+test process::tests::install_refuses_user_file_and_link ... ok
+test clock::tests::does_not_go_back_and_matches_uptime ... ok
+test process::tests::maps_refuse_library_outside_root ... ok
+test process::tests::chain_of_own_process_ends_in_it ... ok
+test process::tests::tracer_pid_and_ppid_from_status ... ok
+test process::tests::refusal_does_not_leak_detail ... ok
+test launcher::tests::launch_sets_dev_null_and_closes_fds ... ok
+test role::tests::attack_gid_inside_a_subgid_range ... ok
+test role::tests::attack_group_with_member_repeated_or_broken ... ok
+test role::tests::kernel_policy ... ok
+test role::tests::group_from_etc_group ... ok
+test server::tests::invalid_path_refuses ... ok
+test process::tests::maps_refuse_inode_different_from_path ... ok
+test server::tests::messages_without_path ... ok
+test server::tests::system_only_accepts_uid_0 ... ok
+test server::tests::test_accepts_its_own_uid_and_not_root ... ok
+test process::tests::attack_process_with_u202e_in_name_reaches_chain_whole ... ok
+test socket::tests::different_uid_refuses ... ok
+test socket::tests::invalid_dir_path_refuses ... ok
+test socket::tests::listen_pid_and_fds_plain_decimal_only ... ok
+test socket::tests::parent_writable_by_others_refuses ... ok
+test role::tests::attack_gid_this_process_already_has ... ok
+test socket::tests::attack_user_dir_does_not_pass_as_system_dir ... ok
+test socket::tests::peer_closed_without_consuming_bytes ... ok
+test socket::tests::root_dirs_are_accepted_and_a_link_is_not ... ok
+test socket::tests::runtime_by_the_euid ... ok
+test socket::tests::system_path_by_the_euid ... ok
+test terminal::tests::cancel_and_limit ... ok
+test terminal::tests::capacity_reserved_without_reallocating ... ok
+test terminal::tests::line_editing ... ok
+test terminal::tests::regular_file_is_not_a_terminal ... ok
+test terminal::tests::raw_mode_turns_on_and_back_and_pty_size ... ok
+test terminal::tests::ctrl_c_cancels_and_restores ... ok
+test launcher::tests::attack_only_the_launcher_pid_is_the_app ... ok
+test launcher::tests::test_bridge_gets_the_minimal_environment_and_the_log_is_0600 ... ok
+test memory::tests::size_out_of_limit_refuses ... ok
+test launcher::tests::app_exit_status_is_kept_for_the_log ... ok
+test app::tests::std_socket_has_cloexec_and_the_close_is_seen ... ok
+test terminal::tests::attack_password_does_not_echo_on_the_pty ... ok
+test child::tests::pty_controlling_terminal_window_and_input ... ok
+test child::tests::pty_killing_the_group_takes_the_session_and_the_environment_is_exact ... ok
+test child::tests::attack_f55_grandchild_outside_the_group_dies_on_lock ... ok
+test child::tests::attack_child_with_own_session_dies_with_kill_with_child_sessions ... ok
+test child::tests::attack_single_write_above_64_kib_arrives_whole ... ok
+test connect::tests::attack_forged_channel_is_refused_without_echo ... ok
+
+test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.03s
+
+     Running tests/activation.rs (target/debug/deps/activation-aee811ed439fcef6)
+
+running 5 tests
+test helper_child ... ok
+test attack_more_than_one_fd ... ok
+test attack_socket_at_another_path ... ok
+test attack_fake_user_systemd_with_socket_in_its_dir ... ok
+test attack_wrong_listen_pid_and_listen_fds ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/hardening.rs (target/debug/deps/hardening-770e3862555ce2fa)
+
+running 10 tests
+test helper_child ... ok
+test starts_clean_without_ld_and_without_debugger ... ok
+test attack_sigsegv_leaves_no_core ... ok
+test v3_34_memlock_of_8_mib ... ok
+test v3_34_child_does_not_inherit_the_mlockall ... ok
+test attack_starting_with_ld_refuses ... ok
+test attack_read_memory_environment_and_ptrace_of_the_hardened_process ... ok
+test attack_v3_25_forged_name_comes_out_cut ... ok
+test attack_starting_with_the_glibc_insecure_list_refuses ... ok
+test attack_starting_under_strace_refuses ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/identification.rs (target/debug/deps/identification-dd7fe82187bad48e)
+
+running 14 tests
+test attack_user_library_without_variable ... ok
+test attack_ptrace_scope_0_or_suid_dumpable_1_turns_the_roles_off ... ok
+test extension_host_without_allowed_parent_when_the_parent_is_the_test ... ok
+test attack_binary_copied_out_of_the_install ... ok
+test extension_host_requires_the_allowed_parent ... ok
+test installed_binary_is_identified ... ok
+test attack_test_server_with_open_socket_or_swapped_address ... ok
+test attack_process_that_exits_before_the_check ... ok
+test attack_user_namespace_does_not_forge_the_group ... ok
+test attack_client_under_strace ... ok
+test attack_test_extension_host_only_with_the_chrome_parent ... ok
+test test_app_without_egid_only_with_the_daemon_parent ... ok
+test attack_fake_server_of_the_same_uid_is_refused_before_any_byte ... ok
+test attack_ld_variables_in_the_environment ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/socket.rs (target/debug/deps/socket-877ada4299d7a4dd)
+
+running 10 tests
+test attack_dir_of_another_owner_does_not_start ... ok
+test attack_dir_above_writable_by_group ... ok
+test accept_carries_pid_and_uid_of_the_peer ... ok
+test attack_existing_dir_0755_neither_starts_nor_fixes ... ok
+test attack_file_in_place_of_the_dir ... ok
+test dir_swapped_after_prepare_refuses_to_listen ... ok
+test attack_file_or_link_in_place_of_the_socket ... ok
+test attack_symbolic_link_in_place_of_the_dir ... ok
+test new_dir_ends_up_0700_and_socket_0600_of_the_user ... ok
+test second_daemon_on_the_same_socket_refuses_and_stale_socket_is_replaced ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/subreaper.rs (target/debug/deps/subreaper-e70a1c97a2e57581)
+
+running 1 test
+test attack_f55_descendant_outside_the_group_does_not_survive ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_test_bridge-a87f5080bfb6538e)
+
+running 3 tests
+test startup::tests::dist_only_from_absolute_dev ... ok
+test wl_clipboard::tests::attack_binary_off_the_rules_is_refused ... ok
+test simulated::tests::attack_repo_terminal_only_with_repository_files ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/ward_test_bridge-f2ddea2a0132a746)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/attacks.rs (target/debug/deps/attacks-7d0a5ce28c2a469a)
+
+running 23 tests
+test attack_request_outside_the_limits ... ok
+test bridge_csp_is_the_app_one ... ok
+test attack_bridge_without_app_role_exits_on_first_reply ... ok
+test attack_file_outside_the_dist ... ok
+test attack_host_or_origin_of_another_site ... ok
+test attack_no_token_wrong_token_or_repeated ... ok
+test attack_lock_through_the_bridge ... ok
+test attack_external_backup_through_the_bridge ... ok
+test attack_plugin_or_invented_command ... ok
+test attack_old_command_path_is_refused ... ok
+test attack_form_through_the_bridge ... ok
+test attack_standalone_generator_through_the_bridge ... ok
+test copy_works_and_the_response_has_no_value ... ok
+test attack_old_command_names_and_keys_are_refused ... ok
+test tcp_only_on_127_0_0_1_with_security_headers ... ok
+test attack_attachments_and_connect_through_the_bridge ... ok
+test attack_credentials_screen_responses_without_secret ... ok
+test attack_load_key_through_the_bridge ... ok
+test attack_first_use_through_the_bridge ... ok
+test attack_restore_backup_through_the_bridge ... ok
+test attack_settings_through_the_bridge ... ok
+test attack_set_level_through_the_bridge ... ok
+test attack_unlock_through_the_bridge ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.73s
+
+     Running unittests src/lib.rs (target/debug/deps/wardd-82a75d23d3e6c6dc)
+
+running 54 tests
+test bridge::tests::attack_socket_of_another_uid_or_ambiguous ... ok
+test bridge::tests::stat_group_with_parentheses_in_name ... ok
+test bridge::tests::proc_net_tcp_address ... ok
+test cdp::tests::pause_reads_only_url_type_and_frame ... ok
+test cdp::tests::writer_escapes_and_does_not_reallocate ... ok
+test config::tests::relative_or_dot_dot_path_refused ... ok
+test config::tests::test_mode_requires_dev_dir ... ok
+test config::tests::test_extension_only_with_chrome ... ok
+test bridge::tests::attack_process_in_group_of_another_session_is_refused ... ok
+test execution::tests::attack_only_the_list_passes_from_the_cli ... ok
+test execution::tests::attack_value_that_becomes_a_path_stays_out ... ok
+test execution::tests::end_notice_only_says_ended_with_nothing_left ... ok
+test execution::tests::attack_open_or_linked_rt_refused ... ok
+test execution::tests::utf8_locale_stays_and_c_becomes_c_utf8 ... ok
+test files::tests::d62_old_format_reads_zero_and_new_has_the_line ... ok
+test execution::tests::temp_files_0600_zeroed_and_deleted ... ok
+test files::tests::dt6_attack_mixed_or_forged_state_refused ... ok
+test execution::tests::startup_cleans_what_was_left ... ok
+test files::tests::dt6_v1_and_v2_read_the_same_and_the_write_is_v2 ... ok
+test files::tests::strict_state ... ok
+test lock::tests::attack_f55_detail_totp_and_window_answer_do_not_count ... ok
+test lock::tests::attack_list_and_suggest_do_not_count_as_use ... ok
+test lock::tests::attack_strange_bus_path ... ok
+test lock::tests::status_lock_and_error_do_not_count_as_use ... ok
+test lock::tests::expired_at_the_limit_and_fails_closed ... ok
+test login::tests::id_of_another_request_does_not_match ... ok
+test playwright::tests::argv_only_fixed_with_pipe_and_no_port ... ok
+test playwright::tests::attack_name_outside_dir_refused ... ok
+test server::tests::d63_without_the_group_the_launcher_pid_gives_no_app_role ... ok
+test ssh::tests::attack_values_out_of_format_refused ... ok
+test playwright::tests::attack_dom_clobbering_scripts_only_through_prototypes ... ok
+test ssh::tests::d56_sftp ... ok
+test playwright::tests::attack_delete_sessions_does_not_follow_link ... ok
+test playwright::tests::state_in_playwright_format ... ok
+test ssh_agent::tests::attack_add_remove_lock_and_garbage_refused ... ok
+test ssh_agent::tests::attack_sftp_bang_other_child_of_sftp_is_refused ... ok
+test udisks::tests::attack_strange_mount_counts_as_not_mounted ... ok
+test ssh::tests::phase28_bridge_argv_without_proxyjump ... ok
+test ssh::tests::key_uses_the_session_agent ... ok
+test ssh::tests::d43_user_with_at_sign_only_after_l ... ok
+test ssh::tests::phase28_attack_target_and_alias_out_of_format ... ok
+test ssh_agent::tests::only_lists_and_signs ... ok
+test usage::tests::combined_level_is_the_most_restrictive ... ok
+test udisks::tests::label_without_control_and_cut ... ok
+test bridge::tests::f28g_direct_child_of_leader_with_own_session ... ok
+test ssh_agent::tests::f28g_startup_deletes_leftover_ssh_dirs ... ok
+test launch::tests::exit_goes_to_the_log_only_with_numbers ... ok
+test files::tests::f54l_attack_fifo_in_place_does_not_block_the_read ... ok
+test server::tests::subscriber_writes_a_whole_frame_and_fails_closed ... ok
+test files::tests::dt6_v1_state_on_disk_becomes_v2_and_strange_files_are_refused ... ok
+test files::tests::attack_loose_or_linked_known_hosts_is_refused ... ok
+test server::tests::d63_child_peer_without_egid_stays_agent ... ok
+test bridge::tests::peer_in_group_for_real ... ok
+test server::tests::attack_agent_connections_do_not_evict_the_app ... ok
+
+test result: ok. 54 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running unittests src/main.rs (target/debug/deps/wardd-5feb4ecf9d5f86d3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests test-app/main.rs (target/debug/deps/wardd_test_app-116d453ab6061b3a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests test-approver/main.rs (target/debug/deps/wardd_test_approver-f101438c75b5fd4b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/app_value_binary.rs (target/debug/deps/app_value_binary-c8480488b71a6f43)
+
+running 1 test
+test v3_39_v3_40_app_values_and_list_through_the_test_daemon ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+     Running tests/app_value_core.rs (target/debug/deps/app_value_core-6f0e42196d0c8820)
+
+running 4 tests
+test v3_40_app_list_with_summary_and_agent_list_without_level_or_summary ... ok
+test v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one ... ok
+test attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp ... ok
+test v3_39_app_totp_by_the_daemon_clock ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.87s
+
+     Running tests/approval.rs (target/debug/deps/approval-f5838231cbac431b)
+
+running 27 tests
+test attack_v3_15_hook_without_feature_or_out_of_place ... ok
+test v3_14_deny_and_close_deny ... ok
+test f26a_working_directory_goes_to_the_window_with_visible_escape ... ok
+test attack_agent_answers_the_approval ... ok
+test v3_14_once_only_that_request ... ok
+test v3_15_no_approver_in_the_binary ... ok
+test v3_36_only_the_launcher_pid_is_app ... ok
+test d51_command_and_chain_with_visible_escape ... ok
+test f54b_ssh_with_pipe_warns ... ok
+test client_that_drops_cancels ... ok
+test v3_14_no_answer_expires_in_2_min ... ok
+test f54b_1_hour_grant_does_not_cover_pipe ... ok
+test opened_app_receives_the_request_on_subscribe ... ok
+test attack_phase_39a_unlock_with_entry_and_command_neutralized ... ok
+test f54b_terminal_and_null_pass_as_before ... ok
+test f54b_attack_pipe_on_approval_without_the_box_does_not_pass ... ok
+test attack_phase_39a_empty_entry_does_not_bring_down_the_app ... ok
+test v3_14_always_leaves_free_in_the_file ... ok
+test v3_38_status_carries_the_role ... ok
+test attack_allow_without_valid_pin ... ok
+test attack_49a_restore_cancels_pending_request ... ok
+test d19_combined_level ... ok
+test d57_open_app ... ok
+test v3_16_prod_has_the_same_levels_and_buttons ... ok
+test d21_approval_unavailable ... ok
+test v3_14_one_hour_until_59_59_and_lock_ends_it ... ok
+test v3_18_waits_for_unlock_up_to_2_min ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.19s
+
+     Running tests/attachment_edit.rs (target/debug/deps/attachment_edit-4ce755b01b9ed941)
+
+running 2 tests
+test v5_12_edit_keeps_adds_and_removes_attachment ... ok
+test v5_12_attack_forged_keep_attachments ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.69s
+
+     Running tests/backup.rs (target/debug/deps/backup-4d9acd937601c17f)
+
+running 14 tests
+test unsafe_backups_folder_shows_in_the_settings ... ok
+test attack_backups_folder_swapped_for_a_link ... ok
+test v7_8_agent_and_extension_do_not_restore ... ok
+test attack_version_swapped_for_a_link ... ok
+test attack_future_dated_versions_neither_delete_the_real_ones_nor_restore ... ok
+test state_temp_files_go_away_at_startup ... ok
+test restore_keeps_the_current_lock_timeout_and_external_backup ... ok
+test attack_restore_with_vault_swapped_outside_ward ... ok
+test attack_restore_without_pin_wrong_password_and_locked ... ok
+test attack_restore_without_writing_the_state_does_not_swap_the_vault ... ok
+test f54l_attack_fifo_swapped_in_place_of_the_version_does_not_hold_the_daemon ... ok
+test restore_asks_for_the_version_password ... ok
+test v7_1_each_daemon_write_goes_to_the_backup ... ok
+test v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.08s
+
+     Running tests/core.rs (target/debug/deps/core-7e8c38cb263d4900)
+
+running 10 tests
+test v3_17_v3_26_agent_list_and_blocked_equals_missing ... ok
+test v3_10_lock_and_everything_answers_locked ... ok
+test v3_27_new_entry_starts_with_approval ... ok
+test v3_11_change_level_requires_pin_and_app_role ... ok
+test v3_12_five_pin_errors_lock ... ok
+test first_use_and_pin_only_as_hash ... ok
+test d52_change_password_with_wrong_password ... ok
+test v3_22_rollback_and_swapped_file ... ok
+test v3_9_wrong_password_growing_wait_without_count ... ok
+test v3_28_burned_generation_in_the_state ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.95s
+
+     Running tests/d62.rs (target/debug/deps/d62-1583c3aabeb4a3a9)
+
+running 6 tests
+test v3_35_create_vault_without_state_and_with_invalid_state ... ok
+test v3_33_old_format_and_state_without_secret ... ok
+test v3_35_create_vault_with_old_state_and_old_copy ... ok
+test v3_35_swap_right_after_the_rename_is_refused ... ok
+test attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app ... ok
+test v3_33_agent_wait_survives_the_restart ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.42s
+
+     Running tests/dates.rs (target/debug/deps/dates-61533a2d582ca7f1)
+
+running 5 tests
+test attack_v3_41_dates_do_not_go_to_the_agent ... ok
+test attack_v3_41_date_from_the_client_refused ... ok
+test unreadable_clock_writes_without_a_new_date ... ok
+test restore_keeps_the_dates ... ok
+test v3_41_dates_from_the_daemon_clock ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.54s
+
+     Running tests/extension.rs (target/debug/deps/extension-35b25cb5b278ed7f)
+
+running 11 tests
+test v6_1_agent_and_app_neither_suggest_nor_fill ... ok
+test attack_save_login_only_the_popup_fields ... ok
+test attack_extension_without_app_or_agent_operations ... ok
+test attack_save_login_does_not_overwrite_entry ... ok
+test v6_2_suggest_only_the_tab_origin ... ok
+test attack_fill_https_loopback_without_confirming_nothing_leaves ... ok
+test suggestion_carries_environment_and_whether_it_has_totp ... ok
+test v6_2_fill_only_on_the_right_origin ... ok
+test attack_save_login_extension_only_and_unlocked ... ok
+test v6_8_save_login_starts_with_approval ... ok
+test attack_fill_http_without_confirming_nothing_leaves ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.66s
+
+     Running tests/external.rs (target/debug/deps/external-a559ee6232093443)
+
+running 15 tests
+test external_does_not_use_link ... ok
+test fake_udisks_is_read_with_the_checks ... ok
+test attack_future_dated_versions_on_the_drive_do_not_delete_the_real_ones ... ok
+test v7_8_agent_and_extension_neither_turn_on_nor_read ... ok
+test attack_existing_version_on_the_drive_is_not_overwritten ... ok
+test v7_4_off_by_default_writes_nothing ... ok
+test attack_swapped_drive_or_repeated_uuid_gets_nothing ... ok
+test usb_drives_without_udisks_and_invalid_uuid ... ok
+test attack_mount_or_folder_that_is_a_link ... ok
+test locked_or_off_does_not_copy ... ok
+test drive_keeps_30_versions ... ok
+test v7_5_udisks_signal_copies_to_the_mounted_drive ... ok
+test attack_junk_in_the_local_backup_does_not_rotate_the_drive ... ok
+test f54c_attack_names_planted_on_the_drive_do_not_delete_real_copies ... ok
+test v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.62s
+
+     Running tests/lock.rs (target/debug/deps/lock-76b4f93c0b823801)
+
+running 13 tests
+test test_daemon_without_fake_bus_does_not_enable_logind ... ok
+test attack_f55_denied_ward_run_and_window_do_not_delay_the_lock ... ok
+test attack_bus_drops_with_the_vault_open_locks ... ok
+test v3_19_inactivity_with_injected_clock ... ok
+test attack_agent_does_not_keep_the_vault_open_with_status_or_errors ... ok
+test attack_periodic_agent_list_does_not_delay_the_lock ... ok
+test v3_19_timeout_read_from_the_vault_settings ... ok
+test attack_forged_signal_neither_unlocks_nor_holds ... ok
+test attack_clock_that_goes_back_or_is_unreadable_locks ... ok
+test v3_19_binary_locks_on_lock_session_of_the_fake_logind ... ok
+test v3_19_prepare_for_sleep_locks_before_releasing_the_inhibitor ... ok
+test v3_19_lock_and_locked_hint_lock_within_2s ... ok
+test d62_auto_lock_does_not_touch_the_d20_wait ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.14s
+
+     Running tests/login.rs (target/debug/deps/login-b5387f62fb9a50d9)
+
+running 16 tests
+test await_does_not_count_as_use ... ok
+test attack_forged_id_does_not_fill ... ok
+test attack_agent_and_app_on_the_extension_operations ... ok
+test one_request_at_a_time ... ok
+test extension_outcomes ... ok
+test login_https_free_without_window ... ok
+test v6_3_v6_15_attack_different_origin_does_not_fill ... ok
+test lock_in_the_middle_kills_the_request ... ok
+test v6_10_free_login_fills_on_the_right_origin_and_returns_ok ... ok
+test cli_that_drops_kills_the_request ... ok
+test v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does ... ok
+test without_extension_the_request_dies ... ok
+test refusals_before_the_extension ... ok
+test attack_login_http_approval_asks_pin_and_shows_the_origin ... ok
+test attack_login_http_free_only_with_confirmation ... ok
+test attack_login_https_loopback_free_only_with_confirmation ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.06s
+
+     Running tests/memory.rs (target/debug/deps/memory-003b34d3ae1d330e)
+
+running 1 test
+test v3_8_lock_zeroes_the_key_and_the_secrets_before_freeing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.46s
+
+     Running tests/migration.rs (target/debug/deps/migration-b899e0cbd1446cce)
+
+running 12 tests
+test death::dt5_child_migration ... ignored, só roda como processo filho dos testes de morte da migração
+test v4_11_old_state_with_failures_and_mixed_state ... ok
+test v4_1_wrong_password_on_the_v4_writes_no_vault ... ok
+test v4_3_state_failure_keeps_the_v4_and_the_old_state ... ok
+test v4_7_attack_v4_copy_after_the_migration ... ok
+test v4_10_restoring_a_v4_version_writes_the_v5 ... ok
+test v4_3_first_unlock_writes_the_v5_with_the_same_data ... ok
+test v4_3_write_failure_keeps_the_v4_and_answers_the_error ... ok
+test v4_6_migrated_vault_is_not_written_again ... ok
+test death::v4_3_sigkill_at_each_migration_point ... ok
+test v4_10_local_rotation_counts_v4_and_v5 ... ok
+test v4_10_usb_drive_rotation_counts_v4_and_v5 has been running for over 60 seconds
+test v4_10_usb_drive_rotation_counts_v4_and_v5 ... ok
+
+test result: ok. 11 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 232.09s
+
+     Running tests/playwright.rs (target/debug/deps/playwright-bb4aac4c81e14d9b)
+
+running 12 tests
+test real_chrome_login_and_attacks ... ignored, precisa do Chrome instalado: make test-playwright
+test d6_startup_cleans_sessions_and_profiles ... ok
+test v6_15_redirect_to_another_origin_refused ... ok
+test playwright_https_free_without_window ... ok
+test refusals_without_opening_the_browser ... ok
+test v6_12_session_saved_only_the_path_comes_back ... ok
+test attack_playwright_http_free_only_with_confirmation ... ok
+test attack_playwright_https_loopback_free_only_with_confirmation ... ok
+test s1_session_with_the_password_is_not_saved ... ok
+test browser_that_crashes_or_sends_garbage ... ok
+test d6_lock_during_the_session_nothing_saved ... ok
+test d9_origin_of_the_page_and_of_the_submission ... ok
+
+test result: ok. 11 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 23.64s
+
+     Running tests/run.rs (target/debug/deps/run-47de9528a4a67298)
+
+running 11 tests
+test ra1_record_child_environ_readable_by_same_uid ... ok
+test f54b_attack_null_stdin_with_data_kills_the_command ... ok
+test v4_15_cli_that_drops_and_killed_daemon ... ok
+test f26a_attack_cli_environment_does_not_change_the_command ... ok
+test d52_oversized_request_refused_by_daemon ... ok
+test v4_21_locked_waits_for_cli_unlock ... ok
+test v4_delivery_mask_code_and_refusals ... ok
+test f28g_attack_single_large_write_does_not_show_password_start ... ok
+test f54b_attack_piped_script_on_approval ... ok
+test f55_attack_descendant_outside_group_dies_at_end_and_on_lock ... ok
+test f54_attack_ward_run_dies_on_lock ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.04s
+
+     Running tests/settings.rs (target/debug/deps/settings-fd4e7899f4b1fa5f)
+
+running 10 tests
+test attack_settings_reply_without_hash_or_pin ... ok
+test attack_settings_with_the_vault_locked ... ok
+test attack_short_new_master_password_refused_by_the_daemon ... ok
+test attack_guessing_the_pin_through_the_change_locks_on_the_fifth_error ... ok
+test v5_22_default_4h_off_and_changeable_timeout_saved_in_the_vault ... ok
+test attack_agent_and_extension_neither_read_nor_change_the_settings ... ok
+test v5_22_change_pin_asks_for_the_current_pin ... ok
+test composed_master_password_opens_decomposed_through_the_daemon ... ok
+test v5_22_change_password_asks_for_the_current_one_and_keeps_the_settings ... ok
+test f55_attack_fifo_in_place_of_the_vault_does_not_hold_the_password_change ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.51s
+
+     Running tests/socket.rs (target/debug/deps/socket-decf7ff168c385e7)
+
+running 5 tests
+test v3_30_env_with_tmpdir_or_ld_refuses_to_start ... ok
+test attack_m2_v4_13_v1_frames_get_unknown_version_and_the_connection_closes ... ok
+test v3_6_running_wardd_denies_proc_ptrace_and_core ... ok
+test v3_20_cycle_through_the_socket_without_secret_in_the_log ... ok
+test v3_33_kill_9_between_the_wrong_passwords ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.45s
+
+     Running tests/ssh.rs (target/debug/deps/ssh-0b4106222f1dac72)
+
+running 17 tests
+test refusals_without_running_anything ... ok
+test v4_35_d43_user_with_at_sign_and_password_only_in_env ... ok
+test attack_loose_known_hosts_refused_without_running ... ok
+test phase28_lock_closes_the_tunnel_to_new_connections ... ok
+test phase28_jump_with_password_through_the_bridge ... ok
+test attack_sftp_bang_does_not_use_the_agent ... ok
+test phase28_database_tunnel_in_run ... ok
+test v4_24_d12_agent_only_for_the_child ... ok
+test v5_24_connect_token ... ok
+test d12_lock_brings_down_the_agent ... ok
+test d12_sftp_with_key_serves_the_ssh_of_sftp ... ok
+test d34_attack_timing_without_pty_prefix_not_delayed ... ok
+test d34_attack_pty_right_and_wrong_prefix_come_out_alike_and_at_once ... ok
+test v4_37_d56_sftp_with_user_and_host_after_double_dash ... ok
+test phase28_jump_with_key_agent_per_ssh ... ok
+test f54c_attack_ward_ssh_dies_on_lock ... ok
+test f54l_attack_cli_drops_in_ward_ssh_no_ssh_left ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.67s
+
+     Running tests/test_app.rs (target/debug/deps/test_app-984fc2044204965e)
+
+running 1 test
+test v3_37_only_the_app_opened_by_the_test_daemon_is_app ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+     Running tests/units.rs (target/debug/deps/units-aecd1fd0eae3ebea)
+
+running 3 tests
+test v3_21_system_socket ... ok
+test v3_21_service_with_user_limitcore_and_no_ld ... ok
+test d57_attack_no_directive_that_turns_on_no_new_privs ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests ward
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_app_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_core
+
+running 1 test
+test crates/ward-core/src/atomic_write.rs - atomic_write (line 45) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test crates/ward-core/src/format.rs - format::OpenVault (line 273) - compile fail ... ok
+test crates/ward-core/src/format.rs - format::OpenVault (line 291) - compile fail ... ok
+test crates/ward-core/src/atomic_write.rs - atomic_write (line 23) - compile fail ... ok
+test crates/ward-core/src/format.rs - format::OpenVault (line 303) - compile fail ... ok
+test crates/ward-core/src/atomic_write.rs - atomic_write (line 31) - compile fail ... ok
+test crates/ward-core/src/format.rs - format::OpenVault (line 282) - compile fail ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+all doctests ran in 0.29s; merged doctests compilation took 0.24s
+   Doc-tests ward_nm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_platform
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_test_bridge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wardd
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> 5/7 cargo audit
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo-audit audit --deny warnings
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1458 security advisories (from <home>/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (112 crate dependencies)
+==> 6/7 cargo deny check
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo-deny --all-features check
+warning[duplicate]: found 2 duplicate entries for crate 'syn'
+   ┌─ <repo>/Cargo.lock:75:1
+   │  
+75 │ ╭ syn 2.0.119 registry+https://github.com/rust-lang/crates.io-index
+76 │ │ syn 3.0.9 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ syn v2.0.119
+     └── curve25519-dalek-derive v0.1.1
+         └── curve25519-dalek v5.0.0
+             └── ed25519-dalek v3.0.0
+                 └── ssh-key v0.7.0-rc.12
+                     └── wardd v0.2.0
+   ├ syn v3.0.9
+     ├── async-trait v0.1.92
+     │   └── zbus v6.2.1
+     │       └── (dev) wardd v0.2.0
+     ├── serde_derive v1.0.229
+     │   └── serde v1.0.229
+     │       ├── ward-app-core v0.2.0
+     │       │   └── ward-test-bridge v0.2.0
+     │       ├── wardd v0.2.0 (*)
+     │       ├── zbus v6.2.1 (*)
+     │       ├── zbus_utils v6.1.0
+     │       │   ├── zbus v6.2.1 (*)
+     │       │   └── zbus_macros v6.2.1
+     │       │       └── zbus v6.2.1 (*)
+     │       └── zcheapstr v1.2.0
+     │           └── zbus v6.2.1 (*)
+     ├── serde_repr v0.1.21
+     │   └── zbus v6.2.1 (*)
+     ├── zbus_macros v6.2.1 (*)
+     └── zbus_utils v6.1.0 (*)
+
+advisories ok, bans ok, licenses ok, sources ok
+==> 7/7 gitleaks
+<repo>/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
+12:08PM INF scanned ~9841972 bytes (9.84 MB) in 325ms
+12:08PM INF no leaks found
+<repo>/.dev/tools/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+12:08PM INF 0 commits scanned.
+12:08PM INF scanned ~0 bytes (0) in 117ms
+12:08PM INF no leaks found
+<repo>/.dev/tools/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+12:08PM INF 352 commits scanned.
+12:08PM INF scanned ~16008672 bytes (16.01 MB) in 2.12s
+12:08PM INF no leaks found
+<repo>/.dev/tools/bin/gitleaks dir --config dev/gitleaks-extra-tree.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+12:08PM INF scanned ~84894915 bytes (84.89 MB) in 565ms
+12:08PM INF no leaks found
+<repo>/.dev/tools/bin/gitleaks git --staged --pre-commit --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+12:08PM INF 0 commits scanned.
+12:08PM INF scanned ~0 bytes (0) in 4.35ms
+12:08PM INF no leaks found
+<repo>/.dev/tools/bin/gitleaks git --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+12:08PM INF 352 commits scanned.
+12:08PM INF scanned ~16008672 bytes (16.01 MB) in 1.75s
+12:08PM INF no leaks found
+==> make check: tudo limpo

@@ -65,7 +65,7 @@ escolha segurança e registre a decisão.
 | nota segura | texto | — |
 | genérico | só campos extras | `WARD_<CAMPO>` |
 
-- Cada campo declara se é segredo. Segredo nunca aparece em `ward lista`.
+- Cada campo declara se é segredo. Segredo nunca aparece em `ward list`.
 - Toda entrada aceita **campos extras** (nome, valor, segredo sim/não).
 - **Tipos customizados ficam para a v2.**
 - Toda entrada tem `grupo` e `ambiente` **obrigatórios**: `dev`, `stage` ou
@@ -76,7 +76,7 @@ escolha segurança e registre a decisão.
 - **TOTP**: o cofre gera o código; o agente recebe o código, nunca a semente.
 - **Anexos** cifrados no cofre (chave SSH, `.pem`, `.env`, `.ovpn`). No `ward run`
   viram arquivo temporário em `/run/user/<uid>/ward/`, permissão 0600, apagado ao
-  fim do comando. A ferramenta recebe só o caminho (`WARD_ARQUIVO_<NOME>`).
+  fim do comando. A ferramenta recebe só o caminho (`WARD_FILE_<NAME>`).
 - **Gerador de senha** com tamanho e conjuntos de caracteres configuráveis (há
   painéis que não aceitam símbolo), no formulário e numa tela própria.
 
@@ -90,7 +90,7 @@ cofre não restringe comandos dentro do servidor, nem no banco, nem no painel.
 
 | Comando | Faz |
 |---|---|
-| `ward lista [--json]` | Entradas que o agente pode ver: nome, tipo, grupo, ambiente, projeto, URL/host. As bloqueadas não aparecem |
+| `ward list [--json]` | Entradas que o agente pode ver: nome, tipo, grupo, ambiente, projeto, URL/host. As bloqueadas não aparecem |
 | `ward run <entrada> -- <cmd…>` | O **daemon** executa o comando com a credencial no ambiente do processo filho, nas variáveis do tipo. Devolve a saída mascarada e o código de saída |
 | `ward ssh <entrada> [cmd]` | Conecta no servidor (senha ou chave, salto) |
 | `ward login <entrada>` | Pela extensão: confere o domínio da aba, preenche, envia o formulário e limpa os campos |
@@ -168,11 +168,11 @@ backups. Os scripts antigos (`cofre-lista`, `cofre-run`, `cofre-ssh`,
 - Pedido do agente com o cofre travado: o app abre e pede a senha mestra ao
   usuário. O pedido espera até 2 minutos.
 - Trava sozinho: bloqueio de tela, suspensão e **4 horas sem uso** (cada uso zera).
-  Não conta como uso o tráfego automático do app: o `detalhe` (inclusive o que a janela
+  Não conta como uso o tráfego automático do app: o `detail` (inclusive o que a janela
   de aprovação pede e o clique numa entrada), o código TOTP do formulário e a resposta
   da janela de aprovação; nem um `ward run` negado ou expirado. Contam revelar, copiar,
   as gravações e o pedido permitido (Fase 55, D69).
-- "Travar agora" no app, na bandeja e em `ward travar`.
+- "Travar agora" no app, na bandeja e em `ward lock`.
 - **PIN** separado da senha mestra, de 4 a 6 dígitos. Só aprova usos e mudanças de
   nível; não destrava. Depois de 5 erros seguidos, o cofre trava.
 
@@ -312,7 +312,7 @@ inclusive o valor revelado (PRD D64).
     alcança o pipe de depuração (`--remote-debugging-pipe`) do Chrome do
     `ward playwright`, por onde passa o comando que preenche a senha e de onde se pode
     mandar qualquer comando CDP enquanto ele roda, e o stdout do `ward-nm` no Chrome do
-    usuário (as respostas de `preencher`, com usuário, senha e TOTP), que o atacante lê
+    usuário (as respostas de `fill`, com usuário, senha e TOTP), que o atacante lê
     com um `tee` no lugar do Chrome. Esse acesso não é `ptrace`: o Yama não o barra.
     O `ward-nm` setgid e não-dumpable protege os fds dele, não os do Chrome.
 - Crash do Chrome com a senha preenchida (2ª auditoria do M5, Fase 39g; parecer do
@@ -341,8 +341,8 @@ inclusive o valor revelado (PRD D64).
     valor revelado através dele;
   - pôr um `ward` falso antes no `PATH` (`~/.local/bin`, por exemplo), ou um alias ou
     uma função no `~/.bashrc`/`~/.zshrc`, e ler a senha mestra digitada em
-    `ward destravar`. A auditoria final capturou assim a senha mestra com um `ward`
-    falso no `PATH`;
+    `ward unlock`. A auditoria final (0.1.x, quando o subcomando era `destravar`)
+    capturou assim a senha mestra com um `ward` falso no `PATH`;
   - mexer no que o app lê do home: tema do GTK (`settings.ini`, `gtk.css`), dconf,
     caches de fonte e o perfil da NVIDIA (`~/.nv/…`, D67).
   O compositor e o shell rodam como o usuário: não há âncora de root para conferir o
@@ -353,10 +353,11 @@ inclusive o valor revelado (PRD D64).
   - a CLI e o app conferem que o servidor é o `wardd` instalado antes de mandar a
     senha mestra (S5). Isso barra o servidor falso, não o cliente falso;
   - a senha mestra e o PIN nunca passam pelo Claude: a skill não destrava e o deny
-    nega `ward destravar`;
+    nega `ward unlock` (e a forma da 0.1.x, para a versão antiga que ainda estiver
+    instalada durante a troca);
   - os guias (`docs/instalacao.md`, `docs/migracao.md`, a skill e o
     `skill/README.md`) mandam destravar pelo app ou, no terminal, por
-    `/usr/local/bin/ward destravar`, com o caminho completo. O caminho completo fecha
+    `/usr/local/bin/ward unlock`, com o caminho completo. O caminho completo fecha
     o `ward` falso no `PATH` (o caso da auditoria). Não fecha uma função do bash ou do
     zsh com o nome `/usr/local/bin/ward`, um alias do zsh com esse nome, nem um rc
     que grave o terminal: o shell adulterado continua fora do modelo.
@@ -543,6 +544,48 @@ leitura e é a referência visual quando o `Ward.figcraft` não tiver as imagens
 
 O milestone 0 fecha com a **aprovação do usuário** no FigCraft. As fases de UI dos
 milestones seguintes implementam a partir desses nodes.
+
+## Missão 2 — Código em inglês
+
+Decisões do usuário de 2026-11-10 (a missão 1, concluída nas releases 0.1.0–0.1.4,
+fica arquivada em `docs/mission/arquivo/m1/`). PRD, plano e contrato em `docs/mission/`.
+
+- **O que vira inglês:** identificadores (funções, métodos, tipos, variáveis,
+  constantes, módulos, crates, arquivos e pastas) e todos os comentários do código
+  (Rust, TS/JS, Svelte, shell, Python, Makefile, systemd etc.).
+- **O que fica em pt-BR:** textos exibidos ao usuário (mensagens da CLI, interface do
+  app, extensão, notificações), `docs/` e o README (que só acompanham os nomes novos).
+  A interface continua toda em português (seção "App desktop").
+- **Nomes externos em inglês, sem alias:** subcomandos da CLI (`ward list`,
+  `ward unlock`, `ward lock`) e alvos e variáveis do Makefile (`make dev-vault`,
+  `make test-cli`…). A skill `ward`, as regras de deny, o README, o `CLAUDE.md` e os
+  docs acompanham.
+- **Nomes gravados e de protocolo em inglês:** tipos, níveis e opções no cofre, no
+  protocolo e no `ward list --json` (`database`, `server`, `generic`, `secure-note`,
+  `blocked`, `approval`, `free`, SMTP `none`…); a tabela da CLI e o app mostram os
+  rótulos em pt-BR.
+- **Variáveis entregues pelo `ward run`:** `WARD_ENTRY`, `WARD_GROUP`,
+  `WARD_ENVIRONMENT`, `WARD_PROTOCOL`, `WARD_FILE_<NAME>` e `WARD_FILE_KEY`, sem alias.
+- **Migração do cofre:** o daemon lê o formato da 0.1.x e regrava no novo na primeira
+  abertura, sem perder dados e sem segredo em claro no disco; backups e versões antigas
+  continuam legíveis. Os nomes do cofre real no disco não mudam
+  (`~/.local/share/ward/cofre.ward`, `estado`, versões do backup, pasta `ward-backup` do
+  pendrive): só o conteúdo migra.
+- **Protocolo com versão nova.** Daemon, CLI, app e extensão saem juntos na 0.2.0
+  (inclusive `.deb` e `.crx`).
+- **Caminhos instalados:** `/usr/local/share/ward/extension/` e
+  `/usr/local/lib/ward/created-groups`; `make install` e o `.deb` apagam os caminhos da
+  0.1.x, e o uninstall ainda lê a marca antiga.
+- **Sem Milestone 0 de design:** nenhuma tela muda; `Ward.figcraft` e
+  `docs/mission/design-nodes.md` ficam como estão. Exceção (Fase 55 e Fase 59 da
+  missão 2): os textos que citam um nome externo acompanham o app ("some do
+  `ward list`" no nível bloqueado; `WARD_FILE_<NOME>`, `WARD_FILE_KEY` e
+  `WARD_PROTOCOL` nos formulários), e o `design-nodes.md` cita os caminhos novos.
+- **Testes só no fim:** as fases fazem as trocas 1:1 (renomear num lugar e ajustar todos
+  os usos) e rodam no máximo uma compilação rápida. A bateria inteira roda numa
+  validação única no fim, com fases de correção depois.
+- Nenhuma invariante S1–S15 pode regredir; todas as suítes continuam passando com os
+  nomes novos.
 
 ## Fora do escopo
 

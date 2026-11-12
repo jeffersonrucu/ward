@@ -1,0 +1,27 @@
+# Ward: daemon socket for uid %i (D46, Phase 24). Unit of the SYSTEM systemd.
+#
+# systemd (root) creates /run/ward/ and /run/ward/%i/ root:root 0755, does the bind and
+# the listen of the socket and hands it to wardd@%i.service by LISTEN_FDS. The socket
+# belongs to uid %i, 0600. Whoever connects sees uid 0 in SO_PEERCRED (whoever did the
+# listen), and that is what the CLI and the app verify before sending the master
+# password (S5).
+#
+# Installed by `sudo make install` (Phase 51) in /usr/local/lib/systemd/system/, which
+# also runs `systemctl enable --now wardd@<uid>.socket`; `make test-units` and
+# `make test-install` start them only inside a container. Never install them on the host
+# during the mission.
+
+[Unit]
+Description=Ward: socket do cofre do uid %i
+
+[Socket]
+ListenStream=/run/ward/%i/wardd.sock
+SocketUser=%i
+SocketGroup=root
+SocketMode=0600
+DirectoryMode=0755
+Accept=no
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

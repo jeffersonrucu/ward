@@ -1,192 +1,176 @@
-# Fase 34 — Formulário parte 2: banco, servidor (com Conectar), ftp/sftp e anexos (UI)
+# Fase 34 — `app/core`: `unlock`, `first_use`, `generator`, `clipboard`, `level`; `app/src-tauri`: `main.rs`, `gtk_clipboard.rs`, `build.rs` (Missão 2, Milestone 2)
 
 ## Implementado
-- **Tipos da fase:** `banco`, `servidor` e `ftp/sftp`, com Novo e Edição, a partir dos
-  frames do FigCraft (ids em `docs/mission/design-nodes.md` › "Fase 34"). Os três ficam
-  habilitados em `Nova credencial / Escolher tipo` e no "Editar" de Credenciais.
-- **Nenhuma operação nova no protocolo.** Usei `salvar_entrada` (com `anexos`, que o
-  `Rascunho` já tinha), `detalhe`, `revelar` e `emitir_token`.
-- **`app/nucleo/src/formulario.rs`:**
-  - `tipo_do_formulario` aceita os 9 tipos; `campos_do_tipo` e `montar` ganharam banco
-    (`motor`, `host`, `porta`, `base`, `usuario`, `tunel`; `senha`), servidor (`host`,
-    `porta`, `usuario`, `salto`; `senha`, `chave_privada`, `passphrase`) e ftp/sftp
-    (`protocolo`, `host`, `porta`, `usuario`; os mesmos três segredos);
-  - `Formulario.anexos`: lista de ids dos anexos escolhidos no Rust (o conteúdo nunca
-    vem da interface);
-  - erros do daemon mapeados para os campos novos (`motor`, `base`, `tunel`, `salto`,
-    `protocolo`, `chave_privada`, `passphrase`, `autenticacao`, `anexos`). A recusa do
-    orçamento da máscara (D29, campo `entrada`) aparece no campo dos anexos;
-  - `copiar_rascunho` (validação local) cobre os três tipos e os anexos.
-- **`app/nucleo/src/anexos.rs` (novo):** `Seletor` (quem escolhe o arquivo), `Anexos`
-  (pendentes em `Segredo`, que zera ao sair) e `Escolha` (`anexado {id, nome, tamanho}`,
-  `cancelado` ou `aviso {motivo}`). Lê só arquivo regular, com o tamanho conferido pelo
-  `fstat` do arquivo aberto e de novo pelo que foi lido (`take(MAX+1)`). Números de
-  `ward_core::limites` (D32): acima de `MAX_ANEXOS_SOMADOS` (256 KiB) ou soma acima
-  disso → aviso, o arquivo não é guardado nem enviado; vazio → aviso; mais de
-  `MAX_ANEXOS` → aviso.
-- **`app/nucleo/src/terminal.rs` (novo):** `Token` (o `emitir_token` só é aceito com
-  `[A-Za-z0-9_-]`, 16 a 64 bytes, sem começar por `-`; `Debug` mascarado), `Terminal` e
-  `TerminalDoSistema`: `/usr/bin/x-terminal-emulator -e /usr/local/bin/ward ssh --token
-  <t> <entrada>` (D3), ambiente montado do zero (`PATH` fixo e só `HOME`, `LANG`,
-  `XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`,
-  `XDG_CURRENT_DESKTOP`, `XDG_SESSION_TYPE`), cwd `/`, stdio nulo, espera numa thread.
-  O nome da entrada só vai ao argv no formato do `ward-core` (não vira opção).
-- **`cliente::emitir_token`**; **daemon falso** responde `emitir_token` só para
-  `servidor` (token aleatório de 32 pelo `ward_core::gerador`).
-- **`servico.rs`:** `com_seletor`, `com_terminal` (padrão: `SemSeletor`/`SemTerminal`,
-  que respondem erro fixo), `escolher_anexo`, `remover_anexo`, `conectar` (só
-  `servidor`; o token vai ao terminal e nunca à resposta). O `salvar_credencial` põe no
-  rascunho cópias dos anexos pedidos pelo id (id repetido ou desconhecido é pedido
-  inválido); salvo, cancelado ou ao sair, os anexos escolhidos são zerados.
-- **Comandos novos**, com ACL: `escolher_anexo`, `remover_anexo`, `conectar` em
-  `comandos.rs`, `capabilities/principal.json`, `ponte/comandos.js`, `generate_handler!`
-  e o despacho da ponte.
-- **Tauri:** `SeletorGtk` (o `GtkFileChooserDialog` do GTK, no lado Rust; comando
-  síncrono, na thread principal) e `TerminalDoSistema`.
-- **Ponte de teste:** `--anexos <pasta>` (opcional, no fim) troca o seletor por
-  `SeletorDePasta` (o único arquivo regular da pasta, sem seguir link; a interface não
-  manda caminho). O terminal da ponte (`TerminalDeTeste`) não abre nada: escreve
-  "conectar <entrada> (token de uso único com N caracteres)" na saída de erro.
-- **Interface:**
-  - `formulario.js`: definições dos três tipos (placeholders do design, porta padrão por
-    motor/protocolo, texto de "Acesso" do banco pelo motor, D10), "Autenticação" só da
-    tela (decide quais segredos vão; os da outra forma vão `vazio`), `tamanhoLegivel`,
-    `variavelDoAnexo` e `anexos` no pedido;
-  - `Formulario.svelte`: selects de motor, protocolo, autenticação, túnel e salto
-    (servidores do cofre, menos a própria entrada); com `ftp` a autenticação só oferece
-    senha; chave privada nova em `textarea` mascarado (`-webkit-text-security: disc`),
-    porque o `<input>` perde as quebras de linha; seção Anexos com "Adicionar arquivo",
-    lista (`Anexo`) e aviso; "Conectar" no cabeçalho da edição de `servidor`;
-  - `Anexo.svelte` (componente `Anexo` 6849); `Credenciais.svelte` passa os servidores
-    ao formulário.
+- **Base**: worktree a partir do master da época; rodou em paralelo com as Fases 17, 19 e
+  33. Merges feitos antes do commit: `2e23f1d` (Fase 33) e `3356893` (Fase 17, master
+  atual). Conflitos do `3356893`: `client.rs` (versão do master + os nomes desta fase) e
+  `destrave.rs` modify/delete (apagado; as mudanças da Fase 17 — `ward_core::protocol::
+  PedidoDeDestrave` e `p.operacao.name()` — foram levadas para o `unlock.rs`).
+- **Arquivos** (`git mv`): `app/core/src/destrave.rs` → `unlock.rs`, `primeiro_uso.rs` →
+  `first_use.rs`, `gerador.rs` → `generator.rs`, `area_transferencia.rs` →
+  `clipboard.rs`, `nivel.rs` → `level.rs`, `app/src-tauri/src/area_gtk.rs` →
+  `gtk_clipboard.rs`. `lib.rs`: `pub mod` em ordem e links da doc do crate.
+- **Comentários, locais, privados e testes** dos 8 arquivos em inglês (`mod testes` →
+  `tests`, `ataque_…` → `attack_…`). Comentários que citavam nome de fio ou texto da tela
+  em pt-BR (comandos Tauri, avisos `pedido-de-…`, rótulos de janela, itens da bandeja,
+  códigos de erro, nomes de frame) foram reescritos pelo sentido, como nas Fases 30–33.
+- **Renomes públicos** (lista completa no parágrafo "Fase 34" da seção 15 do glossário),
+  com os usos em `app/core` (`service.rs`, `client.rs`, `settings.rs` — inclusive os
+  links de rustdoc para `crate::first_use::password_errors` e `Typed` —, `approval.rs`,
+  `restore.rs`, `external_backup.rs`, `lib.rs`, `tests/configuracao_tauri.rs`) e
+  `crates/ward-test-bridge` (`http.rs`, `main.rs`, `wl_clipboard.rs`,
+  `tests/attacks.rs`). Principais: `SenhaMestra` → `MasterPassword`, `InfoPedido` →
+  `RequestInfo`, `PedidoPendente` → `PendingRequest`, `vigiar` → `watch`, `Digitado` →
+  `Typed`, `NovoCofre` → `NewVault`, `erros_da_senha` → `password_errors`, `Opcoes` →
+  `Options`, `Forca` → `Strength`, `Gerada`/`Revelada`/`Gerador` → `Generated`/
+  `Revealed`/`Generator`, `AreaTransferencia { escrever, ler, limpar }` → `Clipboard {
+  write, read, clear }`, `Copiador` → `Copier`, `PRAZO_LIMPEZA` → `CLEAR_DELAY`,
+  `NivelMudado` → `LevelChanged`, `nivel_de_nome` → `level_from_name`, `AreaGtk` →
+  `GtkClipboard`.
+- **`main.rs` do Tauri**: tipos e funções próprios em inglês (`Falha` → `Failure`,
+  `RespostaEstado` → `StatusResponse`, `AvisoTela` → `ScreenNotice`, `Canais` →
+  `Channels`, `Estado` → `AppState`, `Bandeja` → `Tray`, `JANELA_PRINCIPAL`/
+  `JANELA_APROVACAO` → `MAIN_WINDOW`/`APPROVAL_WINDOW`, `navegacao_permitida` →
+  `navigation_allowed`, `com_comandos` → `with_commands` etc.); locais de `main`
+  `partida`/`na_aprovacao`/`na_vigia` → `app_startup`/`for_approval`/`for_watcher`.
+  **Ficam** (fio, até a Fase 54): os nomes das funções `#[tauri::command]` (são os nomes
+  dos comandos) e os parâmetros que vêm do JSON (`entrada`, `campo`, `senha`, `canal`,
+  `tamanho`, `minusculas`, `maiusculas`, `digitos`, `simbolos`, `anterior`, `formulario`,
+  `nivel`, `edicao`, `dados`, `minutos`, `ligado`, `uuid`, `id`, `decisao`, `pin`,
+  `ciente`); os `State`/`WebviewWindow` não vêm do JSON e mudaram (`estado` → `state`,
+  `janela` → `window`). Rótulos `principal`/`aprovacao`, avisos `pedido-de-destrave`/
+  `estado-mudou`/`pedido-de-aprovacao`, nomes de thread (`ward-app-destrave`,
+  `ward-app-negar`, `ward-app-bandeja`, `ward-app-travar`, `ward-limpeza`) e todos os
+  textos mostrados ficam.
+- **Fio congelado** (m2:DT3): todo campo `serde` renomeado leva `#[serde(rename =
+  "<antigo>")]`: `RequestInfo { restante, entrada, operacao, comando }`, `NewVault {
+  senha, confirmacao, confirmacao_pin }` (com `deny_unknown_fields`), `LevelChanged {
+  entrada, nivel }`, e no `main.rs` `Failure { codigo, mensagem }`, `StatusResponse {
+  estado, pedido }`, `ScreenNotice { aviso }`, `GeneratedResponse { tamanho, forca,
+  simbolos }`, `RevealedResponse { valor }`, `UsedResponse { tamanho }`.
+- **`dev/tests/webkit-real.sh`** (heredoc que tira a partida do `main.rs`): procura agora
+  `let mut app_startup = startup::start()`, `app_startup.take_daemon()…`,
+  `app_startup.watch(move || {` com `for_watcher` dentro e troca por
+  `drop(for_watcher);`; a checagem final recusa também `app_startup` restante (o `\b`
+  não pegava `startup` dentro de `app_startup`). Conferido rodando o trecho Python do
+  heredoc contra o `main.rs` novo (scratchpad): as três trocas acontecem uma vez e não
+  sobra `app_startup`.
+- **`dev/tests/clipboard.py`**: `TEST_NAME = "gtk_clipboard::tests::real_session"`;
+  `dev/tests/clipboard.sh`: comentário com o módulo novo. O protocolo de linhas do teste
+  (`prazo`, `copiar`, `copiar-fora`, `limpar-fora`, `sair`, `ward39f:`) fica.
+- **`app/core/tests/configuracao_tauri.rs`**: o padrão procurado no `main.rs` passou a
+  `.on_navigation(navigation_allowed)`.
+- **`dev/english-check/frozen.txt`**: 52 entradas da Fase 54 para o `main.rs` (34 nomes de
+  comando Tauri e 18 parâmetros do JSON).
+- **Testes novos** `attack_new_rust_names_are_not_wire_names` em `unlock.rs`,
+  `first_use.rs` (o JSON com as chaves novas em inglês é recusado), `level.rs` e no
+  `main.rs` (as seis respostas da webview serializam com as chaves antigas).
+
+## Literais alterados
+- `Debug` com o nome do tipo (o valor continua `••••`, precedente das Fases 30 e 32):
+  `"SenhaMestra(••••)"` → `"MasterPassword(••••)"`, `"Digitado(••••)"` →
+  `"Typed(••••)"`, `"Revelada(••••)"` → `"Revealed(••••)"` (2).
+- Capturas de `format!` (mesmo texto produzido): `{texto}` → `{text}`, `{mau}`/`{ruim}`/
+  `{ruim:?}` → `{bad}`/`{bad:?}`, `{proibido:?}` → `{forbidden:?}`, `{comando}` →
+  `{command}`, `{falha}` → `{failure}`, `{atual} {novo}` → `{current} {new}`,
+  `{minutos}` → `{minutes}`, `{corpo}` → `{body}`, `{versao:?}` → `{version:?}`,
+  `{rotulo}` → `{label}`, `{motivo}` → `{reason}`.
+- `dev/tests/clipboard.py` (nome do teste), `webkit-real.sh` (padrões acima) e
+  `configuracao_tauri.rs` (padrão acima).
+- Literais novos: só os `rename` do `serde` (nomes antigos) e os JSON/valores falsos dos
+  testes novos (`acme-pg-dev`, `acme-pg-aprovacao`, `falso-valor`, `livre`, `travado`…).
+- Conferência por script (scratchpad): multiconjunto de literais de cada `.rs` tocado
+  contra o `3356893` só difere nos itens acima; os escapes (`\u{…}`, `\x..`, `\0`) estão
+  byte a byte iguais em todos. Tokenizador sem comentários: as sequências só diferem em
+  identificadores (mapa consistente), nos atributos `serde` novos, na forma curta de
+  campo (`size: tamanho` → `size`), na ordem dos `use` e em vírgulas finais do rustfmt.
 
 ## Segurança
-- **Invariantes tocadas:**
-  - **S11 / V5.12:** o conteúdo do anexo nunca passa pela webview: o arquivo é
-    escolhido (GTK ou pasta da ponte) e lido no Rust; a interface recebe id, nome e
-    tamanho. O token do "Conectar" também não volta à interface. A chave privada
-    digitada fica só no estado do formulário (como qualquer valor digitado, Fase 33),
-    mascarada na tela.
-  - **S1:** tudo que vem da interface é não confiável: ids de anexo (repetido,
-    desconhecido, de tipo errado), `conectar` com nome que viraria opção, formulário
-    com os dois métodos de autenticação ou chave no ftp (recusados pela validação),
-    `manter` da chave numa entrada que só tem senha. A resposta do daemon também: token
-    fora do formato é recusado antes de ir a um argv.
-  - **D3 / S3:** o token vai no argv do terminal, como D3 define (não é segredo de
-    credencial, morre no primeiro uso). Nenhum segredo de credencial vai a argv.
-  - **D29 / D32 / V5.12:** limites de `ward_core::limites`; aviso antes de salvar; vazio
-    recusado; recusa do orçamento da máscara no campo dos anexos.
-  - **D47:** o terminal herda o processo do app depois de largar o grupo `ward-app`
-    (antes do GTK), então não ganha o papel app; o ambiente do terminal é montado do zero.
-  - **ACL:** os três comandos só na janela `principal`, com a origem local.
-- **Testes de ataque:**
-  - `app/nucleo/src/anexos.rs`: `ataque_arquivo_grande_soma_e_vazio_nao_sao_guardados`,
-    `ataque_ids_forjados_pela_interface`, `ataque_anexos_demais`,
-    `anexa_lista_e_remove_sem_conteudo_na_resposta`
-  - `app/nucleo/src/terminal.rs`: `ataque_token_forjado_pelo_daemon_e_recusado`,
-    `ataque_entrada_que_viraria_opcao_nao_vai_ao_argv`,
-    `comando_do_terminal_com_ambiente_do_zero`
-  - `app/nucleo/src/servico.rs`: `ataque_anexo_nao_volta_a_interface_e_vai_no_rascunho`,
-    `ataque_anexo_grande_vazio_e_id_forjado`, `ataque_autenticacao_forjada_pela_interface`,
-    `ataque_conectar_so_servidor_e_sem_token_na_resposta`,
-    `banco_servidor_e_ftp_salvam_e_editam`, `erros_dos_tipos_novos_no_campo`
-  - `app/nucleo/src/formulario.rs`: `recusa_do_orcamento_da_mascara_vai_para_os_anexos`
-  - `crates/ward-ponte-teste/tests/ataques.rs` › `ataque_anexos_e_conectar_pela_ponte`
-  - `app/src-tauri/src/main.rs` › `ataque_formulario_so_na_janela_certa` (com os três
-    comandos novos)
-  - QA no Chrome (`docs/mission/evidence/fase-34/qa.json`, todas `true`): nenhum segredo
-    da fixture nem da chave/anexos desta rodada no DOM em 9 momentos; 300 KiB avisa e
-    não lista; vazio recusado; soma acima de 256 KiB avisa; remover; D33 (`app.teste?x`)
-    recusado no campo Base; "Conectar" chega ao terminal da ponte com token de 32 e o
-    token não aparece na tela; `localStorage`/`sessionStorage` vazios; URL sem token; só
-    pedidos locais.
-- **Dependências novas:** `gtk = "=0.18.2"` direta em `app/src-tauri` para o diálogo
-  de arquivo no lado Rust (S11: o conteúdo não passa pela webview). É o mesmo crate que
-  o Tauri/wry já trazem: o `Cargo.lock` só ganhou a linha `"gtk"` nas dependências do
-  `ward-app`, nenhum crate novo. Sem plugin do Tauri e sem permissão nova de plugin.
+- Invariantes tocadas: S1/S11 (entrada da webview não confiável: `MasterPassword`, `Pin`,
+  `Typed`, `NewVault` com `deny_unknown_fields`, `Options::validate`; capabilities e ACL
+  por janela/origem no `main.rs`), S2/S12 (área de transferência no processo, limpeza em
+  30 s só se o valor ainda for o copiado, comparação em tempo constante `ctutils`), S8/
+  S13 (`Debug` sem valor, `Zeroizing`), S9 (PIN no `mudar_nivel`/aprovação), S10
+  (janela de aprovação, negar ao fechar), D47/D57 (partida antes do GTK no `main`).
+  **Destrave, primeiro uso e gerador: diff só de nomes, comentários e atributos `serde`**
+  (tokenizador): nenhuma conferência, limite, ordem de passo, RNG, alfabeto, comparação
+  ou mensagem de erro mudou. No `main.rs`, a ordem `startup::start()` → `take_daemon()` →
+  `watch()` antes do Tauri, o `on_navigation`, o `devtools` só com `test-mode`, o
+  `disable_drag_drop_handler` e a conferência de rótulo da janela de aprovação ficam
+  iguais.
+- Testes de ataque: os existentes ficam (renomeados `attack_…`); novos
+  `attack_new_rust_names_are_not_wire_names` em `app/core/src/unlock.rs`,
+  `app/core/src/first_use.rs`, `app/core/src/level.rs` e `app/src-tauri/src/main.rs`
+  (nome novo não vira campo do fio; `NewVault` recusa as chaves em inglês). Rodados:
+  `cargo test -p ward-app-core -p ward-test-bridge` (199 + 7 ok) e `cargo test` do
+  `app/src-tauri` (22 ok, 1 ignorado: a sessão gráfica real).
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **Editar entrada com anexos** continua recusado (`AnexosNaoMantidos`; "Editar"
-  desabilitado). O protocolo não tem operação que devolva o conteúdo do anexo ao app, e
-  o `salvar_entrada` substitui a entrada inteira: editar apagaria os anexos. Na edição
-  de uma entrada sem anexos dá para anexar. Precisa de decisão do planner (ex.: "manter
-  anexo pelo nome" no `salvar_entrada`).
-- **V5.24 ponta a ponta:** o `wardd` ainda responde `interno` ao `emitir_token`
-  (`nucleo.rs`, "token: 27/34") e o `ward ssh` não tem `--token` (Fase 27). O app já
-  pede o token e abre o terminal; os ataques do V5.24 (reusar o token do `cmdline`,
-  usar depois de 30 s, usar em outra entrada) são do daemon e da CLI e ficam para a
-  fase que atender `emitir_token` e o `ward ssh --token`.
-- **Terminal padrão:** `x-terminal-emulator -e` (política do Debian). Não conferi no
-  COSMIC do usuário qual terminal a alternativa aponta, nem abri o terminal de verdade
-  (o `ward ssh --token` ainda não existe). No modo de teste a ponte só registra.
-- **Diálogo do GTK no app real:** compilado e com clippy limpo, mas não aberto numa
-  janela (o QA é pela ponte). Confere na primeira rodada do app real.
-- **Mudar nível** (Fase 35), **Duplicar**/**Excluir**, datas do rodapé (22d): sem
-  mudança.
+- `tests/configuracao_tauri.rs` → `tests/tauri_config.rs` e o resto dele: não é arquivo
+  desta fase; só o padrão do `main.rs` mudou.
+- Nomes de `ward_core::protocol` usados no `unlock.rs` (`PedidoDeDestrave { restante,
+  entrada, operacao, comando }`; 15 achados do `english-check`): são de outra fase.
+- Nomes de comando Tauri e parâmetros do JSON: Fase 54 (entradas no `frozen.txt`).
+- `make test-clipboard` e `make test-webkit-real` (precisam da sessão gráfica); o
+  heredoc foi simulado e o teste `real_session` compila.
+- `make check` (regra 6 do PRD: a fase termina com `make compile`).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `cargo clippy --all-targets --all-features -p ward-app-nucleo -p ward-ponte-teste -- -D warnings` | 0 |
-| `cargo test --all-features -p ward-app-nucleo -p ward-ponte-teste` (67 + 6 + 12) | 0 |
-| `cargo fmt` / `clippy --all-targets -D warnings` / `test` em `app/src-tauri` (com `PKG_CONFIG_PATH` do scratchpad, R32); a 1ª rodada do clippy falhou por falta de `app/dist`, resolvida com `make app-front` | 101, depois 0 |
-| `make app-front` | 0 |
-| ponte `--daemon-falso cheio --anexos <pasta>` + Playwright (`qa34.py`, Chrome headless, 1280×800); a 1ª rodada teve 2 checagens `false` por corrida no script (lia o `h2` antes do detalhe abrir), corrigido | 0 |
-| `make check` | 0 |
-| `make app-front` (final) | 0 |
+| `cargo fmt --all` e `cargo fmt` (`app/src-tauri`), depois `--check` nos dois | 0 |
+| `make compile` (`<scratchpad>/compile-fase34.log`) | 0 (a 1ª rodada deu 2: dois usos de campo renomeado nos testes do `service.rs`, corrigidos) |
+| `cargo clippy -p ward-app-core -p ward-test-bridge --all-targets --all-features --locked -- -D warnings` (`clippy-fase34.log`) | 0 |
+| `cargo clippy --all-targets --all-features --locked -- -D warnings` (`app/src-tauri`; `clippy-tauri-fase34.log`) | 0 |
+| `cargo test -p ward-app-core -p ward-test-bridge --locked` (`test-core-fase34.log`) | 0 (a 1ª deu 101: padrão `navegacao_permitida` no `configuracao_tauri.rs`, corrigido) |
+| `cargo test --locked` (`app/src-tauri`; `test-tauri-fase34.log`) | 0 |
+| `python3 -I dev/english_check.py --paths <8 arquivos>` (`english-fase34.log`) | 1 (15 achados, todos de `ward_core::protocol`) |
+| `python3 -I dev/english_check.py` (repositório inteiro; `english-full-fase34.log`) | 1 (achados de outras fases; 0 problema nas exceções) |
 
 ## Problemas descobertos
-- **Anexo com nome que começa por `.`** (ex.: `.env`): o `ward-core` recusa (`ANEXO_NOME`),
-  e o nome é o do arquivo escolhido. O erro aparece no campo, mas não há como renomear
-  na tela. O escopo cita `.env` como anexo típico: decisão do planner (renomear ao
-  anexar, ou aceitar `.` no início).
-- **Chave privada no Novo:** o design desenha um `Campo secreto` de uma linha; usei
-  `textarea` mascarado porque o `<input>` tira as quebras de linha da chave colada.
-- **Túnel e salto** listam todos os `servidor` do cofre (menos a própria entrada); a
-  lista do app não diz quais têm salto, então "servidor do túnel não pode ter salto" só
-  aparece como erro ao salvar.
-- **Anexos no design aparecem em todos os tipos** (banco também), e o V5.12 cita só
-  `servidor` e `genérico`. Deixei a seção em todos, como o design e a Fase 33.
-- **"Conectar" sem estado no design:** depois do clique o ícone vira "check" por 2 s; o
-  erro (daemon sem `emitir_token`) vai ao `Toast` do rodapé.
-- **Console do QA:** um 404 (favicon, o mesmo da Fase 33).
-- **Toast "Credencial salva."** continua visível ao abrir outro formulário logo depois
-  de salvar (comportamento da Fase 33, vem de Credenciais).
+- `dev/fixtures/legacy/strings-0.1.4.txt` (linha de base antiga) ainda traz
+  `SenhaMestra(••••)`, `Digitado(••••)` e `Revelada(••••)`; é fixture legada com
+  `SHA256SUMS` e ficou como está (mesma decisão da Fase 32).
+- O `frozen.txt` ganhou 52 entradas da Fase 54 para o `main.rs`; a Fase 54 tem de
+  tirá-las ao renomear os comandos (senão o checador acusa exceção sem uso).
+- Os logs ficaram no scratchpad da sessão (o worktree não tem `.dev/`), com "fase34" no
+  nome.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `app/nucleo/src/anexos.rs` | criado |
-| `app/nucleo/src/terminal.rs` | criado |
-| `app/nucleo/src/formulario.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/nucleo/src/erro.rs` | alterado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/src-tauri/Cargo.toml` | alterado |
-| `app/src-tauri/Cargo.lock` | alterado |
-| `app/src-tauri/capabilities/principal.json` | alterado |
+| `app/core/src/unlock.rs` (era `destrave.rs`) | renomeado e alterado |
+| `app/core/src/first_use.rs` (era `primeiro_uso.rs`) | renomeado e alterado |
+| `app/core/src/generator.rs` (era `gerador.rs`) | renomeado e alterado |
+| `app/core/src/clipboard.rs` (era `area_transferencia.rs`) | renomeado e alterado |
+| `app/core/src/level.rs` (era `nivel.rs`) | renomeado e alterado |
+| `app/core/src/lib.rs` | alterado |
+| `app/core/src/service.rs` | alterado |
+| `app/core/src/settings.rs` | alterado |
+| `app/core/src/approval.rs` | alterado |
+| `app/core/src/restore.rs` | alterado |
+| `app/core/src/external_backup.rs` | alterado |
+| `app/core/src/client.rs` | alterado |
+| `app/core/tests/configuracao_tauri.rs` | alterado |
+| `app/src-tauri/src/gtk_clipboard.rs` (era `area_gtk.rs`) | renomeado e alterado |
 | `app/src-tauri/src/main.rs` | alterado |
-| `app/src/lib/componentes/Anexo.svelte` | criado |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `app/src/telas/Credenciais.svelte` | alterado |
-| `app/src/telas/Formulario.svelte` | alterado |
-| `app/src/telas/formulario.js` | alterado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/src/lib.rs` | alterado |
-| `crates/ward-ponte-teste/src/main.rs` | alterado |
-| `crates/ward-ponte-teste/src/simulados.rs` | criado |
-| `crates/ward-ponte-teste/tests/ataques.rs` | alterado |
-| `docs/mission/design-nodes.md` | alterado |
-| `docs/mission/evidence/fase-34/` (13 PNG + `qa.json`) | criado |
+| `app/src-tauri/build.rs` | alterado |
+| `crates/ward-test-bridge/src/http.rs` | alterado |
+| `crates/ward-test-bridge/src/main.rs` | alterado |
+| `crates/ward-test-bridge/src/wl_clipboard.rs` | alterado |
+| `crates/ward-test-bridge/tests/attacks.rs` | alterado |
+| `dev/tests/webkit-real.sh` | alterado |
+| `dev/tests/clipboard.py` | alterado |
+| `dev/tests/clipboard.sh` | alterado |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-34.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
+- [ ] `make check` rodado — não (regra 6 do PRD); `make compile` 0, clippy e testes dos
+  crates tocados 0
 - [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [x] (UI/DESIGN) Conferido contra o FigCraft (cópia; o original não foi tocado)
+- [x] Teste de ataque para cada (SEG) tocado (fio congelado)
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

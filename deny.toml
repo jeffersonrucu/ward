@@ -1,5 +1,5 @@
-# cargo-deny (S14): advisories, licenças, crates banidos e origem das dependências.
-# Qualquer exceção aqui precisa de motivo escrito no handoff da fase que a criou.
+# cargo-deny (S14): advisories, licenses, banned crates and origin of the dependencies.
+# Any exception here needs a reason written in the handoff of the phase that created it.
 
 [graph]
 all-features = true
@@ -9,15 +9,16 @@ version = 2
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 unmaintained = "all"
-# O padrão do cargo-deny 0.20 ("workspace") não olha as dependências transitivas; com
-# "all", um advisory "unsound" em qualquer crate do grafo reprova (handoff 29b, Fase 39c).
+# The cargo-deny 0.20 default ("workspace") does not look at transitive dependencies;
+# with "all", an "unsound" advisory in any crate of the graph fails (handoff 29b,
+# Phase 39c).
 unsound = "all"
 ignore = []
 
 [licenses]
 version = 2
 confidence-threshold = 0.93
-# A lista é a política do projeto; não precisa já estar em uso.
+# The list is the project policy; it does not need to be in use already.
 unused-allowed-license = "allow"
 allow = [
     "MIT",
@@ -32,7 +33,7 @@ allow = [
 exceptions = []
 
 [licenses.private]
-# Os crates do workspace são `publish = false`.
+# The workspace crates are `publish = false`.
 ignore = true
 
 [bans]

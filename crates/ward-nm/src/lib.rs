@@ -1,27 +1,28 @@
-//! Host de native messaging da extensão do Chrome (Fase 40; D5, D9, D47; S1, S8, S13).
+//! Native messaging host of the Chrome extension (Phase 40; D5, D9, D47; S1, S8, S13).
 //!
-//! O Chrome executa o `ward-nm` instalado (root:`ward-nm` 2755, D47) como filho direto
-//! do processo do navegador, com um argumento só, a origem da extensão
-//! (`chrome-extension://<id>/`), e fala com ele pelo stdin/stdout em mensagens de
-//! native messaging: 4 bytes de tamanho na ordem nativa e o corpo JSON em UTF-8.
+//! Chrome executes the installed `ward-nm` (root:`ward-nm` 2755, D47) as a direct child
+//! of the browser process, with a single argument, the origin of the extension
+//! (`chrome-extension://<id>/`), and talks to it over stdin/stdout in native messaging
+//! messages: 4 bytes of size in native order and the JSON body in UTF-8.
 //!
-//! Cada mensagem da extensão é um pedido do protocolo do daemon
-//! (`{"v":1,"op":"…","dados":{…}}`), lido com a mesma leitura estrita do daemon no
-//! papel extensão. Só passam as operações da extensão ([`OPERACOES`]); o pedido é
-//! recodificado (forma canônica) e vai ao `wardd` numa conexão própria, conferida antes
-//! do primeiro byte (D46). Quem decide o papel é o daemon, pelo egid e pelo pai Chrome
-//! (D47): aberto por qualquer outro processo, o `ward-nm` vira agente e o daemon recusa
-//! (V6.1). A origem da aba é comparada no daemon (D9), nunca aqui.
+//! Each message of the extension is a request of the daemon protocol
+//! (`{"v":2,"op":"…",…}`), parsed with the same strict parsing as the daemon in the
+//! extension role. Only the extension's operations pass ([`OPERATIONS`]); the request is
+//! re-encoded (canonical form) and goes to `wardd` on a connection of its own, checked
+//! before the first byte (D46). The daemon decides the role, by the egid and by the
+//! Chrome parent (D47): opened by any other process, `ward-nm` becomes an agent and the
+//! daemon refuses (V6.1). The origin of the tab is compared in the daemon (D9), never
+//! here.
 //!
-//! A resposta do daemon é lida no papel extensão (uma resposta de segredo, token ou
-//! lista do app não decodifica), conferida contra a operação pedida
-//! ([`resposta_cabe`]) e recodificada para a extensão. Nada mais sai no stdout.
+//! The daemon's response is parsed in the extension role (a response with a secret, a
+//! token or the app's list does not decode), checked against the requested operation
+//! ([`response_fits`]) and re-encoded for the extension. Nothing else goes out on stdout.
 //!
-//! Limites: mensagem da extensão até [`MAX_MENSAGEM_ENTRADA`]; maior que isso, vazia ou
-//! cortada, o host responde o erro e sai (o fluxo perdeu o compasso). Resposta à
-//! extensão até [`MAX_MENSAGEM_SAIDA`] (o limite do Chrome). Mensagens e quadros com
-//! credencial ficam em `Zeroizing`. O stderr (que o Chrome junta ao log dele) só leva
-//! textos fixos, nunca o conteúdo de uma mensagem (S13).
+//! Limits: a message from the extension up to [`MAX_MESSAGE_IN`]; larger than that,
+//! empty or truncated, the host answers the error and exits (the stream lost its step).
+//! Response to the extension up to [`MAX_MESSAGE_OUT`] (Chrome's limit). Messages and
+//! frames with credentials stay in `Zeroizing`. The stderr (which Chrome joins to its
+//! log) only carries fixed texts, never the content of a message (S13).
 
 #![forbid(unsafe_code)]
 
@@ -29,240 +30,248 @@ use std::io::{self, Read, Write};
 
 use zeroize::Zeroizing;
 
-use ward_core::limites::KIB;
-use ward_core::protocolo::{self, ErroResposta, Operacao, Papel, Resposta, TipoResposta};
+use ward_core::limits::KIB;
+use ward_core::protocol::{self, Operation, Response, ResponseError, ResponseType, Role};
 
-/// Maior mensagem aceita da extensão. O maior pedido legítimo é um `salvar_login` com
-/// a URL, o usuário e a senha (cada um até 2 KiB, D25) em base64.
-pub const MAX_MENSAGEM_ENTRADA: usize = 64 * KIB;
-/// Maior mensagem que o Chrome aceita do host (1 MiB).
-pub const MAX_MENSAGEM_SAIDA: usize = 1024 * KIB;
+/// Largest message accepted from the extension. The largest legitimate request is a
+/// login save with the URL, the username and the password (each up to 2 KiB, D25) in
+/// base64.
+pub const MAX_MESSAGE_IN: usize = 64 * KIB;
+/// Largest message Chrome accepts from the host (1 MiB).
+pub const MAX_MESSAGE_OUT: usize = 1024 * KIB;
 
-/// Operações que o host leva ao daemon: as do papel extensão na tabela do protocolo.
-/// Lista explícita: uma operação nova na tabela não passa sem mudar aqui (o teste
-/// `operacoes_sao_as_da_extensao` prende as duas).
-pub const OPERACOES: [Operacao; 8] = [
-    Operacao::Estado,
-    Operacao::Sugerir,
-    Operacao::Preencher,
-    Operacao::SalvarLogin,
-    Operacao::AguardarLogin,
-    Operacao::PreencherLogin,
-    Operacao::ResultadoLogin,
-    Operacao::AbrirApp,
+/// Operations the host takes to the daemon: those of the extension role in the protocol
+/// table. Explicit list: a new operation in the table does not pass without changing it
+/// here (the test `operations_are_the_extensions` ties the two).
+pub const OPERATIONS: [Operation; 8] = [
+    Operation::Status,
+    Operation::Suggest,
+    Operation::Fill,
+    Operation::SaveLogin,
+    Operation::AwaitLogin,
+    Operation::FillLogin,
+    Operation::LoginResult,
+    Operation::OpenApp,
 ];
 
-/// A resposta do daemon cabe na operação pedida? Erro cabe em todas; fora isso, cada
-/// operação tem um tipo só (um `preenchimento` nunca responde um `sugerir`).
-pub fn resposta_cabe(op: Operacao, tipo: TipoResposta) -> bool {
-    tipo == TipoResposta::Erro
+/// Does the daemon's response fit the requested operation? An error fits all of them;
+/// apart from that, each operation has a single type (a fill never answers a
+/// suggestion request).
+pub fn response_fits(op: Operation, kind: ResponseType) -> bool {
+    kind == ResponseType::Error
         || matches!(
-            (op, tipo),
-            (Operacao::Estado, TipoResposta::Estado)
-                | (Operacao::Sugerir, TipoResposta::Sugestoes)
-                | (Operacao::Preencher, TipoResposta::Preenchimento)
-                | (Operacao::SalvarLogin, TipoResposta::Ok)
-                // `ward login` (Fase 43): `ok` é a espera que acabou sem pedido.
-                | (Operacao::AguardarLogin, TipoResposta::PedidoDeLogin | TipoResposta::Ok)
-                | (Operacao::PreencherLogin, TipoResposta::Preenchimento)
-                | (Operacao::ResultadoLogin, TipoResposta::Ok)
-                | (Operacao::AbrirApp, TipoResposta::Ok)
+            (op, kind),
+            (Operation::Status, ResponseType::Status)
+                | (Operation::Suggest, ResponseType::Suggestions)
+                | (Operation::Fill, ResponseType::Fill)
+                | (Operation::SaveLogin, ResponseType::Ok)
+                // `ward login` (Phase 43): `ok` is the wait that ended without a request.
+                | (Operation::AwaitLogin, ResponseType::LoginRequest | ResponseType::Ok)
+                | (Operation::FillLogin, ResponseType::Fill)
+                | (Operation::LoginResult, ResponseType::Ok)
+                | (Operation::OpenApp, ResponseType::Ok)
         )
 }
 
-/// Id da extensão do Ward (Fase 41): sai da chave pública do campo `key` do
-/// `extensao/manifest.json` (sha-256 da chave em DER, 32 primeiros dígitos hex em
-/// `a`–`p`). `dev/extensao/montar.py` recusa montar a extensão se o id do manifesto não
-/// for este.
-pub const ID_EXTENSAO: &str = "nhkehjnmlgkebhmelajfpmpblepaichf";
+/// Id of the Ward extension (Phase 41): it comes from the public key of the `key` field
+/// of `extension/manifest.json` (sha-256 of the key in DER, first 32 hex digits in
+/// `a`–`p`). `dev/extension/build.py` refuses to build the extension if the manifest's
+/// id is not this one.
+pub const EXTENSION_ID: &str = "nhkehjnmlgkebhmelajfpmpblepaichf";
 
-/// O argumento que o Chrome passa: `chrome-extension://<id>/`. Só o id do Ward
-/// ([`ID_EXTENSAO`]) passa: outra extensão que tenha um manifesto de native messaging
-/// apontando para o `ward-nm` (no perfil do usuário, por exemplo) não chega ao daemon.
-/// Qualquer outra coisa (outro esquema, caminho, outro id) recusa.
-pub fn origem_da_extensao_valida(arg: &[u8]) -> bool {
-    let Some(resto) = arg.strip_prefix(b"chrome-extension://") else {
+/// The argument Chrome passes: `chrome-extension://<id>/`. Only Ward's id
+/// ([`EXTENSION_ID`]) passes: another extension that has a native messaging manifest
+/// pointing to `ward-nm` (in the user's profile, for instance) does not reach the
+/// daemon. Anything else (another scheme, a path, another id) is refused.
+pub fn valid_extension_origin(arg: &[u8]) -> bool {
+    let Some(rest) = arg.strip_prefix(b"chrome-extension://") else {
         return false;
     };
-    let Some(id) = resto.strip_suffix(b"/") else {
+    let Some(id) = rest.strip_suffix(b"/") else {
         return false;
     };
-    id.len() == 32 && id.iter().all(|c| (b'a'..=b'p').contains(c)) && id == ID_EXTENSAO.as_bytes()
+    id.len() == 32 && id.iter().all(|c| (b'a'..=b'p').contains(c)) && id == EXTENSION_ID.as_bytes()
 }
 
-/// Por que a leitura de uma mensagem da extensão parou.
+/// Why reading a message from the extension stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErroMensagem {
-    /// Fim do stdin antes do primeiro byte: o Chrome fechou (fim normal).
-    Fim,
-    /// Cortada no meio do tamanho ou do corpo.
-    Cortada,
-    /// Tamanho 0.
-    Vazia,
-    /// Acima de [`MAX_MENSAGEM_ENTRADA`].
-    GrandeDemais,
-    /// Erro de E/S.
+pub enum MessageError {
+    /// End of stdin before the first byte: Chrome closed (normal end).
+    End,
+    /// Truncated in the middle of the size or of the body.
+    Truncated,
+    /// Size 0.
+    Empty,
+    /// Above [`MAX_MESSAGE_IN`].
+    TooLarge,
+    /// I/O error.
     Io(io::ErrorKind),
 }
 
-/// Lê uma mensagem de native messaging (tamanho na ordem nativa). O corpo só é lido
-/// depois de conferir o tamanho; nada além do tamanho declarado é lido.
-pub fn ler_mensagem(r: &mut impl Read) -> Result<Zeroizing<Vec<u8>>, ErroMensagem> {
-    let mut cab = [0u8; 4];
-    let mut lidos = 0;
-    while lidos < cab.len() {
-        match r.read(&mut cab[lidos..]) {
-            Ok(0) if lidos == 0 => return Err(ErroMensagem::Fim),
-            Ok(0) => return Err(ErroMensagem::Cortada),
-            Ok(n) => lidos += n,
+/// Reads a native messaging message (size in native order). The body is read only after
+/// checking the size; nothing beyond the declared size is read.
+pub fn read_message(r: &mut impl Read) -> Result<Zeroizing<Vec<u8>>, MessageError> {
+    let mut header = [0u8; 4];
+    let mut read = 0;
+    while read < header.len() {
+        match r.read(&mut header[read..]) {
+            Ok(0) if read == 0 => return Err(MessageError::End),
+            Ok(0) => return Err(MessageError::Truncated),
+            Ok(n) => read += n,
             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(ErroMensagem::Io(e.kind())),
+            Err(e) => return Err(MessageError::Io(e.kind())),
         }
     }
-    let n = usize::try_from(u32::from_ne_bytes(cab)).map_err(|_| ErroMensagem::GrandeDemais)?;
+    let n = usize::try_from(u32::from_ne_bytes(header)).map_err(|_| MessageError::TooLarge)?;
     if n == 0 {
-        return Err(ErroMensagem::Vazia);
+        return Err(MessageError::Empty);
     }
-    if n > MAX_MENSAGEM_ENTRADA {
-        return Err(ErroMensagem::GrandeDemais);
+    if n > MAX_MESSAGE_IN {
+        return Err(MessageError::TooLarge);
     }
-    let mut corpo = Zeroizing::new(vec![0u8; n]);
-    r.read_exact(&mut corpo).map_err(|e| match e.kind() {
-        io::ErrorKind::UnexpectedEof => ErroMensagem::Cortada,
-        k => ErroMensagem::Io(k),
+    let mut body = Zeroizing::new(vec![0u8; n]);
+    r.read_exact(&mut body).map_err(|e| match e.kind() {
+        io::ErrorKind::UnexpectedEof => MessageError::Truncated,
+        k => MessageError::Io(k),
     })?;
-    Ok(corpo)
+    Ok(body)
 }
 
-/// Escreve uma mensagem de native messaging. Acima de [`MAX_MENSAGEM_SAIDA`] não sai
-/// nada.
-pub fn escrever_mensagem(w: &mut impl Write, corpo: &[u8]) -> io::Result<()> {
-    if corpo.is_empty() || corpo.len() > MAX_MENSAGEM_SAIDA {
+/// Writes a native messaging message. Above [`MAX_MESSAGE_OUT`] nothing goes out.
+pub fn write_message(w: &mut impl Write, body: &[u8]) -> io::Result<()> {
+    if body.is_empty() || body.len() > MAX_MESSAGE_OUT {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    let n = u32::try_from(corpo.len()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-    let mut tudo = Zeroizing::new(Vec::with_capacity(4 + corpo.len()));
-    tudo.extend_from_slice(&n.to_ne_bytes());
-    tudo.extend_from_slice(corpo);
-    w.write_all(&tudo)?;
+    let n = u32::try_from(body.len()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let mut all = Zeroizing::new(Vec::with_capacity(4 + body.len()));
+    all.extend_from_slice(&n.to_ne_bytes());
+    all.extend_from_slice(body);
+    w.write_all(&all)?;
     w.flush()
 }
 
-/// Falha ao falar com o daemon (só para o log; a extensão recebe `interno`).
+/// Failure talking to the daemon (only for the log; the extension gets the internal error).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FalhaDaemon {
-    /// Não há daemon, ou o servidor não passou na conferência (nada foi enviado).
-    Indisponivel,
-    /// Conexão caiu, prazo, quadro ruim.
-    Conversa,
+pub enum DaemonFailure {
+    /// No daemon, or the server did not pass the check (nothing was sent).
+    Unavailable,
+    /// Connection dropped, time limit, bad frame.
+    Conversation,
 }
 
-impl FalhaDaemon {
-    pub fn texto(self) -> &'static str {
+impl DaemonFailure {
+    pub fn text(self) -> &'static str {
         match self {
-            FalhaDaemon::Indisponivel => "daemon indisponível ou não conferido",
-            FalhaDaemon::Conversa => "a conversa com o daemon falhou",
+            DaemonFailure::Unavailable => "daemon indisponível ou não conferido",
+            DaemonFailure::Conversation => "a conversa com o daemon falhou",
         }
     }
 }
 
-/// O caminho até o daemon: manda o quadro do pedido e devolve o corpo da resposta.
+/// The path to the daemon: sends the request frame and returns the response body.
 pub trait Daemon {
-    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, FalhaDaemon>;
+    fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, DaemonFailure>;
 }
 
-/// Corpo da resposta de erro para a extensão.
-fn erro(e: ErroResposta) -> Zeroizing<Vec<u8>> {
-    protocolo::codificar_resposta(Papel::Extensao, &Resposta::Erro(e)).unwrap_or_else(|_| {
+/// Body of the error response for the extension.
+fn error_body(e: ResponseError) -> Zeroizing<Vec<u8>> {
+    protocol::encode_response(Role::Extension, &Response::Error(e)).unwrap_or_else(|_| {
         Zeroizing::new(
-            br#"{"v":1,"tipo":"erro","dados":{"codigo":"interno","mensagem":"erro interno"}}"#
+            br#"{"v":2,"type":"error","data":{"code":"internal","message":"erro interno do Ward"}}"#
                 .to_vec(),
         )
     })
 }
 
-/// Atende uma mensagem da extensão e devolve o corpo da resposta (sempre uma resposta
-/// do papel extensão). O texto do log, quando há, vai em `log`, sem conteúdo.
-pub fn atender(
-    mensagem: &[u8],
+/// Handles one message of the extension and returns the response body (always a
+/// response of the extension role). The log text, when there is one, goes to `log`,
+/// without content.
+pub fn handle(
+    message: &[u8],
     daemon: &mut dyn Daemon,
     log: &mut dyn FnMut(&str),
 ) -> Zeroizing<Vec<u8>> {
-    let pedido = match protocolo::decodificar_pedido(Papel::Extensao, mensagem) {
+    let request = match protocol::decode_request(Role::Extension, message) {
         Ok(p) => p,
         Err(e) => {
             log("mensagem da extensão recusada pela leitura do protocolo");
-            return erro(e);
+            return error_body(e);
         }
     };
-    let op = pedido.operacao();
-    if !OPERACOES.contains(&op) {
+    let op = request.operation();
+    if !OPERATIONS.contains(&op) {
         log("operação fora das da extensão");
-        return erro(ErroResposta::NaoAutorizado);
+        return error_body(ResponseError::Unauthorized);
     }
-    let Ok(quadro) = protocolo::codificar_pedido(Papel::Extensao, &pedido) else {
-        return erro(ErroResposta::PedidoInvalido);
+    let Ok(frame) = protocol::encode_request(Role::Extension, &request) else {
+        return error_body(ResponseError::InvalidRequest);
     };
-    drop(pedido);
-    let corpo = match daemon.trocar(&quadro) {
+    drop(request);
+    let body = match daemon.exchange(&frame) {
         Ok(c) => c,
         Err(f) => {
-            log(f.texto());
-            return erro(ErroResposta::Interno);
+            log(f.text());
+            return error_body(ResponseError::Internal);
         }
     };
-    drop(quadro);
-    let resposta = match protocolo::decodificar_resposta(Papel::Extensao, &corpo) {
-        Ok(r) if resposta_cabe(op, r.tipo()) => r,
+    drop(frame);
+    let response = match protocol::decode_response(Role::Extension, &body) {
+        Ok(r) if response_fits(op, r.kind()) => r,
+        // m2:DT8: a daemon of another protocol version. The extension gets only the
+        // version error, never the frame.
+        Err(_) if protocol::frame_version(&body).is_some_and(|v| v != protocol::VERSION) => {
+            log("o daemon fala outra versão do protocolo");
+            return error_body(ResponseError::UnknownVersion);
+        }
         _ => {
             log("resposta do daemon fora do papel extensão ou da operação");
-            return erro(ErroResposta::Interno);
+            return error_body(ResponseError::Internal);
         }
     };
-    // D63: o `estado` traz o papel que o daemon deu a esta conexão. Sem o papel
-    // extensão (o host não foi aberto pelo Chrome instalado, ou não é o binário setgid),
-    // a extensão recebe só `nao_autorizado`.
-    if let Resposta::Estado { papel, .. } = &resposta
-        && *papel != Papel::Extensao
+    // D63: the state response carries the role the daemon gave to this connection.
+    // Without the extension role (the host was not opened by the installed Chrome, or it
+    // is not the setgid binary), the extension gets only the unauthorized error.
+    if let Response::Status { role, .. } = &response
+        && *role != Role::Extension
     {
         log("o daemon não deu o papel extensão a este host");
-        return erro(ErroResposta::NaoAutorizado);
+        return error_body(ResponseError::Unauthorized);
     }
-    match protocolo::codificar_resposta(Papel::Extensao, &resposta) {
-        Ok(c) if c.len() <= MAX_MENSAGEM_SAIDA => c,
+    match protocol::encode_response(Role::Extension, &response) {
+        Ok(c) if c.len() <= MAX_MESSAGE_OUT => c,
         _ => {
             log("resposta grande demais para a extensão");
-            erro(ErroResposta::Interno)
+            error_body(ResponseError::Internal)
         }
     }
 }
 
-/// Laço do host: lê cada mensagem, atende e responde. Sai com `Ok` no fim do stdin;
-/// com `Err` (depois de responder o erro, quando dá) se a mensagem veio vazia, grande
-/// demais ou cortada, ou se o stdout falhou.
-pub fn servir(
-    entrada: &mut impl Read,
-    saida: &mut impl Write,
+/// Loop of the host: reads each message, handles it and answers. Returns `Ok` at the
+/// end of stdin; `Err` (after answering the error, when possible) if the message came
+/// empty, too large or truncated, or if stdout failed.
+pub fn serve(
+    input: &mut impl Read,
+    output: &mut impl Write,
     daemon: &mut dyn Daemon,
     log: &mut dyn FnMut(&str),
-) -> Result<(), ErroMensagem> {
+) -> Result<(), MessageError> {
     loop {
-        let mensagem = match ler_mensagem(entrada) {
+        let message = match read_message(input) {
             Ok(m) => m,
-            Err(ErroMensagem::Fim) => return Ok(()),
+            Err(MessageError::End) => return Ok(()),
             Err(e) => {
                 log("mensagem da extensão vazia, grande demais ou cortada");
-                if matches!(e, ErroMensagem::Vazia | ErroMensagem::GrandeDemais) {
-                    let _ = escrever_mensagem(saida, &erro(ErroResposta::QuadroInvalido));
+                if matches!(e, MessageError::Empty | MessageError::TooLarge) {
+                    let _ = write_message(output, &error_body(ResponseError::InvalidFrame));
                 }
                 return Err(e);
             }
         };
-        let resposta = atender(&mensagem, daemon, log);
-        drop(mensagem);
-        escrever_mensagem(saida, &resposta).map_err(|e| ErroMensagem::Io(e.kind()))?;
+        let response = handle(&message, daemon, log);
+        drop(message);
+        write_message(output, &response).map_err(|e| MessageError::Io(e.kind()))?;
     }
 }
 
 #[cfg(test)]
-mod testes;
+mod tests;

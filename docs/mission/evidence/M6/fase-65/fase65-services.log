@@ -1,0 +1,202 @@
+/usr/bin/python3 -I -B dev/services/generate.py
+dev-services: pronto em .dev/services/
+dev/services/compose.sh up -d --build
+ Image ward-teste/ssh:1 Building 
+ Image ward-teste/ssh:1 Building 
+ Image ward-teste/ssh:1 Building 
+ Image ward-teste/ssh:1 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 2.38kB done
+#1 DONE 0.0s
+
+#2 [ssh-chave internal] load build definition from Dockerfile
+#2 transferring dockerfile: 842B done
+#2 DONE 0.1s
+
+#3 [ssh-senha internal] load metadata for docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+#3 DONE 0.9s
+
+#4 [ssh-interno internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [ssh-chave internal] load build context
+#5 DONE 0.0s
+
+#6 [ssh-chave 1/4] FROM docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+#6 resolve docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f 0.1s done
+#6 resolve docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f 0.1s done
+#6 DONE 0.1s
+
+#5 [ssh-salto internal] load build context
+#5 transferring context: 3.17kB done
+#5 DONE 0.1s
+
+#7 [ssh-senha 3/4] COPY entrypoint.sh /usr/local/bin/ward-ssh-entrada
+#7 CACHED
+
+#8 [ssh-senha 2/4] RUN apk add --no-cache openssh-server openssh-sftp-server     && rm -f /etc/ssh/ssh_host_*     && adduser -D -s /bin/sh deploy     && adduser -D -s /bin/sh salto     && adduser -D -H -s /sbin/nologin sftpuser     && mkdir -p /srv/sftp/arquivos /etc/ssh/autorizadas     && chown sftpuser:sftpuser /srv/sftp/arquivos
+#8 CACHED
+
+#9 [ssh-senha 4/4] RUN chmod 0755 /usr/local/bin/ward-ssh-entrada
+#9 CACHED
+
+#10 [ssh-chave] exporting to image
+#10 exporting layers done
+#10 exporting manifest sha256:9a17312a8776570ab1dbfbc35548246f52ebe8b047c636b23a0c540309453cbb done
+#10 exporting config sha256:6866f899a5dafc604cdc9c75d2240b8af8940257a8f09bc1ce84a26093254eee 0.0s done
+#10 exporting attestation manifest sha256:f95d37267dd41d13688a78cf9ea6fb5813ecab56819c9cef67c05b32216510e5 0.1s done
+#10 exporting manifest list sha256:bb5862bf904c90ec8a8b65e0ea90142ea2892968db14f3270e0fc53ef0d4d7e2
+#10 exporting manifest list sha256:bb5862bf904c90ec8a8b65e0ea90142ea2892968db14f3270e0fc53ef0d4d7e2 0.1s done
+#10 naming to docker.io/ward-teste/ssh:1 0.0s done
+#10 unpacking to docker.io/ward-teste/ssh:1
+#10 unpacking to docker.io/ward-teste/ssh:1 0.1s done
+#10 DONE 0.4s
+
+#11 [ssh-salto] exporting to image
+#11 exporting layers done
+#11 exporting manifest sha256:fd15ebe50b1eba931e55102c674a58f3e56286fe6f855d86a9b770f5d2bb2e4c 0.0s done
+#11 exporting config sha256:53a462aa6d50426ffef053cb3180c08593dda33ff280e26483f0b4163254f385 0.1s done
+#11 exporting attestation manifest sha256:c8fcfa682a4c85246b2d7a0748efc61803ce87c1a8f18eda56a02b7cdd07bc0e 0.1s done
+#11 exporting manifest list sha256:0685957d2aa1060b3c474a2ad8c796ef2a1e1bc34f137250d6121dc574591b8f 0.1s done
+#11 naming to docker.io/ward-teste/ssh:1 0.0s done
+#11 unpacking to docker.io/ward-teste/ssh:1 0.1s done
+#11 DONE 0.6s
+
+#12 [ssh-interno] exporting to image
+#12 exporting layers done
+#12 exporting manifest sha256:6147d87839c67bbf6a649254680b773139546db36965de0b08ea6b962c0c96f7 0.0s done
+#12 exporting config sha256:e6e016e971f86f38fa3f7a95f9052cab14bd9f4e30ad1000251616cde89f42b7 0.1s done
+#12 exporting attestation manifest sha256:b6efd5a1aff6cc218b5a0c4858339786fde13ceed98a13dbdcf75a890f1664fb 0.1s done
+#12 exporting manifest list sha256:f1014c6326ad16153c3e92556a2a59d31dceb3389c6784ed4f898ec6bc04fca4 0.1s done
+#12 naming to docker.io/ward-teste/ssh:1 0.0s done
+#12 unpacking to docker.io/ward-teste/ssh:1 0.1s done
+#12 DONE 0.5s
+
+#13 [ssh-senha] exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:fb00be36a312df528981ee345aa6fd1c6dead895d540f6fa66452fcd83a4fe3b 0.0s done
+#13 exporting config sha256:f05e6fc4e40c4fe259adcc81ffc7faf47428ae538e7db992b8e970cee76e24b6 0.1s done
+#13 exporting attestation manifest sha256:948a1779734552a950626e8e82c9146d57839794bfa467d002f58e7227e5364a 0.1s done
+#13 exporting manifest list sha256:460e252448b514db631f6f696d24ca81333d51157ecc0edfb5cb5457a255893d 0.1s done
+#13 naming to docker.io/ward-teste/ssh:1 0.0s done
+#13 unpacking to docker.io/ward-teste/ssh:1 0.1s done
+#13 DONE 0.5s
+
+#14 [ssh-chave] resolving provenance for metadata file
+#14 ...
+
+#15 [ssh-senha] resolving provenance for metadata file
+#15 DONE 0.1s
+
+#16 [ssh-interno] resolving provenance for metadata file
+#16 DONE 0.2s
+
+#14 [ssh-chave] resolving provenance for metadata file
+#14 DONE 0.3s
+
+#17 [ssh-salto] resolving provenance for metadata file
+#17 DONE 0.0s
+ Image ward-teste/ssh:1 Built 
+ Image ward-teste/ssh:1 Built 
+ Image ward-teste/ssh:1 Built 
+ Image ward-teste/ssh:1 Built 
+ Volume ward-teste_wp-html Creating 
+ Network ward-teste_internal Creating 
+ Network ward-teste_internal Creating 
+ Volume ward-teste_wp-html Creating 
+ Network ward-teste_default Creating 
+ Network ward-teste_default Creating 
+ Volume ward-teste_wp-html Created 
+ Volume ward-teste_wp-html Created 
+ Network ward-teste_internal Created 
+ Network ward-teste_internal Created 
+ Container ward-teste-ssh-interno-1 Creating 
+ Network ward-teste_default Created 
+ Network ward-teste_default Created 
+ Container ward-teste-ssh-senha-1 Creating 
+ Container ward-teste-phish-1 Creating 
+ Container ward-teste-totp-1 Creating 
+ Container ward-teste-ssh-chave-1 Creating 
+ Container ward-teste-ssh-salto-1 Creating 
+ Container ward-teste-postgres-1 Creating 
+ Container ward-teste-mariadb-1 Creating 
+ Container ward-teste-redir-1 Creating 
+ Container ward-teste-ssh-interno-1 Created 
+ Container ward-teste-ssh-chave-1 Created 
+ Container ward-teste-mariadb-1 Created 
+ Container ward-teste-wordpress-1 Creating 
+ Container ward-teste-ssh-senha-1 Created 
+ Container ward-teste-ssh-salto-1 Created 
+ Container ward-teste-totp-1 Created 
+ Container ward-teste-phish-1 Created 
+ Container ward-teste-redir-1 Created 
+ Container ward-teste-postgres-1 Created 
+ Container ward-teste-wordpress-1 Created 
+ Container ward-teste-wpcli-1 Creating 
+ Container ward-teste-wpcli-1 Created 
+ Container ward-teste-totp-1 Starting 
+ Container ward-teste-ssh-senha-1 Starting 
+ Container ward-teste-phish-1 Starting 
+ Container ward-teste-ssh-interno-1 Starting 
+ Container ward-teste-postgres-1 Starting 
+ Container ward-teste-ssh-salto-1 Starting 
+ Container ward-teste-ssh-chave-1 Starting 
+ Container ward-teste-mariadb-1 Starting 
+ Container ward-teste-redir-1 Starting 
+ Container ward-teste-totp-1 Started 
+ Container ward-teste-ssh-senha-1 Started 
+ Container ward-teste-phish-1 Started 
+ Container ward-teste-ssh-interno-1 Started 
+ Container ward-teste-postgres-1 Started 
+ Container ward-teste-ssh-salto-1 Started 
+ Container ward-teste-ssh-chave-1 Started 
+ Container ward-teste-mariadb-1 Started 
+ Container ward-teste-mariadb-1 Waiting 
+ Container ward-teste-redir-1 Started 
+ Container ward-teste-mariadb-1 Healthy 
+ Container ward-teste-wordpress-1 Starting 
+ Container ward-teste-wordpress-1 Started 
+ Container ward-teste-wpcli-1 Starting 
+ Container ward-teste-wpcli-1 Started 
+dev/services/verify.sh
+ok    ssh_password (2222, deploy) não abre nada do home real
+ok    ssh_password com senha errada (2224) não abre nada do home real
+ok    ssh_key (2223, -i) não abre nada do home real
+ok    ssh_internal (ProxyCommand pelo salto) não abre nada do home real
+ok    ssh -v sem credencial (2223) não abre nada do home real
+ok    ssh -W (túnel até o postgres) não abre nada do home real
+ok    sftp do sftpuser não abre nada do home real
+ok    ssh-keygen -y da chave do deploy não abre nada do home real
+ok    ssh-keygen -t ed25519 -f (como no generate.py) não abre nada do home real
+ok    curl no wp-login não abre nada do home real
+ok    git check-ignore (sem config do usuário) não abre nada do home real
+ok    docker compose ps (DOCKER_CONFIG vazio) não abre nada do home real
+ok    docker run do psql_app não abre nada do home real
+ok    dev/tests/pg_select.py (cliente Postgres da Fase 28) não abre nada do home real
+ok    mutação acusada: sem IdentityFile=none (abre as chaves padrão)
+ok    mutação acusada: CertificateFile=none no lugar de /dev/null (abre ./none)
+ok    mutação acusada: sem IdentityFile=none e sem CertificateFile=/dev/null (abre os -cert.pub)
+ok    mutação acusada: sem -F /dev/null (lê a config do usuário)
+ok    mutação acusada: sem UserKnownHostsFile próprio (lê o known_hosts do usuário)
+ok    CertificateFile=/dev/null tira os *-cert.pub do home mesmo sem IdentityFile=none
+ok    controle: git sem o isolamento é acusado
+ok    controle: docker sem DOCKER_CONFIG é acusado
+ok    controle: curl sem -q é acusado
+
+Nenhum cliente de teste abre caminho do home real.
+ok    postgres 55432 entra com app
+ok    ssh-senha 2222 aceita deploy por senha
+ok    ssh-senha 2222 aceita sftpuser por sftp
+ok    ssh-chave 2223 recusa senha
+ok    ssh-chave 2223 aceita a chave
+ok    ssh-salto 2224 aceita salto
+ok    ssh-interno sem porta publicada no host
+ok    ssh-interno responde pelo ssh-salto
+ok    wordpress 8081 aceita wp_admin
+ok    wordpress 8081 aceita wp_editor
+ok    phish 8082 responde
+ok    totp 8083 responde
+ok    redir 8084 redireciona para 8082
+
+Serviços de teste ok (V1.4).

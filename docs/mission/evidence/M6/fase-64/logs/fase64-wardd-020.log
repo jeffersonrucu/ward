@@ -1,0 +1,111 @@
+wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela unit com LimitMEMLOCK=infinity
+wardd: daemon de TESTE (test-mode): cofre de .dev/, nunca o real
+wardd: daemon de teste: open_app abre o app de teste da configuração
+wardd: daemon sem barramento do sistema: logind desligado; udisks2 (backup externo) desligado
+wardd: pronto
+wardd[debug]: status (agent): status
+wardd: app aberto (pid 2174292)
+wardd[debug]: open_app (agent): ok
+wardd[debug]: status (app): status
+wardd: cofre no formato da 0.1.x (corpo v4): gravando no formato novo (v5)
+wardd[debug]: backup local gravado
+wardd: cofre migrado para o corpo v5
+wardd[debug]: unlock (app): ok
+wardd[debug]: list (app): list
+wardd[debug]: detail (app): detail
+wardd: reveal acme-pg-aprovacao password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-pg-dev password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-pg-prod password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-pg-tunel password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-ssh-chave-prod private_key
+wardd[debug]: reveal (app): secret
+wardd: reveal acme-ssh-chave-prod passphrase
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-ssh-interno private_key
+wardd[debug]: reveal (app): secret
+wardd: reveal acme-ssh-interno passphrase
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-ssh-interno-aprov private_key
+wardd[debug]: reveal (app): secret
+wardd: reveal acme-ssh-interno-aprov passphrase
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-ssh-salto password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-ssh-salto-livre password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-ssh-senha-stage password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal acme-totp-dev password
+wardd[debug]: reveal (app): secret
+wardd: reveal acme-totp-dev totp_seed
+wardd[debug]: reveal (app): secret
+wardd: totp acme-totp-dev
+wardd[debug]: totp (app): totp_code
+wardd[debug]: detail (app): detail
+wardd: reveal acme-wp-dev password
+wardd[debug]: reveal (app): secret
+wardd: reveal acme-wp-dev totp_seed
+wardd[debug]: reveal (app): secret
+wardd: totp acme-wp-dev
+wardd[debug]: totp (app): totp_code
+wardd[debug]: detail (app): detail
+wardd: reveal acme-wp-prod password
+wardd[debug]: reveal (app): secret
+wardd: reveal acme-wp-prod totp_seed
+wardd[debug]: reveal (app): secret
+wardd: totp acme-wp-prod
+wardd[debug]: totp (app): totp_code
+wardd[debug]: detail (app): detail
+wardd: reveal beta-aws-dev secret_access_key
+wardd[debug]: reveal (app): secret
+wardd: reveal beta-aws-dev session_token
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal beta-github-api token
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal beta-sftp-dev password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal beta-smtp-stage password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal delta-api-simbolos token
+wardd[debug]: reveal (app): secret
+wardd: reveal delta-api-simbolos extra "SEGREDO_ASCII"
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal delta-redir password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal gama-bloqueada password
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal gama-generico extra "CHAVE_LICENCA"
+wardd[debug]: reveal (app): secret
+wardd[debug]: detail (app): detail
+wardd: reveal gama-nota text
+wardd[debug]: reveal (app): secret
+wardd[debug]: config (app): config
+wardd[debug]: backups (app): backups
+wardd: app (pid 2174292) saiu com código 0
+wardd[debug]: lock (agent): ok
+wardd[debug]: unlock (agent): ok
+wardd[debug]: lock (agent): ok
+wardd[debug]: unlock (agent): ok
+wardd[debug]: lock (agent): ok
+wardd[debug]: unlock (agent): ok

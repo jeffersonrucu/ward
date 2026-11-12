@@ -1,0 +1,78 @@
+   Compiling ward-core v0.2.0 (<repo>/crates/ward-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.17s
+     Running unittests src/lib.rs (target/debug/deps/ward_core-1d1c68ce1a7d699b)
+
+running 37 tests
+test atomic_write::tests::child_write ... ignored, só roda como processo filho dos testes de gravação
+test atomic_write::tests::clean_temp_files_deletes_only_the_vault_ones ... ok
+test atomic_write::tests::error_carries_no_content ... ok
+test atomic_write::tests::relative_path_without_directory ... ok
+test atomic_write::tests::temp_file_is_born_0600_with_any_umask ... ok
+test atomic_write::tests::temp_file_does_not_follow_symlink_nor_reuse_file ... ok
+test atomic_write::tests::d53_body_that_does_not_serialize_does_not_burn ... ok
+test atomic_write::tests::invalid_destination ... ok
+test atomic_write::tests::refuses_to_write_bytes_that_are_not_a_vault ... ok
+test atomic_write::tests::temp_file_names_do_not_repeat ... ok
+test wire_v1::dt8_unknown_version_error_has_no_data ... ok
+test wire_v1::dt8_v1_requests_answer_unknown_version ... ok
+test wire_v1::dt8_v1_responses_refused_by_the_v2_client ... ok
+test wire_v1::v1_fixture_has_only_known_kinds ... ok
+test wire_v1::v1_fixture_is_version_1 ... ok
+test atomic_write::tests::directory_destination_fails_without_leaving_temp_file ... ok
+test atomic_write::tests::symlink_destination_is_not_followed ... ok
+test atomic_write::tests::replaces_existing_destination_and_sets_0600 ... ok
+test wire_v1::vault_and_backups_014_have_no_value_in_clear ... ok
+test wire_v1::vault_014_body_v4_is_read_and_written_as_v5 ... ok
+test atomic_write::tests::v2_9_io_failure_injected_at_each_point ... ok
+test wire_v1::backup_014_two_consecutive_generations ... ok
+test atomic_write::tests::d62_identity_from_the_fd_and_swap_right_after_the_rename ... ok
+test wire_v1::vault_v5_header_same_as_014 ... ok
+test atomic_write::tests::dt5_attack_migration_bytes_have_no_clear_name ... ok
+test wire_v1::attack_vault_014_byte_flipped_does_not_open ... ok
+test atomic_write::tests::d53_burned_lower_than_the_disk_does_not_go_down ... ok
+test atomic_write::tests::v2_10_v2_11_strace_order_and_nothing_in_clear ... ok
+test atomic_write::tests::d62_new_vault_after_the_burned_generation ... ok
+test atomic_write::tests::d65_v4_byte_changed_in_the_dates_fails_the_opening ... ok
+test atomic_write::tests::round_trip_mode_0600_without_temp_file ... ok
+test atomic_write::tests::dt5_sigkill_at_each_point_v4_to_v5 ... ok
+test atomic_write::tests::v2_9_sigkill_at_each_point ... ok
+test atomic_write::tests::d65_v4_sigkill_at_each_point_keeps_the_dates ... ok
+test atomic_write::tests::v2_9_sigkill_at_200_random_points ... ok
+test atomic_write::tests::v2_53_directory_fsync_fails_and_the_generation_does_not_repeat ... ok
+test atomic_write::tests::v2_44_failure_at_each_point_burns_the_generation ... ok
+
+test result: ok. 36 passed; 0 failed; 1 ignored; 0 measured; 312 filtered out; finished in 27.92s
+
+     Running tests/body_memory.rs (target/debug/deps/body_memory-ae9a9bdbe1aff7d9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/sources.rs (target/debug/deps/sources-0cd2495a6f64dbc3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running unittests examples/dev-vault/main.rs (target/debug/examples/dev_vault-af281ec5ced2b9d5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+   Doc-tests ward_core
+
+running 1 test
+test crates/ward-core/src/atomic_write.rs - atomic_write (line 45) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+test crates/ward-core/src/atomic_write.rs - atomic_write (line 31) - compile fail ... ok
+test crates/ward-core/src/atomic_write.rs - atomic_write (line 23) - compile fail ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.04s
+
+all doctests ran in 0.20s; merged doctests compilation took 0.14s

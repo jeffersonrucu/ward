@@ -1,201 +1,210 @@
-# Fase 46 — Backup externo em pendrive por UUID via udisks2 (D17, D30)
+# Fase 46 — O resto de `dev/` e o contrato do `common.sh` (Missão 2, trilha S)
 
 ## Implementado
-- **Configuração (D30):** o corpo já tinha `BackupExterno { ligado, uuid }`. O padrão é
-  desligado e sem UUID. **O corpo não mudou**, então não há conflito com a 22d.
-- **Protocolo (`ward-core`)**, só papel app (tabela, asserção de compilação e 2ª camada
-  no `atender_de`):
-  - `backup_externo` (sem campo). Responde `backup_externo {ligado, uuid?}`.
-  - `definir_backup_externo {ligado, uuid?}`. O UUID é conferido por
-    `BackupExterno::novo`, com o formato de D45, e ligado exige UUID. A leitura e a
-    escrita do pedido conferem isso. Grava pela gravação comum (geração, estado,
-    backup local) e desfaz em caso de erro. Desligar não apaga nada do pendrive.
-  - `pendrives` (sem campo). Responde `pendrives {itens:[{uuid, rotulo, montado}]}`,
-    com até `MAX_PENDRIVES = 32` itens e rótulo de até `MAX_ROTULO = 128` bytes, sem
-    caractere de controle. **Nenhum caminho de montagem vai ao cliente.**
-  - Erro novo: `pendrives_indisponiveis` ("não deu para ver os pendrives (o udisks
-    não respondeu)"; sem dígito, como as outras mensagens).
-- **`ward-plataforma::pasta::renomear_sem_sobrescrever`:** `renameat2(RENAME_NOREPLACE)`
-  relativo ao fd da pasta, para publicar sem `link(2)`, que o vfat não tem. Recusa nome
-  com `/`, NUL, `.` ou `..`. O `unsafe` fica em `sys.rs`, com `// SAFETY:`.
-- **`wardd::externo`** (cópia):
-  - O pendrive só é conhecido com o cofre destravado, porque o UUID está na parte
-    cifrada. Travado ou desligado: `Ok(None)`, sem consultar o udisks2.
-  - `escolher`: exatamente um sistema de arquivos com o UUID, sem diferenciar
-    maiúsculas. Dois com o mesmo UUID dão `Ambiguo`; nenhum dá `NaoConectado`.
-  - A montagem é aberta com `O_NOFOLLOW|O_DIRECTORY`, e o `st_dev` do fd tem de ser o
-    `DeviceNumber` que o udisks2 deu. Depois de aberta, o **udisks2 é consultado de
-    novo** e tem de repetir UUID, dispositivo e montagem; se não repetir, dá `Trocado`.
-    Daí em diante tudo passa por `/proc/self/fd/<n>`.
-  - `<montagem>/ward-backup/` é criada se faltar e aberta com `O_NOFOLLOW`. Tem de ter o
-    mesmo `st_dev` e o dono tem de ser o euid. O modo não é conferido, porque no vfat ele
-    vem das opções de montagem.
-  - Vão as versões do backup local (Fase 45, já cifradas) que faltam, até 30, da mais
-    antiga para a mais nova. Cada uma é lida por `arquivos::ler_cofre` (arquivo comum do
-    usuário, sem link, tamanho máximo) e precisa ter o cabeçalho do formato
-    (`formato::ler_cabecalho`).
-  - Publicação: temporário `.ward-tmp-*` com `O_EXCL|O_NOFOLLOW` e modo 0600, depois
-    `fsync`, depois `renameat2(NOREPLACE)`, depois `fsync` da pasta. Se o nome existir,
-    o temporário é apagado e nada muda. Temporários velhos são apagados no começo.
-  - Rotação para 30 pela data do nome. Nunca apaga o que acabou de copiar, um link ou um
-    arquivo sem nome de versão.
-- **`wardd::udisks`:**
-  - `Udisks` (`FontePendrives`): `GetManagedObjects` numa conexão nova a cada consulta,
-    pelo `trava::conectar` (mesmo endereço e prazo da Fase 24).
-  - `ler_objetos` aceita só objetos com `Block` e `Filesystem`, `IdUsage=filesystem` e
-    `HintIgnore=false`, e ainda `HintSystem=false` ou interface `Loop` (a imagem do
-    V7.4). O UUID passa pelo formato de D45, o rótulo é limpo, e a montagem tem de ser
-    absoluta, sem NUL, sem `.`, `..` ou `//`, com até 4096 bytes. Fora disso, conta como
-    "não montado". São lidos no máximo 4096 objetos.
-  - `vigiar_udisks`: assina os sinais de `org.freedesktop.UDisks2`
-    (`path_namespace=/org/freedesktop/UDisks2`) e cutuca a cópia. Reconecta com espera
-    de 1 a 60 s.
-  - `vigiar_copia`: espera um cutucão ou 300 s, junta a rajada (500 ms) e chama
-    `Daemon::sincronizar_externo`. O log só tem textos fixos.
-- **`nucleo.rs`:**
-  - Campos `pendrives` (fonte), `cutucao` (`OnceLock<SyncSender>`) e `vez_externo`.
-  - `com_pendrives`, `ligar_copia_externa`, `cutucar_externo` e `sincronizar_externo`.
-    Este último só lê o UUID com o estado travado e copia sem segurar o mutex.
-  - Destravar, criar, gravar, trocar senha ou PIN, restaurar e ligar o externo, quando
-    dão certo, cutucam a cópia (`muda_o_externo`).
-- **`main.rs`:** o barramento é decidido antes de criar o `Arc<Daemon>`. Com
-  barramento, sobem as threads de logind, udisks2 e cópia. No daemon de teste sem
-  `WARD_DEV_DBUS_SISTEMA`, nenhuma sobe, e o log continua com "logind desligado".
-- `CLAUDE.md`: a linha do `dev-daemon` cita o udisks2.
+
+O worktree nasceu em `b4d5e1b`. Com a árvore limpa, rodei `git reset --hard 5efa7f5` (master). A troca foi 1:1 pelo `docs/glossario.md`, no padrão das Fases 40–45. Em todos os arquivos, comentários e docstrings foram para o inglês ("Fase" → "Phase", IDs da missão 1 sem prefixo). As mensagens impressas (`ok`, `FALHA`, erros, uso) continuam em pt-BR e iguais byte a byte.
+
+O trabalho foi dividido em quatro grupos de arquivos disjuntos. Fiz o contrato e o grupo D. Os grupos A, B e C foram feitos em paralelo, no mesmo worktree, por forks deste worker. Revisei os diffs deles.
+
+### Contrato de `dev/env.sh` e `dev/services/common.sh` (só nomes e comentários)
+
+**Quem carrega:** define `ROOT` antes do `.`. Os `RAIZ="$ROOT"` do `install.sh` e do `attacks-services.sh` saíram. O `real-home.sh` e o `deb.sh` usavam `RAIZ` como raiz própria e agora usam `ROOT`.
+
+| Antigo | Novo |
+| --- | --- |
+| `RAIZ` | `ROOT` |
+| `CASA_PASSWD` (`env.sh`) | `PASSWD_HOME` |
+| `DS` | `SERVICES_DIR` |
+| `SEG` | `SECRETS_DIR` |
+| `DOCKER_VAZIO` | `DOCKER_EMPTY` |
+| `IMAGEM_PG` | `PG_IMAGE` |
+| `OPCOES_SSH` | `SSH_OPTIONS` |
+| `exigir` | `require` |
+| `cliente` | `client` |
+| `montar_opcoes_ssh` | `build_ssh_options` |
+| `ssh_senha` | `ssh_password` |
+| `ssh_chave` | `ssh_key` |
+| `ssh_interno` | `ssh_internal` |
+| `esperar_wordpress` | `wait_wordpress` |
+| locais `arq`/`porta`/`usuario`/`salto` | `file`/`port`/`user`/`jump` |
+
+Ficam como estão: `psql_app`, `wp_login` e `COMPOSE`.
+
+**Usos ajustados** em `verify.sh`, `compose.sh`, `real-home.sh`, `deb.sh`, `attacks-services.sh`, `install.sh`, `attacks-foundation.sh` (`CASA_PASSWD`), `dev-vault.sh` (`CASA_PASSWD`), `home-decoys.sh`, `ssh-home.sh`, `docker-platform.sh`, `docker-uid.sh` e `units.sh`.
+- No `real-home.sh`, o `declare -p` que leva o ambiente do `common.sh` ao bash rastreado passou a `SSH_OPTIONS MUT COMPOSE PG_IMAGE SERVICES_DIR SECRETS_DIR ROOT TMP`. É a mesma lista de antes, com os nomes novos.
+- As linhas `CASA="$CASA_PASSWD"` (`home-decoys.sh`, `ssh-home.sh`) saíram, e os usos passaram a `PASSWD_HOME`.
+- Conferi por grep: nenhum `RAIZ`, `CASA_PASSWD`, `OPCOES_SSH`, `IMAGEM_PG`, `$DS`, `$SEG`, `exigir`, `cliente <comando>`, `ssh_senha`, `ssh_chave`, `ssh_interno`, `esperar_wordpress` ou `montar_opcoes_ssh` sobra em `dev/`.
+
+### Grupo D (eu)
+
+- **`services/verify.sh`**:
+  - `falhas`/`falhou` → `failures`/`failed`, `par`/`usuario`/`arq`/`cab` → `pair`/`user`/`file`/`headers`.
+  - Os comentários citam a porta (2222/2223/2224) em vez do nome do serviço (`ssh-salto` …, que são dados do cofre de teste).
+- **`services/compose.sh`**: só `ROOT` e o comentário.
+- **`services/ssh/entrypoint.sh`**: `modo` → `mode`, `segredos` → `secrets`, `definir_senha` → `set_password`, `so_chave` → `key_only`, `autorizar_chave` → `authorize_key`. O comentário do `Dockerfile` também foi para o inglês.
+- **`services/wordpress/install.sh`**: `banco_pronto` → `db_ready`.
+- **`tests/clipboard.sh`**: `linha`/`alvo` → `line`/`target`, no Python embutido.
+- **`tests/app-e2e.sh`** e **`tests/revealed-selection.sh`**: `GUARDA` → `BACKUP` e `limpar` → `cleanup`.
+- **`tests/gst-channels.sh`**, no padrão do `webkit-real.sh` da Fase 45:
+  - `LANCADOR` → `LAUNCHER`, `valor_fixo` → `fixed_value`, `LISTA` → `ALLOWLIST`;
+  - `isca` → `decoy`, `rot` → `label`, `casa` → `home`, `marca(s)` → `marks`, `canal` → `channel`;
+  - `falhou` → `failed`, `nao` → `not_ok`, `CASA` → `GST_HOME`;
+  - o C gerado passou a `mark()`, com as macros `MARKS`/`LABEL`.
+
+### Grupo A (fork)
+
+- **`daemon.sh`**: `subir`/`parar` → `start`/`stop_daemon`, `pid_vivo` → `live_pid`, `COFRE`/`ESTADO` → `VAULT`/`STATE`, `MARCA_APP` → `APP_MARK`, `NIVEL_LOG` → `LOG_LEVEL`, `UID_ATUAL` → `CURRENT_UID`, `CASA` → `PASSWD_HOME` (local; o script não carrega o `env.sh`), `PASTA_SOCKET` → `SOCKET_DIR` (local). Os subcomandos `up`/`stop`/`status` são os mesmos.
+- **`bridge.sh`**: `antes` → `before`, `novo` → `new_output`.
+- **`open-app.py`**: `ler_exato` → `read_exact`, `resposta` → `reply`, `tipo` → `kind` … Conferido por AST.
+- **`socket-attacks.sh`, `nm.sh`, `extension.sh`, `login.sh`, `playwright.sh`**:
+  - comuns: `COFRE` → `VAULT`, `LISTA` → `PATTERN_LIST`, `TRAB` → `WORK_DIR`, `limpar` → `cleanup`, `falhas` → `failures`;
+  - por arquivo: `CONEXOES` → `CONNECTIONS` (variável local, não a do Makefile), `SONDA` → `PROBE`, `USO` → `USAGE`, `FALSO` → `FAKE`, `APROVADOR` → `APPROVER`.
+
+### Grupo B (fork)
+
+- **`chrome-policy.sh`**: `POLITICA` → `POLICY`, `rodada` → `run_round`, `sem`/`com` → `without`/`with`.
+- **`ssh-home.sh`**: `COFRE`/`LISTA`/`TRAB` como no grupo A.
+- **`home-decoys.sh`**: `ABERTAS` → `OPENED`, `FASE` → `STAGE`, `escritores` → `writers`, `iscas` → `decoys`, `rodar` → `run_stage`.
+- **`docker-platform.sh`, `docker-uid.sh`, `units.sh`**: `IMAGEM` → `IMAGE`, `CLIENTE` → `CLIENT`, `NOME` → `CONTAINER_NAME`, `CHROME_FALSO` → `FAKE_CHROME`, `COFRE_TESTE` → `TEST_VAULT`.
+- **`no-test-mode.sh`**: `ALVO` → `TARGET_DIR`, `com_modo_teste` → `with_test_mode`, `conferir` → `check_strings`, `TEXTOS` → `MARKS`.
+- **`app-release.sh`**: `BINARIO` → `BINARY`, `TEXTOS` → `STRINGS_FILE`.
+
+### Grupo C (fork)
+
+- **`terminal-test.py`**: `PRAZO`/`MARCA` → `TIMEOUT`/`MARK`, `sair` → `die`, `registrar` → `record`, `mestre`/`escravo` → `master`/`slave`, `varrer_proc` → `scan_proc` …
+  - Entrou o helper `yes_no(flag)` (devolve `"sim"`/`"nao"`), que tira os literais de dentro das f-strings. A linha de log é a mesma (precedente: `reply_kind`, Fase 45).
+- **`pg_select.py`**: `Conexao` → `Connection`, `falhar` → `fail`, e os nomes do SCRAM (`salt`, `salted`, `client_key`, `stored_key`, `proof`, `signature`).
+- **`fake_crx.py`**: só variáveis. As opções `--adulterado`/`--versao` ficam, porque o `install.sh` as passa.
+- **`fake_v6.py`**: `PORTA`/`SAIDA` → `PORT`/`OUTPUT`, `Pagina` → `Page`, `Servidor` → `Server`.
+- **`apport_list.py`**: o uso imprimia `__doc__`. Agora imprime a constante `USAGE`, com o texto pt-BR igual (conferido por AST). O rótulo ignorado/não ignorado saiu da f-string para `verdict`.
+- **`app-dist.py`**: `SO_NO_TESTE` → `TEST_ONLY`, `conferir` → `check`.
+- **`log-scan.py`**: `varrer` → `scan`, `autoteste` → `self_test`, `limpo`/`sujo` → `clean`/`dirty`.
+- **`bidi_icu.py`**: `EXIBICAO` → `DISPLAY_RS`, `faixas_js`/`faixas_rust` → `js_ranges`/`rust_ranges`.
+- **`bidi.mjs`**: `igual` → `equal`, `falhas` → `failures`. As letras hebraicas do comentário viraram escapes.
+
+### Conferências
+
+**Textos procurados em fontes e saídas, todos casam com o master:**
+- `FIXED_VARIABLES` e as constantes do `launcher.rs` (`gst-channels.sh`);
+- `const RTL` e `bidiParts` do `bidi.js`, e `pub fn invisible` do `display.rs` (`bidi_icu.py`);
+- `papel extensão de teste` (`servidor.rs`) e `login acme-wp-prod: formulário enviado` (`login.rs`);
+- `^ward-ponte-teste:` (log da ponte);
+- as marcas de `test-mode` do `no-test-mode.sh`;
+- os caminhos `/opt/teste/...` dos `inside.sh`.
+
+**Outros ajustes:**
+- `allow.txt`: entrou `dev/tests/gst-channels.sh frei` (frei0r é nome de plugin, como no `launcher.rs`).
+- Glossário: entrou um parágrafo da Fase 46 na seção 4, com o contrato e os nomes recorrentes.
+
+### Literais alterados (PRD regra 5; todos são nomes internos do próprio script)
+
+- **Pastas temporárias do socket:**
+  - `ward-socket-ataques-*` → `ward-socket-attacks-*`
+  - `ward-nm-teste-*` → `ward-nm-test-*`
+  - `ward-extensao-teste-*` → `ward-extension-test-*`
+  - `ward-login-teste-*` → `ward-login-test-*`
+  - Os scripts Python recebem esse caminho por argumento.
+- **Cópia do cofre de teste:** `.dev/e2e-guarda` → `.dev/e2e-backup`, `.dev/selecao-guarda` → `.dev/selection-backup`.
+- **`gst-channels.sh`:**
+  - nomes das iscas (`*marca*.so` → `*mark*.so`, `urn:ward:mark`) e o C gerado (`mark()`, `MARKS`, `LABEL`);
+  - subpastas `casa`/`marcas` → `home`/`marks`;
+  - rótulos `gst-sem`/`gst-com`/`egl-sem`/`egl-com` → `*-without`/`*-with`;
+  - `.saida` → `.out`.
+- **`home-decoys.sh`:** `$TMP/abertas`/`fase` → `opened`/`stage`, e os rótulos de etapa `inicio`/`conferir`/`ataques`/`controle` → `start`/`verify`/`attacks`/`control`, com o `grep -qx` junto. As mensagens "controle: …" não mudaram.
+- **`ssh-home.sh`:** `$TRAB/envolver` → `$WORK_DIR/wrapper`.
+- **`chrome-policy.sh`:** staging `$TRAB/raiz` → `$WORK_DIR/root`.
+- **`units.sh`:** `$TMP/controle` → `control`, e no controle negativo `LimitCORE=nao-e-numero`/`DiretivaInventada` → `not-a-number`/`InventedDirective`, com o `grep` junto.
+- **`no-test-mode.sh`:** `$TMP/arvore`/`forcado`/`textos` → `tree`/`forced`/`strings.txt`.
+- **`log-scan.py --self-test`:** `limpo.log`/`sujo.log` → `clean.log`/`dirty.log`.
+- **`real-home.sh`:** os rótulos `verify "ssh_senha …"`, `"ssh_chave …"`, `"ssh_interno …"` e a mensagem `mutação não casou com OPCOES_SSH` citam o nome da função ou variável e passaram aos nomes novos.
 
 ## Segurança
-- **Invariantes tocadas**
-  - **S1:** as respostas novas não levam segredo nem caminho. As três operações são só
-    do app.
-  - **S2/S6:** o pendrive só recebe as versões já cifradas do backup local, byte a byte
-    (Argon2id + XChaCha20-Poly1305). Nada é decifrado nem selado. O temporário é
-    prefixo do cifrado.
-  - **S7:** sem `link(2)` e sem sobrescrever. Uma interrupção deixa só um temporário,
-    apagado na próxima vez. Uma versão já existente nunca é trocada.
-  - **S3/D17:** desligado por padrão. A configuração fica na parte cifrada, e a cópia só
-    acontece com o cofre destravado.
-  - **S13:** o log não tem UUID, rótulo nem caminho.
-  - **Entrada não confiável (D-Bus):** tudo do udisks2 é conferido. Um sinal só dispara
-    uma consulta. O barramento nunca destrava, grava o cofre nem muda a configuração. A
-    montagem é amarrada ao dispositivo pelo `st_dev` do fd.
-- **Testes de ataque** (todos falham do lado do atacante):
-  - `crates/wardd/tests/externo.rs`:
-    - `v7_4_desligado_por_padrao_nao_grava_nada`: nem consulta o udisks2 e o pendrive
-      fica vazio.
-    - `v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo`:
-      - B sozinho não recebe nada (`NaoConectado`); com A e B conectados, só o A recebe;
-      - as cópias são iguais às locais e não há temporário;
-      - a 2ª vez não muda nada, e uma gravação nova leva só ela;
-      - UUID em minúsculas funciona;
-      - V7.6: nenhum dos `SEGREDOS`, nem a senha ou o PIN, em claro ou em base64, e cada
-        cópia abre com a senha de teste.
-    - `ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada`: dispositivo que não
-      bate dá `Trocado`; o udisks2 muda de dispositivo ou de montagem depois de aberto
-      e dá `Trocado`; desconecta entre as consultas e dá `NaoConectado`; UUID repetido
-      dá `Ambiguo`; sem montagem dá `NaoMontado`. Em todos os casos nada é escrito.
-    - `ataque_montagem_ou_pasta_que_e_link`: montagem que é link dá `Trocado`;
-      `ward-backup` que é link ou arquivo dá `PastaInsegura`. O alvo fica intacto.
-    - `ataque_versao_existente_no_pendrive_nao_e_sobrescrita`: o arquivo com o nome da
-      versão fica igual, o link com o nome de versão não é seguido nem trocado, o
-      temporário velho some e o `LEIA-ME.txt` fica.
-    - `pendrive_fica_com_30_versoes`: 35 antigas mais as novas resultam em 30, com as
-      copiadas mantidas e o `notas.txt` mantido.
-    - `travado_ou_desligado_nao_copia`: travado não consulta; destravar traz a
-      configuração ligada; desligado não copia e não apaga.
-    - `v7_8_agente_e_extensao_nao_ligam_nem_leem`: `nao_autorizado` pelo protocolo e
-      direto no `Daemon::atender`. O cofre fica igual byte a byte, sem consulta.
-    - `pendrives_sem_udisks_e_uuid_invalido`.
-    - `udisks_falso_e_lido_com_as_conferencias`: num `dbus-daemon` privado com um
-      udisks2 falso feito com o `zbus`, o disco de sistema é filtrado, o loop é aceito,
-      o UUID `../etc` é filtrado, o rótulo é limpo e a montagem com `..` vira "não
-      montado". Barramento sem udisks2 dá `None`.
-    - `v7_5_sinal_do_udisks_copia_para_o_pendrive_montado`: threads reais. Com A
-      desmontado, nada acontece; o sinal de montagem leva a cópia ao A e não ao B; uma
-      gravação nova também chega.
-    - `externo_nao_usa_link`: varre a fonte atrás de `hard_link`, `linkat`, `libc::link`
-      e `fs::symlink(`.
-  - `crates/ward-core/src/protocolo/testes.rs`: `v7_8_backup_externo_so_pelo_app`,
-    `ataque_definir_backup_externo_fora_do_formato` e as tabelas V3.15 atualizadas.
-  - `crates/ward-plataforma/src/pasta.rs`: `renomeia_e_nunca_sobrescreve` (inclusive
-    link no destino) e `ataque_nome_que_sai_da_pasta_recusado`. Os dois cobrem o
-    `unsafe` novo.
-  - `crates/wardd/src/udisks.rs`: `ataque_montagem_estranha_conta_como_nao_montado` e
-    `rotulo_sem_controle_e_cortado`.
-- **Dependências novas:** nenhuma. São usados o `renameat2` e o `RENAME_NOREPLACE` da
-  `libc` que já existia no `ward-plataforma`.
+
+**Invariantes tocadas:**
+- **R19/R13, Fase 12a/12b** (`common.sh`, `env.sh`, `real-home.sh`):
+  - o diff do `common.sh`/`env.sh` é só de nomes e comentários;
+  - as opções do ssh (`IdentityFile=none`, `CertificateFile=/dev/null`, `-F /dev/null` …), o `env -i` do `client`, o `-q` do curl, o `DOCKER_CONFIG` vazio, a limpeza de `DOCKER_*`/`COMPOSE_*`/`GIT_*` e os `GIT_CONFIG_*` fixos são os mesmos;
+  - as mutações do `real-home.sh` andam pelo array `SSH_OPTIONS` e devem acusar as mesmas proteções.
+- **S2/S15**:
+  - senhas dos serviços SSH continuam pelo stdin (`chpasswd`), e as do WordPress por `--prompt`;
+  - `sshpass -f` sempre;
+  - `PGPASSWORD` pelo ambiente, sem valor em argv.
+- **S1/S5, D47, V5.27, V6.x** (testes do grupo A):
+  - continuam iguais: `env -i` do `daemon.sh` com a mesma lista, conferência do pid pelo `cmdline`, `umask`/0700 e varredura dos logs com `.dev/variations.txt`;
+  - as variáveis renomeadas são atribuídas antes do uso, então nada herdado do ambiente entra.
+- **V5.32/D64** (`gst-channels.sh`): o mesmo controle positivo, as mesmas iscas e o mesmo leitor do `launcher.rs`.
+- **`pg_select.py`**: o SCRAM e o `hmac.compare_digest` são iguais por AST.
+
+**Testes de ataque:** nenhum novo, porque a fase só renomeia. Os existentes foram escritos de novo e não rodados (PRD regra 6), e rodam no M6:
+- `make dev-services-verify`, `test-attacks-services`, `test-real-home`, `test-home-decoys`;
+- `test-socket-attacks`, `test-nm`, `test-extension`, `test-login`, `test-playwright`, `test-chrome-policy`;
+- `test-docker-platform`, `test-docker-uid`, `test-units`, `test-no-test-mode`;
+- `test-clipboard`, `test-revealed-selection`, `test-app-e2e`, `test-gst-channels`, `test-app-logs`, `app-front`.
+
+**Dependências novas:** nenhuma.
 
 ## Ficou de fora
-- **Montar o pendrive:** o Ward nunca chama `Filesystem.Mount`. Ele copia quando o
-  pendrive aparece montado, pela área de trabalho ou pelo usuário. Sem automontagem,
-  nada é copiado até alguém montar (ver Problemas).
-- **Teste com vfat real montado:** não montei nada no host, porque `udisksctl
-  loop-setup` toca o udisks2 e o `/media` reais. Também não montei vfat em contêiner,
-  porque o loop é do kernel do host e o udisks2 do host o veria. O vfat ficou coberto
-  pelo desenho (sem `link`, só `renameat2(NOREPLACE)`, que o vfat suporta) e pela
-  varredura da fonte. O V7.4 e o V7.5 de verdade ficam com o validador do M7, como diz
-  o contrato: imagem vfat em `.dev/`, `udisksctl loop-setup` e `mount`, depois
-  `make dev-daemon` com `WARD_DEV_DBUS_SISTEMA=/run/dbus/system_bus_socket`, destravar e
-  `definir_backup_externo`.
-- **UI** (Fase 48): ela usa `pendrives`, `backup_externo` e `definir_backup_externo`.
+
+- **`english-check` em `dev/`: 64 achados restantes, nenhum é identificador desta fase** (`dev/fixtures/entries.json` e `dev/gitleaks-*.toml` à parte):
+  - **Fase 56:** `WARD_HOME_COBERTO`, `WARD_ISCAS_DENTRO`, `WARD_SSH_HOME_DENTRO`, `WARD_SSH_HOME_TRAB`, `WARD_DEV_EXTENSAO`, `WARD_DEV_DBUS_SISTEMA`.
+  - **Comentários que citam nomes congelados ou de outras fases:**
+    - operações e erros do fio: `abrir_app`, `preencher`, `sugerir`, `nao_autorizado`;
+    - subcomandos `ward lista`/`ward travar`;
+    - o binário `wardd-aprovador-teste`, `aprovador.modo` e `modo-teste`;
+    - `ward-teste`, `/tmp/sentinela-ssh`, `/cadastro`;
+    - as mensagens "domínio não confere" e "papel app recusado";
+    - o teste `configuracao_tauri`;
+    - os `iscas.sh` da auditoria.
+  - Somem quando as fases donas renomearem, ou na Fase 60. Não pus nada no `frozen.txt`: a Fase 45 também não pôs, e uma entrada sem uso quebraria as fases paralelas.
+- **Fase 48:** `dev/fixtures/entries.json`.
+- **Fase 47:** `dev/gitleaks-*.toml`.
+- **Literais compartilhados que ficaram:**
+  - `terminal-teste.*` e os modos (`terminal-test.py` × `app_e2e.py`/`app-e2e.sh`);
+  - `aprovador.modo`/`confirmar` (lido pelo `crates/wardd/aprovador-teste`);
+  - `--adulterado`/`--versao` do `fake_crx.py` (passadas pelo `install.sh`);
+  - os cenários e as chaves JSON entre `chrome-policy.sh` e `chrome_policy.py`;
+  - `tracos` (`ssh-home.sh` × `ssh_home.py`);
+  - `ward-teste`, `ward-teste-e2e`, `ward-teste-selecao` (pasta do socket, Fase 56);
+  - os caminhos internos dos contêineres e dos serviços SSH (`/etc/ssh/autorizadas`, `senha-*`, `autorizada.pub`, `ward-ssh-entrada`, `/srv/sftp/arquivos`);
+  - o estado `ward-estado 1` (Fase 49).
+- **Suítes e Docker:** ficam para o Milestone 6.
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` | 0 |
-| `make dev-cofre` | 0 |
-| `cargo test -p ward-core --lib protocolo` | 0 |
-| `cargo test -p ward-plataforma --lib pasta` | 0 |
-| `cargo test -p wardd --all-features` (1ª: `montagem_valida` aceitava `/./`; 2ª: varredura achou `symlink_metadata`) | 101, 101, depois 0 |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 0 |
-| `make check` (1ª: `erros_sem_numero…` acusou o "2" de "udisks2" na mensagem; corrigido) | 2, depois 0 |
+| `git reset --hard 5efa7f5` (árvore limpa) | 0 |
+| `bash -n` / `sh -n` dos shell alterados, `py_compile` dos Python, `node --check dev/tests/bidi.mjs` | 0 |
+| conferência por AST dos Python (forks; scripts em `fase46-c/` e `fase46-astcmp.py` no scratchpad) | 0 diferenças de lógica (só as três extrações listadas) |
+| `python3 -I -B dev/english_check.py --paths dev` | 1 (64 achados, todos de outras fases ou literais congelados; ver acima) |
+| `python3 -I -B dev/english_check.py --paths dev/services dev/env.sh` e nos arquivos do grupo D | 0 |
+| `make compile` (log em `.dev/fase46/fase46-make-compile.log`) | 0 (origens, `cargo check` do workspace e do `app/src-tauri`, Vite, sintaxe de 48 shell, 35 Python e 7 JS) |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **Cópia só com o cofre destravado.** O UUID está na parte cifrada (D30). Um pendrive
-  conectado com o cofre travado só recebe a cópia no próximo destravar, se ainda
-  estiver montado. Isso é coerente com D30, mas difere da leitura literal de "copia
-  sempre que conectado".
-- **Sem automontagem, sem cópia.** O Ward não monta. Montar por `Filesystem.Mount`
-  passaria pelo polkit do udisks2 para um serviço do sistema com `User=`, o que não
-  foi testado. O planner decide se monta.
-- **Pasta no pendrive sem conferência de modo.** No vfat, o modo vem da montagem
-  (`umask`). Se ela for 0777 e `/media/<usuário>` for atravessável por outros, outro
-  usuário da máquina pode plantar um nome de versão e impedir aquela cópia (negação de
-  serviço) ou apagar as cópias. Ele não lê nada em claro.
-- **Sistemas de arquivos sem `st_dev` do bloco** (btrfs, por exemplo, usa dispositivo
-  anônimo) dão `Trocado` e nunca recebem cópia. Pendrive normal (vfat, exFAT, ext4,
-  NTFS) não tem esse problema.
-- **`HintSystem` do loop:** aceitei a interface `Loop` mesmo com `HintSystem` verdadeiro,
-  para o V7.4 funcionar com `udisksctl loop-setup`. A consequência é que um loop do
-  sistema (snap, por exemplo, que é squashfs com UUID) aparece em `pendrives`. Nenhum
-  vai receber cópia sem ser escolhido pelo UUID, e o snap é só leitura.
-- **UUID repetido** (pendrive clonado com `dd`) bloqueia a cópia com aviso no log.
-- **Threads de teste:** `v7_5_sinal_do_udisks…` deixa as threads do vigia vivas até o
-  fim do binário de teste. Depois que o barramento morre, elas não escrevem nada.
+
+- **Conflitos previsíveis de merge:**
+  - A Fase 47 mexe em `install/` e nos comentários do Makefile. Daqui, o Makefile não mudou. O `deb.sh` e o `install.sh` daqui ainda procuram textos de `install/` (mensagens `modo-teste`, `ID_EXTENSAO` …), que conferi contra o master.
+  - A Fase 12 (trilha R) não toca em `dev/`.
+- **Fase 56:** ao trocar `WARD_HOME_COBERTO`, `WARD_ISCAS_DENTRO`, `WARD_SSH_HOME_*`, `WARD_DEV_EXTENSAO`, `WARD_DEV_DBUS_SISTEMA`, `ward-teste*` e `wardd-aprovador-teste`, ajustar os scripts desta fase. Ali estão o `daemon.sh`, o `bridge.sh` (prefixo `ward-ponte-teste:`) e os `*.sh` de `dev/tests/`.
+- **Fase 34:** o comentário do `clipboard.sh` já não cita `area_gtk::testes::sessao_real`/`Copiador`. O `clipboard.py` ainda roda esse teste pelo nome, e quem o renomear tem de ajustar o `clipboard.py`.
+- **`daemon.sh` × `install/`:** o `daemon.sh` grava `ward-estado 1 / vista 0 / queimada 0` quando falta o estado. Na Fase 49 (estado v2) o script muda junto.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-core/src/protocolo.rs` | alterado |
-| `crates/ward-core/src/protocolo/pedido.rs` | alterado |
-| `crates/ward-core/src/protocolo/resposta.rs` | alterado |
-| `crates/ward-core/src/protocolo/erros.rs` | alterado |
-| `crates/ward-core/src/protocolo/testes.rs` | alterado |
-| `crates/ward-plataforma/src/pasta.rs` | criado |
-| `crates/ward-plataforma/src/sys.rs` | alterado (`renameat_sem_sobrescrever`) |
-| `crates/ward-plataforma/src/lib.rs` | alterado |
-| `crates/wardd/src/externo.rs` | criado |
-| `crates/wardd/src/udisks.rs` | criado |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/src/trava.rs` | alterado (`conectar` vira `pub(crate)`) |
-| `crates/wardd/src/main.rs` | alterado |
-| `crates/wardd/src/lib.rs` | alterado |
-| `crates/wardd/tests/externo.rs` | criado |
-| `CLAUDE.md` | alterado (linha do `dev-daemon`) |
+| `dev/env.sh`, `dev/services/common.sh`, `dev/services/compose.sh`, `dev/services/verify.sh` | alterado |
+| `dev/services/ssh/entrypoint.sh`, `dev/services/ssh/Dockerfile`, `dev/services/wordpress/install.sh` | alterado |
+| `dev/daemon.sh`, `dev/bridge.sh`, `dev/open-app.py` | alterado |
+| `dev/tests/{app-e2e,app-release,chrome-policy,clipboard,docker-platform,docker-uid,extension,gst-channels,home-decoys,login,nm,no-test-mode,playwright,revealed-selection,socket-attacks,ssh-home,units}.sh` | alterado |
+| `dev/tests/{attacks-foundation,attacks-services,deb,dev-vault,install,real-home}.sh` (usos do contrato) | alterado |
+| `dev/tests/{terminal-test,pg_select,bidi_icu,log-scan,app-dist,apport_list,fake_v6,fake_crx}.py`, `dev/tests/bidi.mjs` | alterado |
+| `dev/english-check/allow.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-46.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados (nenhum dispositivo montado, nenhum barramento real)
-- [x] Teste de ataque para cada (SEG) tocado (V7.6, V7.8, pendrive trocado, links, sem sobrescrever, desligado por padrão)
-- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica (fase sem tela)
-- [x] Ficou dentro do escopo da fase
+- [ ] `make check` rodado: não, pela regra 6 do PRD. Rodaram o `make compile` (0), o `english-check` e as conferências de sintaxe e AST.
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto, nenhum daemon, nenhum Docker).
+- [x] Teste de ataque para cada (SEG) tocado: os ataques existentes seguem iguais, conferidos por AST e por diff.
+- [x] (UI/DESIGN) não se aplica.
+- [x] Ficou dentro do escopo da fase.

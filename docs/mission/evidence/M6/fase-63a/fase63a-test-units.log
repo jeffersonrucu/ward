@@ -1,0 +1,48 @@
+/dev/nvme0n1p6  104G   83G   17G  84% /
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+dev/tests/units.sh target/no-test-mode/debug/wardd target/no-test-mode/debug/examples/wardd-test-client target/no-test-mode/debug/ward
+==> systemd-analyze verify
+ok: systemd-analyze verify
+ok: o verify acusa diretiva inválida (controle)
+==> imagem com systemd
+==> contêiner
+ok: systemd de pé
+ok: socket ativo
+ok: serviço ainda parado
+ok: /run/ward root:root 0755
+ok: /run/ward/1000 root:root 0755
+ok: socket do uid, 0600
+ok: primeira conexão responde
+ok: serviço subiu
+ok: wardd roda com o uid
+ok: sem no_new_privs (D57)
+ok: LimitCORE=0
+ok: LimitMEMLOCK=infinity (D62)
+ok: sem LD_* no ambiente (HOME INVOCATION_ID JOURNAL_STREAM LANG LISTEN_FDNAMES LISTEN_FDS LISTEN_PID LOGNAME MEMORY_PRESSURE_WATCH MEMORY_PRESSURE_WRITE PATH SHELL SYSTEMD_EXEC_PID USER )
+ok: destrava o cofre de teste
+ok: lista com o cofre destravado
+Stopping 'wardd@1000.service', but its triggering units are still active:
+wardd@1000.socket
+ok: V4.38 destrava de novo, com os grupos
+ok: V4.38 ward run -- ward-app: papel agente
+ok: V4.38 ward run -- ward-app: lista do agente
+ok: V4.38 ward run -- ward-nm: papel agente
+ok: ward run de release: a senha sai mascarada
+ok: V4.38 o daemon recusou o papel app ao filho (D63)
+ok: journal sem valor do cofre
+ok: VmLck 688356 kB cobre o VmRSS 13592 kB (mlockall, D62)
+ok: 8 MiB de memlock: sai 1
+ok: 8 MiB de memlock: mensagem
+ok: 8 MiB de memlock: não chegou ao socket
+ok: depois de morto, a conexão sobe de novo
+ok: pid novo (199)
+ok: uid 1000 não mexe em /run/ward/1000
+Nov 11 17:37:59 c342a5504bca wardd[199]: wardd: pasta de temporários do ward run indisponível (permission denied)
+Nov 11 17:37:59 c342a5504bca wardd[199]: wardd: pastas do agente SSH indisponíveis (permission denied)
+Nov 11 17:37:59 c342a5504bca wardd[199]: wardd: pronto
+Nov 11 17:37:59 c342a5504bca wardd[199]: wardd: logind: barramento do sistema indisponível; só a trava por inatividade vale até conectar
+Nov 11 17:37:59 c342a5504bca wardd[199]: wardd: udisks2: barramento indisponível; backup externo parado até conectar
+test-units: tudo ok
+test-units exit=0

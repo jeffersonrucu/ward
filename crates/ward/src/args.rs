@@ -1,90 +1,91 @@
-//! Linha de comando da CLI. Nenhum argumento é repetido nas mensagens de erro: quem
-//! digita `ward destravar <senha>` por engano não vê a senha voltar na tela, no log do
-//! terminal nem na saída que o agente lê (S1, S3).
+//! Command line of the CLI. No argument is repeated in the error messages: whoever
+//! types the password after the unlock subcommand by mistake does not see it come back
+//! on the screen, in the terminal log nor in the output the agent reads (S1, S3).
 
 use std::ffi::OsString;
 
-/// O que a CLI vai fazer.
+/// What the CLI is going to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Comando {
-    Lista {
+pub enum Command {
+    List {
         json: bool,
     },
-    Travar,
-    Destravar,
-    /// `ward run <entrada> -- <comando…>` (Fase 26): o argv vai em bytes, sem shell.
+    Lock,
+    Unlock,
+    /// `ward run <entry> -- <command…>` (Phase 26): the argv goes as bytes, without a
+    /// shell.
     Run {
-        entrada: String,
+        entry: String,
         argv: Vec<OsString>,
     },
-    /// `ward ssh [--token-fd <n>] <entrada> [--] [comando…]` (Fases 27 e 27a): o
-    /// comando remoto em bytes; `token_fd` é o número do fd herdado do app por onde
-    /// chega o token do "Conectar" (D3). O token nunca vem no argv.
+    /// `ward ssh [--token-fd <n>] <entry> [--] [command…]` (Phases 27 and 27a): the
+    /// remote command as bytes; `token_fd` is the number of the fd inherited from the app
+    /// through which the token of the Connect button arrives (D3). The token never comes in argv.
     Ssh {
-        entrada: String,
+        entry: String,
         token_fd: Option<u32>,
-        comando: Vec<OsString>,
+        command: Vec<OsString>,
     },
-    /// `ward playwright <entrada>` (Fase 44, D6): o daemon faz o login no Chrome
-    /// headless e a CLI imprime só o caminho do storage state.
+    /// `ward playwright <entry>` (Phase 44, D6): the daemon logs in on headless Chrome
+    /// and the CLI prints only the path of the storage state.
     Playwright {
-        entrada: String,
+        entry: String,
     },
-    /// `ward login <entrada>` (Fase 43): a extensão do Chrome confere a origem da aba
-    /// ativa, preenche, envia e limpa os campos. Nenhum valor volta.
+    /// `ward login <entry>` (Phase 43): the Chrome extension checks the origin of the
+    /// active tab, fills, submits and clears the fields. No value comes back.
     Login {
-        entrada: String,
+        entry: String,
     },
-    Ajuda,
-    Versao,
+    Help,
+    Version,
 }
 
-/// Erro de uso (sai com código 2). Só textos fixos.
+/// Usage error (exits with code 2). Only fixed texts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErroUso {
-    SemComando,
-    ComandoDesconhecido,
-    ArgumentoInesperado(&'static str),
-    NaoUtf8,
-    /// `ward run` sem entrada, sem `--` ou sem comando.
-    UsoRun,
-    /// `ward ssh` sem entrada, ou com `--token-fd` fora do formato.
-    UsoSsh,
-    /// `ward ssh --token <t>` (Fase 27a): o token no argv fica legível em
-    /// `/proc/<pid>/cmdline` por qualquer processo do mesmo usuário. Recusado.
-    TokenEmArgv,
-    /// `ward playwright` sem entrada ou com argumento a mais.
-    UsoPlaywright,
-    /// `ward login` sem entrada ou com argumento a mais.
-    UsoLogin,
+pub enum UsageError {
+    NoCommand,
+    UnknownCommand,
+    UnexpectedArgument(&'static str),
+    NotUtf8,
+    /// `ward run` without entry, without `--` or without command.
+    RunUsage,
+    /// `ward ssh` without entry, or with `--token-fd` out of format.
+    SshUsage,
+    /// `ward ssh --token <t>` (Phase 27a): the token in argv is readable in
+    /// `/proc/<pid>/cmdline` by any process of the same user. Refused.
+    TokenInArgv,
+    /// `ward playwright` without entry or with an extra argument.
+    PlaywrightUsage,
+    /// `ward login` without entry or with an extra argument.
+    LoginUsage,
 }
 
-impl ErroUso {
-    pub fn mensagem(self) -> String {
+impl UsageError {
+    pub fn message(self) -> String {
         match self {
-            ErroUso::SemComando => "falta o comando".to_owned(),
-            ErroUso::ComandoDesconhecido => "comando desconhecido".to_owned(),
-            ErroUso::ArgumentoInesperado(cmd) => format!("argumento inesperado para `{cmd}`"),
-            ErroUso::NaoUtf8 => "argumento que não é UTF-8".to_owned(),
-            ErroUso::UsoRun => "uso: ward run <entrada> -- <comando> [argumentos…]".to_owned(),
-            ErroUso::UsoSsh => "uso: ward ssh <entrada> [--] [comando remoto…]".to_owned(),
-            ErroUso::TokenEmArgv => "o token do Conectar não vai na linha de comando; \
+            UsageError::NoCommand => "falta o comando".to_owned(),
+            UsageError::UnknownCommand => "comando desconhecido".to_owned(),
+            UsageError::UnexpectedArgument(cmd) => format!("argumento inesperado para `{cmd}`"),
+            UsageError::NotUtf8 => "argumento que não é UTF-8".to_owned(),
+            UsageError::RunUsage => "uso: ward run <entrada> -- <comando> [argumentos…]".to_owned(),
+            UsageError::SshUsage => "uso: ward ssh <entrada> [--] [comando remoto…]".to_owned(),
+            UsageError::TokenInArgv => "o token do Conectar não vai na linha de comando; \
                  use o botão Conectar do app"
                 .to_owned(),
-            ErroUso::UsoPlaywright => "uso: ward playwright <entrada>".to_owned(),
-            ErroUso::UsoLogin => "uso: ward login <entrada>".to_owned(),
+            UsageError::PlaywrightUsage => "uso: ward playwright <entrada>".to_owned(),
+            UsageError::LoginUsage => "uso: ward login <entrada>".to_owned(),
         }
     }
 }
 
-pub const AJUDA: &str = "\
+pub const HELP: &str = "\
 ward: cofre de credenciais do trabalho (cliente do wardd)
 
 Uso:
-  ward lista [--json]   entradas que o agente pode ver: nome, tipo, grupo,
+  ward list [--json]    entradas que o agente pode ver: nome, tipo, grupo,
                         ambiente, projeto e URL/host (nunca segredo)
-  ward destravar        destrava o cofre com a senha mestra, lida do terminal
-  ward travar           trava o cofre agora
+  ward unlock           destrava o cofre com a senha mestra, lida do terminal
+  ward lock             trava o cofre agora
   ward run <entrada> -- <comando> [argumentos…]
                         roda o comando com a credencial no ambiente (D10); a
                         saída volta com os segredos trocados por ••••, e o
@@ -117,28 +118,28 @@ Uso:
 Nenhum comando devolve segredo. Revelar e copiar existem só no app.
 ";
 
-/// `run <entrada> -- <comando…>`: a entrada em UTF-8; o comando em bytes, como veio.
-fn interpretar_run(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
-    let mut it = resto.into_iter();
-    let entrada = it
+/// `run <entry> -- <command…>`: the entry in UTF-8; the command as bytes, as it came.
+fn parse_run(rest: Vec<OsString>) -> Result<Command, UsageError> {
+    let mut it = rest.into_iter();
+    let entry = it
         .next()
-        .ok_or(ErroUso::UsoRun)?
+        .ok_or(UsageError::RunUsage)?
         .into_string()
-        .map_err(|_| ErroUso::NaoUtf8)?;
-    if entrada.is_empty() || entrada.starts_with('-') {
-        return Err(ErroUso::UsoRun);
+        .map_err(|_| UsageError::NotUtf8)?;
+    if entry.is_empty() || entry.starts_with('-') {
+        return Err(UsageError::RunUsage);
     }
     if it.next().is_none_or(|s| s != "--") {
-        return Err(ErroUso::UsoRun);
+        return Err(UsageError::RunUsage);
     }
     let argv: Vec<OsString> = it.collect();
     if argv.first().is_none_or(|a| a.is_empty()) {
-        return Err(ErroUso::UsoRun);
+        return Err(UsageError::RunUsage);
     }
-    Ok(Comando::Run { entrada, argv })
+    Ok(Command::Run { entry, argv })
 }
 
-/// Token do "Conectar" (D3): o formato que o daemon emite e o app aceita.
+/// Token of the Connect button (D3): the format the daemon issues and the app accepts.
 pub fn token_ok(t: &[u8]) -> bool {
     (16..=64).contains(&t.len())
         && t[0] != b'-'
@@ -146,149 +147,195 @@ pub fn token_ok(t: &[u8]) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'-')
 }
 
-/// Número de `--token-fd`: só dígitos decimais (sem sinal, sem espaço), de 3 a
-/// `MAX_NUMERO_FD` (0–2 são a entrada e as saídas padrão).
-fn numero_fd(a: &OsString) -> Option<u32> {
+/// Number of `--token-fd`: decimal digits only (no sign, no space), from 3 to
+/// `MAX_FD_NUMBER` (0–2 are standard input and the standard outputs).
+fn fd_number(a: &OsString) -> Option<u32> {
     let t = a.to_str()?;
     if t.is_empty() || t.len() > 7 || !t.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     let n: u32 = t.parse().ok()?;
-    (3..=ward_plataforma::conectar::MAX_NUMERO_FD)
+    (3..=ward_platform::connect::MAX_FD_NUMBER)
         .contains(&n)
         .then_some(n)
 }
 
-/// `ssh [--token-fd <n>] <entrada> [--] [comando…]`. `--token` (com o valor em argv,
-/// separado ou com `=`) é recusado (Fase 27a).
-fn interpretar_ssh(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
+/// `ssh [--token-fd <n>] <entry> [--] [command…]`. `--token` (with the value in argv,
+/// separate or with `=`) is refused (Phase 27a).
+fn parse_ssh(rest: Vec<OsString>) -> Result<Command, UsageError> {
     use std::os::unix::ffi::OsStrExt;
-    let mut it = resto.into_iter().peekable();
+    let mut it = rest.into_iter().peekable();
     if it.peek().is_some_and(|a| {
         let b = a.as_bytes();
         b == b"--token" || b.starts_with(b"--token=")
     }) {
-        return Err(ErroUso::TokenEmArgv);
+        return Err(UsageError::TokenInArgv);
     }
     let mut token_fd = None;
     if it.peek().is_some_and(|a| a == "--token-fd") {
         it.next();
-        let n = it.next().ok_or(ErroUso::UsoSsh)?;
-        token_fd = Some(numero_fd(&n).ok_or(ErroUso::UsoSsh)?);
+        let n = it.next().ok_or(UsageError::SshUsage)?;
+        token_fd = Some(fd_number(&n).ok_or(UsageError::SshUsage)?);
     }
-    let entrada = it
+    let entry = it
         .next()
-        .ok_or(ErroUso::UsoSsh)?
+        .ok_or(UsageError::SshUsage)?
         .into_string()
-        .map_err(|_| ErroUso::NaoUtf8)?;
-    if entrada.is_empty() || entrada.starts_with('-') {
-        return Err(ErroUso::UsoSsh);
+        .map_err(|_| UsageError::NotUtf8)?;
+    if entry.is_empty() || entry.starts_with('-') {
+        return Err(UsageError::SshUsage);
     }
     if it.peek().is_some_and(|a| a == "--") {
         it.next();
     }
-    let comando: Vec<OsString> = it.collect();
-    if comando.first().is_some_and(|a| a.is_empty()) {
-        return Err(ErroUso::UsoSsh);
+    let command: Vec<OsString> = it.collect();
+    if command.first().is_some_and(|a| a.is_empty()) {
+        return Err(UsageError::SshUsage);
     }
-    Ok(Comando::Ssh {
-        entrada,
+    Ok(Command::Ssh {
+        entry,
         token_fd,
-        comando,
+        command,
     })
 }
 
-/// Lê os argumentos (sem o nome do programa).
-pub fn interpretar(args: impl IntoIterator<Item = OsString>) -> Result<Comando, ErroUso> {
+/// Reads the arguments (without the program name).
+pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, UsageError> {
     let mut args: Vec<OsString> = args.into_iter().collect();
     if args.first().is_some_and(|a| a == "run") {
-        return interpretar_run(args.split_off(1));
+        return parse_run(args.split_off(1));
     }
     if args.first().is_some_and(|a| a == "ssh") {
-        return interpretar_ssh(args.split_off(1));
+        return parse_ssh(args.split_off(1));
     }
-    let mut textos = Vec::new();
+    let mut texts = Vec::new();
     for a in args {
-        textos.push(a.into_string().map_err(|_| ErroUso::NaoUtf8)?);
+        texts.push(a.into_string().map_err(|_| UsageError::NotUtf8)?);
     }
-    let mut it = textos.iter().map(String::as_str);
-    let Some(primeiro) = it.next() else {
-        return Err(ErroUso::SemComando);
+    let mut it = texts.iter().map(String::as_str);
+    let Some(first) = it.next() else {
+        return Err(UsageError::NoCommand);
     };
-    let resto: Vec<&str> = it.collect();
-    let sem_resto = |c: Comando, nome: &'static str| {
-        if resto.is_empty() {
+    let rest: Vec<&str> = it.collect();
+    let no_rest = |c: Command, name: &'static str| {
+        if rest.is_empty() {
             Ok(c)
         } else {
-            Err(ErroUso::ArgumentoInesperado(nome))
+            Err(UsageError::UnexpectedArgument(name))
         }
     };
-    match primeiro {
-        "-h" | "--help" | "ajuda" => sem_resto(Comando::Ajuda, "--help"),
-        "-V" | "--version" => sem_resto(Comando::Versao, "--version"),
-        "travar" => sem_resto(Comando::Travar, "travar"),
-        "destravar" => sem_resto(Comando::Destravar, "destravar"),
-        "playwright" => match resto.as_slice() {
-            [entrada] if !entrada.is_empty() && !entrada.starts_with('-') => {
-                Ok(Comando::Playwright {
-                    entrada: (*entrada).to_owned(),
-                })
-            }
-            _ => Err(ErroUso::UsoPlaywright),
-        },
-        "login" => match resto.as_slice() {
-            [entrada] if !entrada.is_empty() && !entrada.starts_with('-') => Ok(Comando::Login {
-                entrada: (*entrada).to_owned(),
+    match first {
+        // m2:DT10: English names only; the four 0.1.x names (the unit test
+        // `old_names_are_unknown_commands` lists them) are unknown commands, with no alias.
+        "-h" | "--help" | "help" => no_rest(Command::Help, "--help"),
+        "-V" | "--version" => no_rest(Command::Version, "--version"),
+        "lock" => no_rest(Command::Lock, "lock"),
+        "unlock" => no_rest(Command::Unlock, "unlock"),
+        "playwright" => match rest.as_slice() {
+            [entry] if !entry.is_empty() && !entry.starts_with('-') => Ok(Command::Playwright {
+                entry: (*entry).to_owned(),
             }),
-            _ => Err(ErroUso::UsoLogin),
+            _ => Err(UsageError::PlaywrightUsage),
         },
-        "lista" => match resto.as_slice() {
-            [] => Ok(Comando::Lista { json: false }),
-            ["--json"] => Ok(Comando::Lista { json: true }),
-            _ => Err(ErroUso::ArgumentoInesperado("lista")),
+        "login" => match rest.as_slice() {
+            [entry] if !entry.is_empty() && !entry.starts_with('-') => Ok(Command::Login {
+                entry: (*entry).to_owned(),
+            }),
+            _ => Err(UsageError::LoginUsage),
         },
-        _ => Err(ErroUso::ComandoDesconhecido),
+        "list" => match rest.as_slice() {
+            [] => Ok(Command::List { json: false }),
+            ["--json"] => Ok(Command::List { json: true }),
+            _ => Err(UsageError::UnexpectedArgument("list")),
+        },
+        _ => Err(UsageError::UnknownCommand),
     }
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
-    fn ler(a: &[&str]) -> Result<Comando, ErroUso> {
-        interpretar(a.iter().map(OsString::from))
+    fn parse_args(a: &[&str]) -> Result<Command, UsageError> {
+        parse(a.iter().map(OsString::from))
     }
 
     #[test]
-    fn comandos() {
-        assert_eq!(ler(&["lista"]), Ok(Comando::Lista { json: false }));
-        assert_eq!(ler(&["lista", "--json"]), Ok(Comando::Lista { json: true }));
-        assert_eq!(ler(&["travar"]), Ok(Comando::Travar));
-        assert_eq!(ler(&["destravar"]), Ok(Comando::Destravar));
-        assert_eq!(ler(&["--help"]), Ok(Comando::Ajuda));
-        assert_eq!(ler(&["-h"]), Ok(Comando::Ajuda));
-        assert_eq!(ler(&["--version"]), Ok(Comando::Versao));
-        assert_eq!(ler(&[]), Err(ErroUso::SemComando));
-        assert_eq!(ler(&["revelar"]), Err(ErroUso::ComandoDesconhecido));
+    fn commands() {
+        assert_eq!(parse_args(&["list"]), Ok(Command::List { json: false }));
         assert_eq!(
-            ler(&["lista", "--json", "x"]),
-            Err(ErroUso::ArgumentoInesperado("lista"))
+            parse_args(&["list", "--json"]),
+            Ok(Command::List { json: true })
+        );
+        assert_eq!(parse_args(&["lock"]), Ok(Command::Lock));
+        assert_eq!(parse_args(&["unlock"]), Ok(Command::Unlock));
+        assert_eq!(parse_args(&["--help"]), Ok(Command::Help));
+        assert_eq!(parse_args(&["-h"]), Ok(Command::Help));
+        assert_eq!(parse_args(&["help"]), Ok(Command::Help));
+        assert_eq!(parse_args(&["--version"]), Ok(Command::Version));
+        assert_eq!(parse_args(&[]), Err(UsageError::NoCommand));
+        assert_eq!(parse_args(&["revelar"]), Err(UsageError::UnknownCommand));
+        assert_eq!(
+            parse_args(&["list", "--json", "x"]),
+            Err(UsageError::UnexpectedArgument("list"))
         );
         assert_eq!(
-            ler(&["lista", "--nivel"]),
-            Err(ErroUso::ArgumentoInesperado("lista"))
+            parse_args(&["list", "--nivel"]),
+            Err(UsageError::UnexpectedArgument("list"))
+        );
+        assert_eq!(
+            parse_args(&["unlock", "x"]),
+            Err(UsageError::UnexpectedArgument("unlock"))
+        );
+        assert_eq!(
+            parse_args(&["lock", "x"]),
+            Err(UsageError::UnexpectedArgument("lock"))
         );
     }
 
-    /// Ataque: a senha digitada por engano como argumento não volta na mensagem.
+    /// m2:DT10, m2:V5.1: the 0.1.x subcommands have no alias. Each one (alone, with the
+    /// arguments it took, and in another case) is an unknown command (exit 2), never
+    /// the English command it used to mean.
     #[test]
-    fn ataque_argumento_nao_volta_na_mensagem() {
-        for a in [
-            &["destravar", "falso-mestra-ward-01"][..],
-            &["falso-mestra-ward-01"][..],
-            &["lista", "falso-mestra-ward-01"][..],
+    fn old_names_are_unknown_commands() {
+        for old in [
+            &["lista"][..],
+            &["lista", "--json"],
+            &["travar"],
+            &["destravar"],
+            &["ajuda"],
+            &["LIST"],
+            &["Unlock"],
         ] {
-            let m = ler(a).unwrap_err().mensagem();
+            assert_eq!(parse_args(old), Err(UsageError::UnknownCommand), "{old:?}");
+        }
+        assert_eq!(
+            parse_args(&["help", "x"]),
+            Err(UsageError::UnexpectedArgument("--help"))
+        );
+        assert_eq!(UsageError::UnknownCommand.message(), "comando desconhecido");
+        for old in ["lista", "travar", "destravar", "ajuda"] {
+            assert!(
+                !HELP.contains(&format!("ward {old}")),
+                "a ajuda ainda cita `ward {old}`"
+            );
+        }
+        for new in ["ward list [--json]", "ward unlock", "ward lock"] {
+            assert!(HELP.contains(new), "a ajuda não cita `{new}`");
+        }
+    }
+
+    /// Attack: the password typed by mistake as an argument does not come back in the
+    /// message.
+    #[test]
+    fn attack_argument_not_echoed_in_message() {
+        for a in [
+            &["unlock", "falso-mestra-ward-01"][..],
+            &["falso-mestra-ward-01"][..],
+            &["list", "falso-mestra-ward-01"][..],
+            &["destravar", "falso-mestra-ward-01"][..],
+        ] {
+            let m = parse_args(a).unwrap_err().message();
             assert!(!m.contains("falso-mestra"), "{m}");
         }
     }
@@ -296,21 +343,21 @@ mod testes {
     #[test]
     fn run() {
         assert_eq!(
-            ler(&["run", "acme-pg-dev", "--", "psql", "-tAc", "select 1"]),
-            Ok(Comando::Run {
-                entrada: "acme-pg-dev".into(),
+            parse_args(&["run", "acme-pg-dev", "--", "psql", "-tAc", "select 1"]),
+            Ok(Command::Run {
+                entry: "acme-pg-dev".into(),
                 argv: vec!["psql".into(), "-tAc".into(), "select 1".into()],
             })
         );
-        // O `--` do comando é dele.
+        // The command's `--` belongs to it.
         assert_eq!(
-            ler(&["run", "e", "--", "sh", "--", "-c"]),
-            Ok(Comando::Run {
-                entrada: "e".into(),
+            parse_args(&["run", "e", "--", "sh", "--", "-c"]),
+            Ok(Command::Run {
+                entry: "e".into(),
                 argv: vec!["sh".into(), "--".into(), "-c".into()],
             })
         );
-        for ruim in [
+        for bad in [
             &["run"][..],
             &["run", "e"][..],
             &["run", "e", "--"][..],
@@ -319,57 +366,59 @@ mod testes {
             &["run", "-x", "--", "psql"][..],
             &["run", "e", "--", ""][..],
         ] {
-            assert_eq!(ler(ruim), Err(ErroUso::UsoRun), "{ruim:?}");
+            assert_eq!(parse_args(bad), Err(UsageError::RunUsage), "{bad:?}");
         }
-        // Argumento do comando que não é UTF-8 passa em bytes.
+        // A command argument that is not UTF-8 goes as bytes.
         use std::os::unix::ffi::OsStringExt;
-        let r = interpretar([
+        let r = parse([
             OsString::from("run"),
             OsString::from("e"),
             OsString::from("--"),
             OsString::from_vec(vec![b'x', 0xff]),
         ]);
-        assert!(matches!(r, Ok(Comando::Run { .. })));
-        // A mensagem de uso não repete argumento.
-        let m = ler(&["run", "falso-PG:s3nha/01@#"]).unwrap_err().mensagem();
+        assert!(matches!(r, Ok(Command::Run { .. })));
+        // The usage message does not repeat an argument.
+        let m = parse_args(&["run", "falso-PG:s3nha/01@#"])
+            .unwrap_err()
+            .message();
         assert!(!m.contains("falso"), "{m}");
     }
 
     #[test]
     fn ssh() {
         assert_eq!(
-            ler(&["ssh", "acme-ssh-senha-stage"]),
-            Ok(Comando::Ssh {
-                entrada: "acme-ssh-senha-stage".into(),
+            parse_args(&["ssh", "acme-ssh-senha-stage"]),
+            Ok(Command::Ssh {
+                entry: "acme-ssh-senha-stage".into(),
                 token_fd: None,
-                comando: vec![],
+                command: vec![],
             })
         );
         assert_eq!(
-            ler(&["ssh", "e", "whoami"]),
-            Ok(Comando::Ssh {
-                entrada: "e".into(),
+            parse_args(&["ssh", "e", "whoami"]),
+            Ok(Command::Ssh {
+                entry: "e".into(),
                 token_fd: None,
-                comando: vec!["whoami".into()],
+                command: vec!["whoami".into()],
             })
         );
         assert_eq!(
-            ler(&["ssh", "e", "--", "ls", "-la"]),
-            Ok(Comando::Ssh {
-                entrada: "e".into(),
+            parse_args(&["ssh", "e", "--", "ls", "-la"]),
+            Ok(Command::Ssh {
+                entry: "e".into(),
                 token_fd: None,
-                comando: vec!["ls".into(), "-la".into()],
+                command: vec!["ls".into(), "-la".into()],
             })
         );
         assert_eq!(
-            ler(&["ssh", "--token-fd", "7", "e"]),
-            Ok(Comando::Ssh {
-                entrada: "e".into(),
+            parse_args(&["ssh", "--token-fd", "7", "e"]),
+            Ok(Command::Ssh {
+                entry: "e".into(),
                 token_fd: Some(7),
-                comando: vec![],
+                command: vec![],
             })
         );
-        for ruim in [
+        for bad in [
             &["ssh"][..],
             &["ssh", "--token-fd"],
             &["ssh", "--token-fd", "7"],
@@ -385,50 +434,50 @@ mod testes {
             &["ssh", "-x", "e"],
             &["ssh", "e", ""],
         ] {
-            assert_eq!(ler(ruim), Err(ErroUso::UsoSsh), "{ruim:?}");
+            assert_eq!(parse_args(bad), Err(UsageError::SshUsage), "{bad:?}");
         }
     }
 
-    /// Ataque (Fase 27a, achado alto do M3): o token em argv (`--token <t>`,
-    /// `--token=<t>`, com ou sem entrada) é recusado antes de qualquer conexão, e a
-    /// mensagem não repete o valor.
+    /// Attack (Phase 27a, high finding of M3): the token in argv (`--token <t>`,
+    /// `--token=<t>`, with or without an entry) is refused before any connection, and
+    /// the message does not repeat the value.
     #[test]
-    fn ataque_token_em_argv_recusado_sem_eco() {
+    fn attack_token_in_argv_refused_without_echo() {
         let t = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
-        let igual = format!("--token={t}");
-        for ruim in [
+        let with_equals = format!("--token={t}");
+        for bad in [
             &["ssh", "--token", t, "e"][..],
             &["ssh", "--token", t],
             &["ssh", "--token"],
-            &["ssh", &igual, "e"],
+            &["ssh", &with_equals, "e"],
             &["ssh", "--token=", "e"],
         ] {
-            let e = ler(ruim).unwrap_err();
-            assert_eq!(e, ErroUso::TokenEmArgv, "{ruim:?}");
-            assert!(!e.mensagem().contains("AbCd"), "{}", e.mensagem());
+            let e = parse_args(bad).unwrap_err();
+            assert_eq!(e, UsageError::TokenInArgv, "{bad:?}");
+            assert!(!e.message().contains("AbCd"), "{}", e.message());
         }
-        // Depois da entrada, `--token` é argumento do comando remoto (como qualquer
-        // outro), não o token do Ward: o daemon nunca o vê como token.
+        // After the entry, `--token` is an argument of the remote command (like any
+        // other), not Ward's token: the daemon never sees it as a token.
         assert_eq!(
-            ler(&["ssh", "e", "--token", t]),
-            Ok(Comando::Ssh {
-                entrada: "e".into(),
+            parse_args(&["ssh", "e", "--token", t]),
+            Ok(Command::Ssh {
+                entry: "e".into(),
                 token_fd: None,
-                comando: vec!["--token".into(), t.into()],
+                command: vec!["--token".into(), t.into()],
             })
         );
-        let m = ler(&["ssh", "--token", "falso-SSH-senha-01!"])
+        let m = parse_args(&["ssh", "--token", "falso-SSH-senha-01!"])
             .unwrap_err()
-            .mensagem();
+            .message();
         assert!(!m.contains("falso"), "{m}");
         assert!(
-            !AJUDA.contains("--token <"),
+            !HELP.contains("--token <"),
             "a ajuda ainda ensina o token em argv"
         );
     }
 
     #[test]
-    fn formato_do_token() {
+    fn token_format() {
         assert!(token_ok(b"AbCdEfGhIjKlMnOpQrStUvWxYz012345"));
         for t in [
             &b""[..],
@@ -446,54 +495,54 @@ mod testes {
     #[test]
     fn playwright() {
         assert_eq!(
-            ler(&["playwright", "acme-wp-prod"]),
-            Ok(Comando::Playwright {
-                entrada: "acme-wp-prod".into()
+            parse_args(&["playwright", "acme-wp-prod"]),
+            Ok(Command::Playwright {
+                entry: "acme-wp-prod".into()
             })
         );
-        for ruim in [
+        for bad in [
             &["playwright"][..],
             &["playwright", ""],
             &["playwright", "-x"],
             &["playwright", "a", "b"],
             &["playwright", "--", "a"],
         ] {
-            assert_eq!(ler(ruim), Err(ErroUso::UsoPlaywright), "{ruim:?}");
+            assert_eq!(parse_args(bad), Err(UsageError::PlaywrightUsage), "{bad:?}");
         }
-        // A mensagem de uso não repete argumento.
-        let m = ler(&["playwright", "e", "falso-WP-senha-02"])
+        // The usage message does not repeat an argument.
+        let m = parse_args(&["playwright", "e", "falso-WP-senha-02"])
             .unwrap_err()
-            .mensagem();
+            .message();
         assert!(!m.contains("falso"), "{m}");
     }
 
     #[test]
     fn login() {
         assert_eq!(
-            ler(&["login", "acme-wp-prod"]),
-            Ok(Comando::Login {
-                entrada: "acme-wp-prod".into()
+            parse_args(&["login", "acme-wp-prod"]),
+            Ok(Command::Login {
+                entry: "acme-wp-prod".into()
             })
         );
-        for ruim in [
+        for bad in [
             &["login"][..],
             &["login", ""],
             &["login", "-x"],
             &["login", "a", "b"],
             &["login", "--", "a"],
         ] {
-            assert_eq!(ler(ruim), Err(ErroUso::UsoLogin), "{ruim:?}");
+            assert_eq!(parse_args(bad), Err(UsageError::LoginUsage), "{bad:?}");
         }
-        let m = ler(&["login", "e", "falso-WP-senha-02"])
+        let m = parse_args(&["login", "e", "falso-WP-senha-02"])
             .unwrap_err()
-            .mensagem();
+            .message();
         assert!(!m.contains("falso"), "{m}");
     }
 
     #[test]
-    fn nao_utf8() {
+    fn not_utf8() {
         use std::os::unix::ffi::OsStringExt;
-        let r = interpretar([OsString::from_vec(vec![0xff, 0xfe])]);
-        assert_eq!(r, Err(ErroUso::NaoUtf8));
+        let r = parse([OsString::from_vec(vec![0xff, 0xfe])]);
+        assert_eq!(r, Err(UsageError::NotUtf8));
     }
 }

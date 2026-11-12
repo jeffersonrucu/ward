@@ -1,0 +1,6 @@
+wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela unit com LimitMEMLOCK=infinity
+wardd: daemon de TESTE (modo-teste): cofre de .dev/, nunca o real
+wardd: daemon sem barramento do sistema: logind desligado; udisks2 (backup externo) desligado
+wardd: pronto
+wardd: destravar recusado: arquivo de estado ausente ou inválido (D39)
+wardd[debug]: destravar (agente): retrocesso

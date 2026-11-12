@@ -1,0 +1,11 @@
+test wire_v1::v1_fixture_has_only_known_kinds ... ok
+test wire_v1::v1_fixture_is_version_1 ... ok
+test wire_v1::attack_renamed_wire_name_is_refused ... ok
+test wire_v1::v1_responses_read_and_written_byte_for_byte ... ok
+test wire_v1::v1_error_codes_read_and_written_byte_for_byte ... ok
+test wire_v1::v1_requests_read_and_written_byte_for_byte ... ok
+test wire_v1::vault_and_backups_014_have_no_value_in_clear ... ok
+test wire_v1::vault_014_body_v4_read_and_written_byte_for_byte ... ok
+test wire_v1::backup_014_two_consecutive_generations ... ok
+test wire_v1::attack_vault_014_byte_flipped_does_not_open ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 308 filtered out; finished in 2.24s

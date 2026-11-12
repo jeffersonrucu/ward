@@ -1,154 +1,202 @@
-# Fase 11 — Fundação: workspace, toolchain, deny, gitleaks, Makefile e "Comandos"
-
-> **Nota (Fase 12a):** na allowlist do gitleaks, este handoff foi substituído pelo
-> `phase-11-ajuste.md`: a exceção do id do Figma descrita abaixo foi removida e a
-> `.gitleaks.toml` tem só os valores de D15. A Fase 12a também mudou `GITLEAKS`/`CARGO`
-> para `:=`, passou a conferir o sha256 do binário do gitleaks a cada varredura e
-> acrescentou a varredura extra e `dev/origens.py` (ver `phase-12a.md`).
+# Fase 11 — `ward-core`: `format` e `atomic_write` (Missão 2, Milestone 2, trilha R)
 
 ## Implementado
-- Workspace Cargo (`Cargo.toml`, resolver 3, edição 2024, `rust-version = 1.99`,
-  `publish = false`) com seis crates vazios em `crates/`: `ward-core` (lib),
-  `ward-plataforma` (lib), `wardd` (bin), `ward` (bin), `ward-nm` (bin) e
-  `ward-ponte-teste` (lib, com a feature `modo-teste` declarada e vazia). Os binários
-  saem com código 1 e "ainda não implementado", em vez de fingir sucesso.
-- Lints do workspace: `unsafe_code = "deny"` e `unsafe_op_in_unsafe_fn = "deny"`;
-  `clippy::undocumented_unsafe_blocks`, `dbg_macro` e `todo` como `deny`. Todos os
-  crates, menos `ward-plataforma`, têm `#![forbid(unsafe_code)]`. Perfil release com
-  `overflow-checks`, LTO e `strip`.
-- `rust-toolchain.toml` fixo em `1.99.1` com `rustfmt` e `clippy`. `Cargo.lock`
-  gerado (versão 4) e fora do `.gitignore`.
-- `deny.toml`: advisories (`yanked = "deny"`, `unmaintained = "all"`, sem `ignore`),
-  licenças permissivas numa lista fechada, `wildcards = "deny"` (só path do workspace
-  liberado), `unknown-registry` e `unknown-git` = `deny`, só o crates.io permitido.
-- `.gitleaks.toml`: regras padrão + allowlist só dos valores falsos fixos de D15
-  (cada um casado inteiro, `^…$`) e uma entrada separada para o id público do Figma
-  (ver "Problemas"). `dev/gitleaks-arvore.toml` herda essa config e só acrescenta os
-  diretórios que o `.gitignore` tira do git (`.dev/`, `target/`, `node_modules/`,
-  `dist/`), para a varredura da árvore de trabalho.
-- `Makefile`: `make check` roda, nessa ordem, `cargo fmt --check`,
-  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`,
-  `cargo test --workspace --all-features --locked`, `cargo audit --deny warnings`,
-  `cargo deny --all-features check` e gitleaks em três varreduras (árvore com arquivos
-  não versionados; índice `--staged`, sem exceção de diretório; histórico), sempre
-  com `--redact --verbose` (mostra arquivo e linha, nunca o valor). Alvos `build`,
-  `fmt`, `ferramentas` (instala `cargo-audit@0.22.2`, `cargo-deny@0.20.2` e o gitleaks
-  8.30.1 em `.dev/ferramentas/bin/`, conferindo o sha256 antes de extrair) e
-  `teste-ataques-fundacao`. Alvos das fases seguintes (`dev-servicos`, `dev-cofre`,
-  `dev-variacoes`, `dev-daemon`, `dev-daemon-parar`) existem e falham com mensagem
-  dizendo a fase que os implementa.
-- `CLAUDE.md` › "Comandos": build, `make check`, `make ferramentas`, testes de ataque,
-  `make dev-servicos`, `docker compose -f dev/compose.yml up -d`/`down`,
-  `make dev-cofre`, `make dev-variacoes`, `make dev-daemon`/`dev-daemon-parar`, senha
-  mestra e PIN de teste, cada um com a fase em que fica pronto (V1.6).
-- `.gitignore`: `__pycache__/` e `*.pyc`, como pedido.
+- **Base**: o worktree nasceu em `b4d5e1b`; com a árvore limpa, `git reset --hard f03b2fa`.
+- **Arquivos** (glossário seção 4): `src/formato.rs` → `format.rs`,
+  `formato/testes.rs` → `format/tests.rs`, `gravacao.rs` → `atomic_write.rs`,
+  `gravacao/testes.rs` → `atomic_write/tests.rs`. Módulos no `lib.rs`: `pub mod format`
+  e `pub mod atomic_write` (este continua `#[cfg(unix)]`).
+- **Comentários, locais, parâmetros, privados e nomes de teste** dos 4 arquivos em
+  inglês (`ida_e_volta` → `round_trip`, `filho_gravacao` → `child_write`,
+  `ataque_*` → `attack_*`…).
+- **Renomes públicos e `pub(crate)`** (antigo → novo), com todos os usos ajustados:
+  - `format`: `MAGIA` → `MAGIC`, `VERSAO` → `VERSION`, `TAM_SAL` → `SALT_SIZE`,
+    `TAM_CABECALHO` → `HEADER_SIZE`, `MAX_CONTEUDO` → `MAX_CONTENT`;
+    `ParametrosKdf { memoria_kib, passes, paralelismo }` → `KdfParams { memory_kib,
+    passes, parallelism }` (`PADRAO`/`MINIMO`/`MAXIMO` → `DEFAULT`/`MINIMUM`/`MAXIMUM`,
+    `conferir` → `verify`); `Cabecalho { versao, kdf, tamanho_corpo }` → `Header {
+    version, kdf, body_size }`; `ErroFormato` → `FormatError` (`PasswordOrFile`,
+    `UnsupportedVersion`, `ParamsBelowMinimum`, `ParamsAboveMaximum`,
+    `ContentTooLarge`, `EmptyPassword`, `Random`, `Encrypt`); `SenhaMestra` →
+    `MasterPassword` (`nova`/`de_bytes`/`digitada`/`serve_de_nova` → `new`/`from_bytes`/
+    `typed`/`is_valid_new`); `CofreAberto` → `OpenVault` (`novo`, `novo_com`,
+    `depois_da_geracao`, `de_partes`, `geracao`, `proxima_geracao`, `queimar`,
+    `parametros`, `configuracao`, `configuracao_mut`, `selar`, `autentica`,
+    `geracao_selada` → `new`, `new_with`, `after_generation`, `from_parts`, `generation`,
+    `next_generation`, `burn`, `params`, `config`, `config_mut`, `seal`,
+    `authenticates`, `sealed_generation`); `ChavesCofre` → `VaultKeys` (`sal`,
+    `nonce_chave`, `embrulhada`, `chave_dados` → `salt`, `key_nonce`, `wrapped`,
+    `data_key`; `novo_com`/`novo_interno`/`abrir_proprio` → `new_with`/`new_internal`/
+    `open_own`); `ler_cabecalho` → `read_header`, `abrir` → `open`,
+    `abrir_com_minimo` → `open_with_minimum`, `trocar_senha` → `change_password`,
+    `SenhaTrocada` → `PasswordChanged`, `prefixo_cabecalho` → `header_prefix`, `u32_em`
+    → `u32_at`; constantes privadas `P_*` e `TAM_EMBRULHADA` → `WRAPPED_SIZE`.
+  - `atomic_write`: `IdentidadeArquivo { …, tamanho }` → `FileIdentity { …, size }`;
+    `Etapa` → `Step` (`Read`, `CreateTemp`, `Write`, `FsyncTemp`, `Rename`,
+    `FsyncDir`); `ErroGravacao` → `WriteError` (`GenerationExhausted`, `Rollback`,
+    `NotVault`, `Format`, `Body`, `InvalidDestination`, `Io { step, kind, identity }`);
+    `Ponto` → `Point` (`AfterCreate`, `Writing`, `AfterWrite`, `AfterFsync`,
+    `AfterRename`, `AfterFsyncDir`); `Gravado { identidade, backup }` → `Written {
+    identity, backup }`; `gravar_entradas`(`_com_backup`) → `write_entries`
+    (`_with_backup`), `trocar_senha_lido` → `change_password_from_bytes`,
+    `trocar_senha_com_backup_lido` → `change_password_with_backup_from_bytes`,
+    `trocar_senha`(`_com_backup`) (só testes) → `change_password`(`_with_backup`),
+    `gravar_cofre` → `write_vault`, `gravar` → `write`, `limpar_temporarios` →
+    `clean_temp_files`, `gravar_novo_com_pontos` → `write_new_with_points`; privados
+    `MARCA_TEMPORARIO`/`MODO`/`PEDACO` → `TEMP_MARK`/`MODE`/`CHUNK`, `Temporario {
+    caminho, ativo }` → `TempFile { path, active }`, `criar_temporario` → `create_temp`,
+    `escrever_temporario` → `write_temp`, `sincronizar_diretorio` → `sync_dir`,
+    `separar` → `split`, `erro` → `error`, `ler_arquivo` → `read_file`,
+    `*_com_pontos`/`*_selado` → `*_with_points`/`*_sealed`.
+- **Usos ajustados** (só os nomes desta fase): `ward-core` (`lib`, `crypto` — campos do
+  `KdfParams` —, `backup` e testes, `configuracao` e testes, `corpo` e testes,
+  `entrada/testes`, `protocolo/erros`, `protocolo/testes`, `wire_v1.rs`,
+  `tests/corpo_memoria.rs`, `tests/fontes.rs`, `examples/dev-cofre/{main,testes}.rs`),
+  `wardd` (`arquivos`, `externo`, `nucleo`; testes `anexos_edicao`, `app_valor`,
+  `backup`, `comum/mod.rs`, `d62`, `externo`, `memoria`) e `app/core/src/primeiro_uso.rs`
+  (a chamada a `ward_core::format::MasterPassword::typed(..).is_valid_new()`).
+- **Colisões evitadas** (outros itens com o mesmo nome, não mudaram): o `SenhaMestra`
+  do `app/core/src/destrave.rs` (e os usos no app, na ponte de teste e no Tauri); os
+  `limpar_temporarios` de `wardd/src/execucao.rs` e `wardd/src/externo.rs`; o
+  `ler_cabecalho` de `corpo.rs`, `protocolo/quadro.rs` e `protocolo/resposta.rs`;
+  `ErroResposta::{Retrocesso, GeracaoEsgotada}` (fio, Fase 17/18) e
+  `ErroAbrir::Retrocesso` (Fase 14); `backup::geracao_selada` (Fase 15, só o método do
+  `OpenVault` mudou); `protocolo::VERSAO`; `configuracao::HashPin::parametros()`.
+- **`tests/fontes.rs`** (auditor de V2.46/V2.50): o arquivo de produção que pode gravar
+  passou a ser `atomic_write.rs`; a lista exata de `pub fn` é a nova
+  (`change_password_from_bytes`, `change_password_with_backup_from_bytes`,
+  `clean_temp_files`, `write_entries`, `write_entries_with_backup`); os trechos de
+  código procurados acompanham os nomes novos (`fn seal(`/`fn write_vault(`/
+  `fn write(`, `corpo::serializar(vault.config(), generation, entries)`,
+  `corpo::desserializar(&content)`, `write_entries_sealed(destination, &mut vault,
+  &entries`). Lógica do teste igual.
+- **Testes de fio** (`wire_v1.rs`): diff só de nomes (`MasterPassword::new`,
+  `format::open`); fixture e expectativas intactas.
+- **Glossário**: parágrafo "Fase 11" na seção 15 (inclusive o termo novo "lido" →
+  `from_bytes` e as colisões acima).
+- **Exceções**: 4 entradas novas em `allow.txt` (`falso` e `mestra` em `format.rs` e
+  `atomic_write.rs`: a senha falsa de D15 `"falso-mestra-ward-01"` nos doc-tests, que o
+  checador lê como comentário). Nenhuma em `frozen.txt`.
+
+## Literais alterados (PRD regra 5)
+- `format.rs`: `Debug` manual: `"SenhaMestra(••••)"` → `"MasterPassword(••••)"`,
+  `debug_struct("CofreAberto")` → `"OpenVault"` com os campos `"chaves"`,
+  `"configuracao"`, `"geracao"` → `"keys"`, `"config"`, `"generation"`;
+  `debug_struct("ChavesCofre")` → `"VaultKeys"` e `"chave_dados"` → `"data_key"` (o
+  valor continua `"••••"`). Doc-test `compile_fail`: `b"corpo sem hash de PIN"` →
+  `b"body without a PIN hash"` (não compila de propósito, nunca roda).
+- `atomic_write.rs`: captura `({tipo})` → `({kind})` no `Display` de `WriteError::Io`
+  (texto exibido igual); doc-tests (`compile_fail` e `no_run`, nunca gravam):
+  `"cofre.ward"` → `"vault.ward"`.
+- `atomic_write/tests.rs`: `CHILD_NAME` `"gravacao::testes::filho_gravacao"` →
+  `"atomic_write::tests::child_write"` (caminho do teste que o processo filho roda; tem
+  de acompanhar o módulo e a função); pasta de teste em `target/<perfil>/`
+  `"ward-teste-gravacao"` → `"ward-test-atomic-write"`; capturas de `format!`/`assert!`
+  (`{versao}`, `{SEGREDO_FALSO}`, `{marca}`, `{nome}`, `{alvo:?}`, `{outro:?}`,
+  `{controle}`, `{esperada}`, `{MORTES}`, `{com_temporario}`, `{vistas:?}`, `{uma:?}`,
+  `{caminho_tmp}`, `{destino}`, `{texto}`, `{devolvida:?}` → `{version}`,
+  `{FAKE_SECRET}`, `{mark}`, `{name}`, `{target:?}`, `{other:?}`, `{control}`,
+  `{expected}`, `{DEATHS}`, `{with_temp}`, `{seen:?}`, `{one:?}`, `{tmp_path}`,
+  `{destination}`, `{text}`, `{returned:?}`; texto igual).
+- `format/tests.rs`: capturas `{tam}` → `{size}`, `{nome}` → `{name}`, `{cofre:?}` →
+  `{vault:?}`.
+- `tests/fontes.rs`: os nomes de arquivo e os trechos de código procurados listados
+  acima, mais a mensagem `"pub fn de atomic_write.rs"`.
+- **Ficaram**: todos os `Display` pt-BR (`FormatError`, `WriteError`, `Step::name`), as
+  marcas do filho (`WARD-PONTO`, `WARD-FIM`, `WARD-PRONTO`), os modos `"ponto:"`/`"laco"`/
+  `"strace"`, as variáveis `WARD_TESTE_GRAVACAO_{MODO,DIR,MARCA,CONTROLE}` (DT12, Fase
+  56; os identificadores Rust viraram `ENV_MODE`/`ENV_MARK`/`ENV_CONTROL`), a magia
+  `WARDCOFR`, `"cofre.ward"` e o prefixo `.ward-tmp-` nos testes e os valores falsos.
+- **Conferido** por comparação da forma (tokens com identificadores normalizados, sem
+  comentários) entre cada arquivo antigo e o novo (script na scratchpad):
+  `atomic_write.rs` igual token a token; `format.rs` igual, fora uma vírgula final que o
+  rustfmt tirou; `format/tests.rs` igual, fora um bloco `{ … }` em volta de um
+  closure (mesma expressão); `atomic_write/tests.rs` igual. Os literais que diferem são
+  exatamente os listados acima.
 
 ## Segurança
-- Invariantes tocadas:
-  - **S14**: `cargo audit --deny warnings` e `cargo deny check` no `make check`;
-    origens restritas ao crates.io; `Cargo.lock` gerado e não ignorado; `--locked`
-    em build, clippy e testes (lockfile desatualizado falha).
-  - **S15**: gitleaks em árvore, índice e histórico; allowlist só com valores exatos
-    de D15 (nada de `falso-.*`); a exceção de diretório vale só na árvore, então um
-    arquivo de `.dev/` forçado para o git é achado; `--redact` em todas as varreduras.
-  - V1.5: `.dev/` ignorado; Makefile e `dev/` não citam cofre real, KeePassXC, pasta
-    de chaves SSH, de credenciais AWS, `ssh_config` nem `SSH_AUTH_SOCK`. O Makefile só
-    acrescenta `~/.cargo/bin` ao `PATH`.
-- Testes de ataque (`dev/testes/ataques-fundacao.sh`, via
-  `make teste-ataques-fundacao`; todos barrados no momento da execução):
-  - `v1_2`: arquivo `vazamento.txt` com chave OpenSSH ed25519 gerada na hora e
-    `aws_secret_access_key = <40 aleatórios>` → `make check` sai 2 e aponta o arquivo;
-    a saída não repete o segredo; sem o arquivo, volta a 0.
-  - `allowlist_ancorada`: `api_secret = "falso-WP-senha-01<aleatório>"` continua sendo
-    achado (a allowlist não vira porta de saída).
-  - `dev_forcado_no_indice`: chave em `.dev/` adicionada com `git add -f` (numa cópia
-    do workspace, com `git init` próprio) é achada pela varredura do índice.
-  - `v1_3_advisory`: crate de teste com `time = "=0.1.43"` → `make check` falha no
-    passo 4/6 (`cargo audit`) com RUSTSEC-2020-0071; `make deny` também recusa.
-  - `v1_3_git`: dependência de git (`file://` local, sem rede) → `make check` falha no
-    passo 5/6 (`cargo deny`) com `source-not-allowed`.
-  - `v1_3_lockfile`: `Cargo.lock` existe e `git check-ignore` não o ignora.
-  - `v1_5`: `.dev/qualquer`, `.dev/cofre-teste.ward` e o gitleaks local são ignorados;
-    grep dos padrões proibidos no Makefile e em `dev/` não acha nada (os padrões são
-    montados por partes para o script não casar consigo mesmo).
-  - Os ataques de V1.3 rodam numa cópia do workspace em `mktemp -d`; o único arquivo
-    criado no repositório real é `vazamento.txt`, apagado por `trap` mesmo em erro.
-- Dependências novas: nenhuma dependência de crate. Ferramentas de desenvolvimento
-  (fora do grafo do projeto): `cargo-audit 0.22.2` e `cargo-deny 0.20.2`
-  (`cargo install --locked`, em `~/.cargo/bin`) e gitleaks 8.30.1 (binário oficial do
-  GitHub, sha256 `551f6fc8…f2470eb` conferido contra o `checksums.txt` da release), em
-  `.dev/ferramentas/bin/`. Motivo: são as ferramentas que V1.1 exige.
+- **Invariantes tocadas** (PRD regra 7; diff só de nomes e comentários):
+  - S6 (`format`): cabeçalho de 160 bytes, posições e AAD iguais; recusa de parâmetros
+    abaixo do mínimo e acima do máximo antes de derivar; erro único
+    `PasswordOrFile`; chave de dados no heap (`Key`), `ZeroizeOnDrop` em
+    `MasterPassword`, `OpenVault` e `VaultKeys`, `Debug` sem segredo; NFC da senha
+    digitada igual (Fase 39c); `seal` e `from_parts` continuam `pub(crate)` (os
+    doc-tests `compile_fail` E0609/E0599/E0616/E0624 acompanham os nomes novos).
+  - S7/S2 (`atomic_write`): temporário `O_CREAT|O_EXCL|O_CLOEXEC` 0600 no mesmo
+    diretório, escrita em pedaços, fsync, rename, fsync do diretório, `link(2)` sem
+    sobrescrever para o backup; só bytes com a estrutura de cofre entram; geração
+    queimada ao selar (D53); identidade do fd do temporário (D62). As únicas `pub fn`
+    que gravam continuam 5 (V2.50, `tests/fontes.rs` com os nomes novos), e
+    `write`/`write_vault` seguem `pub(crate)` (doc-tests `compile_fail` E0603).
+  - S13: nenhum erro carrega conteúdo; os rótulos dos `Debug` manuais mudaram de nome,
+    o valor continua `••••`.
+- **Testes de ataque**: nenhum novo (só rename); os existentes renomeados junto
+  (`v2_4_downgrade_to_8_mib_fails`, `splicing_between_vaults_and_writes_fails`,
+  `attack_short_disguised_new_password_is_refused`,
+  `refuses_to_write_bytes_that_are_not_a_vault`, `symlink_destination_is_not_followed`,
+  `temp_file_does_not_follow_symlink_nor_reuse_file`,
+  `v2_9_sigkill_at_200_random_points`, `v2_10_v2_11_strace_order_and_nothing_in_clear`,
+  `v2_53_directory_fsync_fails_and_the_generation_does_not_repeat`…). Não rodaram (PRD
+  regra 6).
+- **Dependências novas**: nenhuma.
 
 ## Ficou de fora
-- `app/` (Tauri) e `extensao/` não foram criados: não são crates vazios e chegam no
-  M5/M6. O `src-tauri` entra no workspace quando a fase do app o criar.
-- `make dev-servicos`, `dev-cofre`, `dev-variacoes`, `dev-daemon`, `dev-daemon-parar`:
-  só o alvo que falha com mensagem; implementação nas Fases 12, 19 e no M3.
-- Ligação entre `wardd` e `ward-ponte-teste` pela feature `modo-teste`: fica para a
-  fase da ponte (D7), que decide se é dependência opcional do daemon ou binário à parte.
-- Os testes de ataque não entram no `make check` (V1.1 fixa os seis passos e V1.2 roda
-  o próprio `make check`); ficam em `make teste-ataques-fundacao`.
+- Os nomes dos módulos das Fases 12–15 usados nestes arquivos (`Configuracao`,
+  `HashPin::criar`, `corpo::serializar`/`desserializar`/`abrir_entradas`,
+  `ErroAbrir::Retrocesso`, `Entrada`, `Rascunho*`, `Segredo`, `PastaBackup`, `Versao`,
+  `ErroBackup`, `cofre_teste`…): são os 139 achados que sobram no `english-check` desta
+  fase (comentários dos doc-tests que chamam `Configuracao::nova`/`HashPin::criar` e
+  identificadores); nenhum nome desta fase.
+- Os locais pt-BR de outros arquivos que usam os nomes novos (`cofre`, `senha`,
+  `geracao`…, em `nucleo.rs`, `corpo/testes.rs` etc.) ficam para as fases deles; aqui só
+  o identificador desta fase mudou.
+- `tests/fontes.rs`: só os usos e os trechos procurados; a tradução do arquivo é da Fase
+  18.
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `cargo install --locked cargo-audit cargo-deny` | 0 |
-| download do gitleaks 8.30.1 + `sha256sum` contra `checksums.txt` | 0 |
-| `cargo build` | 0 |
-| `make check` (antes do arquivo da Fase 10d aparecer) | 0 |
-| `make teste-ataques-fundacao` | 0 (13 ok, 0 falhas) |
-| `make check` (final) | 2 — só `docs/mission/evidence/fase-10d/v0-auditoria.json`, ver "Problemas" |
-| gitleaks da árvore sem esse único arquivo (config temporária no scratchpad) | 0 |
+| `git reset --hard f03b2fa` (worktree nasceu em `b4d5e1b`, árvore limpa) | 0 |
+| `cargo check --workspace --all-targets --all-features --locked` (até ficar limpo; log `fase11-check.log`) | 0 |
+| `cargo fmt --all` / `cargo fmt --all --check` | 0 |
+| `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` (extra, log `fase11-clippy.log`) | 0 |
+| `make compile` (log `fase11-make-compile.log`; inclui o `cargo check` do `app/src-tauri`) | 0 |
+| `python3 -I dev/english_check.py --paths crates/ward-core/src/format.rs crates/ward-core/src/format crates/ward-core/src/atomic_write.rs crates/ward-core/src/atomic_write` (= `make english-check PATHS=…`; log `fase11-english.log`) | 1 (139 achados, todos nomes das Fases 12–15; 0 problema nas exceções) |
+| comparação de forma e de literais antigo × novo (scripts na scratchpad) | — |
+| `make check` | não rodado (PRD regra 6) |
 
 ## Problemas descobertos
-- **`make check` final sai 2 por um arquivo da Fase 10d, que roda em paralelo**:
-  `docs/mission/evidence/fase-10d/v0-auditoria.json`, linha ~492, contém a string
-  `falso-exemplo-9f3k` sob uma chave que o `generic-api-key` trata como segredo. Não é
-  valor de D15, então não entrou na allowlist (regra da fase), e o arquivo é da
-  10d, então não o alterei. Saídas: a 10d evita gravar a string (ou grava só um
-  hash), ou o orchestrator decide pôr esse valor exato na allowlist com motivo. Sem
-  esse arquivo, todos os seis passos passam.
-- **Id do Figma na allowlist**: `bzu9PxxFur2tU3vlNCHvsY` aparece em três evidências do
-  M0 (`fase-1-inspiracoes.json`, `fase-4a/…`, `fase-10/v0-21-inspiracoes.json`) e o
-  `generic-api-key` o acusa. Não é credencial nem valor de D15; entrou como exceção
-  separada, casada inteira, com comentário. Se a regra "allowlist só de D15" for
-  estrita, a alternativa é tirar o id dessas evidências.
-- `--pre-commit --staged` e a varredura do histórico rodam sem commits hoje (0 commits);
-  passam a valer quando o usuário commitar.
-- `cargo audit` e `cargo deny` baixam o banco de advisories pela rede a cada
-  `make check`; sem rede o passo falha (falha fechada, não passa em silêncio).
-- Os nomes `make dev-daemon` e `make dev-daemon-parar` são proposta desta fase; o plano
-  não os nomeia. A fase do daemon de teste pode trocá-los e atualizar o `CLAUDE.md`.
-- O `extend.path` de `dev/gitleaks-arvore.toml` é relativo ao diretório atual (o
-  gitleaks não resolve relativo ao arquivo); por isso o Makefile sempre roda da raiz.
+- O worktree nasceu em `b4d5e1b`, não em `f03b2fa`; com a árvore limpa, fiz
+  `git reset --hard f03b2fa`.
+- **Homônimos que não são desta fase**: `limpar_temporarios` existe também em
+  `wardd/src/execucao.rs` (pública, chamada pelo `main.rs`) e em `wardd/src/externo.rs`
+  (privada); `SenhaMestra` existe no `app/core/src/destrave.rs` com o mesmo `Debug`
+  `"SenhaMestra(••••)"`. As fases deles (21, 23, 31) precisam escolher nomes; sugestão no
+  glossário só para o do `atomic_write` (`clean_temp_files`).
+- `strings-0.1.4.txt` tem os rótulos dos `Debug` manuais de `SenhaMestra`,
+  `CofreAberto`, `ChavesCofre` (`"chaves"`, `"configuracao"`, `"geracao"`,
+  `"chave_dados"`): o V6.3 deve aceitar a troca, como os `Debug` das Fases 8–10.
+- **Arquivos compartilhados com as trilhas W e S**: `dev/english-check/allow.txt` (4
+  linhas no fim) e `docs/glossario.md` (um parágrafo antes de "Funções e métodos…" na
+  seção 15). Nenhum script de `dev/` nem de `install/` foi tocado.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `Cargo.toml` | criado |
-| `Cargo.lock` | criado |
-| `rust-toolchain.toml` | criado |
-| `deny.toml` | criado |
-| `.gitleaks.toml` | criado |
-| `dev/gitleaks-arvore.toml` | criado |
-| `dev/testes/ataques-fundacao.sh` | criado |
-| `Makefile` | criado |
-| `crates/ward-core/{Cargo.toml,src/lib.rs}` | criado |
-| `crates/ward-plataforma/{Cargo.toml,src/lib.rs}` | criado |
-| `crates/wardd/{Cargo.toml,src/main.rs}` | criado |
-| `crates/ward/{Cargo.toml,src/main.rs}` | criado |
-| `crates/ward-nm/{Cargo.toml,src/main.rs}` | criado |
-| `crates/ward-ponte-teste/{Cargo.toml,src/lib.rs}` | criado |
-| `CLAUDE.md` | alterado (seção "Comandos") |
-| `.gitignore` | alterado (`__pycache__/`, `*.pyc`) |
+| `crates/ward-core/src/format.rs`, `crates/ward-core/src/format/tests.rs` (eram `formato.rs`, `formato/testes.rs`) | renomeado e reescrito |
+| `crates/ward-core/src/atomic_write.rs`, `crates/ward-core/src/atomic_write/tests.rs` (eram `gravacao.rs`, `gravacao/testes.rs`) | renomeado e reescrito |
+| `crates/ward-core/src/lib.rs` | alterado |
+| `crates/ward-core/src/{backup,configuracao,corpo,crypto,wire_v1}.rs`, `backup/testes.rs`, `configuracao/testes.rs`, `corpo/testes.rs`, `entrada/testes.rs`, `protocolo/{erros,testes}.rs` | alterado (usos) |
+| `crates/ward-core/tests/{corpo_memoria,fontes}.rs`, `crates/ward-core/examples/dev-cofre/{main,testes}.rs` | alterado (usos) |
+| `crates/wardd/src/{arquivos,externo,nucleo}.rs`, `crates/wardd/tests/{anexos_edicao,app_valor,backup,d62,externo,memoria}.rs`, `crates/wardd/tests/comum/mod.rs` | alterado (usos) |
+| `app/core/src/primeiro_uso.rs` | alterado (uso) |
+| `dev/english-check/allow.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-11.md` | criado |
-| `.dev/ferramentas/bin/gitleaks` | criado (fora do git) |
 
 ## Procedimentos
-- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): passou com 0
-  antes; o final sai 2 só pelo arquivo da Fase 10d (ver "Problemas")
-- [x] Só cofre de teste e credenciais falsas usados (chaves geradas na hora em
-  diretório temporário e apagadas)
-- [x] Teste de ataque para cada (SEG) tocado (V1.2, V1.3, V1.5)
-- [x] (UI/DESIGN) não se aplica
+- [ ] `make check` rodado — não, por PRD regra 6; rodou `make compile` (0), `cargo fmt` e `cargo clippy -D warnings` (0)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
+- [x] Teste de ataque para cada (SEG) tocado — os existentes renomeados; a lógica não mudou
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

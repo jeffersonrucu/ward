@@ -3799,31 +3799,31 @@ dependencies = [
 
 [[package]]
 name = "ward-app"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "gtk",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
- "ward-app-nucleo",
+ "ward-app-core",
 ]
 
 [[package]]
-name = "ward-app-nucleo"
-version = "0.1.5"
+name = "ward-app-core"
+version = "0.2.0"
 dependencies = [
  "ctutils",
  "libc",
  "serde",
  "ward-core",
- "ward-plataforma",
+ "ward-platform",
  "zeroize",
 ]
 
 [[package]]
 name = "ward-core"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "argon2",
  "base64ct",
@@ -3837,8 +3837,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ward-plataforma"
-version = "0.1.5"
+name = "ward-platform"
+version = "0.2.0"
 dependencies = [
  "libc",
  "zeroize",

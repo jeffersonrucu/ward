@@ -1,0 +1,34 @@
+# Ward: vault daemon of uid %i (D46, D57, D62, Phases 24 and 51). Unit of the SYSTEM
+# systemd, installed by `sudo make install` in /usr/local/lib/systemd/system/.
+#
+# Starts on the first connection to wardd@%i.socket and gets the socket by LISTEN_FDS.
+#
+# No NoNewPrivileges=, RestrictSUIDSGID= nor any option that implies no_new_privs in a
+# service with User= (SystemCallFilter=, SystemCallArchitectures=, RestrictNamespaces=,
+# RestrictAddressFamilies=, LockPersonality=, MemoryDenyWriteExecute=, RestrictRealtime=,
+# PrivateDevices=, ProtectKernel*=, ProtectClock=, DynamicUser=...). With no_new_privs
+# the execve of ward-app, which the daemon launches, does not apply the setgid and the
+# app never gets the role (D57); MemoryDenyWriteExecute= also breaks the WebKitGTK JIT.
+# Also no ProtectHome=/ProtectSystem=/PrivateTmp=: the vault lives in the home and
+# `ward run` runs the user's command in their cwd.
+#
+# No Environment=/EnvironmentFile=: wardd refuses LD_* and glibc's unsecure list
+# (S8, D48) and builds the children's environment from scratch (D57).
+
+[Unit]
+Description=Ward: daemon do cofre do uid %i
+Requires=wardd@%i.socket
+After=wardd@%i.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wardd
+User=%i
+UMask=0077
+# S8: no core dump.
+LimitCORE=0
+# D62: mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) at hardened start; with a
+# limit, the Argon2 allocation would fail.
+LimitMEMLOCK=infinity
+Restart=on-failure
+RestartSec=1

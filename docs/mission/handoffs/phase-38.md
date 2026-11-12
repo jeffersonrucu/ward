@@ -1,218 +1,243 @@
-# Fase 38 — Configurações (UI)
+# Fase 38 — (UI) `Settings`, `Unlock`, `ChangePassword`, `ChangePin`, `ChooseUsbDrive`, `lib/bridge` e `Showcase`
 
 ## Implementado
-- **Tela `Configurações / Geral`** (`app/src/telas/Configuracoes.svelte`), feita a partir
-  do frame `15242` do FigCraft (ids em `docs/mission/design-nodes.md` › "Fase 38"). Ela
-  substitui o "Esta tela ainda não existe." em `App.svelte`.
-  - **Acesso:** "Senha mestra › Trocar" abre `TrocarSenha.svelte`, que pede a senha
-    atual, a nova e a confirmação. A nova segue a regra do primeiro uso: no mínimo 12
-    caracteres, com o mesmo medidor de força. "PIN de aprovação › Trocar" abre
-    `TrocarPin.svelte`, que pede o PIN atual, o novo e a confirmação, com o mesmo
-    `beforeinput` do primeiro uso. "Tempo de trava" é um `Select` compacto (15 min,
-    30 min, 1 h, 2 h e 4 h, o padrão). Um valor gravado fora da lista também aparece.
-    Ao mudar, o tempo é gravado pelo daemon.
-  - **Backup:** "Backup local" e "Kit de emergência" aparecem com os botões
-    desabilitados. Restaurar é da Fase 47 e o kit é do M7. "Backup externo em pendrive"
-    mostra o estado lido do daemon (desligado) com o interruptor desabilitado. A nota
-    "Backups sempre cifrados" é igual à do design.
-  - Os toasts são "Tempo de trava salvo.", "PIN trocado." e "Senha mestra trocada.". O
-    erro `travado` leva à tela de destravar. PIN errado consulta o estado, porque o 5º
-    erro trava. Uma falha de gravação também confere o estado, porque o daemon trava em
-    D53.
-- **Componentes:** `LinhaDeOpcao` ganhou o snippet `controle`, para as variantes
-  `Controle=botão` (10380) e `Controle=select` (10825). `Select` ganhou `compacto`
-  (`largura/select-compacto`, rótulo só para leitor de tela) e `onmudar`. Os dois
-  diálogos montam `Modal` + `CampoSenha`/`CampoPin` e reusam `primeiro-uso.js`
-  (`erroDaSenha`, `pinValido`, `forcaDaSenha`, `MENSAGENS`). O `PainelDeMarca` não foi
-  usado, porque a tela fica dentro da casca e não tem painel de marca no design.
-- **Protocolo (`ward-core`):** operação nova `configuracao`, só para o app, sem campo.
-  A resposta nova `configuracao` traz `{ minutos_trava, backup_externo }`, nunca o hash
-  do PIN nem o UUID. A leitura recusa minutos fora de 1–1440 e campo a mais. Asserções
-  de compilação garantem que `configuracao`, `trocar_pin`, `trocar_senha` e
-  `tempo_trava` não aceitam o papel agente nem o extensão.
-- **Daemon (`wardd`):** `Pedido::Configuracao` lê a configuração do `CofreAberto` (com o
-  cofre travado, responde `travado`). `trocar_pin` (PIN atual pelo `conferir_pin`, com
-  contagem e trava no 5º erro), `trocar_senha` (D52/D53) e `tempo_trava` já existiam
-  (Fase 22) e gravam geração nova (D39). Não mexi neles.
-- **Núcleo do app (`app/nucleo`):**
-  - `configuracoes.rs` (novo): `TrocaPin { atual, novo, confirmacao }` e
-    `TrocaSenha { atual, nova, confirmacao }`, os dois com `deny_unknown_fields` e
-    `Digitado`, que zera e tem `Debug` mascarado. As regras são as de
-    `primeiro_uso.rs`: `pin_valido`, `erros_da_senha` e a comparação em tempo
-    constante, que passou a `pub(crate)`. A senha atual só precisa ter de 1 a
-    `MAX_SEGREDO` bytes. Também tem `minutos_validos` (1–1440, D45), `Configuracoes` e
-    `ResultadoTroca`.
-  - `cliente.rs`: `configuracao`, `trocar_pin`, `trocar_senha` e `tempo_trava`.
-  - `servico.rs`: `configuracoes`, `trocar_pin`, `trocar_senha_mestra` e
-    `definir_tempo_trava`. Com erro de campo, nada vai ao daemon.
-  - Comandos novos `configuracoes`, `trocar_pin { dados }`,
-    `trocar_senha_mestra { dados }` e `definir_tempo_trava { minutos }`. Entraram em
-    `comandos.rs`, `comandos.js`, na capability (`allow-*`), no `generate_handler!` e
-    no despacho da ponte. Na ponte, os `dados` saem do mapa por `remove`, e campo a mais
-    é recusado.
-  - `daemon_falso`: atende `configuracao`, `tempo_trava`, `trocar_pin` (mesma regra e
-    mesma contagem do `mudar_nivel`) e `trocar_senha` (compara em tempo constante; a
-    nova passa a destravar).
+
+Troca 1:1 pelo `docs/glossario.md` (seções 2 e 4, mais a tabela nova "Telas `Settings`,
+`Unlock`, `ChangePassword`, `ChangePin`, `ChooseUsbDrive`, `lib/bridge` e `Showcase`
+(Fase 38)"), sem mudar comportamento nem texto visível em pt-BR. Parte de `master`
+6d8cda8.
+
+- **Arquivos** (`git mv`): `screens/Configuracoes.svelte` → `Settings.svelte`,
+  `configuracoes.js` → `settings.js`, `Destravar.svelte` → `Unlock.svelte`,
+  `TrocarSenha.svelte` → `ChangePassword.svelte`, `TrocarPin.svelte` → `ChangePin.svelte`,
+  `EscolherPendrive.svelte` → `ChooseUsbDrive.svelte`. `App.svelte` importa
+  `./screens/Settings.svelte` e `./screens/Unlock.svelte`.
+- **`settings.js`**: `MIN_LOCK_MINUTES`, `MAX_LOCK_MINUTES`, `LOCK_OPTIONS`,
+  `minutesLabel`, `lockOptions`, `usbDriveName`, `situationInList`, `usbDriveCard`
+  (`{ name, situation, status, mounted }`), `LOCAL_BACKUP_WARNING`. Os campos do fio
+  (`rotulo`, `montado`, `pendrive`, `pendrives_visiveis`) ficam.
+- **`Settings.svelte`**: estado e funções em inglês; a config local virou
+  `{ lockMinutes, externalBackup, localBackup }` (lida da resposta de `configuracoes`,
+  cujos campos ficam); `dialog` com `password`/`pin`/`usb-drive`/`restore`/`kit`; prop
+  `onlocked` sem o alias da Fase 35; classes locais e ids do DOM em inglês.
+- **`Unlock.svelte`**: props `request`, `onunlocked`, `onerror` sem o alias da Fase 35;
+  `MAX_WAIT`, `OPERATION_COMMAND` (a chave do fio `'executar'` entre aspas),
+  `operationCommand`, `withRequest`, `consecutiveErrors`, `dismissed`, `buttonLabel`
+  etc.; id `senha-mestra` → `master-password` (com os usos em `dev/tests/app_e2e.py` e
+  `revealed_selection.py`).
+- **`ChangePassword.svelte`/`ChangePin.svelte`**: props `open`, `onclose`, `onchanged`,
+  `onfailure` (e `onlocked` no PIN); valores locais `current`/`next`/`confirmation`;
+  `errors` com as chaves do fio entre aspas (`'atual'`, `'nova'`/`'novo'`,
+  `'confirmacao'`), porque o `erros[].campo` da resposta indexa esse objeto; o pedido
+  `{ 'dados': { 'atual', 'nova'|'novo', 'confirmacao' } }` tem as mesmas chaves e a mesma
+  ordem; `refusal(field)`, `focusField(field)`, `wrongPin`; ids `change-password-*`,
+  `change-pin-*`; `data-test` e `data-tone` (antes `data-teste`, `data-tom`).
+- **`ChooseUsbDrive.svelte`**: props `open`, `replace`, `current`, `onclose`, `onchosen`,
+  `onlocked`; `usbDrives`, `chosen`, `load`, `confirm` etc.
+- **`lib/bridge/*`**: `COMANDOS` → `COMMANDS` (a lista de comandos é a mesma, byte a
+  byte; o teste `configuracao_tauri.rs` confere só o `Object.freeze([...])`);
+  `AVISOS` → `NOTICES`, `obterTransporte` → `getTransport`, `falha` → `failure`;
+  `criarTransporte` → `createTransport`, `lerToken` → `readToken`, `ouvirPorConsulta` →
+  `listenByPolling`; parâmetros e locais em inglês; comentários em inglês. O objeto de
+  erro continua `{ codigo, mensagem }` (do fio), na mesma ordem.
+- **`lib/test/Showcase.svelte`**: comentário, `modalOpen`, `environment`, classes
+  `.showcase`/`.row`/`.list`, ids `v-group`/`v-password`/`v-environment`.
+- **Comentários**: em inglês; nodes do FigCraft pelo id (regra da Fase 35); sem nome de
+  fio nem de identificador Rust em pt-BR (os comandos e módulos são descritos em inglês).
+- **Glossário**: tabela da Fase 38 (exports, estado local, props, ids, `data-*` e a
+  ponte).
+
+### Literais alterados (PRD regra 5; todos são nomes)
+
+- Caminhos de import: `./screens/Configuracoes.svelte` → `./screens/Settings.svelte`,
+  `./screens/Destravar.svelte` → `./screens/Unlock.svelte`, `./configuracoes.js` →
+  `./settings.js`, `./TrocarPin.svelte`/`./TrocarSenha.svelte`/`./EscolherPendrive.svelte`
+  → `./ChangePin.svelte`/`./ChangePassword.svelte`/`./ChooseUsbDrive.svelte`.
+- Valores internos do `dialog` de Configurações: `senha`/`pendrive`/`restaurar` →
+  `password`/`usb-drive`/`restore` (`pin`, `kit` ficam). Nunca saem da tela.
+- Ids do DOM: `senha-mestra` → `master-password` (usos nos dois scripts de teste
+  ajustados); `configuracoes-titulo`, `acesso-titulo`, `backup-titulo` →
+  `settings-title`, `access-title`, `backup-title`; `config-senha`, `config-trava`,
+  `config-tempo-trava`, `config-backup-local`, `config-backup-local-aviso`,
+  `config-backup-externo` → `config-password`, `config-lock`, `config-lock-timeout`,
+  `config-local-backup`, `config-local-backup-warning`, `config-external-backup`;
+  `trocar-senha-atual/nova/confirmacao` → `change-password-current/new/confirmation`;
+  `trocar-pin-atual/novo/confirmacao` → `change-pin-current/new/confirmation`;
+  `v-grupo`/`v-senha`/`v-ambiente` → `v-group`/`v-password`/`v-environment`. Nenhum
+  outro é lido fora da tela (conferido em `app/`, `dev/`, `extension/`, `crates/`).
+- `data-teste="trocar-senha"`, `"trocar-senha-aviso-backups"`, `"trocar-pin"` →
+  `data-test="change-password"`, `"change-password-backups-notice"`, `"change-pin"`
+  (ninguém lê); `data-tom` → `data-tone` (atributo e seletores CSS do mesmo arquivo).
+- Classes locais (escopadas pelo Svelte; nenhuma global nem lida fora): `principal` →
+  `main`, `topo` → `top`, `colunas` → `columns`, `acesso` → `access`, `nota` → `note`,
+  `janela` → `window`, `formulario` → `form`, `com-pedido` → `with-request`, `corpo` →
+  `body`, `forca` → `strength`, `barra(s)` → `bar(s)`, `legenda` → `caption`, `opcao` →
+  `option`, `escolhida` → `chosen`, `vitrine` → `showcase`, `linha` → `row` etc. Mesmas
+  regras CSS; nenhum choque com as classes globais de `tokens.css`/`base.css`.
+- Chaves do fio passaram de shorthand a chave entre aspas (`{ ligado: … }` →
+  `{ 'ligado': … }`, `{ minutos: novo }` → `{ 'minutos': next }`, `{ senha: enviada }` →
+  `{ 'senha': sent }`, `{ dados: { atual, nova, confirmacao } }` →
+  `{ 'dados': { 'atual': current, 'nova': next, 'confirmacao': confirmation } }`,
+  `{ canal }` → `{ 'canal': channel }`, `{ codigo, mensagem }` →
+  `{ 'codigo': code, 'mensagem': message }`): mesmos bytes no fio.
+- Template strings só mudaram nas variáveis interpoladas (`${espera}` → `${wait}`,
+  `${resto}` → `${rest}`, `${forca.rotulo}` → `${strength.rotulo}`, `/ponte/${comando}` →
+  `/ponte/${command}`); o texto é o mesmo.
+- Ficaram de propósito: `name="pendrive"` do grupo de rádio (o checador não acusa), o
+  caminho `/ponte/<comando>`, o `&tela=` da URL de teste, o modo `'teste'` do Vite, os
+  códigos de erro (`'travado'`, `'senha-incorreta'`, `'pin-incorreto'`,
+  `'pedido-invalido'`, `'pendrive-nao-conectado'`, `'comando-desconhecido'`,
+  `'aviso-desconhecido'`, `'ponte-indisponivel'`, `'ponte-invalida'`, `'falha'`), os
+  nomes de aviso e de comando Tauri.
+
+### Entradas novas de `dev/english-check/frozen.txt` (todas Fase 54)
+
+- `app/src/lib/bridge/index.js`: `codigo`, `mensagem`, `aviso`.
+- `app/src/lib/bridge/test-bridge.js`: `codigo`, `mensagem`, `valor`.
+- `app/src/screens/settings.js`: `rotulo`, `montado`, `pendrive`, `pendrives_visiveis`.
+- `app/src/screens/Settings.svelte`: `minutos_trava`, `backup_externo`, `ligado`,
+  `estado`, `codigo`, `mensagem` (as de `instante`/`entradas` saíram no merge com a
+  Fase 37: a resposta do restaurar chega já como `{ instant, entries }`).
+- `app/src/screens/Unlock.svelte`: `restante`, `entrada`, `operacao`, `comando`,
+  `codigo`, `mensagem`.
+- `app/src/screens/ChangePassword.svelte`: `dados`, `atual`, `nova`, `confirmacao`,
+  `trocado`, `erros`, `campo`, `motivo`, `codigo`, `mensagem`.
+- `app/src/screens/ChangePin.svelte`: `dados`, `atual`, `novo`, `confirmacao`, `trocado`,
+  `erros`, `campo`, `motivo`, `estado`, `codigo`, `mensagem`.
+- `app/src/screens/ChooseUsbDrive.svelte`: `codigo`, `mensagem`.
 
 ## Segurança
-- **Invariantes tocadas:**
-  - **S9:** trocar o PIN exige o PIN atual, conferido no daemon. A contagem de erros é
-    a mesma do `mudar_nivel`, e o 5º erro seguido trava. O PIN novo vira só o hash
-    Argon2id (D30).
-  - **S1/D5:** as operações de configuração são só do papel app. Isso é conferido na
-    tabela, numa asserção de compilação e por teste.
-  - **S11:** nenhuma resposta traz PIN, senha ou hash. Os valores digitados ficam no
-    estado local do diálogo e saem dele antes da resposta, ao fechar (inclusive por Esc)
-    e no `onDestroy`. Nada vai para `localStorage`, `sessionStorage`, URL ou estado
-    global. O QA conferiu o HTML, os dois armazenamentos e a URL depois de cada passo.
-  - **S7/D39:** toda mudança grava geração nova (testado no `wardd`).
-  - **ACL:** os 4 comandos só passam na janela `principal` com a origem local.
-- **Testes de ataque:**
-  - `crates/wardd/tests/configuracoes.rs`:
-    - `ataque_agente_e_extensao_nao_leem_nem_mudam_a_configuracao`
-    - `ataque_configuracao_com_o_cofre_travado`
-    - `ataque_resposta_configuracao_sem_hash_nem_pin`
-    - `ataque_adivinhar_pin_pela_troca_trava_no_quinto_erro`
-    - `v5_22_trocar_pin_pede_o_pin_atual`
-    - `v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao`
-    - `v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre` (geração +1; o
-      valor sobrevive a travar e destravar; fora de 1–1440 é recusado na leitura)
-  - `app/nucleo/src/configuracoes.rs`:
-    - `ataque_pin_atual_ou_novo_fora_do_formato_e_recusado`
-    - `ataque_senha_nova_curta_ou_diferente_e_atual_vazia_recusadas`
-    - `ataque_erros_e_debug_nao_mostram_valor`
-    - `ataque_campo_a_mais_ou_tipo_errado_e_recusado`
-    - `ataque_minutos_fora_da_faixa`
-    - `pelo_servico::ataque_pin_ou_senha_fora_da_regra_nao_chegam_ao_daemon` (espião:
-      zero quadros)
-    - `pelo_servico::ataque_tempo_fora_da_faixa_nem_chega_ao_daemon`
-    - `pelo_servico::ataque_adivinhar_o_pin_pela_troca_trava_no_quinto_erro`
-    - `pelo_servico::v5_22_*` (3 testes; o quadro do `trocar_pin` não leva a
-      confirmação)
-  - `crates/ward-ponte-teste/tests/ataques.rs` › `ataque_configuracoes_pela_ponte`
-  - `app/src-tauri/src/main.rs` ›
-    `ataque_configuracoes_so_na_janela_certa_e_conferidas_no_rust`
-  - `ward-core` › `v3_15_tabela_operacao_papel` e a tabela de respostas, atualizadas
-    com `configuracao`.
-- **QA no Chrome** (`docs/mission/evidence/fase-38/qa.json`, 31 checagens, todas
-  `true`; ponte com `--daemon-falso cheio`, Chrome headless, 1280×800, tema claro do
-  sistema):
-  - V5.22: padrão 4 horas; backup externo desligado e sem como mexer; tempo trocado
-    para 30 min continua depois de sair e voltar à tela; trocar PIN pede o PIN atual
-    (sem ele, nada vai ao daemon; errado mostra "PIN incorreto. Nada foi alterado." e
-    esvazia os campos; certo troca); trocar senha pede a atual (sem ela, nada vai; nova
-    curta é recusada; errada mostra "Senha mestra incorreta. Nada foi alterado."; certa
-    troca).
-  - Também: Esc fecha e apaga o digitado; nenhum valor no HTML, no armazenamento, na URL
-    ou nas respostas; só pedidos locais; console sem erro.
-- **Dependências novas:** nenhuma.
+
+- Invariantes: S1/S11/S13 (senha mestra só no estado local de `Unlock`, sai antes da
+  resposta e no `onDestroy`; nada em estado global, armazenamento ou URL), S9 (PIN atual
+  e novo só no estado local de `ChangePin`, apagados antes da resposta e ao fechar; o
+  5.º erro seguido trava o cofre, conferido pelo `estado_do_cofre`), D52 (senha atual
+  na troca), D51 (texto do agente e rótulo do udisks só como texto, isolados) e D7 (o
+  token da ponte só na variável do módulo, tirado da URL e do histórico; `credentials:
+  'omit'`, `redirect: 'error'`, `no-referrer`). Só nomes e comentários mudaram: a ordem
+  das operações (copiar o valor, apagar o estado, enviar, `args.dados = null` no
+  `finally`), as conferências e os ramos de erro são os mesmos linha a linha. A ponte
+  segue recusando comando fora de `COMMANDS` e aviso fora de `NOTICES`; o ramo de teste
+  continua atrás de `import.meta.env.MODE === 'teste'`, então some do `dist/`.
+- Testes de ataque: nenhum novo (fase de nomes). `revealed_selection.py` (V3.4) e
+  `app_e2e.py` acompanham o id `#master-password`.
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **Ligar o backup externo e o frame `16178`:** Fase 46. A tela já mostra "Ligado." se
-  a configuração disser que está ligado, mas o interruptor fica desabilitado.
-- **"Restaurar" (Fase 47) e "Imprimir kit" (M7):** os botões aparecem desabilitados. O
-  "Último: hoje às 14:32" do design saiu da descrição do backup local: a operação
-  `backups` existe, mas mostrar a data é da tela de restaurar.
-- **Ponta a ponta com o `wardd` real pela tela:** os testes do `wardd` cobrem as
-  operações. O QA na tela usou o daemon falso.
+
+- Nomes exportados por módulos da Fase 37 (rodando ao mesmo tempo noutro worktree):
+  `primeiro-uso.js` (`MENSAGENS` e as chaves `senhaDiferente`, `pinComLetra`,
+  `pinLongo`, `pinInvalido`, `pinDiferente`; `erroDaSenha`, `forcaDaSenha` e o objeto de
+  força `{ rotulo, segmentos, tom }` com os valores `perigo`/`aviso`/`sucesso` que os
+  seletores `[data-tone=…]` de `ChangePassword` usam; `mensagemDoRust`; `MAX_DIGITOS_PIN`;
+  `pinValido`), `restaurar.js` (`mensagemRestaurado`) e as props de
+  `KitEmergencia.svelte`/`RestaurarBackup.svelte` (`aberto`, `onfechar`, `ontravado`,
+  `onrestaurado`). Aqui eles são importados com alias em inglês
+  (`mensagemDoRust as rustMessage`, `MENSAGENS as MESSAGES`, `erroDaSenha as
+  passwordError`, `forcaDaSenha as passwordStrength`, `MAX_DIGITOS_PIN as
+  MAX_PIN_DIGITS`, `pinValido as validPin`, `mensagemRestaurado as restoredMessage`;
+  `KitEmergencia`/`RestaurarBackup` como `EmergencyKit`/`RestoreBackup`, apontando para
+  o arquivo antigo), então os usos nas minhas telas já estão em inglês. São os 25
+  achados que sobram no `english-check` (lista em "Comandos").
+- Nomes de fio (comandos Tauri, campos, avisos, códigos de erro, `/ponte/`, `&tela=`):
+  Fase 54 (`frozen.txt`).
+- `docs/mission/design-nodes.md` cita `app/src/telas/Destravar.svelte`,
+  `Configuracoes.svelte`, `TrocarSenha.svelte`, `TrocarPin.svelte`,
+  `EscolherPendrive.svelte`, `configuracoes.js` e `config-kit`: Fase 59 (PRD regra 2).
+- Suítes (`app_e2e.py`, `revealed_selection.py`, QA visual e de teclado V3.2/V3.3):
+  Milestone 6 (PRD regra 6).
 
 ## Comandos executados
+
 | Comando | Exit code |
 | --- | --- |
-| `cargo test -p wardd --test configuracoes` | 0 |
-| `cargo test -p ward-app-nucleo --all-features` | 0 |
-| `cargo test -p ward-ponte-teste --all-features --test ataques configuracoes` | 0 |
-| `make app-front` | 0 |
-| ponte `--daemon-falso cheio` + Playwright (`qa38.py`, scratchpad): a 1ª rodada só falhou no `console_sem_erro` (o 404 de `/favicon.ico`); o filtro passou a olhar a URL do 404, e a 2ª rodada deu tudo `true` | 1, depois 0 |
-| `make ferramentas` | 0 |
-| `make check`: a 1ª rodada falhou em `v3_15_tabela_operacao_papel`, porque faltava `configuracao` na tabela de respostas do teste. Corrigi, e a 2ª rodada saiu limpa | 2, depois 0 |
-| `make app-check` com o `PKG_CONFIG_PATH` do scratchpad (R32): a 1ª rodada falhou em `ataque_comandos_proprios_so_na_janela_e_origem_certas` e `ataque_destravar_so_na_janela_certa_e_senha_sem_eco`, porque o `wardd` de teste de outro worktree estava destravado no socket fixo do uid (pendência da 35); o teste novo da fase passou. Com aquele daemon parado (não fui eu que o parei), a 2ª rodada saiu limpa | 2, depois 0 |
-| Depois do `git merge master`: `make check` | 0 |
-| Depois do merge: `make app-front` | 0 |
-| Depois do merge: `make app-check` (R32) | 0 |
-| Depois do merge: ponte `--daemon-falso cheio` + `qa38.py`, com todas as checagens `true` | 0 |
+| `python3 -I dev/english_check.py --paths app/src/screens/{Settings.svelte,settings.js,Unlock.svelte,ChangePassword.svelte,ChangePin.svelte,ChooseUsbDrive.svelte} app/src/lib/bridge app/src/lib/test` (= `make english-check PATHS=…`) | 1 (25 achados, todos nomes da Fase 37 listados em "Ficou de fora"; 0 problema nas exceções; `lib/bridge`, `lib/test`, `settings.js`, `Unlock.svelte` e `ChooseUsbDrive.svelte` com 0 achado) |
+| `make compile` (cargo check do workspace e do `app/src-tauri`, `npm ci`, `vite build`, `syntax_check.py`) | 0 (0 erro; só os 10 avisos `state_referenced_locally` de `screens/Form.svelte` que já existiam) |
+| `npm run build:teste` (conferência rápida: o `dist-teste` tem `test-bridge-*.js` e `Showcase-*.js`, e os nomes `createTransport`, `listenByPolling`, `requestedScreen` batem entre o chunk da ponte e o `index`) | 0 |
+| comparação de literais antigo × novo dos 11 arquivos (script na scratchpad) | — (só os nomes listados acima) |
+
+Achados que sobram (todos da Fase 37): `ChangePassword.svelte` `MENSAGENS`,
+`erroDaSenha`, `forcaDaSenha`, `senhaDiferente`, `segmentos`, `rotulo`;
+`ChangePin.svelte` `MAX_DIGITOS_PIN`, `MENSAGENS`, `pinValido`, `pinComLetra`,
+`pinLongo`, `pinInvalido`, `pinDiferente`; `Settings.svelte` `mensagemRestaurado`,
+`aberto`, `onfechar`, `ontravado`, `onrestaurado` (nas instâncias de `KitEmergencia` e
+`RestaurarBackup`). `mensagemDoRust` não aparece porque as entradas `mensagem` do
+`frozen.txt` cobrem a palavra.
+
+## Merge com a Fase 37 (master a51cd7e)
+
+Pedido do coordinator depois do primeiro commit (0b0eb87). `git merge a51cd7e`, com os
+conflitos resolvidos como previsto:
+- `Configuracoes.svelte`, `EscolherPendrive.svelte`, `TrocarPin.svelte`,
+  `TrocarSenha.svelte`, `configuracoes.js` (apagados aqui, alterados pela 37): ficou a
+  versão da 38 (`Settings`, `ChooseUsbDrive`, `ChangePin`, `ChangePassword`,
+  `settings.js`), com os nomes da 37 e sem aliases: imports de `./first-use.js`
+  (`MESSAGES`, `passwordError`, `passwordStrength`, `rustMessage`, `MAX_PIN_DIGITS`,
+  `isValidPin`), `./restore.js` (`restoredMessage`), `./EmergencyKit.svelte`,
+  `./RestoreBackup.svelte`; chaves `MESSAGES.passwordMismatch`, `pinWithLetter`,
+  `pinLong`, `pinInvalid`, `pinMismatch`; força `strength.segments/tone/label` e
+  seletores `[data-tone='danger'|'warning'|'success']`; props `open`, `onclose`,
+  `onlocked`, `onrestored` (`r.instant`, `r.entries`) de `EmergencyKit`/`RestoreBackup`.
+- `App.svelte`: `Unlock.svelte` da 38 com `PasswordGenerator`, `ApprovalWindow` e
+  `FirstUse` da 37.
+- `docs/glossario.md` e `dev/english-check/frozen.txt`: as duas partes (37 e depois 38);
+  a linha do `data-tone` no glossário passou a citar os valores de `first-use.js`; as
+  entradas `instante`/`entradas` de `Settings.svelte` saíram do `frozen.txt` (sem uso).
+- Com isso o `english-check` nos caminhos da fase deu **0 achado e 0 problema** (e 0 em
+  todo `app/src`); o "Ficou de fora" e a lista dos 25 achados acima valiam só antes do
+  merge.
+
+| Comando (depois do merge) | Exit code |
+| --- | --- |
+| `python3 -I dev/english_check.py --paths <caminhos da fase>` | 0 (0 achado, 0 problema) |
+| `python3 -I dev/english_check.py --paths app/src` | 0 |
+| `make compile` (log `compile-fase38-merge.log` na scratchpad) | 0 (0 erro; só os 10 avisos antigos de `Form.svelte`) |
 
 ## Problemas descobertos
-- **Design × contrato no PIN:** a descrição do frame `15242` diz "Trocar pede a senha
-  mestra", mas V5.22 e o `wardd` (`trocar_pin { atual, novo }`) pedem o PIN atual. Segui
-  o contrato e o daemon, e o texto da tela ficou "Trocar pede o PIN atual". O texto do
-  FigCraft precisa ser ajustado numa fase de design, ou o planner decide o contrário.
-- **"(máximo 4 h)" × D45:** o design limita a trava a 4 h, e D45 aceita de 1 a 1440 min.
-  A tela oferece até 4 h, e o daemon aceita até 24 h, por exemplo de outro cliente. Um
-  valor fora da lista aparece no select. Decidir se o máximo é 4 h também no
-  `ward_core::limites`.
-- **Sem frames para os diálogos:** "Trocar senha mestra" e "Trocar PIN" não têm frame no
-  FigCraft. Montei os dois com `Modal`, `CampoSenha`/`CampoPin` e `Botão`. Vale
-  desenhá-los numa fase de design.
-- **Operação nova `configuracao` no protocolo:** a Fase 46, em paralelo, também mexe na
-  configuração. No merge pode haver conflito nas tabelas `Operacao`/`TipoResposta`, em
-  `testes.rs` e no `nucleo.rs`. A resposta tem só `minutos_trava` e `backup_externo`; se
-  a 46 precisar do UUID, que seja num campo à parte, para app só.
-- **Pendências da 30 que continuam abertas:** o mínimo de 12 caracteres da senha nova
-  só é imposto no app; o `wardd` aceita senha de 1 byte no `trocar_senha`. Também não
-  há NFC. Segui o primeiro uso, sem decisão nova.
-- **Senha atual errada sem espera de D20:** `trocar_senha` no `wardd` não aplica a
-  espera crescente de D20 à senha atual. É só papel app, mas um app comprometido
-  poderia testar senhas mais rápido por aqui que pelo `destravar`. Decidir se a espera
-  do papel app vale também na troca.
-- **Teste do Tauri sensível ao socket fixo (pendência da 35, de novo):** com um `wardd`
-  de teste de outro worktree no ar, dois testes de ACL do `app/src-tauri` falham. Com
-  worktrees em paralelo, isso volta a acontecer; vale isolar o socket do teste.
-- **Cópias no JS e no IPC:** as mesmas das Fases 30 e 31. O lado Rust zera a partir do
-  `Digitado`.
 
-## Merge com o master (Fases 46, 36, 27, 22d)
-- **Protocolo:** `configuracao` ficou junto de `backup_externo`, `definir_backup_externo`
-  e `pendrives` da 46, nessa ordem, nas tabelas `Operacao`/`TipoResposta`, em
-  `pedido.rs`/`resposta.rs` e nas tabelas do V3.15 em `testes.rs`. Nenhum `ErroResposta`
-  novo na 38, então o `SIMPLES` continua com o tamanho que o master deixou (29).
-- **`backup_externo` × `configuracao`:** as duas respostas leem a mesma fonte no `wardd`
-  (`a.cofre.configuracao().backup().ligado()`), então não divergem. A tela continua
-  lendo pelo `configuracoes` (uma ida ao daemon só, sem UUID). O app ainda não tem
-  comando para a operação `backup_externo` da 46, e criar um seria escopo da tela de
-  ligar o backup externo. Se essa tela usar `backup_externo`, o campo `backup_externo`
-  da resposta `configuracao` pode sair.
-- **App:** os quatro comandos da 38 entraram em `COMANDOS_PRINCIPAL` (só a capability
-  `principal`). `COMANDOS` agora é principal + aprovação, espelhado em `comandos.js` e no
-  `generate_handler!`. No `daemon_falso`, os campos `minutos_trava`/`senha` convivem com
-  `aprovacoes` da 36. `cheio()`/`sem_cofre()` seguem com `..vazio()`, e o
-  `conferir_pin` é o mesmo para trocar PIN, mudar nível e responder aprovação.
+- **Merge com a Fase 37** (mesmos arquivos, linhas próximas): conflitos esperados em
+  `app/src/App.svelte` (imports das telas, linhas 13–18), `docs/glossario.md` (as duas
+  tabelas novas entram antes de "### Extensão"), `dev/english-check/frozen.txt` (fim do
+  arquivo) e nas linhas de import e de uso dos nomes da Fase 37 em `Settings.svelte`,
+  `ChangePassword.svelte`, `ChangePin.svelte` e `ChooseUsbDrive.svelte` (a Fase 37 os
+  troca nos arquivos com o nome antigo). Receita: ficar com a versão da Fase 38 desses
+  quatro arquivos e trocar só os imports (`./primeiro-uso.js` → `./first-use.js`,
+  `./restaurar.js` → `./restore.js`, `./KitEmergencia.svelte`/`./RestaurarBackup.svelte`
+  → `./EmergencyKit.svelte`/`./RestoreBackup.svelte`, tirando os aliases se os nomes da
+  37 forem os mesmos), as chaves de `MESSAGES`, o objeto de força
+  (`strength.segmentos/tom/rotulo` e os valores dos seletores `[data-tone=…]`) e as props
+  de `EmergencyKit`/`RestoreBackup` em `Settings.svelte` pelos nomes que a 37 escolheu.
+  Depois, `english-check` nesses quatro arquivos tem de dar 0.
+- `crates/ward-test-bridge/src/http.rs:392` cita `ponte-teste.js` › `ouvirAvisos`
+  (agora `test-bridge.js` › `listenByPolling`): é da trilha R (Fase 29), não mexi.
+- As entradas `mensagem` do `frozen.txt` cobrem também a palavra dentro de
+  `mensagemDoRust`/`mensagemRestaurado` (casamento por palavra): o checador não os acusa
+  enquanto o `frozen.txt` tiver `mensagem` para o arquivo.
 
 ## Arquivos criados/alterados
+
 | Arquivo | Ação |
 | --- | --- |
-| `crates/ward-core/src/protocolo.rs` | alterado |
-| `crates/ward-core/src/protocolo/pedido.rs` | alterado |
-| `crates/ward-core/src/protocolo/resposta.rs` | alterado |
-| `crates/ward-core/src/protocolo/testes.rs` | alterado |
-| `crates/wardd/src/nucleo.rs` | alterado |
-| `crates/wardd/tests/configuracoes.rs` | criado |
-| `app/nucleo/src/configuracoes.rs` | criado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/nucleo/src/primeiro_uso.rs` | alterado (`igual` → `pub(crate)`) |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/src-tauri/src/main.rs` | alterado |
-| `app/src-tauri/capabilities/principal.json` | alterado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/tests/ataques.rs` | alterado |
-| `app/src/App.svelte` | alterado |
-| `app/src/lib/componentes/LinhaDeOpcao.svelte` | alterado |
-| `app/src/lib/componentes/Select.svelte` | alterado |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `app/src/telas/Configuracoes.svelte` | criado |
-| `app/src/telas/TrocarSenha.svelte` | criado |
-| `app/src/telas/TrocarPin.svelte` | criado |
-| `app/src/telas/configuracoes.js` | criado |
-| `docs/mission/design-nodes.md` | alterado |
-| `docs/mission/evidence/fase-38/*` (8 PNG + `qa.json`) | criado |
+| `app/src/screens/Configuracoes.svelte` → `app/src/screens/Settings.svelte` | renomeado e reescrito |
+| `app/src/screens/configuracoes.js` → `app/src/screens/settings.js` | renomeado e reescrito |
+| `app/src/screens/Destravar.svelte` → `app/src/screens/Unlock.svelte` | renomeado e reescrito |
+| `app/src/screens/TrocarSenha.svelte` → `app/src/screens/ChangePassword.svelte` | renomeado e reescrito |
+| `app/src/screens/TrocarPin.svelte` → `app/src/screens/ChangePin.svelte` | renomeado e reescrito |
+| `app/src/screens/EscolherPendrive.svelte` → `app/src/screens/ChooseUsbDrive.svelte` | renomeado e reescrito |
+| `app/src/lib/bridge/commands.js`, `index.js`, `test-bridge.js` | alterado |
+| `app/src/lib/test/Showcase.svelte` | alterado |
+| `app/src/App.svelte` | alterado (imports) |
+| `dev/tests/app_e2e.py`, `dev/tests/revealed_selection.py` | alterado (`#master-password`) |
+| `dev/english-check/frozen.txt` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-38.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
-- [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [x] (UI/DESIGN) Conferido contra o FigCraft (cópia do `Ward.figcraft`; nada salvo)
+
+- [x] `make compile` rodado (a missão 2 não roda `make check` por fase; PRD regra 6)
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto nesta fase)
+- [x] Teste de ataque para cada (SEG) tocado (nenhuma lógica de segurança mudou; o teste
+  existente de V3.4 acompanha o id novo)
+- [x] (UI) Conferido contra o FigCraft: nenhuma medida, cor ou token mudou (só nomes de
+  classe locais; mesmas regras CSS)
 - [x] Ficou dentro do escopo da fase

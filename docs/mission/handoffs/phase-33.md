@@ -1,196 +1,155 @@
-# Fase 33 — Formulário parte 1 (UI)
+# Fase 33 — `app/core`: `commands`, `settings`, `external_backup`, `terminal`, `key`, `startup`, `credentials` (Missão 2, Milestone 2)
 
 ## Implementado
-- **Tipos da fase:** login, api, aws, smtp, nota segura e genérico, com Novo e Edição, a
-  partir dos frames do FigCraft (ids em `docs/mission/design-nodes.md` › "Fase 33").
-- **Nenhuma operação nova no protocolo.** Usei as que já existem em
-  `ward_core::protocolo`: `revelar`, `totp`, `salvar_entrada`, `detalhe` e `copiar`.
-- **`app/nucleo/src/cliente.rs`:**
-  - `revelar(entrada, alvo)` devolve um `Segredo`;
-  - `totp(entrada)` devolve `CodigoTotp`: o código precisa ter 6 dígitos e o `restante`
-    ficar entre 1 e 30, senão é `RespostaInvalida`;
-  - `salvar(anterior, rascunho)` devolve `Salvamento::{Salvo, Problemas}`.
-- **`app/nucleo/src/daemon_falso.rs`** (só `modo-teste`):
-  - responde `Revelar` e `Totp` (o `Totp` pelo `ward_core::totp`);
-  - responde `SalvarEntrada` replicando o wardd: valida, confere no cofre, entrada nova
-    entra como `ComAprovacao`, entrada editada mantém o nível.
-- **`app/nucleo/src/formulario.rs` (novo):**
-  - `Formulario` (`deny_unknown_fields`). Cada segredo chega como `vazio`, `manter`,
-    `gerada` ou `{novo}`. `TextoSecreto` guarda o valor em `Zeroizing`, com `Debug`
-    mascarado e `Deserialize` que toma posse da `String`.
-  - `montar` confere os campos contra uma lista fixa por tipo. `manter` só vale na edição
-    e só para um segredo (ou extra secreto) que a entrada editada tem.
-  - A semente TOTP é normalizada: sem espaço, em maiúsculas, e lida de `otpauth://`.
-    Fora de SHA1/6/30 a resposta é "parâmetros de TOTP não suportados" (D35).
-  - Antes do pedido, `validar_local` roda a validação do `ward-core` numa cópia, para
-    todos os erros aparecerem juntos. Os problemas que o daemon devolve passam por
-    `erros_do_daemon`: o campo sai de uma tabela fixa e o motivo vira "inválido" se for
-    longo ou tiver controle ou formatação Unicode.
-- **`app/nucleo/src/servico.rs`:** métodos novos (`ao_sair` também descarta o
-  formulário):
-  - `revelar_campo` decide entre campo e extra secreto pelo detalhe; campo de texto dá
-    `CampoInexistente`;
-  - `codigo_totp` e `copiar_codigo_totp` (este pelo `Copiador`, D4);
-  - `usar_senha_gerada(campo)`: só `senha`; move a senha do gerador para um mapa no
-    Rust e devolve só o tamanho;
-  - `descartar_formulario`;
-  - `salvar_credencial(anterior, formulario)`: na edição, o tipo tem de ser o mesmo e a
-    entrada não pode ter anexos (`ErroApp::AnexosNaoMantidos`). Devolve
-    `{ salvo, erros }`, sem segredo.
-- **`credenciais.rs`:** o detalhe agora traz `projeto` e `tags`, para a edição.
-- **Comandos novos**, com a ACL de cada um:
-  - `revelar_campo`, `codigo_totp`, `copiar_codigo_totp`, `usar_senha_gerada`,
-    `descartar_formulario` e `salvar_credencial`;
-  - registrados em `comandos.rs`, `capabilities/principal.json` (`allow-…`),
-    `ponte/comandos.js`, no `generate_handler!` do Tauri e no despacho da ponte de teste.
-- **Interface:**
-  - componentes novos, um para cada componente da Design System: `TituloDeSecao`,
-    `CampoExtra` (editável), `CodigoTotp`, `Interruptor`, `PopoverGerador`,
-    `CartaoDeTipo` e `ComboboxGrupo` (ARIA combobox com "Criar grupo “x”");
-  - `CampoSecreto` ganhou o modo editável (digitação em `type=password`, com olho local),
-    `ontrocar` (clique na máscara para trocar o valor salvo), `mostrarRevelar`,
-    `mostrarCopiar` e `erro`;
-  - telas `Formulario.svelte` + `formulario.js` (campos por tipo, NFC, host da URL em
-    punycode, montagem do pedido, erros por campo) e `EscolherTipo.svelte`;
-  - `Credenciais.svelte`: "Nova credencial" abre Escolher tipo e depois o formulário;
-    "Editar" abre a edição (fica desabilitado para os tipos da Fase 34 e para entradas
-    com anexos). Ao salvar, recarrega a lista, abre a entrada e mostra o Toast
-    "Credencial salva.";
-  - o revelar do detalhe de Credenciais (D65 b) usa `revelar_campo`. O valor some em
-    30 s, ao ocultar, ao trocar de entrada ou ao sair.
-- **Gerador no formulário (D65 f):** tamanho de 8 a 64, força pelos limiares da 37 e
-  símbolos de `ward_core::gerador::SIMBOLOS`, vindos do Rust. "Usar esta senha" guarda a
-  senha no Rust; a tela mostra só a máscara com o tamanho e manda `"gerada"`.
+- **Base**: worktree em `b4d5e1b`; com a árvore limpa, `git reset --hard a8262a8` (master
+  atual, Fase 32 concluída). Rodou em paralelo com as Fases 17, 23 e 25.
+- **Arquivos** (`git mv`): `app/core/src/comandos.rs` → `commands.rs`, `configuracoes.rs`
+  → `settings.rs`, `backup_externo.rs` → `external_backup.rs`, `chave.rs` → `key.rs`,
+  `partida.rs` → `startup.rs`, `credenciais.rs` → `credentials.rs` (`terminal.rs` fica).
+  `lib.rs`: `pub mod` (o `#[cfg]` continua só no `fake_daemon`) e a doc do crate.
+- **Comentários, locais, parâmetros, privados e testes** dos 7 arquivos em inglês
+  (`mod testes` → `tests`, `pelo_servico` → `via_service`, `ataque_…` → `attack_…`; prefixos
+  `v5_22_`, `v7_9_`, `d65_` do contrato ficam). Comentários que citavam nome de fio em
+  pt-BR (comandos Tauri, operações e campos do protocolo, valores `carregada`, texto da
+  CLI) foram reescritos pelo sentido; o valor de cada constante de comando continua
+  mostrando o nome do fio.
+- **Renomes públicos** (lista completa no parágrafo "Fase 33" da seção 15 do glossário),
+  com os usos em `app/core` (`service.rs`, `client.rs`, `daemon.rs`, `lib.rs`,
+  `tests/configuracao_tauri.rs`, `examples/startup-container.rs`), `app/src-tauri`
+  (`src/main.rs`, `build.rs`) e `crates/ward-test-bridge` (`http.rs`, `simulated.rs`).
+  Principais: `Comando` → `Command` (variantes e `from_name`), constantes de comando
+  (`VAULT_STATUS`…, `COMMANDS`, `MAIN_COMMANDS`, `APPROVAL_COMMANDS`, `SHARED_COMMANDS`),
+  `permissao` → `permission`, `Referencia` → `Reference`, `Configuracoes` → `Settings`,
+  `ResultadoTroca` → `ChangeResult`, `TrocaPin`/`TrocaSenha` → `PinChange`/
+  `PasswordChange`, `PendriveVisto`/`BackupExternoVisto`/`EscolhaDoPendrive` →
+  `UsbDriveView`/`ExternalBackupView`/`UsbDriveChoice`, `TerminalDoSistema`/`SemTerminal`/
+  `Abertura` → `SystemTerminal`/`NoTerminal`/`Opening`, `Terminal::abrir` → `open`,
+  `Carregamento` → `Loading`, `ler_chave` → `read_key`, `ErroPartida`/`Partida` →
+  `StartupError`/`Startup` (`iniciar`/`tomar_daemon`/`vigiar`/`reexecutar_ou_sair` →
+  `start`/`take_daemon`/`watch`/`reexec_or_exit`), `ItemCredencial`/`DetalheCredencial`/
+  `CampoTexto`/`CampoSecreto`/`Anexo` → `CredentialItem`/`CredentialDetail`/`TextField`/
+  `SecretField`/`Attachment`.
+- **Fio congelado** (m2:DT3): todo campo/variante `serde` renomeado leva
+  `#[serde(rename = "<antigo>")]`; no `Loading` o `rename_all = "kebab-case"` virou
+  `rename` por variante (`carregada`, `cancelado`, `aviso`; tag `resultado` fica).
+  Comandos Tauri, nomes dos parâmetros (`dados`, `campo`, `minutos`, `ligado`…), valores
+  das constantes de comando, ids de campo nos erros (`atual`, `novo`, `nova`,
+  `confirmacao`) e todos os textos exibidos ficam.
+- **`dev/tests/webkit-real.sh`** (heredoc que tira a partida do `main.rs`): procura agora
+  `startup::start()`, `partida.take_daemon()`, `partida.watch(move || {` e
+  `use ward_app_core::startup;`, e a checagem final recusa `partida`/`startup` restante.
+  Simulado numa cópia do `main.rs` no scratchpad: as asserções passam e o resultado tem a
+  partida removida. A variável local `partida` do `main.rs` do Tauri é da Fase 34.
+- **Testes novos** `attack_new_rust_names_are_not_wire_names` em `settings.rs`,
+  `external_backup.rs`, `key.rs` e `credentials.rs`: serializam com os nomes antigos e
+  (nos `Deserialize`) recusam JSON com os nomes novos em inglês.
+
+## Literais alterados
+- Capturas de `format!` (mesmo texto produzido): `{nome}` → `{name}` (`commands.rs`;
+  `"ward-chave-{}-{name}"` em `key.rs`), `{ruim:?}`/`{mau}`/`{texto}`/`{agulha}`/
+  `{forjado}`/`{corpo}` → `{bad:?}`/`{bad}`/`{text}`/`{needle}`/`{forged}`/`{body}`,
+  `"-----END {label}-----"` e `"{a}{label}-----\n{body}\n{b}{label}-----\n"` (`key.rs`),
+  `"1 {one}"`/`"{n} {many}"` e `r#""criada_em":{created}"#` (`credentials.rs`).
+- `key.rs`: `rename_all = "kebab-case"` sai; entram os `rename` por variante com os mesmos
+  valores.
+- `tests/configuracao_tauri.rs`: mensagem de teste `"comandos.js diverge de COMANDOS"` →
+  `"commands.js diverge de COMMANDS"` (nome do arquivo JS da Fase 35 e da constante).
+- `dev/tests/webkit-real.sh`: os padrões do heredoc acima e a mensagem
+  `"main.rs do app mudou: vigiar"` → `"…: watch"`.
+- Literais novos: só os `rename` do `serde` (nomes antigos) e os JSON dos testes novos.
+- Conferência por script (tokenizador Rust no scratchpad): para cada arquivo tocado, a
+  sequência de tokens sem comentários contra o master só difere em identificadores, nos
+  atributos `serde` novos, em forma curta de campo (`size: size` → `size`) e na ordem dos
+  `use` (rustfmt); o multiconjunto de literais só perde os listados acima. Os escapes
+  (`\u{202E}`, `\u{200B}`, `\u{2066}`, `\u{FEFF}`, `\u{1b}`, `\u{e9}`, `\0` e o `\u001b`
+  dentro do `r#"…"#` do `external_backup.rs`) estão byte a byte iguais; nenhum caractere
+  invisível cru nos fontes (`grep -P`).
+
+## Exceções novas
+- Nenhuma em `allow.txt`/`frozen.txt`. O `english-check` dos 7 arquivos dá 190 achados,
+  todos de nomes de outras fases ainda não traduzidos: `ward_core::protocolo` (`Papel`,
+  `Pedido`, `Resposta`, `quadro`, `Pendrive { rotulo, montado }`, `ItemLista`,
+  `DetalheEntrada`, `ResumoItem` e campos `nome`/`tipo`/`campos`/`segredos`/`anexos`/
+  `datas`…, `MAX_ROTULO`, `MAX_PENDRIVES`), e do `app/core` da Fase 34 (`primeiro_uso`,
+  `Digitado`, `erros_da_senha`, `pin_valido`, `PIN_INVALIDO`, `PIN_DIFERENTE`,
+  `SenhaMestra`, `area_transferencia`/`AreaTransferencia`/`Copiador` e métodos `ler`/
+  `escrever`/`limpar`, `nivel`, `novo`/`nova`). Os achados de comentário que sobram
+  (`settings.rs` linhas 9 e 17) são o link `crate::primeiro_uso::erros_da_senha` e
+  `[`Digitado`]`, nomes da Fase 34.
 
 ## Segurança
-- **Invariantes tocadas:**
-  - **S11 / V5.3:** nenhuma resposta do formulário (salvar, TOTP, usar senha, detalhe)
-    traz segredo do cofre. O valor só chega no `revelar_campo`, por clique, e sai em
-    30 s, ao ocultar, ao trocar de entrada ou ao sair. Segredo salvo vai como "manter" e
-    é posto no rascunho pelo Rust. A senha gerada nunca passa pelo JS, a não ser no
-    revelar do popover.
-  - **S1:** toda entrada dos comandos é tratada como não confiável.
-    - `deny_unknown_fields` no formulário (um campo `nivel` forjado é recusado).
-    - Limites de tamanho, tipo dentro da lista da fase, chaves de campo dentro da lista
-      do tipo.
-    - `manter` não puxa segredo de outra entrada: numa entrada nova é sempre recusado, e
-      na edição só vale para o que a entrada editada tem.
-    - A resposta do daemon também é não confiável: o problema é limpo.
-  - **D4 / V5.5:** copiar (campo e código TOTP) passa pelo `Copiador`, com limpeza em
-    30 s.
-  - **D35 / V5.13:** `otpauth://` fora de SHA1/6/30 é recusado, a mensagem aparece no
-    campo e nada é gravado.
-  - **V5.14:** a senha do gerador não chega à interface ao preencher o campo.
-  - **ACL:** os seis comandos só passam na janela `principal`, com a origem local.
-- **Testes de ataque:**
-  - `app/nucleo/src/formulario.rs`:
-    - `ataque_otpauth_fora_de_sha1_6_30_e_recusado`
-    - `ataque_problema_forjado_pelo_daemon_nao_vira_texto_livre`
-    - `ataque_debug_do_texto_secreto_nao_mostra_o_valor`
-    - `ataque_formulario_com_chave_desconhecida_e_recusado`
-  - `app/nucleo/src/servico.rs`:
-    - `ataque_formulario_forjado_pela_interface` (manter em entrada nova, extra de outra
-      entrada, tipo trocado, campo de outro tipo, tipos da 34, anexos, nome anterior
-      inválido)
-    - `ataque_revelar_so_de_segredo_e_respostas_sem_segredo`
-    - `ataque_otpauth_nao_suportado_nao_e_salvo`
-    - `gerador_do_formulario_preenche_a_senha_sem_passar_pela_interface`
-    - `salvar_sem_obrigatorio_mostra_erro_no_campo`
-    - `salvar_novo_e_editar_mantendo_segredo`
-  - `crates/ward-ponte-teste/tests/ataques.rs` › `ataque_formulario_pela_ponte`
-  - `app/src-tauri/src/main.rs` › `ataque_formulario_so_na_janela_certa`
-  - QA no Chrome (`docs/mission/evidence/fase-33/qa.json`):
-    - nenhum segredo da fixture no DOM em 12 momentos (antes do revelar, depois de
-      ocultar, nas edições, depois de gerar, depois de salvar);
-    - `localStorage` e `sessionStorage` vazios;
-    - URL sem token;
-    - só pedidos locais.
-- **Dependências novas:** nenhuma no repositório. O Playwright do QA roda fora do
-  repositório, no scratchpad.
+- Invariantes tocadas: S1 (entrada da webview e resposta do daemon não confiáveis:
+  `Reference`, `UsbDriveChoice`, `Token::from_response`, `entry_for_argv`), S2/S11/S13
+  (`key.rs`: leitura da chave, avisos fixos), S8/D47/D57/D63 (`startup.rs`: partida setgid,
+  papel, reexecução), S9 (troca de PIN), S11 (lista de comandos e capabilities). Diff só
+  de nomes, comentários e atributos `serde` (conferido pelo tokenizador): nenhuma
+  conferência, ordem de passos da partida, flag de `open` (`O_NOFOLLOW|O_NONBLOCK|
+  O_NOCTTY`), limite ou regex mudou. O token do "Conectar" continua só no canal (fd), nunca
+  em argv/ambiente; `Token` e `Secret` seguem sem `Debug` do valor.
+- Testes de ataque: os existentes ficam (renomeados `attack_…`); novos
+  `attack_new_rust_names_are_not_wire_names` em `settings.rs`, `external_backup.rs`,
+  `key.rs`, `credentials.rs` (nome novo não vira campo do fio). Escritos, não rodados
+  (regra 6 do PRD); compilam (`cargo clippy --all-targets`, com e sem `test-mode`).
+- Dependências novas: nenhuma.
 
 ## Ficou de fora
-- **Anexos:** "Adicionar arquivo" fica desabilitado. O protocolo não tem operação para
-  ler o conteúdo de um anexo, então editar uma entrada com anexos apagaria os anexos
-  (o `salvar_entrada` substitui a entrada inteira). Por isso essa edição é recusada.
-- **Mudar nível** fica desabilitado (Fase 35). **Duplicar** e **Excluir** continuam sem
-  ação.
-- **Tipos banco, servidor e ftp/sftp** ficam desabilitados no Escolher tipo (Fase 34).
-- **"Alterada em …"** no rodapé da edição fica vazio (datas na Fase 22d).
-- No daemon real, `revelar` chega na 22c e o transporte do app na 23a. Hoje só o daemon
-  falso responde.
+- `tests/configuracao_tauri.rs` → `tests/tauri_config.rs` (glossário) e o resto dele: não
+  é arquivo desta fase; só os usos foram ajustados.
+- `main.rs`/`build.rs` do Tauri: só os nomes vindos destes módulos e o caminho
+  `ward_app_core::startup`/`commands::COMMANDS` em comentário; o resto é da Fase 34.
+- Nomes de `ward-core` e dos módulos do `app/core` da Fase 34 (ficam como no master).
+- `cargo test` e `make check` (regra 6 do PRD: a fase termina com `make compile`).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make ferramentas` (antes) | 0 |
-| `cargo test -p ward-app-nucleo -p ward-ponte-teste --all-features` | 0 |
-| `make app-front` | 0 |
-| `make app-check` com `PKG_CONFIG_PATH` do scratchpad (R32); a 1ª rodada falhou no `cargo fmt --check`, corrigido | 2, depois 0 |
-| ponte `--daemon-falso cheio` + Playwright (`qa33.py`, Chrome headless, 1280×800): todas as checagens `true` na 1ª rodada | 0 |
-| `make check`: a 1ª rodada falhou em 2 lints do clippy em `formulario.rs`, corrigidos | 2, depois 0 |
-| `make app-front` (final) | 0 |
+| `cargo check -p ward-app-core -p ward-test-bridge --all-targets --all-features --locked` | 0 |
+| `cargo clippy -p ward-app-core -p ward-test-bridge --all-targets --all-features -- -D warnings` (`.dev/logs/fase33-clippy.log`) | 0 |
+| `cargo clippy -p ward-app-core --all-targets -- -D warnings` (sem `test-mode`; `.dev/logs/fase33-clippy-notest.log`) | 0 |
+| `cargo fmt --all --check` (raiz e `app/src-tauri`) | 0 |
+| `cargo clippy --all-targets --all-features -- -D warnings` (`app/src-tauri`; `.dev/logs/fase33-tauri-clippy.log`) | 0 |
+| `make compile` (`.dev/logs/fase33-make-compile.log`) | 0 |
+| `make english-check PATHS="<7 arquivos>"` (`.dev/logs/fase33-english.log`) | 2 (190 achados, todos de outras fases) |
 
 ## Problemas descobertos
-- **Salvar no Novo vazio:** o design o desenha desabilitado, mas o V5.10 pede o erro no
-  campo ao salvar. Deixei o botão clicável.
-- **Estados de segredo que o design não desenha:**
-  - Trocar um valor salvo: clicar na máscara abre a digitação. "Trocar" sem digitar
-    nada salva o campo vazio; num campo obrigatório isso dá erro.
-  - Senha vinda do gerador: só a máscara, sem revelar nem copiar até salvar.
-- **Placeholder da URL:** o design usa "https://", mas o `dev/testes/app-dist.py` recusa
-  qualquer `https://` no pacote. Em vez de afrouxar a checagem, troquei o texto por
-  "Endereço com http ou https".
-- **Escolher tipo:** o clique no cartão abre o formulário direto. O estado intermediário
-  `Tipo escolhido` (18055) não aparece.
-- **`Campo nota segura`** virou um `textarea` na tela (Novo) e o `Campo secreto`
-  editável (Edição), não um componente próprio.
-- **Rótulos do revelar:** agora são `Revelar <rótulo>` / `Ocultar <rótulo>` (antes
-  `Revelar` / `Ocultar`). O roteiro de QA da Fase 37, fora do repositório, usava o
-  seletor antigo.
-- **Erros por campo:** ficam até o próximo salvar. O select de Ambiente mostra o erro
-  embaixo, sem `aria-invalid`.
-- **Console do QA:** dois 404, que parecem ser do favicon (não investiguei).
-- **Valor digitado:** fica no estado da tela enquanto o formulário está aberto
-  (inevitável) e sai ao salvar, cancelar ou sair da tela.
-- **Rebase:** reapliquei as mudanças sobre o master atual (Fases 22a, 23, 24). As
-  contagens do cofre de teste não estão fixadas nos testes novos.
+- Corrida com a Fase 17 (paralela): `startup.rs`, `credentials.rs`, `external_backup.rs`
+  e `client.rs` usam nomes de `ward_core::protocolo` (`Papel`, `Pedido::Estado`,
+  `Resposta::Estado { travado, cofre_existe, papel }`, `quadro::ler_quadro`,
+  `Pendrive { rotulo, montado }`, `ItemLista`, `DetalheEntrada`…). Quem fizer o merge da
+  segunda das duas ajusta esses usos.
+- Os comentários de `settings.rs` citam `crate::primeiro_uso::erros_da_senha` e
+  `Digitado` (link de rustdoc): a Fase 34 precisa atualizá-los ao renomear, senão o link
+  quebra só no `cargo doc`.
+- O `webkit-real.sh` procura a variável local `partida` do `main.rs` (`partida.take_daemon`,
+  `partida.watch`): se a Fase 34 renomear essa variável, o heredoc muda junto.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `app/nucleo/src/formulario.rs` | criado |
-| `app/nucleo/src/cliente.rs` | alterado |
-| `app/nucleo/src/comandos.rs` | alterado |
-| `app/nucleo/src/credenciais.rs` | alterado |
-| `app/nucleo/src/daemon_falso.rs` | alterado |
-| `app/nucleo/src/erro.rs` | alterado |
-| `app/nucleo/src/gerador.rs` | alterado |
-| `app/nucleo/src/lib.rs` | alterado |
-| `app/nucleo/src/servico.rs` | alterado |
-| `app/src-tauri/capabilities/principal.json` | alterado |
+| `app/core/src/commands.rs` (era `comandos.rs`) | renomeado e alterado |
+| `app/core/src/settings.rs` (era `configuracoes.rs`) | renomeado e alterado |
+| `app/core/src/external_backup.rs` (era `backup_externo.rs`) | renomeado e alterado |
+| `app/core/src/key.rs` (era `chave.rs`) | renomeado e alterado |
+| `app/core/src/startup.rs` (era `partida.rs`) | renomeado e alterado |
+| `app/core/src/credentials.rs` (era `credenciais.rs`) | renomeado e alterado |
+| `app/core/src/terminal.rs` | alterado |
+| `app/core/src/lib.rs` | alterado |
+| `app/core/src/service.rs` | alterado |
+| `app/core/src/client.rs` | alterado |
+| `app/core/src/daemon.rs` | alterado |
+| `app/core/tests/configuracao_tauri.rs` | alterado |
+| `app/core/examples/startup-container.rs` | alterado |
 | `app/src-tauri/src/main.rs` | alterado |
-| `app/src/lib/ponte/comandos.js` | alterado |
-| `app/src/lib/componentes/CampoSecreto.svelte` | alterado |
-| `app/src/lib/componentes/CampoExtra.svelte` | criado |
-| `app/src/lib/componentes/CartaoDeTipo.svelte` | criado |
-| `app/src/lib/componentes/CodigoTotp.svelte` | criado |
-| `app/src/lib/componentes/ComboboxGrupo.svelte` | criado |
-| `app/src/lib/componentes/Interruptor.svelte` | criado |
-| `app/src/lib/componentes/PopoverGerador.svelte` | criado |
-| `app/src/lib/componentes/TituloDeSecao.svelte` | criado |
-| `app/src/telas/Credenciais.svelte` | alterado |
-| `app/src/telas/EscolherTipo.svelte` | criado |
-| `app/src/telas/Formulario.svelte` | criado |
-| `app/src/telas/formulario.js` | criado |
-| `crates/ward-ponte-teste/src/http.rs` | alterado |
-| `crates/ward-ponte-teste/tests/ataques.rs` | alterado |
-| `docs/mission/design-nodes.md` | alterado |
-| `docs/mission/evidence/fase-33/` (22 PNG + `qa.json`) | criado |
+| `app/src-tauri/build.rs` | alterado |
+| `crates/ward-test-bridge/src/http.rs` | alterado |
+| `crates/ward-test-bridge/src/simulated.rs` | alterado |
+| `dev/tests/webkit-real.sh` | alterado |
+| `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-33.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)
+- [ ] `make check` rodado — não (regra 6 do PRD); `make compile` 0
 - [x] Só cofre de teste e credenciais falsas usados
-- [x] Teste de ataque para cada (SEG) tocado
-- [x] (UI/DESIGN) Conferido contra o FigCraft (cópia; o original não foi tocado)
+- [x] Teste de ataque para cada (SEG) tocado (fio congelado)
+- [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase

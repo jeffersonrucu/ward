@@ -1,0 +1,28 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+WARD_DEV_SOCKET_DIR="" dev/tests/revealed-selection.sh
+==> daemon de teste em <rt>/ward-test-selection com a ponte (D63)
+daemon de teste no ar: pid 2236290, socket <rt>/ward-test-selection/wardd.sock, log <repo>/.dev/logs/wardd.log
+==> valor revelado contra seleção e cópia (WebKitGTK num X privado)
+OK   X privado (sem TCP) recusa cliente sem o cookie
+OK   destravado pela ponte com a senha de teste
+OK   valor revelado só no atributo do campo, sem nó de texto (não impresso)
+OK   autoteste: valor como texto selecionado vai à PRIMARY (o leitor acha)
+OK   autoteste: Ctrl+C (evento do GDK) leva o valor como texto à CLIPBOARD
+OK   seleção do campo por script: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   Ctrl+A: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   Ctrl+A e Ctrl+C: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   arrasto do mouse pelo campo: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   clique triplo no campo: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   clique triplo e Ctrl+C: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   seleção que atravessa o campo: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   cópia da seleção que atravessa o campo: o valor não vai à PRIMARY nem à CLIPBOARD
+OK   innerText da página sem o valor revelado
+OK   o campo continua mostrando o valor (::before)
+OK   Ocultar tira o valor do documento
+selecao-revelado: ok
+==> varredura de logs (V5.27): .dev/logs com .dev/variations.txt
+limpo    .dev/logs/ward-test-bridge.log (151 bytes)
+limpo    .dev/logs/wardd.log (1018 bytes)
+2 arquivo(s), 0 com segredo
